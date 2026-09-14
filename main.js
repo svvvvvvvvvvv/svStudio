@@ -14,6 +14,13 @@ const ENGINE_PY = 'C:\\Users\\user\\.workbuddy\\binaries\\python\\envs\\spektraf
 const ENGINE_CWD = path.join(__dirname, 'svFilm');
 /** ★ 引擎启动日志：引擎起不来时唯一的线索来源，助理直接读它 */
 const ENGINE_LOG = path.join(__dirname, '_logs', 'engine_start.log');
+/* ⚠ 这个目录**不在 git 里**（.gitignore 掉了）⇒ 新克隆/搬过家之后是没有的。
+   直接 `fs.openSync(ENGINE_LOG,'a')` 会 ENOENT，把整个 engine-start 抛掉 ——
+   表现就是点「渲染」报「拉起服务失败」，而且因为日志都写不出来，一点线索都没有。 */
+function ensureEngineLog() {
+  const d = path.dirname(ENGINE_LOG);
+  if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
+}
 
 // 注意：app.getPath 必须等 app ready 之后才能调用，
 // 因此这里做成惰性取值，避免模块顶层访问导致 undefined 崩溃。
@@ -823,6 +830,7 @@ ipcMain.handle('engine-start', async () => {
     return { ok: false, error: '找不到引擎用的 Python：' + py };
   }
   try {
+    ensureEngineLog();
     const child = spawn(py, ['-u', '-m', 'svFilm.service', '--port', String(ENGINE.port)], {
       cwd: ENGINE_CWD,
       detached: true,

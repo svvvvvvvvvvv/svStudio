@@ -131,6 +131,12 @@ console.log('\n[6] 调试日志');
 check('main.js 有 log-line 通道', /ipcMain\.handle\('log-line'/.test(read('main.js')));
 check('preload 暴露 logLine', /logLine:/.test(preload));
 check('React 侧有全局错误捕获', /addEventListener\('error'/.test(read('src/main.tsx')));
+/* ★ 09-15 回归：ENGINE_LOG 指向仓库里的 _logs/，而那个目录被 .gitignore 掉了
+   ⇒ 新克隆/搬过家之后不存在 ⇒ openSync ENOENT ⇒ 点「渲染」报「拉起服务失败」且没有日志。
+   必须在使用前 mkdir。*/
+check('★ main.js 写引擎日志前会先建 _logs 目录', /function ensureEngineLog\(\)/.test(read('main.js')) && /ensureEngineLog\(\);/.test(read('main.js')));
+/* ★ 同一类问题：所有相对 __dirname 的路径，目录不存在就得建 */
+check('★ 引擎 cwd 用仓库内相对路径（不是写死 E:\\）', /ENGINE_CWD\s*=\s*path\.join\(__dirname/.test(read('main.js')));
 
 /* ---------- 汇总 ---------- */
 console.log('\n' + '-'.repeat(50));
