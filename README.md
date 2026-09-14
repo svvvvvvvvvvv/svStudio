@@ -96,24 +96,47 @@ npm run verify   # tsc 类型检查 + 构建 + 静态检查 + 真浏览器布局
 高光增亮 / 黑白位校正 / 像差模糊 / 扫描锐化），换卷时要重跑卷积。
 **效果多 = 换卷慢**，这个取舍是有意的。
 
-## 本机路径
+## 引擎用哪份 Python
 
-```bash
-# ★ 引擎必须用 spektrafilm 那个 venv（default 缺 colour 库，一 render 就 ModuleNotFoundError）
-PY_ENGINE=C:/Users/user/.workbuddy/binaries/python/envs/spektrafilm/Scripts/python.exe
-PY=C:/Users/user/.workbuddy/binaries/python/envs/default/Scripts/python.exe   # 普通脚本用这个
-GIT=C:/Users/user/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe  # 本机 git 用 WorkBuddy 自带那份
-# 引擎在 ../svFilm
-```
+**不写死在仓库里**（每人机器不一样）。按顺序找：
+
+1. 环境变量 `SVFILM_PY`（推荐，设一次然后重开窗口）：
+   `setx SVFILM_PY "D:\Python\venvs\svfilm\Scripts\python.exe"`
+2. 配置里的 `enginePy`（在用户目录的 `config.json` 里，**不进仓库**）
+3. PATH 上的 `python`
+
+那份 Python 得有：`colour-science` / `rawpy` / `numpy` / `Pillow` / `opencv-python`，
+以及 `pip install -e spektrafilm`。
+**用错环境的表现**：引擎起得来、`/health` 也正常，但一 `/render` 就
+`ModuleNotFoundError: No module named 'colour'`。
+
+> 作者本机的做法：在 `%APPDATA%\svStudio\config.json` 里写
+> `"enginePy": "<venv>\Scripts\python.exe"`。
 
 ## 现状
 
 - [x] 目录 + git
-- [x] svFilm 常驻服务（`/scan` `/load` `/render` `/stocks` `/bases` `/params`）
-- [x] **搬 pickstation 的选片台进来**（Electron 33 + 原生 HTML/JS）
-- [x] **调色台并进同一个窗口**（顶栏 tab / 分屏 / 按主题存参数 / 引擎自启）
+- [x] svFilm 常驻服务（`/scan` `/load` `/render` `/base` `/stocks` `/bases` `/params`）
+- [x] **界面重写为 React + Radix Themes**（Vite lib 模式；旧的 `renderer/app.js`、`renderer/style.css` 已删）
+- [x] 左栏固定图库目录 / 五段布局 / 大图 / 详情右栏（全部 EXIF）/ 底栏缩略图（虚拟滚动 + 悬浮预览）
+- [x] **调色台并进同一个窗口**（顶栏 tab / 分屏 / 按主题存参数 / 渲染条 / 引擎自启）
+- [x] **svFilm 用 git subtree 合进 `svFilm/`** ⇒ clone 一次全下来
+- [x] 自检工具（`npm run verify`：类型 + 构建 + 静态 + 真浏览器布局）
 - [ ] 出片（把调好的参数写成一条命令，交引擎批量跑全主题）
 - [ ] 打包（模型随包、依赖可复现）
+
+## 许可证
+
+| 目录 | 许可 | 说明 |
+|---|---|---|
+| 根目录（svStudio 工作台） | **MIT** | 见 `LICENSE` |
+| `svFilm/`（引擎） | **MIT** | 见 `svFilm/LICENSE` |
+| `svFilm/_tools/spektrafilm/`（引擎的第三方依赖，随仓库带上） | **CC BY-SA 4.0** | 见它自己的 `LICENSE` / `SPEKTRAFILM_LICENSE.txt`，**原样引用、未改动** |
+
+⇒ 单独用 svStudio 按 MIT。**一旦把 spektrafilm 和它打包在一起分发**，
+那一份组合分发要遵守 CC BY-SA 4.0（署名 + 相同方式共享）。
+
+`svFilm/_models/` 下两个模型来自 MediaPipe（Apache-2.0）。
 
 ## ⚠ 启动 svStudio 的一个坑（Electron 开发者注意）
 

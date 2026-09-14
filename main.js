@@ -5,9 +5,25 @@ const crypto = require('crypto');
 const http = require('http');
 const { spawn } = require('child_process');
 
-/* 引擎启动用哪份 Python —— 必须是**装了 spektrafilm 依赖的那个 venv**
-   （`envs/spektrafilm`；`envs/default` 缺 `colour` 库，一跑引擎就 ModuleNotFoundError）。 */
-const ENGINE_PY = 'C:\\Users\\user\\.workbuddy\\binaries\\python\\envs\\spektrafilm\\Scripts\\python.exe';
+/* 引擎启动用哪份 Python —— 必须是**装了 spektrafilm 依赖的那个解释器**
+   （缺 `colour` 库的话，引擎起得来、但一 /render 就 ModuleNotFoundError）。
+   ★ 不要把本机路径写死在这儿（要开源）。优先级：
+     ① 环境变量 SVFILM_PY  ② 配置里的 enginePy  ③ PATH 上的 python
+   自己那份写进配置（在用户目录里，不进仓库）或设 SVFILM_PY。 */
+function enginePy() {
+  let cfgPy = '';
+  try {
+    cfgPy = String(loadConfig().enginePy || '').trim();
+  } catch (e) {
+    /* app 还没 ready 等等，忽略 */
+  }
+  const envPy = String(process.env.SVFILM_PY || '').trim();
+  for (const c of [envPy, cfgPy]) {
+    if (c && fs.existsSync(c)) return c;
+  }
+  // 都不存在也把「用户自己填的那个」返回出去，好让报错指名道姓
+  return cfgPy || envPy || 'python';
+}
 /* ★★ 09-15：全部改成**相对本文件**算，不再写死 E:\WorkBuddy\...
    这样整个目录搬到哪儿（E:\svStudio 或别处）都能直接跑。
    svFilm 现在就在本仓库里的 `svFilm/` 子目录（已合仓）。 */
@@ -52,7 +68,11 @@ let win;
 
 function defaultConfig() {
   return {
-    libRoot: 'D:\\PhotoLib',
+    // ★ 图库根：留空 = 先用系统的「图片」目录（见 withLibFallback），再在台子里切到自己的照片目录。
+    //   不要把某个人的绝对路径写进仓库。
+    libRoot: '',
+    // ★ 引擎用哪份 Python（绝对路径）。留空 = 用 SVFILM_PY / PATH 上的 python
+    enginePy: '',
     lastSession: null,   // { name } 上次进入的主题
     lastIdx: -1,         // 上次离开的照片 index（重启后恢复）
     lastFilter: 'all',   // 上次的筛选档（重启后恢复）
@@ -71,12 +91,24 @@ function loadConfig() {
       // 旧版死字段清理（archiveRoot/lrExe 已随 LR 工作流移除）
       delete cfg.archiveRoot;
       delete cfg.lrExe;
-      return cfg;
+      return withLibFallback(cfg);
     }
   } catch (e) {
     console.error('config load failed', e);
   }
-  return defaultConfig();
+  return withLibFallback(defaultConfig());
+}
+
+/** 图库根为空时给个像样的默认（系统的「图片」目录），别让新用户对着空列表发呆 */
+function withLibFallback(cfg) {
+  if (!cfg.libRoot) {
+    try {
+      cfg.libRoot = app.getPath('pictures');
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  return cfg;
 }
 
 function saveConfig(cfg) {
@@ -825,7 +857,7 @@ ipcMain.handle('engine-health', () => engineGet('/health', 1500));
 ipcMain.handle('engine-start', async () => {
   const alive = await engineGet('/health', 1200);
   if (alive.ok) return { ok: true, already: true, data: alive.data };
-  const py = ENGINE_PY;
+  const py = enginePy();
   if (!fs.existsSync(py)) {
     return { ok: false, error: '找不到引擎用的 Python：' + py };
   }

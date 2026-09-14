@@ -252,8 +252,9 @@ E:\工作目录\
 ## 常用命令
 
 ```bash
-PY=C:/Users/user/.workbuddy/binaries/python/envs/default/Scripts/python.exe   # 在本目录下执行
-GIT=C:/Users/user/.workbuddy/binaries/PortableGit/versions/1.2.0/cmd/git.exe  # 本机 git 用 WorkBuddy 自带那份
+# 用你自己的 python —— 要装了 colour / rawpy 等依赖，见上面「跑起来之前」
+PY=python
+# 下面全部在**本目录**（svFilm/）下执行
 
 $PY -m svFilm.selftest                                  # 动完任何一层都要跑
 $PY -m svFilm.cli stocks                                # 列出所有胶片卷（人话说明）
