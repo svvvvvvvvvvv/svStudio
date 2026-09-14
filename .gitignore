@@ -1,0 +1,17 @@
+# 依赖与构建产物
+node_modules/
+dist/
+build/
+out/
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 临时/调试产出（真要留的放 _debug/_logs 或效果debug）
+_debug/_logs/
+效果debug/
+*.tmp
