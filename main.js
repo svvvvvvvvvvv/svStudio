@@ -9,6 +9,8 @@ const { spawn } = require('child_process');
    （`envs/spektrafilm`；`envs/default` 缺 `colour` 库，一跑引擎就 ModuleNotFoundError）。 */
 const ENGINE_PY = 'C:\\Users\\user\\.workbuddy\\binaries\\python\\envs\\spektrafilm\\Scripts\\python.exe';
 const ENGINE_CWD = 'E:\\WorkBuddy\\摄影助手\\svFilm';
+/** ★ 引擎启动日志（09-15 新增）：引擎起不来时唯一的线索来源，助理直接读它 */
+const ENGINE_LOG = 'E:\\WorkBuddy\\摄影助手\\_debug\\_logs\\engine_start.log';
 
 // 注意：app.getPath 必须等 app ready 之后才能调用，
 // 因此这里做成惰性取值，避免模块顶层访问导致 undefined 崩溃。
@@ -821,10 +823,22 @@ ipcMain.handle('engine-start', async () => {
     const child = spawn(py, ['-u', '-m', 'svFilm.service', '--port', String(ENGINE.port)], {
       cwd: ENGINE_CWD,
       detached: true,
-      stdio: 'ignore',
+      /* ★ 09-15：原来是 stdio:'ignore' —— 引擎起不来时**一点线索都没有**。
+         改成把 stdout/stderr 追加到日志文件，下次失败直接看文件。 */
+      stdio: ['ignore', fs.openSync(ENGINE_LOG, 'a'), fs.openSync(ENGINE_LOG, 'a')],
       windowsHide: true
     });
+    child.on('error', (err) => {
+      fs.appendFileSync(ENGINE_LOG, '\n[spawn error] ' + (err && err.message) + '\n');
+    });
+    child.on('exit', (code) => {
+      fs.appendFileSync(ENGINE_LOG, '\n[child exit] code=' + code + '\n');
+    });
     child.unref();
+    fs.appendFileSync(
+      ENGINE_LOG,
+      '\n[spawn] pid=' + child.pid + ' cwd=' + ENGINE_CWD + ' py=' + py + '\n'
+    );
   } catch (err) {
     return { ok: false, error: '启动失败：' + err.message };
   }
