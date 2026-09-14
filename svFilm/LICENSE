@@ -1,0 +1,34 @@
+MIT License
+
+Copyright (c) 2026 SV
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+--------------------------------------------------------------------------
+第三方依赖提示（不是本目录代码的一部分，但跑起来必须装）
+--------------------------------------------------------------------------
+本项目运行时会 import `spektrafilm`（真胶片模拟引擎）：
+    https://github.com/.../spektrafilm   —— 许可 CC BY-SA 4.0
+
+我们**不复制**它的代码，只按需 import（`svFilm/spektra.py` 里用环境变量
+`SPEKTRAFILM_ROOT` 指向它的 `src`）。因此本仓库自身仍按上面的 MIT 分发；
+但**你一旦把它和 spektrafilm 一起打包/再分发**，那一份组合分发要遵守
+CC BY-SA 4.0（署名 + 相同方式共享）。
+
+另外 `svFilm/_models/` 里两个模型文件来自 MediaPipe，Apache-2.0。

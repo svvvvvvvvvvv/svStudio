@@ -8,6 +8,41 @@ svFilm       纯引擎（没有界面、没有弹窗）      喂一张图 + 一�
 svStudio     工作台（这里）                    人在这儿挑图、挑卷、调参、出片
 ```
 
+## 仓库结构
+
+`svFilm` 引擎用 **git subtree** 合在本仓库的 `svFilm/` 子目录里 ⇒ **clone 一次全下来**，
+不用再单独拉一个仓库。
+
+```
+svStudio/
+├─ main.js  preload.js   Electron 主进程 / 安全桥（preload 里的 IPC 通道是契约，别乱改）
+├─ src/                  React 界面（Vite lib 模式打成 IIFE）
+├─ renderer/index.html   手写的入口页（不经 Vite —— 原因见 src 里的注释）
+├─ _check/               自检：静态检查 + 真浏览器布局检查
+├─ svFilm/               ← 引擎（subtree，来自独立的 svFilm 仓库）
+│    ├─ svFilm/          Python 包本体（pip 不用装，靠 cwd 里 `python -m svFilm.service`）
+│    ├─ LICENSE          MIT（+ 关于 spektrafilm 依赖的提示）
+│    └─ README.md        引擎自己的文档
+├─ LICENSE               MIT
+└─ 启动svStudio.bat      双击开台子
+```
+
+### 从零跑起来
+
+```bash
+npm install                 # 装依赖（Electron / Vite / React ...）
+双击 启动svStudio.bat        # 选片台直接能用；调色台点「渲染」会自己把引擎拉起来
+```
+
+引擎需要一份装了 `spektrafilm` 依赖（`colour`/`rawpy`）的 Python。
+`启动调色台.bat` 里的 `PY` 变量是**本机路径**（作者自己的 venv），换机器改那一行即可。
+
+### 改完怎么自检
+
+```bash
+npm run verify   # tsc 类型检查 + 构建 + 静态检查 + 真浏览器布局检查（本机 Edge）
+```
+
 ## 两个台（同一个窗口，顶栏切换）
 
 | 台 | 干什么 |

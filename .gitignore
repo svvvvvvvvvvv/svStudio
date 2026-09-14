@@ -13,6 +13,8 @@ venv/
 
 # 临时/调试产出（真要留的放 _debug/_logs 或效果debug）
 _debug/_logs/
+# 引擎启动日志（main.js 写这里，起不来时唯一线索）
+_logs/
 效果debug/
 *.tmp
 svstudio_启动日志.txt
