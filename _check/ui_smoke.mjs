@@ -131,10 +131,11 @@ console.log('\n[6] 调试日志');
 check('main.js 有 log-line 通道', /ipcMain\.handle\('log-line'/.test(read('main.js')));
 check('preload 暴露 logLine', /logLine:/.test(preload));
 check('React 侧有全局错误捕获', /addEventListener\('error'/.test(read('src/main.tsx')));
-/* ★ 09-15 回归：ENGINE_LOG 指向仓库里的 _logs/，而那个目录被 .gitignore 掉了
-   ⇒ 新克隆/搬过家之后不存在 ⇒ openSync ENOENT ⇒ 点「渲染」报「拉起服务失败」且没有日志。
-   必须在使用前 mkdir。*/
-check('★ main.js 写引擎日志前会先建 _logs 目录', /function ensureEngineLog\(\)/.test(read('main.js')) && /ensureEngineLog\(\);/.test(read('main.js')));
+/* ★ 09-15 回归：调试产出的根由 main.js 的 debugDir() 决定（配置里配，仓库里没有），
+   写日志前必须自己 mkdir —— 目录不存在就会 ENOENT ⇒ 整个 engine-start 抛掉 ⇒
+   点「渲染」报「拉起服务失败」且没有日志。 */
+check('★ main.js 写引擎日志前会先建目录（ensureEngineLog）', /function ensureEngineLog\(\)/.test(read('main.js')) && /ensureEngineLog\(\);/.test(read('main.js')));
+check('★ 调试产出根由 debugDir() 决定（配置里配，默认不写死盘符）', /function debugDir\(\)/.test(read('main.js')) && /debugDir:\s*''/.test(read('main.js')));
 /* ★ 同一类问题：所有相对 __dirname 的路径，目录不存在就得建 */
 check('★ 引擎 cwd 用仓库内相对路径（不是写死 E:\\）', /ENGINE_CWD\s*=\s*path\.join\(__dirname/.test(read('main.js')));
 

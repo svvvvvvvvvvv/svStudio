@@ -11,9 +11,10 @@ __pycache__/
 .venv/
 venv/
 
-# 临时/调试产出（真要留的放 _debug/_logs 或效果debug）
-_debug/_logs/
-# 引擎启动日志（main.js 写这里，起不来时唯一线索）
+# 临时/调试产出 —— 09-15 起**统一放仓库外面**
+# （作者本机是 E:\Debug_svStudio；具体路径看配置里的 debugDir，见 main.js）。
+# 仓库里一个都不留，这里只是兜一道底。
+_debug/
 _logs/
 效果debug/
 *.tmp

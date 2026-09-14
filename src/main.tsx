@@ -13,7 +13,7 @@ applyThemeVars();
 
 /* ---------------- ★★ 渲染层日志（09-15 新增） ----------------
    黑屏时 SV 不用截图 —— 所有未捕获错误 + 启动打点都写到
-   E:\工作目录\_debug\_logs\svstudio_render.log，
+   <调试根>\svstudio_render.log（路径见 main.js 的 debugDir()；作者本机 = E:\Debug_svStudio），
    助理直接读文件定位。 */
 const t0 = Date.now();
 function log(line: string) {

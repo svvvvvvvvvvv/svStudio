@@ -28,13 +28,39 @@ function enginePy() {
    这样整个目录搬到哪儿（E:\svStudio 或别处）都能直接跑。
    svFilm 现在就在本仓库里的 `svFilm/` 子目录（已合仓）。 */
 const ENGINE_CWD = path.join(__dirname, 'svFilm');
+/* ★ 调试产出的根（引擎日志 / 渲染日志 / 实验中间结果）。
+   09-15 SV 定的约定：统一放 `E:\Debug_svStudio` ⇒ 写进配置的 `debugDir`（**不进仓库**）。
+   没配就落到应用自己的 userData 下 —— 别去猜「仓库的上级」，那样搬到哪都会错。
+   注：结果会缓存，改了 debugDir 要重开台子。 */
+let _debugDir = null;
+function debugDir() {
+  if (!_debugDir) {
+    let d = '';
+    try {
+      d = String(loadConfig().debugDir || '').trim();
+    } catch (e) {
+      /* app 还没 ready 之类 */
+    }
+    if (!d) d = path.join(app.getPath('userData'), '_debug');
+    try {
+      fs.mkdirSync(d, { recursive: true });
+    } catch (e) {
+      /* ignore */
+    }
+    _debugDir = d;
+  }
+  return _debugDir;
+}
+
 /** ★ 引擎启动日志：引擎起不来时唯一的线索来源，助理直接读它 */
-const ENGINE_LOG = path.join(__dirname, '_logs', 'engine_start.log');
-/* ⚠ 这个目录**不在 git 里**（.gitignore 掉了）⇒ 新克隆/搬过家之后是没有的。
-   直接 `fs.openSync(ENGINE_LOG,'a')` 会 ENOENT，把整个 engine-start 抛掉 ——
-   表现就是点「渲染」报「拉起服务失败」，而且因为日志都写不出来，一点线索都没有。 */
+function engineLogFile() {
+  return path.join(debugDir(), 'engine_start.log');
+}
+/* ⚠ 目录不存在时 `fs.openSync(...,'a')` 会 ENOENT，把整个 engine-start 抛掉 ——
+   表现就是点「渲染」报「拉起服务失败」，而且因为日志都写不出来，一点线索都没有。
+   debugDir() 里已经 mkdir 过，这里再兜一道（也当自检的锚点用）。 */
 function ensureEngineLog() {
-  const d = path.dirname(ENGINE_LOG);
+  const d = path.dirname(engineLogFile());
   if (!fs.existsSync(d)) fs.mkdirSync(d, { recursive: true });
 }
 
@@ -73,6 +99,8 @@ function defaultConfig() {
     libRoot: '',
     // ★ 引擎用哪份 Python（绝对路径）。留空 = 用 SVFILM_PY / PATH 上的 python
     enginePy: '',
+    // ★ 调试产出根（日志/实验中间结果）。留空 = 应用自己的 userData/_debug
+    debugDir: '',
     lastSession: null,   // { name } 上次进入的主题
     lastIdx: -1,         // 上次离开的照片 index（重启后恢复）
     lastFilter: 'all',   // 上次的筛选档（重启后恢复）
@@ -283,17 +311,13 @@ app.on('activate', () => {
 
 /* ★★ 渲染进程日志（09-15 新增，纯新增不动已有通道）：
    黑屏/白屏时 SV 不用截图 —— 助理直接读这个文件定位。
-   写到 _debug 侧的固定位置，每行带时间戳。 */
+   写到 debugDir() 下，每行带时间戳。 */
 ipcMain.handle('log-line', (_e, line) => {
   try {
-    const fsx = require('fs');
-    const pathx = require('path');
-    const dir = pathx.join(__dirname, '..', '_debug', '_logs');
-    fsx.mkdirSync(dir, { recursive: true });
-    const f = pathx.join(dir, 'svstudio_render.log');
+    const f = path.join(debugDir(), 'svstudio_render.log');
     const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
-    fsx.appendFileSync(f, '[' + ts + '] ' + String(line) + '\n');
-  } catch { /* 日志失败不不影响主流程 */ }
+    fs.appendFileSync(f, '[' + ts + '] ' + String(line) + '\n');
+  } catch { /* 日志失败不影响主流程 */ }
   return true;
 });
 
@@ -868,18 +892,18 @@ ipcMain.handle('engine-start', async () => {
       detached: true,
       /* ★ 09-15：原来是 stdio:'ignore' —— 引擎起不来时**一点线索都没有**。
          改成把 stdout/stderr 追加到日志文件，下次失败直接看文件。 */
-      stdio: ['ignore', fs.openSync(ENGINE_LOG, 'a'), fs.openSync(ENGINE_LOG, 'a')],
+      stdio: ['ignore', fs.openSync(engineLogFile(), 'a'), fs.openSync(engineLogFile(), 'a')],
       windowsHide: true
     });
     child.on('error', (err) => {
-      fs.appendFileSync(ENGINE_LOG, '\n[spawn error] ' + (err && err.message) + '\n');
+      fs.appendFileSync(engineLogFile(), '\n[spawn error] ' + (err && err.message) + '\n');
     });
     child.on('exit', (code) => {
-      fs.appendFileSync(ENGINE_LOG, '\n[child exit] code=' + code + '\n');
+      fs.appendFileSync(engineLogFile(), '\n[child exit] code=' + code + '\n');
     });
     child.unref();
     fs.appendFileSync(
-      ENGINE_LOG,
+      engineLogFile(),
       '\n[spawn] pid=' + child.pid + ' cwd=' + ENGINE_CWD + ' py=' + py + '\n'
     );
   } catch (err) {
@@ -891,7 +915,7 @@ ipcMain.handle('engine-start', async () => {
     const h = await engineGet('/health', 1200);
     if (h.ok) return { ok: true, started: true, seconds: (i + 1) * 0.5, data: h.data };
   }
-  return { ok: false, error: '引擎启动了但 20 秒内没响应（看 svFilm 服务窗口的报错）' };
+  return { ok: false, error: '引擎启动了但 20 秒内没响应（看引擎日志：' + engineLogFile() + '）' };
 });
 
 ipcMain.handle('engine-stocks', async () => {
