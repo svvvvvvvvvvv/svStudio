@@ -8,6 +8,7 @@ import { Dock } from './Dock';
 import { GradePanel } from './GradePanel';
 import { Viewer } from './Viewer';
 import { Stars, FilterChips, ExifBar } from './Stars';
+import { SessionPane } from './SessionPane';
 
 /**
  * 主布局：顶栏 + [中：大图/分屏 + 底栏] + [右：参数]
@@ -56,6 +57,9 @@ export function App() {
       <TopBar />
 
       <Flex style={{ flex: 1, minHeight: 0 }}>
+        {/* ★ 左侧图库目录：固定显示（进主题后也不消失，SV 09-15） */}
+        {sessionName && <SessionPane />}
+
         {/* 主区：大图/分屏 + 底栏
             ⚠ minHeight:0 必须加 —— 嵌套 flex 的子项默认 min-height:auto，
               会被大图内容撑爆，把底栏/星级挤出视口（09-15 SV 实测踩到） */}

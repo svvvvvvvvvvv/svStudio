@@ -134,8 +134,9 @@ function HoverImg({ sessionPath, p }: { sessionPath: string; p: Photo }) {
   useEffect(() => {
     let alive = true;
     setSrc(null);
-    API.getThumb(sessionPath, p.rel, 640).then((b) => {
-      if (alive && b) setSrc(b);
+    // ⚠ 返回 {url,ow,oh} 对象（同 Dock：09-15 裂图元凶）
+    API.getThumb(sessionPath, p.rel, 640).then((t) => {
+      if (alive && t?.url) setSrc(t.url);
     });
     return () => {
       alive = false;

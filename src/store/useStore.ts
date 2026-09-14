@@ -54,7 +54,7 @@ interface AppState {
   setReady: (v: boolean) => void;
   setLibRoot: (v: string) => void;
   loadSessions: () => Promise<void>;
-  enterSession: (name: string) => Promise<void>;
+  enterSession: (name: string, opts?: { silent?: boolean }) => Promise<void>;
   goHome: () => void;
   setCur: (i: number) => void;
   rate: (v: number) => void;
@@ -70,6 +70,11 @@ interface AppState {
 /** 星级键：老代码 `keyForExif` 是 `sessionName + '||' + photo.name`，保持一致 */
 export const ratingKey = (sessionName: string, photoName: string) =>
   sessionName + '||' + photoName;
+
+/** 保存「上次状态」到配置（主题/照片/台）；失败静默 */
+function saveLast(patch: { session?: string; cur?: number; mode?: string }) {
+  API.setConfig({ last: patch }).catch(() => {});
+}
 
 export const useStore = create<AppState>((set, get) => ({
   libRoot: '',
@@ -103,14 +108,23 @@ export const useStore = create<AppState>((set, get) => ({
     const cfg = await API.getConfig();
     const root = cfg?.libRoot || '';
     set({ libRoot: root, ratings: cfg?.ratings || {} });
+    let list: Session[] = [];
     if (root) {
-      const list = await API.scanSessions(root);
-      set({ sessions: list || [] });
+      list = (await API.scanSessions(root)) || [];
+      set({ sessions: list });
     }
     set({ ready: true });
+
+    /* ★★ 恢复上次状态（SV 09-15：进来直接就是台，别停在主题列表）：
+       上次的主题 + 选到哪张 + 在哪个台 */
+    const last = cfg?.last;
+    if (last?.session && list.some((s) => s.name === last.session)) {
+      await get().enterSession(last.session, { silent: true });
+      set({ mode: last.mode === 'grade' ? 'grade' : 'pick', cur: last.cur || 0 });
+    }
   },
 
-  enterSession: async (name) => {
+  enterSession: async (name, opts) => {
     const root = get().libRoot;
     if (!root) return;
     const sessionPath = root + '\\' + name;
@@ -121,11 +135,18 @@ export const useStore = create<AppState>((set, get) => ({
     } finally {
       set({ busy: false });
     }
+    if (!opts?.silent) {
+      // ★ 每次进主题都记下来，下次启动直接回到这
+      saveLast({ session: name });
+    }
   },
 
   goHome: () => set({ sessionPath: '', sessionName: '', photos: [], cur: 0 }),
 
-  setCur: (i) => set({ cur: i }),
+  setCur: (i) => {
+    set({ cur: i });
+    saveLast({ cur: i });
+  },
 
   /**
    * ★ 打星：**只改这一处状态**。
@@ -146,7 +167,10 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setFilter: (f) => set({ filter: f }),
-  setMode: (m) => set({ mode: m }),
+  setMode: (m) => {
+    set({ mode: m });
+    saveLast({ mode: m });
+  },
   setHover: (v) => set({ hoverEnabled: v }),
   setBusy: (v, text) => set({ busy: v, busyText: text || '' }),
 

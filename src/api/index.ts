@@ -24,7 +24,7 @@ declare global {
         sessionPath: string,
         rel: string,
         width: number
-      ) => Promise<string | null>;
+      ) => Promise<Thumb | null>;
       getThumbMeta: (
         sessionPath: string,
         rel: string
@@ -86,6 +86,13 @@ export interface Photo {
 }
 
 export interface ThumbMeta {
+  ow: number;
+  oh: number;
+}
+
+/** get-thumb 的返回（★ 是对象不是字符串 —— 09-15 裂图就是把它当字符串用了） */
+export interface Thumb {
+  url: string;
   ow: number;
   oh: number;
 }

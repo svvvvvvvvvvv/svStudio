@@ -67,7 +67,8 @@ await page.addInitScript(() => {
         rel: `root/DSCF${1000 + i}.JPG`,
         hasRaw: true,
       })),
-    getThumb: async (a, b, c) => mk(c),
+    // ★ mock 必须跟真实返回一致：{url,ow,oh}（09-15 裂图就是把返回当字符串用）
+    getThumb: async (a, b, c) => ({ url: mk(c), ow: 400, oh: 300 }),
     getThumbMeta: async () => ({ ow: 4000, oh: 3000 }),
     getExif: async () => ({ camera: 'X-T4', lens: 'XF35', iso: 400, fnum: 1.4, ss: '1/250', fl: '35mm' }),
     saveRatings: async () => true,

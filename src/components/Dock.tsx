@@ -29,9 +29,9 @@ function Thumb({ p, active }: { p: Photo; active: boolean }) {
   useEffect(() => {
     let alive = true;
     setSrc(null);
-    API.getThumb(sessionPath, p.rel, THUMB_W).then((b) => {
-      // ⚠ 异步回来时组件可能已经滚出可视区被卸载了（虚拟滚动会复用节点）
-      if (alive && b) setSrc(b);
+    // ⚠ 返回的是 {url,ow,oh} 对象，不是字符串（09-15 裂图就是把对象塞给了 src）
+    API.getThumb(sessionPath, p.rel, THUMB_W).then((t) => {
+      if (alive && t?.url) setSrc(t.url);
     });
     return () => {
       alive = false;
