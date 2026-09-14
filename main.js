@@ -8,9 +8,12 @@ const { spawn } = require('child_process');
 /* 引擎启动用哪份 Python —— 必须是**装了 spektrafilm 依赖的那个 venv**
    （`envs/spektrafilm`；`envs/default` 缺 `colour` 库，一跑引擎就 ModuleNotFoundError）。 */
 const ENGINE_PY = 'C:\\Users\\user\\.workbuddy\\binaries\\python\\envs\\spektrafilm\\Scripts\\python.exe';
-const ENGINE_CWD = 'E:\\WorkBuddy\\摄影助手\\svFilm';
-/** ★ 引擎启动日志（09-15 新增）：引擎起不来时唯一的线索来源，助理直接读它 */
-const ENGINE_LOG = 'E:\\WorkBuddy\\摄影助手\\_debug\\_logs\\engine_start.log';
+/* ★★ 09-15：全部改成**相对本文件**算，不再写死 E:\WorkBuddy\...
+   这样整个目录搬到哪儿（E:\svStudio 或别处）都能直接跑。
+   svFilm 现在就在本仓库里的 `svFilm/` 子目录（已合仓）。 */
+const ENGINE_CWD = path.join(__dirname, 'svFilm');
+/** ★ 引擎启动日志：引擎起不来时唯一的线索来源，助理直接读它 */
+const ENGINE_LOG = path.join(__dirname, '_logs', 'engine_start.log');
 
 // 注意：app.getPath 必须等 app ready 之后才能调用，
 // 因此这里做成惰性取值，避免模块顶层访问导致 undefined 崩溃。
