@@ -114,12 +114,12 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
       style={{
         position: 'relative',
         flex: '0 0 auto',
-        /* 高度 = 图72 + 格子padding6 + 边框2 + 名字14 + 上6 + 滚动条10；
-           ⚠ overflow hidden：只许横向滚（09-15 SV：竖滚动条会压住缩略图） */
-        height: 120,
+        /* 高度布局：6(上) + 格子(2边框+3pad+72图+2+13名+3) ≈ 95 + 滚动条独立区 14
+           ⚠ 滚动条必须有自己的空间，不能贴着格子（09-15 SV：滚动栏压住缩略图/选中框） */
+        height: 122,
         borderTop: '1px solid var(--line)',
         background: 'var(--bg-panel)',
-        padding: '6px 0 10px',
+        padding: '6px 0 0',
         overflow: 'hidden',
       }}
     >
@@ -128,7 +128,7 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
       <Virtuoso
         ref={virtuoso}
         horizontalDirection
-        style={{ height: '100%' }}
+        style={{ height: 'calc(100% - 14px)' }}
         totalCount={list.length}
         itemContent={(i) => {
           const gi = list[i];

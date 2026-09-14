@@ -15,15 +15,12 @@ export function PickPanel() {
 
   const p = photos[cur];
   const [exif, setExif] = useState<Record<string, unknown> | null>(null);
-  const [dim, setDim] = useState<{ ow: number; oh: number } | null>(null);
 
   useEffect(() => {
     if (!p) return;
     let alive = true;
     setExif(null);
-    setDim(null);
     API.getExif(sessionPath, p.rel).then((e) => alive && setExif(e));
-    API.getThumbMeta(sessionPath, p.rel).then((d) => alive && setDim(d));
     return () => {
       alive = false;
     };
@@ -31,20 +28,29 @@ export function PickPanel() {
 
   if (!p) return null;
 
-  const rows: [string, string][] = [];
-  const add = (k: string, v: unknown) => {
-    if (v !== undefined && v !== null && v !== '') rows.push([k, String(v)]);
+  /* ★ 全部 EXIF 都列（SV 09-15：把所有的相机信息全部都列出来）。
+     键名对应 main.js humanizeExif() 的实际产出（别猜 —— 猜错过一轮）。 */
+  const LABEL: Record<string, string> = {
+    camera: '相机',
+    lens: '镜头',
+    focal: '焦距',
+    aperture: '光圈',
+    shutter: '快门',
+    iso: '感光度',
+    bias: '曝光补偿',
+    flash: '闪光灯',
+    wb: '白平衡',
+    k: '色温',
+    time: '拍摄时间',
+    size: '原图尺寸',
   };
-  add('相机', exif?.Make && exif?.Model ? `${exif.Make} ${exif.Model}` : exif?.Model || exif?.camera);
-  add('镜头', exif?.LensModel || exif?.lens);
-  add('焦距', exif?.FocalLength || exif?.fl);
-  add('光圈', exif?.FNumber ? `f/${exif.FNumber}` : exif?.fnum ? `f/${exif.fnum}` : '');
-  add('快门', exif?.ExposureTime || exif?.ss);
-  add('ISO', exif?.ISO || exif?.iso);
-  add('拍摄时间', exif?.DateTimeOriginal);
-  if (dim?.ow) add('原图尺寸', `${dim.ow} × ${dim.oh}`);
-  add('RAW', p.hasRaw ? '有（RAF）' : '无');
-  if (p.archived) add('归档', '已归档');
+  const rows: [string, string][] = [];
+  for (const [k, label] of Object.entries(LABEL)) {
+    const v = exif?.[k];
+    if (v !== undefined && v !== null && v !== '') rows.push([label, String(v)]);
+  }
+  if (p.hasRaw) rows.push(['RAW', '有（RAF）']);
+  if (p.archived) rows.push(['归档', '已归档']);
 
   return (
     <Flex
