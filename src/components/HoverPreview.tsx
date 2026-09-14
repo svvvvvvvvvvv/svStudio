@@ -34,20 +34,21 @@ export function HoverPreview({
   const rafRef = useRef<number | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
 
-  /** ★ 直接改 DOM 定位，不走 React —— 这是关键 */
+  /** ★ 直接改 DOM 定位，不走 React —— 这是关键。
+   *  ⚠ 用 position:fixed（视口坐标）：Dock 有 overflow:hidden 会裁掉普通 absolute
+   *    的子元素（09-15 SV：悬浮图在缩略框中间被底部框裁掉）。 */
   const place = useCallback(() => {
     const el = cardRef.current;
     const host = containerRef.current;
     if (!el || !host) return;
     const r = host.getBoundingClientRect();
-    // 卡片垂直方向固定贴在底栏上方（用 transform 的 Y），只水平跟随鼠标
     const { x } = posRef.current;
     const W = 320;
     const H = 320;
-    let left = x - r.left - W / 2;
-    // 夹在容器内，别跑出屏幕
-    left = Math.max(8, Math.min(left, r.width - W - 8));
-    el.style.transform = `translate(${left}px, ${-H - 10}px)`;
+    // 水平：跟随鼠标并夹在视口内；垂直：贴在底栏上方 10px
+    const left = Math.max(8, Math.min(x - W / 2, window.innerWidth - W - 8));
+    el.style.left = `${left}px`;
+    el.style.top = `${Math.max(8, r.top - H - 10)}px`;
   }, [containerRef]);
 
   const onMove = useCallback(
@@ -106,9 +107,10 @@ export function HoverPreview({
     <Box
       ref={cardRef}
       style={{
-        position: 'absolute',
+        /* fixed：视口定位，不受 Dock 的 overflow:hidden 裁剪 */
+        position: 'fixed',
         left: 0,
-        bottom: 0,
+        top: 0,
         width: 320,
         height: 320,
         background: 'var(--bg-panel)',

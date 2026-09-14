@@ -1,6 +1,4 @@
-import { useEffect, useState } from 'react';
-import { Flex, Text } from '@radix-ui/themes';
-import { API } from '../api';
+import { Flex } from '@radix-ui/themes';
 import { ratingKey, useStore, visiblePhotos } from '../store/useStore';
 import type { Filter } from '../store/useStore';
 
@@ -88,42 +86,27 @@ export function FilterChips() {
   );
 }
 
-/** EXIF 条（只读，异步懒加载） */
+/** 底栏上方那行：显示当前照片名（居中）。相机参数在右栏（SV 09-15）。 */
 export function ExifBar() {
   const photos = useStore((s) => s.photos);
   const cur = useStore((s) => s.cur);
-  const sessionPath = useStore((s) => s.sessionPath);
-
   const p = photos[cur];
-  const [txt, setTxt] = useState('');
-
-  useEffect(() => {
-    if (!p) return setTxt('');
-    let alive = true;
-    setTxt('读取中…');
-    API.getExif(sessionPath, p.rel).then((e) => {
-      if (!alive) return;
-      if (!e) return setTxt('—');
-      const bits = [e.camera, e.lens, e.iso ? `ISO${e.iso}` : '', e.fnum ? `f/${e.fnum}` : '', e.ss, e.fl]
-        .filter(Boolean);
-      setTxt(bits.join(' · ') || '—');
-    });
-    return () => {
-      alive = false;
-    };
-  }, [p, sessionPath]);
 
   return (
-    <Text
-      size="1"
+    <div
       style={{
-        color: 'var(--text-dim)',
-        padding: '4px 12px',
+        padding: '3px 12px',
         borderTop: '1px solid var(--line)',
         flex: '0 0 auto',
+        textAlign: 'center',
+        fontSize: 11.5,
+        color: 'var(--text-dim)',
+        overflow: 'hidden',
+        textOverflow: 'ellipsis',
+        whiteSpace: 'nowrap',
       }}
     >
-      {txt}
-    </Text>
+      {p ? p.name : ''}
+    </div>
   );
 }

@@ -12,8 +12,6 @@ export function TopBar() {
   const goHome = useStore((s) => s.goHome);
   const ratings = useStore((s) => s.ratings);
   const photos = useStore((s) => s.photos);
-  const hoverEnabled = useStore((s) => s.hoverEnabled);
-  const setHover = useStore((s) => s.setHover);
 
   return (
     <Flex
@@ -72,25 +70,6 @@ export function TopBar() {
       )}
 
       <Box style={{ flex: 1 }} />
-
-      {/* 悬浮预览开关：★ 默认关（SV 09-14 定死：底栏 hover 不弹大预览） */}
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 5,
-          fontSize: 11.5,
-          color: 'var(--text-dim)',
-          cursor: 'pointer',
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={hoverEnabled}
-          onChange={(e) => setHover(e.target.checked)}
-        />
-        悬浮预览
-      </label>
 
       {/* ★ 待同步数量：直接从 ratings 派生，不用手动维护计数 */}
       <Badge color="gray">

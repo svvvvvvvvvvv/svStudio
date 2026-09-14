@@ -97,7 +97,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   mode: 'pick',
   filter: 'all',
-  hoverEnabled: false,
+  hoverEnabled: true,
   busy: false,
   busyText: '',
   toast: '',
