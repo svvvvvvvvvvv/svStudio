@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('api', {
+  /* ★ 渲染进程日志（09-15 新增）：黑屏时助理直接读文件定位，SV 不用截图 */
+  logLine: (line) => ipcRenderer.invoke('log-line', line),
   getConfig: () => ipcRenderer.invoke('get-config'),
   setConfig: (patch) => ipcRenderer.invoke('set-config', patch),
   pickDirectory: () => ipcRenderer.invoke('pick-directory'),

@@ -14,6 +14,12 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   base: './',
+  // ★★ lib 模式**不会**自动替换 process.env.NODE_ENV（普通模式才会），
+  //   而渲染进程 nodeIntegration:false ⇒ process 不存在 ⇒ 一执行就崩、黑屏。
+  //   必须在这里显式替换掉（09-15 黑屏就是这个）。
+  define: {
+    'process.env.NODE_ENV': JSON.stringify('production'),
+  },
   build: {
     outDir: 'renderer/dist',
     emptyOutDir: true,

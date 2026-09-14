@@ -237,6 +237,22 @@ app.on('activate', () => {
 
 /* ---------------- IPC ---------------- */
 
+/* ★★ 渲染进程日志（09-15 新增，纯新增不动已有通道）：
+   黑屏/白屏时 SV 不用截图 —— 助理直接读这个文件定位。
+   写到 _debug 侧的固定位置，每行带时间戳。 */
+ipcMain.handle('log-line', (_e, line) => {
+  try {
+    const fsx = require('fs');
+    const pathx = require('path');
+    const dir = pathx.join(__dirname, '..', '_debug', '_logs');
+    fsx.mkdirSync(dir, { recursive: true });
+    const f = pathx.join(dir, 'svstudio_render.log');
+    const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    fsx.appendFileSync(f, '[' + ts + '] ' + String(line) + '\n');
+  } catch { /* 日志失败不不影响主流程 */ }
+  return true;
+});
+
 ipcMain.handle('get-config', () => loadConfig());
 
 ipcMain.handle('set-config', (e, patch) => {
