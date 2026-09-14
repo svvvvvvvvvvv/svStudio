@@ -2,6 +2,24 @@
 
 数码仿胶片管线（重写版）。**代码与 `auto_pipe` 完全独立，只沿用原理，不共用任何一行。**
 
+> **本目录是 `<svStudio 仓库>/svFilm/`，用 git subtree 合进去的** ⇒ 拉 svStudio 一个仓库就够，
+> 不用再单独拉这个引擎。改这里的代码，提交在 svStudio 里。
+
+## 跑起来之前
+
+```bash
+# ① 依赖（真卷必须，普通脚本也要）
+pip install numpy Pillow opencv-python rawpy colour-science
+# ② 真卷引擎 spektrafilm（CC BY-SA 4.0，本仓库不复制它的代码，只 import）
+pip install -e /path/to/spektrafilm
+```
+
+⚠ **真卷（portra400 等）要 import `spektrafilm`**。找它的顺序：
+① 环境变量 `SPEKTRAFILM_ROOT` → ② 默认 `<本仓库上级>/_tools/spektrafilm/src`。
+只要 `import spektrafilm` 能成功（例如上面 `pip install -e` 过），本目录搬到哪都能跑。
+
+自检：`python -m svFilm.selftest`（242 项全绿算过）。
+
 ## ★ 对外入口 —— svFilm 是一个「引擎」，不是应用（09-14 SV 定）
 
 > **能力 = 喂一张图 + 一组参数 → 出一张图。** 没有界面、没有弹窗、不假设"用户在看"。
