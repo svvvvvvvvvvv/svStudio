@@ -11,7 +11,7 @@ import tempfile
 import numpy as np
 
 from . import (analyze, cameras, color, config as C, denoise, face, film, guard, io, local, metrics,
-               pipeline, rawmeta, spatial, stocks, style, tone)
+               pipeline, rawmeta, spatial, spektra, stocks, style, tone)
 
 FAIL = []
 
@@ -1304,6 +1304,211 @@ def t_film_color():
           and float(getattr(C, 'DENSITY_FADE_HI', 1.0)) < 1.0)
 
 
+def skip(name):
+    """本机跑不了的检查（**不记 FAIL**）—— 但不许悄悄变绿：打印出来让人看见。"""
+    print('  skip ' + name)
+
+
+class _TmpCfg:
+    """临时改全局 config（用完还原）—— 给"改一个参数会不会让缓存失效"这类检查用。"""
+
+    def __init__(self, **kw):
+        self.kw = kw
+
+    def __enter__(self):
+        self.old = {k: getattr(C, k) for k in self.kw}
+        for k, v in self.kw.items():
+            setattr(C, k, v)
+
+    def __exit__(self, *a):
+        for k, v in self.old.items():
+            setattr(C, k, v)
+        return False
+
+
+# ---- 段缓存用到的两份函数清单 --------------------------------------------------
+# 「被缓存起来的段」（命中就整段不跑）：它的产物必须**只依赖 SIG_CACHE 里的参数**。
+_CACHED_FUNCS = [
+    ('io.anchor_ev', io.anchor_ev), ('io.refocus', io.refocus),
+    ('io.clip_guard', io.clip_guard), ('io.finish_anchor', io.finish_anchor),
+    ('analyze.analyze', analyze.analyze), ('tone.correct', tone.correct),
+    ('denoise.apply', denoise.apply), ('denoise._guided', denoise._guided),
+    ('denoise._grad_mag', denoise._grad_mag), ('spektra.render', spektra.render),
+    ('face.parse', face.parse), ('face.masks', face.masks),
+    ('face.landmarks', face.landmarks), ('face._detector', face._detector),
+    ('face.person_weight', face.person_weight),
+    ('pipeline.run_from', pipeline.run_from), ('pipeline._stock_of', pipeline._stock_of),
+    ('stocks.resolve_base', stocks.resolve_base), ('stocks.base_label', stocks.base_label),
+]
+# 「每次都要重跑、缓存碰不到」的段：
+#   L3 / L4（看画面本身定力道，**不许缓存**）+ 中性基准那条路的 L1/L2/空间层
+#   （段缓存只对真卷生效 ⇒ 这三层在真卷下根本不跑，相关滑杆由它们负责）。
+_STAGE_FUNCS = [local.apply, local._protect, local.skin_floor, local.white_micro,
+                local.face_depth, local.skin_mask, guard.enforce, guard._solve_scale,
+                guard._cap_chroma,
+                tone.correct, style.apply, style._builtin, style._tone_on, style.tone_ref,
+                spatial.apply, spatial.resolve, stocks.color_params]
+
+
+def _cfg_reads(fn):
+    """把一个函数源码里**读到的 config 名字**抠出来（`cfg.X` / `C.X` / `getattr(cfg,'X')`）。"""
+    import inspect
+    import re
+    src = inspect.getsource(fn)
+    names = set(re.findall(r'\b(?:cfg|C)\.([A-Z][A-Z0-9_]*)\b', src))
+    names |= set(re.findall(r'getattr\(\s*(?:cfg|C)\s*,\s*[\'"]([A-Z0-9_]+)[\'"]', src))
+    return names
+
+
+def _mk_sample(disp, path='<自检>'):
+    return io.Sample(_lin_from_disp(disp), disp, 'jpg', path)
+
+
+def t_stage_cache():
+    r"""段缓存（09-15 SV 选「A」）：把「胶片出图」那一段及其之前的产物留下来。
+
+    本组检查真正要守住的是**一件事**：缓存**只许**让"不相关的滑杆"变快，
+    **绝不许**让任何一根滑杆变成"拧了没反应"。
+    """
+    from . import service as _svc                     # 只读它的 PARAMS 白名单，不启服务
+
+    print('[段缓存：允许复用的那一段，读的参数必须全在 SIG_CACHE 里]')
+    # ---- ① 源码扫描：缓存段读到的 config，一个都不许漏在 SIG_CACHE 之外 ----
+    cached_reads = set()
+    bad = {}
+    for label, fn in _CACHED_FUNCS:
+        for n in _cfg_reads(fn):
+            cached_reads.add(n)
+            if not any(n.startswith(p) for p in pipeline.SIG_CACHE):
+                bad.setdefault(n, []).append(label)
+    check('缓存段读到的 config 全被 SIG_CACHE 覆盖（漏一个 = 拧了没反应）',
+          not bad, ('漏了 %s' % sorted(bad)[:8]) if bad else '共 %d 个参数' % len(cached_reads))
+
+    # ---- ② 反方向：13 根滑杆，每一根都必须**至少有一层真的读它** ----
+    stage_reads = set()
+    for fn in _STAGE_FUNCS:
+        stage_reads |= _cfg_reads(fn)
+    dead = [p['k'] for p in _svc.PARAMS
+            if p['k'] not in cached_reads and p['k'] not in stage_reads]
+    check('每根滑杆都至少有一层真的读它（否则就是根死滑杆）', not dead, '死的: %s' % dead)
+    # 反过来：只被"缓存段"读、又不被 L3/L4 读的那些滑杆，必须出现在 SIG_CACHE 里
+    only_cached = [p['k'] for p in _svc.PARAMS
+                   if p['k'] in cached_reads and p['k'] not in stage_reads]
+    miss = [k for k in only_cached if not any(k.startswith(p) for p in pipeline.SIG_CACHE)]
+    check('只被缓存段读的滑杆必须在 SIG_CACHE 里（否则改了没反应）', not miss, '缺: %s' % miss)
+
+    # ---- ③ 签名（键）的行为 ----
+    print('[段缓存：键怎么变]')
+    k0 = pipeline._sig(_Cfg(), pipeline.SIG_CACHE)
+    check('同样的 config ⇒ 同样的键', k0 == pipeline._sig(_Cfg(), pipeline.SIG_CACHE))
+    check('改「本张落点」⇒ 键变（胶片必须重算）',
+          k0 != pipeline._sig(_Cfg(SPEK_PE_SHIFT=1.3), pipeline.SIG_CACHE))
+    check('改「整张浓淡」⇒ 键变（它作用在显影那一步）',
+          k0 != pipeline._sig(_Cfg(SPEK_COUPLERS=0.3), pipeline.SIG_CACHE))
+    check('改降噪 ⇒ 键变（降噪在缓存段里）',
+          k0 != pipeline._sig(_Cfg(DENOISE_LUMA=0.2), pipeline.SIG_CACHE))
+    check('改「脸的红绿」⇒ 键**不变**（这是缓存要救的那根滑杆）',
+          k0 == pipeline._sig(_Cfg(SKIN_FLOOR_A=12.0), pipeline.SIG_CACHE))
+    check('改「脸的层次」⇒ 键**不变**',
+          k0 == pipeline._sig(_Cfg(FACE_SPAN_KMAX=3.0), pipeline.SIG_CACHE))
+    check('改「脸的暗部下限」⇒ 键**不变**（FACE_DEPTH_* 也不许进缓存段）',
+          k0 == pipeline._sig(_Cfg(FACE_DEPTH_DEAD=0.8), pipeline.SIG_CACHE))
+    check('改「白区层次」⇒ 键**不变**',
+          k0 == pipeline._sig(_Cfg(WHITE_MICRO=0.4), pipeline.SIG_CACHE))
+
+    # ---- ④ 身份与 LRU ----
+    print('[段缓存：身份 / 淘汰]')
+    d1 = _gray_img(60, 90, gamma=0.4)
+    d2 = _gray_img(80, 90, gamma=0.4)
+    check('样本身份稳定', pipeline._sample_uid(_mk_sample(d1, 'D:/x/a.jpg'))
+          == pipeline._sample_uid(_mk_sample(d1, 'D:/x/a.jpg')))
+    check('样本身份能区分尺寸',
+          pipeline._sample_uid(_mk_sample(d1, 'D:/x/a.jpg'))
+          != pipeline._sample_uid(_mk_sample(d2, 'D:/x/a.jpg')))
+    check('样本身份能区分路径',
+          pipeline._sample_uid(_mk_sample(d1, 'D:/x/a.jpg'))
+          != pipeline._sample_uid(_mk_sample(d1, 'D:/x/b.jpg')))
+    sc = pipeline.StageCache(2)
+    a = np.zeros((300, 300, 3))
+    b = np.ones((300, 300, 3))
+    sc.put('k1', disp1=a, disp2=b)
+    h = sc.get('k1')
+    check('StageCache 命中且拿回原对象', h is not None and h['disp2'] is b and sc.hits == 1)
+    check('StageCache 未命中计数', sc.get('nope') is None and sc.misses == 1)
+    sc.put('k2', disp1=a, disp2=b)
+    sc.put('k3', disp1=a, disp2=b)
+    check('StageCache 超上限淘汰最旧的那套', sc.get('k1') is None and sc.get('k3') is not None)
+    n_mb = (a.nbytes + b.nbytes) * 2 / 1024.0 ** 2
+    check('StageCache 记账（套数 / 内存）',
+          sc.stats()['sets'] == 2 and abs(sc.stats()['mb'] - n_mb) < 0.2,
+          '%s 期望 mb≈%.1f' % (sc.stats(), n_mb))
+    sc.clear()
+    check('StageCache 能清空', sc.stats()['sets'] == 0)
+
+    # ---- ⑤ 缓存只在真卷那一路生效 ----
+    print('[段缓存：只在真卷生效 / 关掉时逐位不变]')
+    d = _gray_img(120, 180, gamma=0.4)
+    s = _mk_sample(d, 'D:/x/neutral.jpg')
+    sc = pipeline.StageCache(4)
+    r1 = pipeline.run_from(s, stock='neutral', cache=sc)
+    r2 = pipeline.run_from(s, stock='neutral', cache=sc)
+    st = sc.stats()
+    check('中性基准：缓存完全不介入（没存也没查）',
+          st['sets'] == 0 and st['hits'] == 0 and st['misses'] == 0, str(st))
+    check('中性基准：两次输出逐位相同', np.array_equal(r1.disp, r2.disp))
+    check('报告里带缓存命中标记（默认 False）',
+          r1.report.get('stage_cache', {}).get('hit') is False)
+    r3 = pipeline.run_from(s, stock='neutral')          # cache=None
+    check('中性基准：传缓存的与不传的逐位相同', np.array_equal(r1.disp, r3.disp))
+
+    # ---- ⑥ 真卷那一路：miss → hit，产物必须精确复用（需要 spektrafilm）----
+    print('[段缓存：真卷那一发（miss → hit）]')
+    try:
+        spektra._sf()
+        has_sf = True
+    except Exception as e:                                   # noqa: BLE001
+        has_sf = False
+        skip('真卷段缓存的行为检查（本机没装 spektrafilm：%s）' % str(e)[:70])
+    if has_sf:
+        # ⚠ 合成图里必须**贴一块皮肤色**（`_skin_patch`）：纯灰渐变没有皮肤像素，
+        #   `skin_floor` 会直接判 'no_skin' 早退 ⇒ "改了参数画面却不变"会假红。
+        ds = _gray_img(160, 240, gamma=0.4)
+        ds[48:112, 88:152] = _skin_patch(12.0, 14.0, L=62.0, size=64)
+        ss = _mk_sample(ds, 'D:/x/sf.jpg')
+        sc = pipeline.StageCache(4)
+        a0 = pipeline.run_from(ss, stock='portra400')                    # 关缓存
+        a1 = pipeline.run_from(ss, stock='portra400', cache=sc)          # 未命中
+        # ⚠ 端到端这一比要留容差：真卷的**扫描那一步**每次重抽噪声（实测最大 ~3/255），
+        #   所以"两次独立全跑"本来就不会逐位相同 —— 不是缓存的问题。
+        g1 = float(np.abs(a0.disp - a1.disp).max())
+        check('真卷：未命中那一发与关缓存一致（差异只在扫描噪声内）', g1 <= 0.03,
+              'max=%.4f' % g1)
+        a2 = pipeline.run_from(ss, stock='portra400', cache=sc)          # 命中
+        a3 = pipeline.run_from(ss, stock='portra400', cache=sc)          # 再命中
+        check('真卷：第二次确实命中', a2.report['stage_cache']['hit'] is True
+              and sc.stats()['hits'] >= 1, str(sc.stats()))
+        # ★ 这两发的上游（disp1/disp2）是**同一份对象**，L3/L4 又是确定的
+        #   ⇒ 必须逐位相同。这一条才是"缓存精确"的真正证据。
+        check('真卷：两次命中 ⇒ 产物逐位相同（缓存被精确复用）',
+              np.array_equal(a2.disp, a3.disp))
+        gap = float(np.abs(a0.disp - a2.disp).max())
+        check('真卷：命中 vs 关缓存 ⇒ 差异只在扫描噪声之内', gap <= 0.03, 'max=%.4f' % gap)
+        with _TmpCfg(SKIN_FLOOR_A=12.0):
+            b_free = pipeline.run_from(ss, stock='portra400')
+            b_hit = pipeline.run_from(ss, stock='portra400', cache=sc)
+        check('真卷：改「脸的红绿」仍然命中（真卷不重算）',
+              b_hit.report['stage_cache']['hit'] is True)
+        check('真卷：改「脸的红绿」产物确实跟着变（不是空转）',
+              not np.array_equal(b_hit.disp, a2.disp))
+        check('真卷：改「脸的红绿」命中那一发 = 关缓存那一发的尾巴',
+              float(np.abs(b_free.disp - b_hit.disp).max()) <= 0.03)
+        n_before = sc.stats()['misses']
+        with _TmpCfg(SPEK_PE_SHIFT=1.15):
+            pipeline.run_from(ss, stock='portra400', cache=sc)
+        check('真卷：改「本张落点」⇒ 不命中（胶片必须重算）',
+              sc.stats()['misses'] == n_before + 1, str(sc.stats()))
+
+
 def main():
     for fn in (t_color, t_analyze, t_tone_mid_target, t_tone_monotone, _legacy(t_style_lock),
                _legacy(t_style_contrast_direction), _legacy(t_style_tone_curve), _legacy(t_style_chroma_ends), t_denoise,
@@ -1311,7 +1516,7 @@ def main():
                t_io_roundtrip, t_stocks, t_spatial_off, t_spatial_grain,
                t_spatial_bloom_halation, t_local_skin_floor, t_entry_bias, t_pipeline_smoke,
                t_review_fixes, t_entry_settle, t_entry_toe, t_anchor,
-               t_film_color):
+               t_film_color, t_stage_cache):
         fn()
     print('-' * 52)
     if FAIL:

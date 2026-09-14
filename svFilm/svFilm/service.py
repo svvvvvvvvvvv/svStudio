@@ -67,6 +67,13 @@ _path_cache = OrderedDict()
 _path_cache_lock = threading.Lock()
 _PATH_CACHE_MAX = [24]
 
+# ★★ 段缓存（09-15 SV 选「A」）：把「胶片出图」那一段及其之前的产物留下来。
+#   一次出图 3.7 s 里真卷渲染占 2.4 s，而拖「脸/白区」那几根滑杆时它**一个像素都不会变**
+#   ⇒ 只重跑 L3 肤色 + L4 护栏：**3.8 s → 0.99 s（实测 −74%）**。
+#   ⚠ 关掉（`config.CACHE_ENABLE=False` 或起服务时 `--no-stage-cache`）＝ 每次全跑，
+#     与加缓存之前**逐位相同**（自检里钉着这条）。
+_STAGES = [pipeline.StageCache() if getattr(C, 'CACHE_ENABLE', False) else None]
+
 
 def _cache_put(path, side, sample):
     with _cache_lock:
@@ -112,7 +119,7 @@ def _render_bytes(i, stock, base, side, fmt, quality, params=None):
         return None, {'error': 'id 不在缓存里，先 /load'}
     s = row['sample']
     with _Overrides(_parse_params(params)):
-        r = pipeline.run_from(s, stock=stock or None, base=base or None)
+        r = pipeline.run_from(s, stock=stock or None, base=base or None, cache=_STAGES[0])
     disp = np.clip(r.disp, 0.0, 1.0)
     arr = (disp * 255.0 + 0.5).astype(np.uint8)
     if fmt in ('jpg', 'jpeg'):
@@ -157,7 +164,8 @@ def _stats_of(i, stock, base, params=None):
     if not row:
         return {'error': 'id 不在缓存里'}
     with _Overrides(_parse_params(params)):
-        r = pipeline.run_from(row['sample'], stock=stock or None, base=base or None)
+        r = pipeline.run_from(row['sample'], stock=stock or None, base=base or None,
+                              cache=_STAGES[0])
     from . import color
     lab = color.to_lab(np.clip(r.disp, 0, 1))
     L = lab[..., 0]
@@ -202,7 +210,10 @@ class _H(BaseHTTPRequestHandler):
                 with _cache_lock:
                     n = len(_cache)
                 return self._json(dict(ok=True, version=VERSION, cached=n,
-                                       side=DEFAULT_SIDE))
+                                       side=DEFAULT_SIDE,
+                                       # ★ 段缓存的状态：sets/max_sets/hits/misses/mb
+                                       #   （前端状态条想显示"这一发是重算的还是复用的"就看 hit）
+                                       stage_cache=(_STAGES[0].stats() if _STAGES[0] else None)))
             if u.path == '/stocks':
                 # ★ 卷列表从引擎取（`stocks.NAMES`）—— 别在这里写死名字：
                 #   09-14 出过 bug：`air` 从卷表删掉后，这里还在点名它 ⇒
@@ -423,9 +434,13 @@ def main(argv=None):
     ap.add_argument('--port', type=int, default=DEFAULT_PORT)
     ap.add_argument('--host', default='127.0.0.1')
     ap.add_argument('--cache', type=int, default=DEFAULT_CACHE)
+    ap.add_argument('--no-stage-cache', action='store_true',
+                    help='关掉「段缓存」（每次全跑；用于对照/排错，行为与加缓存前逐位相同）')
     ap.add_argument('--web', default=None,
                     help='可选：顺手 serve 一个静态前端目录（例如 ../svStudio/web）')
     a = ap.parse_args(argv)
+    if a.no_stage_cache:
+        _STAGES[0] = None
     serve(a.port, a.host, a.cache, a.web)
 
 

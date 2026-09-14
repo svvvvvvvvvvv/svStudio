@@ -12,11 +12,115 @@
 from __future__ import annotations
 
 import os
+import threading
 import time
+from collections import OrderedDict
 
 import numpy as np
 
 from . import analyze, color, config as C, denoise, guard, io, local, spatial, spektra, stocks, style, tone
+
+
+# ========== 段缓存：「胶片出图」那一层及其之前的产物（09-15 SV 选「A」）==========
+# 为什么是这一段：一次出图 3.7 s 里真卷渲染占 2.4 s（65%），而拖「脸/白区」那几根滑杆时
+# **真卷的产物一个像素都不会变** ⇒ 把「降噪后」和「胶片出图后」留下来，
+# 只重跑 L3 肤色 + L4 护栏：**3.8 s → 0.99 s**（实测 −74%）。
+#
+# ★★ 失效判定 = **每段读的参数白名单**（不是拿整个 config 去哈希 —— 那会误杀）。
+#    ⚠ 两个方向都要守（`selftest.t_stage_cache` 各有一条盯着）：
+#      ① **漏列**一个 ⇒ 变成"拧了没反应"（SV 最烦的那个症状）⇒ 检出办法 = 源码扫描；
+#      ② **多列**一个 ⇒ 那根滑杆白白失去缓存收益 ⇒ 检出办法 = "改它键必须不变"。
+#      ② 不是"宁多不少"就能糊过去的：脸那组滑杆就在缓存段里（`FACE_` 是个陷阱 ——
+#         `FACE_DET_*` 是**检测**参数、缓存段确实要用；`FACE_SPAN_*`/`FACE_DEPTH_*` 是 L3 的旋钮，
+#         一起圈进来会把「脸的层次」那根滑杆的收益整根抹掉）。所以脸这里**逐项写**。
+SIG_CACHE = ('ENTRY_', 'ANCHOR_', 'CLIP_GUARD_', 'DENOISE_', 'TONE_',
+             'SPEK_', 'STOCK', 'BASE', 'LUT_', 'PCT_', 'TGT_', 'NOISE_FLOOR',
+             'GUARD_MID_L', 'MID_DEADZONE_L',
+             'FACE_DET_', 'FACE_GATE_', 'FACE_MIN_', 'FACE_BOX_', 'FACE_FEATHER_REL',
+             'PERSON_')
+
+_CFG_KEYS = tuple(sorted(k for k in dir(C) if k.isupper()))
+
+
+def _sig(cfg, prefixes):
+    r"""把 cfg 里**匹配这些前缀**的参数打成一个可哈希的指纹（顺序固定 ⇒ 可比较）。
+
+    只认标量 / 字符串 / 元组 / 列表；其它类型退回 `repr`（宁可多失效，也不漏）。
+    """
+    out = []
+    for k in _CFG_KEYS:
+        if not any(k.startswith(p) for p in prefixes):
+            continue
+        v = getattr(cfg, k, None)
+        if callable(v) or isinstance(v, type):
+            continue
+        if isinstance(v, (int, float, bool, str)) or v is None:
+            out.append((k, v))
+        elif isinstance(v, (tuple, list)):
+            out.append((k, tuple(v)))
+        else:
+            out.append((k, repr(v)))
+    return tuple(out)
+
+
+def _sample_uid(s):
+    """样本的身份。用「路径 + 类型 + 尺寸」—— 别用 `id()`（对象被回收后 id 会复用，会误命中）。"""
+    p = getattr(s, 'path', None) or ''
+    if not p:
+        return ('<无路径>', id(s), tuple(np.shape(s.lin)))
+    return (os.path.abspath(p), getattr(s, 'kind', ''), tuple(np.shape(s.lin)))
+
+
+class StageCache:
+    r"""按「一张图 × 一卷 × 一组参数」缓存**真卷出图那一段**的产物。
+
+    存两份：`disp1`（降噪后的画面，L3 拿它当肤色参考）+ `disp2`（胶片出图后的画面）。
+    这两份正好是 L3 的全部输入 ⇒ 拖 L3 那几根滑杆时，前面一步都不用重算。
+
+    ⚠ 缓存里放的是**引用**：调用方只许读，不许原地改（服务里都是 `np.clip` 出新的，安全）。
+    ⚠ **调试脚本要开 `keep_stages=True` 时缓存会自动让位** —— 调试要的是"完整一遍"。
+    """
+
+    def __init__(self, max_sets=None):
+        self.max_sets = int(max_sets if max_sets is not None
+                            else getattr(C, 'CACHE_MAX_SETS', 4))
+        self._d = OrderedDict()
+        self._lock = threading.Lock()
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, key):
+        with self._lock:
+            hit = self._d.get(key)
+            if hit is None:
+                self.misses += 1
+                return None
+            self._d.move_to_end(key)
+            self.hits += 1
+            return hit
+
+    def put(self, key, **kw):
+        with self._lock:
+            self._d[key] = kw
+            self._d.move_to_end(key)
+            while len(self._d) > self.max_sets:
+                self._d.popitem(last=False)
+        return kw
+
+    def clear(self):
+        with self._lock:
+            self._d.clear()
+
+    def stats(self):
+        with self._lock:
+            n = len(self._d)
+            mb = 0.0
+            for v in self._d.values():
+                for a in v.values():
+                    if hasattr(a, 'nbytes'):
+                        mb += a.nbytes / 1024.0 ** 2
+            return dict(sets=n, max_sets=self.max_sets, hits=self.hits,
+                        misses=self.misses, mb=round(mb, 1))
 
 
 class Result:
@@ -92,7 +196,7 @@ def run(path, src=None, max_side=None, cfg=C, out=None, lut=None, keep_stages=Fa
 
 
 def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
-             keep_stages=False, t0=None, path=None):
+             keep_stages=False, t0=None, path=None, cache=None):
     r"""★ 从**已经 load 好的** sample 起跑 —— 常驻服务的入口。
 
     ★★ 为什么必须有它：实测 `io.load_raw` **一个人占全链 57%**
@@ -101,6 +205,9 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
     ⚠ **一份实现、两条入口**：`run()` = `io.load()` + `run_from()` —— 不许各写一套。
 
     ⚠ 缓存的 sample 必须**同尺寸**（`io.load(..., max_side)` 的产物）；换尺寸要重新 load。
+
+    ★ `cache` = `StageCache`（默认 `None`）—— **不传就跟没有缓存时逐位相同**。
+      传了、且走真卷那一路时，「胶片出图」及其之前整段可以复用（省 ~2.7 s / 一发）。
     """
     t0 = time.perf_counter() if t0 is None else t0
     s = sample
@@ -113,58 +220,85 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
     # ★★ 真卷（`spek=`）**不用锚点**：实测真卷自己就把脸放到 L* 78~86（比我们靶 68 还亮），
     #   再提一遍就是过曝（中位 61 → 83）。⇒ 真卷模式下位置整段交给胶片。
     _pre_spek = (st or {}).get('spek')
-    if _pre_spek and not bool(getattr(cfg, 'SPEK_ANCHOR', False)):
-        d_ev, anc = 0.0, dict(applied=False, reason='real_stock_真卷自己定曝光')
-    else:
-        d_ev, anc = io.anchor_ev(s.disp, cfg)
-    _on = bool(anc.get('applied'))
-    lin_in = io.refocus(s.lin, d_ev, cfg) if _on else s.lin
-    if _on:
-        # ★★ 09-14 评审修：锚点把入口曲线**重打**了 ⇒ 入口那道裁切护栏（`clip_guard`）
-        #   是**在重打之前**算的，结论已经失效 ⇒ 这里**必须再跑一遍**。
-        #   不跑的话"提亮救脸"会顺手绕过护栏把背景推爆（实测 0805 背景 75→96、护栏当时算出 k=1.0）。
-        lin_in, _gk2 = io.clip_guard(lin_in, cfg)
-        anc['clip_guard_k'] = _gk2
-        if abs(_gk2 - 1.0) > 1e-9:
-            anc['clip_guard_ev'] = float(np.log2(_gk2))
-    disp_in = (np.clip(color.l2s(np.clip(lin_in, 0.0, None)), 0.0, 1.0)
-               if _on else s.disp)
+    _spek = _pre_spek                     # 真卷标记（L2 与空间层都要看它；原来在下面才算一次）
 
-    rep0 = analyze.analyze(lin_in, disp_in, s.kind)                  # L0
-    # L1 影调修正（**只压不提**：提亮交给入口 settle + 脸锚点，兜底提亮那套 09-14 已删）
-    # ★★ 09-14 SV：「丢弃作者线，全部用真卷」。
-    #   真卷（带 `spek=` 标记）**自带完整 H&D 曲线** ⇒ 我们的 L1 影调修正要**让位**（不然是两条曲线串）。
-    _spek = (st or {}).get('spek')
-    if _spek:
-        lin1, t_info = lin_in, dict(applied=False, reason='real_stock_自带H&D曲线')
-        disp1 = disp_in
-    else:
-        lin1, t_info = tone.correct(lin_in, rep0, cfg)               # L1
-        disp1 = np.clip(color.l2s(np.clip(lin1, 0.0, 1.0)), 0.0, 1.0)
-    disp1, d_info = denoise.apply(disp1, cfg)                        # 降噪（L1 之后、L2 之前）
+    # ---- ★ 段缓存：命中就整段跳过，只留 L3 肤色 + L4 护栏（09-15 SV 选「A」）----
+    # ⚠ 要 `keep_stages` 的调试脚本**自动让位** —— 调试要的是"从头完整跑一遍"。
+    if keep_stages:
+        cache = None
+    _ckey, _entry = None, None
+    if cache is not None and _pre_spek:
+        _ckey = ('film', _sample_uid(s), (st or {}).get('name'), _sig(cfg, SIG_CACHE))
+        _entry = cache.get(_ckey)
 
-    if lut is None and cfg.LUT_PATH:
-        lut = style.cube_read(cfg.LUT_PATH)
-    # 锁中灰的参照 = 修正层实际交出来的中灰（不是配置里的靶）
-    if _spek:
-        # ★★ L2 整段换成**真卷**：喂**场景线性**（`lin_in`），出显示域。
-        #   它自带 H&D + `dir_couplers`(彩度) + 染料；落点由 `SPEK_PRINT_EXPOSURE` 定。
-        # ★ 每卷一个 pe（09-14 标定：不同相纸响应不同 ⇒ 全局一个值会让富士卷偏亮 30 个 L*）
-        # ★★ 09-14 新增：再乘一个**逐张微调系数** `SPEK_PE_SHIFT`。
-        #   为什么要分开：全局改 `SPEK_PRINT_EXPOSURE` **会被每卷的 pe 盖掉**（实测三档同值）
-        #   ⇒ 落点滑杆一直是死的。改成「每卷基准 × 全局系数」后它才真的动得了画面。
-        #   用途：救被闪光顶亮的片（1065/1067）—— 只压这一张，别的片不动。
-        _base_pe = float(_spek.get('pe') or getattr(cfg, 'SPEK_PRINT_EXPOSURE', 0.55))
-        _shift = float(getattr(cfg, 'SPEK_PE_SHIFT', 1.0) or 1.0)
-        _pe = _base_pe * _shift
-        disp2 = spektra.render(lin_in, st['name'], cfg, print_exposure=_pe)
-        s_info = dict(applied=True, how='spektrafilm', stock=st['name'],
-                      film=_spek.get('film'), print=_spek.get('print'),
-                      print_exposure=_pe, pe_base=_base_pe, pe_shift=_shift,
-                      tone_curve=False, film_color_w=0.0)
+    if _entry is not None:
+        # 命中：上游全部复用。几个小 dict 要**复制** —— 下游会往 `anc` 里写 finish，
+        #   调用方也可能改 report，不复制就会污染缓存里的那一份。
+        rep0 = dict(_entry['rep0'])
+        anc = dict(_entry['anc'])
+        _on = bool(_entry['on'])
+        t_info = dict(_entry['t_info'])
+        d_info = dict(_entry['d_info'])
+        s_info = dict(_entry['s_info'])
+        disp1 = _entry['disp1']          # 降噪后的画面（L3 拿它当肤色参考）
+        disp2 = _entry['disp2']          # 胶片出图后的画面（L3 的另一半输入）
+        lin_in = disp_in = None          # 命中时用不到（keep_stages 那条路缓存已让位）
     else:
-        disp2, s_info = style.apply(disp1, cfg, lut=lut, lock_ref=style.mid_of(disp1),
-                                    stock=st, base=base)
+        if _pre_spek and not bool(getattr(cfg, 'SPEK_ANCHOR', False)):
+            d_ev, anc = 0.0, dict(applied=False, reason='real_stock_真卷自己定曝光')
+        else:
+            d_ev, anc = io.anchor_ev(s.disp, cfg)
+        _on = bool(anc.get('applied'))
+        lin_in = io.refocus(s.lin, d_ev, cfg) if _on else s.lin
+        if _on:
+            # ★★ 09-14 评审修：锚点把入口曲线**重打**了 ⇒ 入口那道裁切护栏（`clip_guard`）
+            #   是**在重打之前**算的，结论已经失效 ⇒ 这里**必须再跑一遍**。
+            #   不跑的话"提亮救脸"会顺手绕过护栏把背景推爆（实测 0805 背景 75→96、护栏当时算出 k=1.0）。
+            lin_in, _gk2 = io.clip_guard(lin_in, cfg)
+            anc['clip_guard_k'] = _gk2
+            if abs(_gk2 - 1.0) > 1e-9:
+                anc['clip_guard_ev'] = float(np.log2(_gk2))
+        disp_in = (np.clip(color.l2s(np.clip(lin_in, 0.0, None)), 0.0, 1.0)
+                   if _on else s.disp)
+
+        rep0 = analyze.analyze(lin_in, disp_in, s.kind)                  # L0
+        # L1 影调修正（**只压不提**：提亮交给入口 settle + 脸锚点，兜底提亮那套 09-14 已删）
+        # ★★ 09-14 SV：「丢弃作者线，全部用真卷」。
+        #   真卷（带 `spek=` 标记）**自带完整 H&D 曲线** ⇒ 我们的 L1 影调修正要**让位**（不然是两条曲线串）。
+        if _spek:
+            lin1, t_info = lin_in, dict(applied=False, reason='real_stock_自带H&D曲线')
+            disp1 = disp_in
+        else:
+            lin1, t_info = tone.correct(lin_in, rep0, cfg)               # L1
+            disp1 = np.clip(color.l2s(np.clip(lin1, 0.0, 1.0)), 0.0, 1.0)
+        disp1, d_info = denoise.apply(disp1, cfg)                        # 降噪（L1 之后、L2 之前）
+
+        if lut is None and cfg.LUT_PATH:
+            lut = style.cube_read(cfg.LUT_PATH)
+        # 锁中灰的参照 = 修正层实际交出来的中灰（不是配置里的靶）
+        if _spek:
+            # ★★ L2 整段换成**真卷**：喂**场景线性**（`lin_in`），出显示域。
+            #   它自带 H&D + `dir_couplers`(彩度) + 染料；落点由 `SPEK_PRINT_EXPOSURE` 定。
+            # ★ 每卷一个 pe（09-14 标定：不同相纸响应不同 ⇒ 全局一个值会让富士卷偏亮 30 个 L*）
+            # ★★ 09-14 新增：再乘一个**逐张微调系数** `SPEK_PE_SHIFT`。
+            #   为什么要分开：全局改 `SPEK_PRINT_EXPOSURE` **会被每卷的 pe 盖掉**（实测三档同值）
+            #   ⇒ 落点滑杆一直是死的。改成「每卷基准 × 全局系数」后它才真的动得了画面。
+            #   用途：救被闪光顶亮的片（1065/1067）—— 只压这一张，别的片不动。
+            _base_pe = float(_spek.get('pe') or getattr(cfg, 'SPEK_PRINT_EXPOSURE', 0.55))
+            _shift = float(getattr(cfg, 'SPEK_PE_SHIFT', 1.0) or 1.0)
+            _pe = _base_pe * _shift
+            disp2 = spektra.render(lin_in, st['name'], cfg, print_exposure=_pe)
+            s_info = dict(applied=True, how='spektrafilm', stock=st['name'],
+                          film=_spek.get('film'), print=_spek.get('print'),
+                          print_exposure=_pe, pe_base=_base_pe, pe_shift=_shift,
+                          tone_curve=False, film_color_w=0.0)
+        else:
+            disp2, s_info = style.apply(disp1, cfg, lut=lut, lock_ref=style.mid_of(disp1),
+                                        stock=st, base=base)
+        if _ckey is not None:
+            # ⚠ 存的是**引用**：调用方只许读（服务里都是 np.clip 出新的，安全）
+            cache.put(_ckey, rep0=rep0, anc=anc, on=_on, t_info=t_info,
+                      d_info=d_info, s_info=s_info, disp1=disp1, disp2=disp2)
     # ★ 锚点**收尾**（09-14 SV 选「①」）：L1 那一步把脸放到靶上了，但 **L2 影调曲线又把它抬上去**
     #   （实测 +8.4 L*）⇒ 这里量一次脸、用**全局增益**把它挪回靶 ⇒ **最终脸真的落在靶上**。
     #   只在锚点真的动过（脸偏暗）时才做；仍是一条曲线，不分区。
@@ -200,6 +334,7 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
         local=l_info,
         anchor=anc,
         guard=g_info,
+        stage_cache=dict(hit=bool(_entry is not None)),
         ms=(time.perf_counter() - t0) * 1000.0,
     )
     if keep_stages:
