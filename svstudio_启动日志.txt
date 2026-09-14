@@ -1,4 +1,0 @@
-[Mon 09/14/2026 23:05:12.49] svStudio 启动 
-  工作目录: E:\工作目录\svStudio 
-  查找 Electron: E:\工作目录\svStudio\node_modules\electron\dist\electron.exe 
-  已找到，正在启动... 
