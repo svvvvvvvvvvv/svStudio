@@ -10,6 +10,7 @@ import { Viewer } from './Viewer';
 import { Stars, FilterChips, ExifBar } from './Stars';
 import { SessionPane } from './SessionPane';
 import { PickPanel } from './PickPanel';
+import { RenderBar } from './RenderBar';
 
 /**
  * 主布局：顶栏 + [中：大图/分屏 + 底栏] + [右：参数]
@@ -92,6 +93,7 @@ export function App() {
 
               <ExifBar />
               <Dock virtuoso={virtuoso} />
+              {mode === 'grade' && <RenderBar />}
             </>
           )}
         </Flex>

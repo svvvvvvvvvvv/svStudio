@@ -1,5 +1,6 @@
 import { Box, Button, Badge, Flex, Text } from '@radix-ui/themes';
-import { useStore } from '../store/useStore';
+import { API } from '../api';
+import { ratingKey, useStore } from '../store/useStore';
 
 /**
  * 顶栏：切模式（选片台 / 调色台）+ 库路径 + 同步星级。
@@ -9,9 +10,52 @@ export function TopBar() {
   const mode = useStore((s) => s.mode);
   const setMode = useStore((s) => s.setMode);
   const sessionName = useStore((s) => s.sessionName);
+  const sessionPath = useStore((s) => s.sessionPath);
   const goHome = useStore((s) => s.goHome);
   const ratings = useStore((s) => s.ratings);
   const photos = useStore((s) => s.photos);
+  const busy = useStore((s) => s.busy);
+  const setBusy = useStore((s) => s.setBusy);
+  const showToast = useStore((s) => s.showToast);
+
+  /** 同步星级：把当前主题里每张的星级与物理目录对齐 */
+  const syncStars = async () => {
+    if (!sessionName || !photos.length) return;
+    setBusy(true, '同步星级…');
+    try {
+      const items = photos.map((p) => ({
+        rel: p.rel,
+        star: ratings[ratingKey(sessionName, p.name)] || 0,
+      }));
+      const r = await API.archivePhotos({ themePath: sessionPath, items });
+      const n = (r?.done?.length ?? 0) + (r?.removed?.length ?? 0);
+      showToast(`已同步 ${n} 张${r?.failed?.length ? `，${r.failed.length} 张失败` : ''}`);
+    } catch (e) {
+      showToast('同步失败：' + String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  /** 重置调色：清除调色输出与成片（原图/RAW 不动） */
+  const resetColor = async () => {
+    if (!sessionName) return;
+    const ok = await API.confirmDialog({
+      title: '重置调色',
+      message: `确定要清除「${sessionName}」的调色输出与 2~5 星成片吗？`,
+      detail: '原图与 RAW 不动，只清调色结果。换调色思路重跑前用。',
+    });
+    if (!ok) return;
+    setBusy(true, '重置调色…');
+    try {
+      await API.resetColorGrade(sessionPath);
+      showToast('已重置调色');
+    } catch (e) {
+      showToast('重置失败：' + String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   return (
     <Flex
@@ -71,9 +115,24 @@ export function TopBar() {
 
       <Box style={{ flex: 1 }} />
 
-      {/* ★ 待同步数量：直接从 ratings 派生，不用手动维护计数 */}
+      {/* 重置调色（危险操作，二次确认） */}
+      {sessionName && (
+        <Button size="1" variant="ghost" color="red" onClick={resetColor}>
+          重置调色
+        </Button>
+      )}
+
+      {/* 同步星级（物理归位）：把星级与目录同步 */}
+      {sessionName && (
+        <Button size="1" variant="soft" disabled={busy} onClick={syncStars}>
+          同步星级
+        </Button>
+      )}
+
+      {/* ★ 已打星 / 当前主题张数：直接从 ratings 派生，不用手动维护计数 */}
       <Badge color="gray">
-        {Object.values(ratings).filter((v) => v >= 1).length} / {photos.length}
+        {photos.filter((p) => (ratings[ratingKey(sessionName, p.name)] || 0) >= 1).length} /{' '}
+        {photos.length}
       </Badge>
     </Flex>
   );

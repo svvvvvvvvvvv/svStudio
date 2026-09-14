@@ -74,6 +74,9 @@ function SplitView() {
   const cur = useStore((s) => s.cur);
   const grade = useStore((s) => s.grade);
   const engineOk = useStore((s) => s.engineOk);
+  const ensureEngine = useStore((s) => s.ensureEngine);
+  const autoRender = useStore((s) => s.autoRender);
+  const rendering = useStore((s) => s.rendering);
 
   const p: Photo | undefined = photos[cur];
   const [before, setBefore] = useState<string | null>(null);
@@ -82,13 +85,14 @@ function SplitView() {
 
   const idRef = useRef<string | null>(null);
 
-  /** 装载当前图 → 引擎，拿 id */
+  /** 装载当前图 → 引擎，拿 id（引擎没起就自己拉起来） */
   useEffect(() => {
-    if (!p || !engineOk) return;
+    if (!p) return;
     let alive = true;
     setLoading(true);
     (async () => {
       try {
+        if (!(await ensureEngine())) return;
         const full = sessionPath + '\\' + p.rel;
         const r = await API.engineLoad([full]);
         if (!alive || !r?.id) return;
@@ -106,26 +110,33 @@ function SplitView() {
     };
   }, [p, sessionPath, engineOk]);
 
-  /** 渲染（换参数/换卷/换基准都重跑） */
+  /** 渲染（换参数/换卷/换基准都重跑；★ 关掉自动出图时只听「渲染」按钮） */
   useEffect(() => {
-    if (!idRef.current || !engineOk) return;
+    if (!autoRender && !rendering) return;      // 手动模式：等渲染按钮
+    if (!engineOk) return;
     let alive = true;
+    let cancelled = false;
     setLoading(true);
-    API.engineRender(idRef.current, {
-      stock: grade.stock,
-      base: grade.base,
-      params: grade.params || {},
-    })
-      .then((r) => {
-        if (alive && r?.bytes) setAfter(r.bytes);
-      })
-      .finally(() => {
-        if (alive) setLoading(false);
-      });
+    (async () => {
+      try {
+        if (!(await ensureEngine())) return;
+        if (!idRef.current) return;
+        if (!alive || cancelled) return;
+        const r = await API.engineRender(idRef.current, {
+          stock: grade.stock,
+          base: grade.base,
+          params: grade.params || {},
+        });
+        if (alive && !cancelled && r?.bytes) setAfter(r.bytes);
+      } finally {
+        if (alive && !cancelled) setLoading(false);
+      }
+    })();
     return () => {
       alive = false;
+      cancelled = true;
     };
-  }, [grade, engineOk, before]);
+  }, [grade, engineOk, before, autoRender, rendering, ensureEngine]);
 
   return (
     <div

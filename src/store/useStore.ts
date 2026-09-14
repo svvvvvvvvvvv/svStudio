@@ -48,7 +48,11 @@ interface AppState {
   bases: Base[];
   paramDefs: ParamDef[];
   engineOk: boolean;
+  engineMsg: string;
   grade: GradeState;
+  /** 调色台：换图/换卷自动出图（老版 #chkAuto） */
+  autoRender: boolean;
+  rendering: boolean;
 
   /* ---- actions ---- */
   setReady: (v: boolean) => void;
@@ -64,7 +68,10 @@ interface AppState {
   setBusy: (v: boolean, text?: string) => void;
   showToast: (msg: string) => void;
   loadEngine: () => Promise<void>;
+  ensureEngine: () => Promise<boolean>;
   setGrade: (patch: Partial<GradeState>) => void;
+  setAutoRender: (v: boolean) => void;
+  setRendering: (v: boolean) => void;
 }
 
 /** 星级键：老代码 `keyForExif` 是 `sessionName + '||' + photo.name`，保持一致 */
@@ -106,7 +113,10 @@ export const useStore = create<AppState>((set, get) => ({
   bases: [],
   paramDefs: [],
   engineOk: false,
+  engineMsg: '',
   grade: { stock: 'portra400', base: 'all', params: {} },
+  autoRender: true,
+  rendering: false,
 
   setReady: (v) => set({ ready: v }),
   setLibRoot: (v) => set({ libRoot: v }),
@@ -196,7 +206,7 @@ export const useStore = create<AppState>((set, get) => ({
     try {
       const h = await API.engineHealth();
       if (!h || h.ok === false) {
-        set({ engineOk: false });
+        set({ engineOk: false, engineMsg: '引擎未启动' });
         return;
       }
       const [s, b, p] = await Promise.all([
@@ -206,16 +216,44 @@ export const useStore = create<AppState>((set, get) => ({
       ]);
       set({
         engineOk: true,
+        engineMsg: '',
         stocks: s?.stocks || [],
         bases: b?.bases || [],
         paramDefs: p?.params || [],
       });
     } catch {
-      set({ engineOk: false });
+      set({ engineOk: false, engineMsg: '引擎未启动' });
+    }
+  },
+
+  /** ★ 引擎没起就自己拉起来（老版：点渲染时自动 spawn），拉完再探活 */
+  ensureEngine: async () => {
+    if (get().engineOk) return true;
+    try {
+      const r = await API.engineStart();
+      if (r && r.ok === false) {
+        set({ engineMsg: r.error || '引擎启动失败' });
+        return false;
+      }
+      for (let i = 0; i < 30; i++) {
+        await new Promise((res) => setTimeout(res, 1000));
+        const h = await API.engineHealth();
+        if (h && h.ok !== false) {
+          await get().loadEngine();
+          return true;
+        }
+      }
+      set({ engineMsg: '引擎启动超时' });
+      return false;
+    } catch (e) {
+      set({ engineMsg: String(e) });
+      return false;
     }
   },
 
   setGrade: (patch) => set({ grade: { ...get().grade, ...patch } }),
+  setAutoRender: (v) => set({ autoRender: v }),
+  setRendering: (v) => set({ rendering: v }),
 }));
 
 /**
