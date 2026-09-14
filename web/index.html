@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>svStudio · 调胶片参数台</title>
+<style>
+  :root{--bg:#0e0f12;--card:#171a20;--line:#262a33;--fg:#e9ecf1;--dim:#98a2b3;--hi:#7dd3fc;--ok:#34d399;--warn:#fbbf24}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.55 -apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif}
+  header{display:flex;gap:8px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;background:var(--bg);z-index:10}
+  input,button,select{font:inherit;background:var(--card);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+  input[type=text]{min-width:280px;flex:1}
+  button{cursor:pointer}
+  button:hover{border-color:var(--hi)}
+  button.on{background:#0b3a4d;border-color:var(--hi);color:#dff6ff}
+  #bar{font-size:12.5px;color:var(--dim);padding:0 12px 8px}
+  main{display:grid;grid-template-columns:132px 1fr 236px;gap:10px;padding:0 12px 40px;align-items:start}
+  @media(max-width:900px){main{grid-template-columns:110px 1fr} #right{grid-column:1/-1}}
+  #thumbs{display:flex;flex-direction:column;gap:6px;max-height:calc(100vh - 120px);overflow:auto}
+  #thumbs img{width:100%;display:block;border-radius:6px;border:2px solid transparent;cursor:pointer;background:#000}
+  #thumbs img.sel{border-color:var(--hi)}
+  #stage{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px}
+  #shot{width:100%;display:block;border-radius:8px;background:#000;min-height:180px}
+  #nums{font-size:12.5px;color:var(--dim);padding-top:8px;font-variant-numeric:tabular-nums}
+  #nums b{color:var(--fg)}
+  #right{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px}
+  h3{margin:0 0 8px;font-size:13px;color:var(--dim);font-weight:600}
+  .stock{display:block;width:100%;text-align:left;margin-bottom:5px;font-size:13px}
+  .stock small{color:var(--dim);display:block;font-size:11.5px}
+  .p{margin:9px 0}
+  .p label{display:flex;justify-content:space-between;font-size:12px;color:var(--dim)}
+  .p input[type=range]{width:100%;margin:2px 0 0}
+  .p .v{color:var(--hi);font-variant-numeric:tabular-nums}
+  #act{display:flex;gap:8px;margin-top:12px}
+  #act button{flex:1}
+  .hint{font-size:11.5px;color:var(--dim);margin-top:10px}
+  a{color:var(--hi)}
+</style>
+</head>
+<body>
+
+<header>
+  <span style="color:var(--dim)">svFilm :</span>
+  <input id="base" type="text" value="http://127.0.0.1:8765" style="min-width:160px;flex:0">
+  <input id="dir" type="text" placeholder="照片目录（里面有 .RAF 或 .JPG）">
+  <button id="go">载入</button>
+  <span id="stat" style="color:var(--dim);font-size:12.5px"></span>
+</header>
+<div id="bar">就绪。填一个目录点「载入」；会先解码缓存（约 2 秒/张），之后换卷秒出。</div>
+
+<main>
+  <div id="thumbs"></div>
+  <div id="stage">
+    <img id="shot" alt="">
+    <div id="nums">选一张图开始。</div>
+  </div>
+  <div id="right">
+    <h3>胶片卷</h3>
+    <div id="stocks"></div>
+    <h3 style="margin-top:14px">参数</h3>
+    <div id="params"></div>
+    <div id="act">
+      <button id="reset">复位参数</button>
+      <button id="export">出片（原尺寸）</button>
+    </div>
+    <div class="hint">出片用浏览器下载（右上角或下载栏），自己选存哪。</div>
+  </div>
+</main>
+
+<script>
+const $ = s => document.querySelector(s);
+const B = () => $('#base').value.replace(/\/$/, '');
+let items = [];        // [{id, path}]
+let cur = null;        // 当前 id
+let curStock = 'portra400';
+let pv = {};           // 参数覆盖 {KEY: vale}
+let deb = null;
+
+function qs(o){ return Object.entries(o).filter(([,v])=>v!==''&&v!=null)
+  .map(([k,v])=>k+'='+encodeURIComponent(v)).join('&'); }
+function renderURL(id, side){
+  const p = Object.entries(pv).map(([k,v])=>k+':'+v).join(',');
+  return B()+'/render?'+qs({id, stock:curStock, side, params:p});
+}
+function say(t){ $('#bar').textContent = t; }
+
+// ---- 卷 ----------------------------------------------------------------
+async function loadStocks(){
+  const list = await (await fetch(B()+'/stocks')).json();
+  $('#stocks').innerHTML = '';
+  list.forEach(s=>{
+    const b = document.createElement('button');
+    b.className = 'stock' + (s.name===curStock?' on':'');
+    b.innerHTML = s.label + '<small>' + (s.desc||'') + '</small>';
+    b.onclick = ()=>{ curStock = s.name; refreshStocks(); refresh(); };
+    b.dataset.name = s.name;
+    $('#stocks').appendChild(b);
+  });
+}
+function refreshStocks(){
+  document.querySelectorAll('.stock').forEach(b=>
+    b.classList.toggle('on', b.dataset.name === curStock));
+}
+
+// ---- 参数 --------------------------------------------------------------
+async function loadParams(){
+  const list = await (await fetch(B()+'/params')).json();
+  $('#params').innerHTML = '';
+  list.forEach(p=>{
+    if (pv[p.k] == null) pv[p.k] = p.value;
+    const d = document.createElement('div'); d.className='p';
+    d.innerHTML = `<label><span>${p.name}</span><span class="v" data-k="${p.k}">${fmt(pv[p.k])}</span></label>
+      <input type="range" min="${p.lo}" max="${p.hi}" step="${p.step}" value="${pv[p.k]}" data-k="${p.k}">`;
+    d.querySelector('input').oninput = e=>{
+      pv[p.k] = parseFloat(e.target.value);
+      d.querySelector('.v').textContent = fmt(pv[p.k]);
+      refreshSoon();
+    };
+    $('#params').appendChild(d);
+  });
+}
+function fmt(v){ return (Math.round(v*1000)/1000).toString(); }
+function refreshSoon(){ clearTimeout(deb); deb = setTimeout(refresh, 220); }  // ★ 防抖
+
+// ---- 图 ----------------------------------------------------------------
+function pick(id){
+  cur = id;
+  document.querySelectorAll('#thumbs img').forEach(i=>i.classList.toggle('sel', +i.dataset.id===id));
+  $('#shot').src = renderURL(id, 900);
+  refreshStats();
+}
+function refresh(){
+  if (cur==null) return;
+  $('#shot').src = renderURL(cur, 900);
+  refreshStats();
+}
+async function refreshStats(){
+  if (cur==null) return;
+  const p = Object.entries(pv).map(([k,v])=>k+':'+v).join(',');
+  try{
+    const j = await (await fetch(B()+'/stats?'+qs({id:cur, stock:curStock, params:p}))).json();
+    $('#nums').innerHTML =
+      `画面中位 <b>${j.L50}</b> ｜ 亮部 <b>${j.L90}</b> ｜ 黄味 <b>${j.b>=0?'+':''}${j.b}</b> ｜ 彩度 <b>${j.c50}</b>`
+      + ` ｜ 算这一张 <b>${j.ms} ms</b>`;
+  }catch(e){ $('#nums').textContent = '取数失败：'+e; }
+}
+
+// ---- 载入 --------------------------------------------------------------
+$('#go').onclick = async ()=>{
+  const dir = $('#dir').value.trim();
+  if(!dir) return say('先填一个目录');
+  say('扫目录…');
+  let sc;
+  try{ sc = await (await fetch(B()+'/scan?'+qs({dir}))).json(); }
+  catch(e){ return say('连不上服务 —— 先起它：cd svFilm && python -m svFilm.service'); }
+  if(sc.error) return say(sc.error);
+  say(`找到 ${sc.n} 个文件，开始解码缓存（约 2 秒/张）…`);
+  items = []; $('#thumbs').innerHTML='';
+  const CH = 4;                       // ★ 一批 4 张，边解边出
+  for(let i=0;i<sc.files.length;i+=CH){
+    const batch = sc.files.slice(i,i+CH);
+    let out;
+    try{ out = await (await fetch(B()+'/load?'+qs({paths:batch.join(','), side:700}))).json(); }
+    catch(e){ return say('载入失败：'+e); }
+    out.forEach(o=>{
+      if(o.error) return;
+      items.push(o);
+      const im = document.createElement('img');
+      im.dataset.id = o.id;
+      im.src = B()+'/render?'+qs({id:o.id, stock:curStock, side:260});
+      im.onclick = ()=>pick(o.id);
+      $('#thumbs').appendChild(im);
+    });
+    say(`已缓存 ${items.length}/${sc.n} …`);
+  }
+  say(`好了，${items.length} 张。点缩略图挑一张。`);
+  if(items.length) pick(items[0].id);
+};
+
+$('#reset').onclick = ()=>{ pv = {}; loadParams().then(refresh); };
+$('#export').onclick = ()=>{
+  if(cur==null) return;
+  const p = Object.entries(pv).map(([k,v])=>k+':'+v).join(',');
+  const a = document.createElement('a');
+  a.href = B()+'/render?'+qs({id:cur, stock:curStock, side:4000, fmt:'jpg', q:95, params:p});
+  a.download = 'svFilm_' + curStock + '_' + cur + '.jpg';
+  document.body.appendChild(a); a.click(); a.remove();
+  say('出片中（原尺寸，约十几秒）… 浏览器会弹下载。');
+};
+
+// ---- 启动 --------------------------------------------------------------
+(async ()=>{
+  try{
+    const h = await (await fetch(B()+'/health')).json();
+    say(`服务在（v${h.version}）。填一个目录点「载入」。`);
+    await loadStocks(); await loadParams();
+  }catch(e){
+    say('连不上服务 —— 先在 svFilm 目录下起它：python -m svFilm.service --port 8765');
+  }
+})();
+</script>
+</body>
+</html>
