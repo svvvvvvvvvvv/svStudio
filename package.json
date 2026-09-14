@@ -1,0 +1,33 @@
+{
+  "name": "svstudio",
+  "version": "0.1.0",
+  "description": "svStudio 摄影工作台 - 选片台（打星选片·按星级归位）+ 调色台（真卷/参数实时渲染）二合一",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "build:mac": "electron-builder --mac"
+  },
+  "author": "SV",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.sv.svstudio",
+    "productName": "svStudio",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*"
+    ],
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.photography"
+    }
+  }
+}

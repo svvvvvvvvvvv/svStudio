@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>svStudio</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="dot"></span>
+      <span class="title">svStudio</span>
+    </div>
+
+    <!-- 顶栏：选片台 ｜ 调色台（只切右栏内容 + 中间大图的显示源，
+         左栏图库 / 底部缩略图 / 快捷键全部复用同一套） -->
+    <div class="mode-tabs" id="modeTabs">
+      <button class="mtab active" data-mode="pick">选片台</button>
+      <button class="mtab" data-mode="grade">调色台</button>
+    </div>
+
+    <div class="lib-info">
+      <span id="libPath" class="lib-path">—</span>
+      <button id="btnPickLib" class="btn ghost">切换照片库</button>
+    </div>
+    <div class="spacer"></div>
+    <div id="sessInfo" class="sess-info"></div>
+    <button id="btnHome" class="btn ghost">主题列表</button>
+    <button id="btnArchive" class="btn primary" disabled title="把星级与物理目录同步（打星后也会自动同步）">同步星级 <span id="archCount" class="badge">0</span></button>
+    <button id="btnResetColor" class="btn danger" disabled title="清除调色输出与 2~5 星成片（换调色思路重跑前用）；原图与 RAW 不动">重置调色</button>
+  </header>
+
+  <div class="body">
+    <aside id="sessionPane" class="session-pane">
+      <div class="pane-head">拍摄主题</div>
+      <div id="sessionList" class="session-list"></div>
+    </aside>
+
+    <main class="stage">
+      <div id="homeView" class="home-view">
+        <div class="home-inner">
+          <h1 class="home-title">照片库</h1>
+          <p class="home-sub">选择一个主题开始选片 / 调色</p>
+        </div>
+      </div>
+
+      <div id="pickView" class="pick-view hidden">
+        <div class="work-col" id="workCol">
+          <div class="viewer" id="viewer">
+            <img id="bigImgA" class="big-img" alt="">
+            <img id="bigImgB" class="big-img" alt="">
+            <!-- 调色台专用：左右分屏（左 = 原图，右 = 渲染结果） -->
+            <div id="splitView" class="split-view hidden">
+              <div class="sp-side">
+                <img id="splitBefore" class="sp-img" alt="">
+                <span class="sp-tag">原图</span>
+              </div>
+              <div class="sp-side">
+                <img id="splitAfter" class="sp-img" alt="">
+                <span class="sp-tag accent">渲染</span>
+                <div id="splitPh" class="sp-ph">按「渲染」出图</div>
+              </div>
+            </div>
+            <div id="exifBar" class="exif-bar"></div>
+            <div class="rate-overlay" id="rateOverlay">
+              <div id="starRow" class="star-row"></div>
+            </div>
+          </div>
+
+          <div class="dock-wrap">
+            <div class="dock-head">
+              <div class="filter-chips" id="filterChips"></div>
+              <div class="dock-actions">
+                <button id="btnCenter" class="btn ghost sm" title="回到当前选中（C）">◎ 回到当前</button>
+              </div>
+            </div>
+            <div id="dock" class="dock"></div>
+          </div>
+        </div>
+
+        <!-- ===== 右栏：选片模式（照片参数，只读） ===== -->
+        <aside class="param-pane" id="paramPane">
+          <div class="param-head">当前照片</div>
+          <div id="paramList" class="param-list"></div>
+          <div class="param-div"></div>
+          <div class="param-head sub">评分状态</div>
+          <div class="rate-legend">
+            <div class="legend-row"><i class="dot on"></i><span>★1 需调色 → 初筛1星</span></div>
+            <div class="legend-row"><i class="dot on"></i><span>★2 调色满意 → 调色后满意的2星</span></div>
+            <div class="legend-row"><i class="dot on"></i><span>★3+ 待发布（4超满意 5神图）</span></div>
+            <div class="legend-row"><i class="dot skip"></i><span>0 星 · 略过</span></div>
+            <div class="legend-row"><i class="dot none"></i><span>未评</span></div>
+          </div>
+        </aside>
+
+        <!-- ===== 右栏：调色模式（真卷 + 参数，可调） ===== -->
+        <aside class="param-pane grade-pane hidden" id="gradePane">
+          <div class="param-head">调色 · 当前照片</div>
+          <div id="gPhoto" class="g-photo">—</div>
+
+          <div class="param-div"></div>
+          <div class="param-head sub">胶片卷</div>
+          <select id="gStock" class="g-select"></select>
+          <div id="gStockDesc" class="g-desc"></div>
+
+          <div class="param-div"></div>
+          <div class="param-head sub">成色基准</div>
+          <select id="gBase" class="g-select"></select>
+          <div id="gBaseDesc" class="g-desc"></div>
+
+          <div class="param-div"></div>
+          <div class="param-head sub">参数</div>
+          <div id="gParams" class="g-params"></div>
+
+          <div class="g-foot">
+            <button id="gReset" class="btn ghost sm" title="把本主题的调色参数恢复成默认">恢复默认</button>
+            <button id="gSave" class="btn ghost sm" title="把当前参数存到本主题（换主题再回来还在）">存到主题</button>
+          </div>
+        </aside>
+      </div>
+    </main>
+  </div>
+
+  <!-- 底部渲染条（调色模式才出现；压在缩略图列上方） -->
+  <div id="renderBar" class="render-bar hidden">
+    <div id="renderHint" class="rb-hint">调色台 · 选中一张后按「渲染」</div>
+    <div class="spacer"></div>
+    <label class="rb-chk"><input type="checkbox" id="chkAuto" checked> 换图/换卷自动出图</label>
+    <button id="btnRender" class="btn primary" disabled>渲染</button>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <div id="hoverPrev" class="hoverprev hidden">
+    <div class="hp-img">
+      <img id="hpImg" alt="">
+      <div id="hpPh" class="hp-ph">加载缩略图…</div>
+    </div>
+    <div class="hp-meta">
+      <span id="hpName" class="fn">—</span><span id="hpStar" class="hp-star"></span>
+    </div>
+  </div>
+  <div id="overlay" class="overlay hidden">
+    <div class="overlay-card">
+      <div class="spinner"></div>
+      <div id="overlayText">处理中…</div>
+    </div>
+  </div>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
