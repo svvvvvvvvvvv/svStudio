@@ -56,10 +56,12 @@ export function App() {
       <TopBar />
 
       <Flex style={{ flex: 1, minHeight: 0 }}>
-        {/* 主区：大图/分屏 + 底栏 */}
-        <Flex direction="column" style={{ flex: 1, minWidth: 0 }}>
+        {/* 主区：大图/分屏 + 底栏
+            ⚠ minHeight:0 必须加 —— 嵌套 flex 的子项默认 min-height:auto，
+              会被大图内容撑爆，把底栏/星级挤出视口（09-15 SV 实测踩到） */}
+        <Flex direction="column" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
           {!sessionName ? (
-            <Box style={{ flex: 1, overflow: 'auto' }}>
+            <Box style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
               <HomeView />
             </Box>
           ) : (

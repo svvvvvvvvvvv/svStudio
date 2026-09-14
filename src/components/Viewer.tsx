@@ -40,7 +40,8 @@ export function Viewer() {
     <div
       style={{
         flex: 1,
-        minHeight: 0,
+        minHeight: 0,      // ⚠ 同上：不给 0 会被 img 撑爆，底下的条全被挤出视口
+        overflow: 'hidden',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -130,7 +131,7 @@ function SplitView() {
     <div
       style={{
         flex: 1,
-        minHeight: 0,
+        minHeight: 0,      // ⚠ 防撑爆（同选片台大图）
         display: 'flex',
         gap: 8,
         padding: 18,
@@ -162,6 +163,7 @@ function Pane({
       style={{
         flex: 1,
         minWidth: 0,
+        minHeight: 0,
         display: 'flex',
         flexDirection: 'column',
         background: 'var(--bg-panel)',
