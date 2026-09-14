@@ -28,6 +28,7 @@ contextBridge.exposeInMainWorld('api', {
   engineParams: () => ipcRenderer.invoke('engine-params'),
   engineScan: (dir, exts, limit) => ipcRenderer.invoke('engine-scan', dir, exts, limit),
   engineLoad: (paths) => ipcRenderer.invoke('engine-load', paths),
+  engineBase: (id) => ipcRenderer.invoke('engine-base', id),
   engineRender: (id, opts) => ipcRenderer.invoke('engine-render', id, opts),
   engineRawUrl: (sessionPath, rel) =>
     ipcRenderer.invoke('engine-raw-url', sessionPath, rel),

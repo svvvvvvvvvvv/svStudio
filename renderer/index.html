@@ -59,7 +59,10 @@
               <div class="sp-side">
                 <img id="splitAfter" class="sp-img" alt="">
                 <span class="sp-tag accent">渲染</span>
-                <div id="splitPh" class="sp-ph">按「渲染」出图</div>
+                <div id="splitPh" class="sp-ph">
+                  <div id="splitSpin" class="sp-spin hidden"></div>
+                  <span id="splitPhText">按「渲染」出图</span>
+                </div>
               </div>
             </div>
             <div id="exifBar" class="exif-bar"></div>
@@ -98,6 +101,7 @@
         <aside class="param-pane grade-pane hidden" id="gradePane">
           <div class="param-head">调色 · 当前照片</div>
           <div id="gPhoto" class="g-photo">—</div>
+          <div id="gEmpty" class="g-empty hidden"></div>
 
           <div class="param-div"></div>
           <div class="param-head sub">胶片卷</div>

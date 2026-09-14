@@ -95,6 +95,8 @@ async function enterSession(i, opts) {
   _prefetch.clear();
   _gGen++;              // 换场：作废在飞的渲染结果
   gLoaded = null;
+  _gLoadedPath = null;
+  _gScanCache = null;   // 换场：文件清单重扫
   if (!silent) busy(true, '加载照片…');
   photos = await window.api.listPhotos(curSession.path);
   if (!silent) busy(false);
@@ -118,7 +120,7 @@ async function enterSession(i, opts) {
     paintStockDesc();
     paintBaseDesc();
     paintGradeParams();
-    renderRenderHint();
+    paintGradePaneState();
   }
   renderFilters();
   renderDock();
@@ -336,6 +338,17 @@ async function showAt(i) {
   window.api.setConfig({ lastIdx: idx });
 }
 
+/** 调色台专用：在「可调片单」里前进/后退（选片台仍按筛选档走） */
+function gradeStep(dir) {
+  const list = gradeList();
+  if (!list.length) return;
+  const pos = list.indexOf(idx);
+  if (pos < 0) { showAt(list[0]); return; }
+  const np = pos + dir;
+  if (np < 0 || np >= list.length) return;
+  showAt(list[np]);
+}
+
 /* 相邻图片预解码：让浏览器提前 decode 前后各 1 张，翻图时几乎无等待。
    注意内存权衡：24MP 图解码后约 50MB/张，因此只预载 ±1（约 100MB），
    不预载更多，避免内存膨胀。用隐藏 Image 异步解码，不打断当前显示。 */
@@ -536,6 +549,9 @@ function hpEl() { return $('#hoverPrev'); }
 function hpImg() { return $('#hpImg'); }
 
 function dockMouseMove(ev) {
+  // ★ 调色台不弹悬浮大预览：中间已经是「原图 vs 渲染」分屏了，再弹一个纯属重复，
+  //   而且每次 hover 都要读一张大图（实测就是"卡"的一个来源）。
+  if (mode === 'grade') { hideHoverPrev(); return; }
   const dk = ev.target.closest ? ev.target.closest('.dk') : null;
   if (!dk) { hideHoverPrev(); return; }
   const i = parseInt(dk.dataset.i, 10);
@@ -892,10 +908,13 @@ function bindUI() {
       if (mode === 'grade') return;
       rate(0);
     } else if (e.key === 'ArrowRight') {
+      // ★ 调色台只在「有星的片」里翻 —— 免得翻到没打过星的片上去
+      if (mode === 'grade') { gradeStep(1); return; }
       const list = visibleList();
       const pos = list.indexOf(idx);
       if (pos < list.length - 1) showAt(list[pos + 1]);
     } else if (e.key === 'ArrowLeft') {
+      if (mode === 'grade') { gradeStep(-1); return; }
       const list = visibleList();
       const pos = list.indexOf(idx);
       if (pos > 0) showAt(list[pos - 1]);
@@ -1116,50 +1135,164 @@ function applyMode(m, opts) {
   $('#rateOverlay').classList.toggle('hidden', isGrade);   // 调色模式不挡打星、也省地方
   if (!opts || !opts.silent) window.api.setConfig({ mode: mode });
   if (isGrade) {
-    renderRenderHint();
     if (!grade && curSession) { grade = gradeOf(curSession.name); paintGradeParams(); }
+    paintGradePaneState();
+    // ★ 调色台只服务有星级的片：进来先跳到「可调片单」的第一张
+    //   （当前这张没打星 ⇒ 别在调色台里停着，直接领到第一张有星的）
+    const list = gradeList();
+    if (list.length && !list.includes(idx)) { showAt(list[0]); return; }
     if (idx >= 0) prepareGradeImage();
   }
 }
 
+/** 调色台右栏的状态：没图可调时把参数区藏起来、只留一句说明 */
+function paintGradePaneState() {
+  const list = curSession ? gradeList() : [];
+  const has = list.length > 0;
+  const emp = $('#gEmpty');
+  $('#gParams').classList.toggle('hidden', !has);
+  $('#gReset').classList.toggle('hidden', !has);
+  $('#gSave').classList.toggle('hidden', !has);
+  if (emp) {
+    emp.classList.toggle('hidden', has || !curSession);
+    if (!has && curSession) {
+      const total = photos.length;
+      const n1 = photos.filter((p) => (ratings[curKey(p)] || 0) >= 1).length;
+      emp.innerHTML = '这个主题<b>还没有打过星的片</b>，所以调色台里没有可调的图。<br>' +
+        '先切到<b>选片台</b>给要调的片打上 ★（1 星起算），' +
+        '再回调色台就能调了。<br><span style="opacity:.7">本主题共 ' + total +
+        ' 张，已打星 ' + n1 + ' 张。</span>';
+    }
+  }
+  renderRenderHint();
+}
+
+/** 调色台底部提示：说清"共有几张可调 / 现在第几张"，以及空的时候怎么办 */
 function renderRenderHint() {
   const el = $('#renderHint');
   if (!el || mode !== 'grade') return;
   el.style.cursor = 'default';
   el.onclick = null;
-  if (!curSession) { el.textContent = '调色台 · 先在左栏选一个主题'; $('#btnRender').disabled = true; return; }
-  if (!gStocks.length) { el.textContent = '调色台 · 引擎没连上，点这里重试'; el.style.cursor = 'pointer'; el.onclick = gradeStartEngine; return; }
+  if (!curSession) {
+    el.textContent = '调色台 · 先在左栏选一个主题';
+    $('#btnRender').disabled = true;
+    return;
+  }
+  if (!gStocks.length) {
+    el.textContent = '调色台 · 引擎没连上，点这里重试';
+    el.style.cursor = 'pointer';
+    el.onclick = gradeStartEngine;
+    $('#btnRender').disabled = true;
+    return;
+  }
+  const list = gradeList();
+  if (!list.length) {
+    el.textContent = '调色台 · 这个主题没有打过星的片 —— 先去选片台打星（★1 起）';
+    $('#btnRender').disabled = true;
+    return;
+  }
+  const pos = list.indexOf(idx);
   const s = gStocks.find((x) => x.name === grade.stock);
-  el.textContent = '调色台 · ' + (s ? s.label : grade.stock) + ' · 选中一张后按「渲染」';
-  $('#btnRender').disabled = idx < 0 || gRendering;
+  el.textContent = '调色台 · ' + (s ? s.label : grade.stock) +
+    ' · 第 ' + (pos < 0 ? '—' : pos + 1) + '/' + list.length + ' 张';
+  $('#btnRender').disabled = idx < 0 || gRendering || pos < 0;
 }
 
-/* ---------- 取图：把「当前主题」的文件清单交给引擎 ---------- */
-/** photos 是「按形态合并后」的列表（同名的成片/原图只留最新一条），
-    这里要的是**原始 RAW 绝对路径**，所以按 photo 的 rel 去主题根目录找同名 RAW。 */
+/* ---------- 调色台的「可调片单」：★ 定死只收有星级的 ---------- */
+/** 为什么定死：调色台是**给选出来的片调色**的地方，没打星的根本不该进来 ——
+    园岭一个主题 308 张，全列进去既慢（每张都要解码/出图）也没意义。
+    所以调色台只认 ★≥1 的片（0 星=主动略过、未评=还没看）。
+    ★ 返回的是 photos 里的**下标**，翻页/快捷键仍走同一套 idx，不用两套逻辑。 */
+function gradeList() {
+  const out = [];
+  photos.forEach((p, i) => {
+    const v = ratings[curKey(p)];
+    if (v !== undefined && v !== null && v >= 1) out.push(i);
+  });
+  return out;
+}
+
+/** ★ 只扫一次并缓存：原来每渲染一次就 /scan 一遍目录（616 个文件）——
+    实测那是"点调色台很卡"的一个原因（每次翻图/改参数都白扫一遍）。
+    文件名在一个主题里不会变，换主题时清掉即可。 */
+let _gScanCache = null;   // { sess, files }
+
 async function resolveGradeFiles() {
   if (!curSession) return [];
+  if (_gScanCache && _gScanCache.sess === curSession.name) return _gScanCache.files;
   const r = await window.api.engineScan(curSession.path, 'raf,jpg,jpeg', 2000);
   if (!r.ok) { toast('引擎扫目录失败：' + r.error, 5000); return []; }
-  return r.files || [];
+  _gScanCache = { sess: curSession.name, files: r.files || [] };
+  return _gScanCache.files;
 }
 
+/** 在扫描结果里找这张照片对应的文件（先按同名不同后缀，再退到同名） */
+function findFileFor(abs, p) {
+  const stem = p.name.replace(/\.[^.]+$/, '').toUpperCase();
+  let hit = abs.find((f) => {
+    const b = f.replace(/\\/g, '/').split('/').pop().replace(/\.[^.]+$/, '');
+    return b.toUpperCase() === stem;
+  });
+  if (!hit) hit = abs.find((f) => f.replace(/\\/g, '/').endsWith('/' + p.name));
+  return hit || null;
+}
+
+/** 把当前这张送进引擎（解码 + 入口）。**同一张只解一次**（引擎侧另有 path 缓存兜底）。 */
+let _gLoadedPath = null;
+async function loadCurrentIntoEngine(p, gen) {
+  const abs = await resolveGradeFiles();
+  if (gen !== _gGen) return null;
+  const hit = findFileFor(abs, p);
+  if (!hit) return null;
+  if (_gLoadedPath === hit && gLoaded) return gLoaded;   // 同一张，引擎里已经有了
+  const ld = await window.api.engineLoad([hit]);
+  if (gen !== _gGen) return null;
+  if (!ld.ok || !ld.items || !ld.items.length || ld.items[0].error) return null;
+  gLoaded = ld.items[0];
+  _gLoadedPath = hit;
+  return gLoaded;
+}
+
+/** 换图后：出「原图」栏 +（自动模式下）触发渲染。全程有 loading 反馈。 */
 async function prepareGradeImage() {
   if (!curSession || idx < 0) return;
   const p = photos[idx];
   if (!p) return;
   const gen = ++_gGen;
-  // 原图预览：引擎 /load 出来的 disp（和渲染结果同分辨率、同口径，A/B 才公平）
-  const rb = await window.api.engineRawUrl(p.dir || curSession.path, p.rel);
-  if (gen !== _gGen) return;
-  if (rb.ok) $('#splitBefore').src = rb.image;
-  else { $('#splitBefore').removeAttribute('src'); }
+  $('#splitBefore').removeAttribute('src');
   $('#splitAfter').removeAttribute('src');
-  $('#splitPh').style.display = 'flex';
-  $('#splitPh').textContent = $('#chkAuto').checked ? '自动出图中…' : '按「渲染」出图';
-  if ($('#chkAuto').checked) scheduleGradeRender(0);
-  else renderRenderHint();
+  showSplitPh('加载中…', true);
+  try {
+    const ld = await loadCurrentIntoEngine(p, gen);
+    if (gen !== _gGen) return;
+    if (!ld) {
+      showSplitPh('引擎载入失败（看 svFilm 服务窗口的报错）', false);
+      return;
+    }
+    // 「原图」栏 = 引擎里这张的恒等出图（与渲染同分辨率、同口径）
+    const b = await window.api.engineBase(ld.id);
+    if (gen !== _gGen) return;
+    if (b && b.ok) $('#splitBefore').src = b.image;
+    if ($('#chkAuto').checked) scheduleGradeRender(0);
+    else { showSplitPh('按「渲染」出图', false); renderRenderHint(); }
+  } finally {
+    if (gen === _gGen && !$('#chkAuto').checked && $('#splitBefore').getAttribute('src')) {
+      // 原图已就绪、又没在自动出图 ⇒ 把提示文字收起来
+      $('#splitPh').style.display = 'none';
+    }
+  }
 }
+
+function showSplitPh(text, spin) {
+  const el = $('#splitPh');
+  if (!el) return;
+  el.style.display = 'flex';
+  const t = $('#splitPhText');
+  if (t) t.textContent = text;
+  const sp = $('#splitSpin');
+  if (sp) sp.classList.toggle('hidden', !spin);
+}
+
 
 /** 自动出图：防抖，避免拖滑杆时每一帧都发一次渲染（一次 6~7 秒） */
 function scheduleGradeRender(ms) {
@@ -1177,39 +1310,20 @@ async function renderGrade() {
   gRendering = true;
   btn.disabled = true;
   btn.textContent = '渲染中…';
-  $('#splitPh').style.display = 'flex';
-  $('#splitPh').textContent = '渲染中…';
+  showSplitPh('渲染中…', true);
 
   try {
-    // 1) 把原图送进引擎（解码 + 入口 + 锚点，只做一次；之后换卷/换参数都复用）
-    const abs = await resolveGradeFiles();
+    // 1) 确保这张在引擎里（同一张只解一次）
+    const ld = await loadCurrentIntoEngine(p, gen);
     if (gen !== _gGen) return;
-    let hit = abs.find((f) => {
-      const base = f.replace(/\\/g, '/').split('/').pop().replace(/\.[^.]+$/, '');
-      return base.toUpperCase() === p.name.replace(/\.[^.]+$/, '').toUpperCase();
-    });
-    if (!hit) hit = abs.find((f) => f.replace(/\\/g, '/').endsWith('/' + p.name));
-    if (!hit) {
-      $('#splitPh').textContent = '没在主题里找到这张的 RAW / JPG';
-      return;
-    }
-    const ld = await window.api.engineLoad([hit]);
-    if (gen !== _gGen) return;
-    if (!ld.ok || !ld.items || !ld.items.length || ld.items[0].error) {
-      $('#splitPh').textContent = '引擎载入失败：' + ((ld.items && ld.items[0] && ld.items[0].error) || ld.error || '未知');
-      return;
-    }
-    gLoaded = ld.items[0];
+    if (!ld) { showSplitPh('没找到这张的 RAW / JPG（或引擎载入失败）', false); return; }
 
-    // 2) 出图（换卷 6~7 秒，参数改动也走这一步）
-    const rd = await window.api.engineRender(gLoaded.id, {
+    // 2) 出图（换卷 6~7 秒；改滑杆也走这一步）
+    const rd = await window.api.engineRender(ld.id, {
       stock: grade.stock, base: grade.base, params: gradeParamsStr(), side: 700, q: 92
     });
     if (gen !== _gGen) return;
-    if (!rd.ok) {
-      $('#splitPh').textContent = '渲染失败：' + (rd.error || '未知');
-      return;
-    }
+    if (!rd.ok) { showSplitPh('渲染失败：' + (rd.error || '未知'), false); return; }
     $('#splitAfter').src = rd.image;
     $('#splitPh').style.display = 'none';
   } finally {

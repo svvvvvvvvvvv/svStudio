@@ -300,7 +300,16 @@ html, body {
 .sp-ph {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
+  gap: 9px;
   font-size: 12px; color: var(--text-dim);
+}
+/* 转圈：等引擎回报时给个明确反馈（解码 2s / 出图 7s，不转圈就像卡死了） */
+.sp-spin {
+  width: 15px; height: 15px; flex: 0 0 auto;
+  border: 2px solid rgba(255,255,255,.16);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
 }
 
 /* ---------- 调色台：右栏（真卷 + 参数） ---------- */
@@ -310,6 +319,17 @@ html, body {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   margin-bottom: 2px;
 }
+/* 调色台空态：这个主题一张有星的都没有 —— 说清为什么、该怎么办 */
+.g-empty {
+  margin-top: 10px;
+  padding: 11px 12px;
+  border-radius: 9px;
+  border: 1px dashed var(--border-hi);
+  background: rgba(255,255,255,.025);
+  font-size: 11.5px; line-height: 1.6;
+  color: var(--text-dim);
+}
+.g-empty b { color: var(--text); font-weight: 500; }
 .g-select {
   width: 100%;
   background: var(--panel);

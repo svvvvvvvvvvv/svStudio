@@ -846,6 +846,13 @@ ipcMain.handle('engine-load', async (e, paths) => {
   const r = await engineGet('/load' + qs, 180000);
   return r.ok ? { ok: true, items: r.data } : r;
 });
+/** 「原图」栏：引擎缓存里的 Sample 直接出图（恒等，不跑调色）。
+    ★ 不再让前端去读原始 JPG —— 那样出来的尺寸/方向和渲染结果不是一把尺子。 */
+ipcMain.handle('engine-base', async (e, id) => {
+  const r = await engineGet('/base?id=' + encodeURIComponent(String(id)) + '&fmt=jpg&q=90', 60000);
+  return r.ok ? { ok: true, image: r.image } : r;
+});
+
 ipcMain.handle('engine-render', async (e, id, opts) => {
   const o = opts || {};
   const qs = '?id=' + encodeURIComponent(String(id)) +
