@@ -115,10 +115,8 @@ async function enterSession(i, opts) {
   // 调色台：换主题 → 载入这个主题自己的那套参数（按主题存）
   grade = gradeOf(curSession.name);
   if (mode === 'grade' && gStocks.length) {
-    $('#gStock').value = grade.stock;
-    $('#gBase').value = grade.base;
-    paintStockDesc();
-    paintBaseDesc();
+    paintStockSelect();
+    paintBaseSelect();
     paintGradeParams();
     paintGradePaneState();
   }
@@ -751,20 +749,9 @@ function bindUI() {
     b.onclick = () => { if (b.dataset.mode !== mode) applyMode(b.dataset.mode); };
   });
 
-  /* ---- 调色台控件 ---- */
-  $('#gStock').onchange = () => {
-    grade.stock = $('#gStock').value;
-    paintStockDesc();
-    gradeSave();
-    renderRenderHint();
-    scheduleGradeRender(0);        // 换卷必然要重出（引擎侧换卷 6~7 秒）
-  };
-  $('#gBase').onchange = () => {
-    grade.base = $('#gBase').value;
-    paintBaseDesc();
-    gradeSave();
-    scheduleGradeRender(0);
-  };
+  /* ---- 调色台控件 ----
+     ⚠ 「胶片卷」「成色基准」现在是**图标/竖排单选**（不是下拉框），
+       点击处理写在 paintStockSelect / paintBaseSelect 里，这里不再绑 onchange。 */
   $('#gReset').onclick = async () => {
     if (!curSession) return;
     const okGo = await window.api.confirmDialog({
@@ -777,10 +764,8 @@ function bindUI() {
     if (!okGo) return;
     grade = JSON.parse(JSON.stringify(GRADE_DEFAULT));
     gradeSave();
-    $('#gStock').value = grade.stock;
-    $('#gBase').value = grade.base;
-    paintStockDesc();
-    paintBaseDesc();
+    paintStockSelect();
+    paintBaseSelect();
     paintGradeParams();
     renderRenderHint();
     scheduleGradeRender(0);
@@ -1035,45 +1020,106 @@ async function gradeLoadCatalog() {
   paintGradeParams();
 }
 
+/* ---------- 胶片卷图标（拟物） ----------
+   SV 09-14：卷不用下拉框，做成「一排拟物胶片图标」平铺出来一眼看全。
+   形状 = 用户给的 jiaopian.svg（一格胶片：上下齿孔 + 两块画格），
+   颜色 = 每卷一个代表色（SV 选「B」= 我按观感挑，见 STOCK_COLORS）。
+   ⚠ 原图是单色灰的 ⇒ 5 卷会一模一样，所以**必须灌色**才分得出谁是谁。 */
+const STOCK_COLORS = {
+  neutral:   { a: '#4b5563', b: '#374151', t: '中性' },
+  portra400: { a: '#e8a87c', b: '#c9764a', t: 'Portra 400' },
+  fuji_c200: { a: '#8fc9a8', b: '#4f9c74', t: 'C200' },
+  pro400h:   { a: '#a8c8b8', b: '#5f8f7a', t: 'Pro 400H' },
+  ektar100:  { a: '#d98878', b: '#b04a42', t: 'Ektar 100' },
+  cinestill800t: { a: '#d9a066', b: '#a86a2c', t: '500T' }
+};
+
+/** 拟物胶片图标：形状照 jiaopian.svg，三个色槽灌该卷的颜色。size 是像素边长。 */
+function filmIcon(name, size) {
+  const c = STOCK_COLORS[name] || STOCK_COLORS.neutral;
+  const s = size || 44;
+  // 齿孔色：中性档用灰；彩色卷让齿孔也跟着偏一点，看起来是一套
+  const perf = name === 'neutral' ? '#6E6E6E' : c.b;
+  const p2 = name === 'neutral' ? '#8C8C8C' : c.a;
+  return '' +
+    '<svg viewBox="0 0 1024 1024" width="' + s + '" height="' + s + '" class="fi">' +
+    '<path fill="' + perf + '" d="M895.8 98.2c0.2 0.9 0.3 1.8 0.3 2.8v78.8c0 6.6-5.4 12-12 12h-40c-6.6 0-12-5.4-12-12V101c0-1 0.1-1.9 0.3-2.8H191.7c0.2 0.9 0.3 1.8 0.3 2.8v78.8c0 6.6-5.4 12-12 12h-40c-6.6 0-12-5.4-12-12V101c0-1 0.1-1.9 0.3-2.8H65v830h64.5c-0.9-1.7-1.5-3.6-1.5-5.7v-78.8c0-6.6 5.4-12 12-12h40c6.6 0 12 5.4 12 12v78.8c0 2.1-0.5 4-1.5 5.7h643c-0.9-1.7-1.5-3.6-1.5-5.7v-78.8c0-6.6 5.4-12 12-12h40c6.6 0 12 5.4 12 12v78.8c0 2.1-0.5 4-1.5 5.7h66.2v-830h-64.9zM192.2 755.8c0 6.6-5.4 12-12 12h-40c-6.6 0-12-5.4-12-12v-58.4c0-6.6 5.4-12 12-12h40c6.6 0 12 5.4 12 12v58.4z m0-143.2c0 6.6-5.4 12-12 12h-40c-6.6 0-12-5.4-12-12v-58.4c0-6.6 5.4-12 12-12h40c6.6 0 12 5.4 12 12v58.4z m0-143.1c0 6.6-5.4 12-12 12h-40c-6.6 0-12-5.4-12-12v-58.4c0-6.6 5.4-12 12-12h40c6.6 0 12 5.4 12 12v58.4z m0-143.2c0 6.6-5.4 12-12 12h-40c-6.6 0-12-5.4-12-12V268c0-6.6 5.4-12 12-12h40c6.6 0 12 5.4 12 12v58.3z m703.9 429.5c0 6.6-5.4 12-12 12h-40c-6.6 0-12-5.4-12-12v-58.4c0-6.6 5.4-12 12-12h40c6.6 0 12 5.4 12 12v58.4z m0-143.2c0 6.6-5.4 12-12 12h-40c-6.6 0-12-5.4-12-12v-58.4c0-6.6 5.4-12 12-12h40c6.6 0 12 5.4 12 12v58.4z m0-143.1c0 6.6-5.4 12-12 12h-40c-6.6 0-12-5.4-12-12v-58.4c0-6.6 5.4-12 12-12h40c6.6 0 12 5.4 12 12v58.4z m0-143.2c0 6.6-5.4 12-12 12h-40c-6.6 0-12-5.4-12-12V268c0-6.6 5.4-12 12-12h40c6.6 0 12 5.4 12 12v58.3z"/>' +
+    '<path fill="' + p2 + '" d="M756.2 448.2H268.1c-6.6 0-12-5.4-12-12V203.8c0-6.6 5.4-12 12-12h488.1c6.6 0 12 5.4 12 12v232.4c0 6.6-5.4 12-12 12z"/>' +
+    '<path fill="' + c.b + '" d="M756 831.7H267.9c-6.6 0-12-5.4-12-12V587.3c0-6.6 5.4-12 12-12H756c6.6 0 12 5.4 12 12v232.4c0 6.6-5.4 12-12 12z"/>' +
+    '</svg>';
+}
+
+/** 卷短名（图标上地方小，只放短名；完整名在下面说明里） */
+function stockShort(s) {
+  const c = STOCK_COLORS[s.name];
+  if (c && c.t) return c.t;
+  return (s.label || s.name).replace(/^柯达\s*|^富士\s*|^伊尔福\s*/, '');
+}
+
 function paintStockSelect() {
-  const sel = $('#gStock');
-  if (!sel) return;
-  sel.innerHTML = '';
+  const box = $('#gStocks');
+  if (!box) return;
+  box.innerHTML = '';
   for (const s of gStocks) {
-    const o = document.createElement('option');
-    o.value = s.name;
-    o.textContent = s.label || s.name;
-    sel.appendChild(o);
+    const on = grade && (grade.stock || GRADE_DEFAULT.stock) === s.name;
+    const d = document.createElement('div');
+    d.className = 'g-stock' + (on ? ' on' : '');
+    d.title = s.label ? (s.label + (s.desc ? '\n' + s.desc : '')) : s.name;
+    d.innerHTML = filmIcon(s.name, 46) +
+      '<div class="g-stock-name">' + esc(stockShort(s)) + '</div>';
+    d.onclick = () => {
+      if (!grade) return;
+      grade.stock = s.name;
+      paintStockSelect();
+      paintStockDesc();
+      paintBaseSelect();
+      paintGradeParams();          // ★ 换卷要重画参数：哪些生效跟着卷走
+      gradeSave();
+      scheduleGradeRender(0);
+    };
+    box.appendChild(d);
   }
-  if (grade) sel.value = grade.stock || GRADE_DEFAULT.stock;
   paintStockDesc();
+}
+
+function curStockHasSpek() {
+  const s = gStocks.find((x) => x.name === (grade && grade.stock));
+  return !!(s && s.spek);
 }
 
 function paintStockDesc() {
   const el = $('#gStockDesc');
   if (!el) return;
-  const s = gStocks.find((x) => x.name === ($('#gStock').value));
+  const s = gStocks.find((x) => x.name === (grade && grade.stock));
   el.textContent = s ? (s.desc || '') : '';
 }
 
 function paintBaseSelect() {
-  const sel = $('#gBase');
-  if (!sel) return;
-  sel.innerHTML = '';
+  const box = $('#gBases');
+  if (!box) return;
+  box.innerHTML = '';
   for (const b of gBases) {
-    const o = document.createElement('option');
-    o.value = b.name;
-    o.textContent = b.label || b.name;
-    sel.appendChild(o);
+    const on = grade && (grade.base || GRADE_DEFAULT.base) === b.name;
+    const d = document.createElement('div');
+    d.className = 'g-base' + (on ? ' on' : '');
+    d.title = b.desc || b.name;
+    d.innerHTML = '<span class="g-base-t">' + esc(b.label || b.name) + '</span>';
+    d.onclick = () => {
+      if (!grade) return;
+      grade.base = b.name;
+      paintBaseSelect();
+      gradeSave();
+      scheduleGradeRender(0);
+    };
+    box.appendChild(d);
   }
-  if (grade) sel.value = grade.base || GRADE_DEFAULT.base;
   paintBaseDesc();
 }
 
 function paintBaseDesc() {
   const el = $('#gBaseDesc');
   if (!el) return;
-  const b = gBases.find((x) => x.name === $('#gBase').value);
+  const b = gBases.find((x) => x.name === (grade && grade.base));
   el.textContent = b ? (b.desc || '') : '';
 }
 
@@ -1082,7 +1128,27 @@ function paintGradeParams() {
   const box = $('#gParams');
   if (!box) return;
   box.innerHTML = '';
-  for (const p of gParamDefs) {
+  // ★★ 「不生效的就别列出来」（SV 09-14）。
+  //   真卷（物理链）自带 H&D + 颗粒 + halation ⇒ 我们的影调层/空间层**让位**
+  //   ⇒ 那 7 根拧了没反应，直接不画。选中性基准时反过来，只画那 7 根 + 脸。
+  //   引擎 /params 每条带 `spek`：true=只在真卷下生效，false=只在非真卷下生效，缺=都生效。
+  const isSpek = curStockHasSpek();
+  const defs = gParamDefs.filter((p) => {
+    if (p.spek === true && !isSpek) return false;
+    if (p.spek === false && isSpek) return false;
+    return true;
+  });
+  // 按 grp 分组画（同一组连着放，组间插个小标题）
+  let lastGrp = null;
+  for (const p of defs) {
+    const g = p.grp || '';
+    if (g && g !== lastGrp) {
+      const h = document.createElement('div');
+      h.className = 'g-grp';
+      h.textContent = g;
+      box.appendChild(h);
+      lastGrp = g;
+    }
     const row = document.createElement('div');
     row.className = 'g-pr';
     const cur = grade && grade.params && grade.params[p.k] !== undefined
