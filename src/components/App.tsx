@@ -9,6 +9,7 @@ import { GradePanel } from './GradePanel';
 import { Viewer } from './Viewer';
 import { Stars, FilterChips, ExifBar } from './Stars';
 import { SessionPane } from './SessionPane';
+import { PickPanel } from './PickPanel';
 
 /**
  * 主布局：顶栏 + [中：大图/分屏 + 底栏] + [右：参数]
@@ -95,8 +96,9 @@ export function App() {
           )}
         </Flex>
 
-        {/* 右栏：调色台才显示 */}
-        {mode === 'grade' && sessionName && <GradePanel />}
+        {/* 右栏：选片台 = 照片参数（只读）；调色台 = 调色面板 */}
+        {sessionName && mode === 'pick' && <PickPanel />}
+        {sessionName && mode === 'grade' && <GradePanel />}
       </Flex>
 
       {/* busy 遮罩 */}

@@ -51,7 +51,7 @@ function Thumb({ p, active }: { p: Photo; active: boolean }) {
     >
       <div
         style={{
-          height: 78,
+          height: 72,
           background: 'var(--bg)',
           borderRadius: 4,
           overflow: 'hidden',
@@ -114,10 +114,13 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
       style={{
         position: 'relative',
         flex: '0 0 auto',
-        height: 108,
+        /* 高度 = 图72 + 格子padding6 + 边框2 + 名字14 + 上6 + 滚动条10；
+           ⚠ overflow hidden：只许横向滚（09-15 SV：竖滚动条会压住缩略图） */
+        height: 120,
         borderTop: '1px solid var(--line)',
         background: 'var(--bg-panel)',
-        padding: '6px 0',
+        padding: '6px 0 10px',
+        overflow: 'hidden',
       }}
     >
       {/* ★ 悬浮大预览（高频值走 useRef，零重渲染） */}

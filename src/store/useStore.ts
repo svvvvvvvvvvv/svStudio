@@ -71,9 +71,16 @@ interface AppState {
 export const ratingKey = (sessionName: string, photoName: string) =>
   sessionName + '||' + photoName;
 
-/** 保存「上次状态」到配置（主题/照片/台）；失败静默 */
+/** 保存「上次状态」到配置（主题/照片/台）；失败静默。
+ *  ⚠ 必须用**平铺键**（lastSession/lastCur/lastMode），
+ *    不能存 last:{...} 整个对象 —— main.js 的 set-config 是 Object.assign(cfg, patch)，
+ *    存 {last:{cur}} 会把 last 整个换掉、丢掉 session（09-15「进来不是台」的根因）。 */
 function saveLast(patch: { session?: string; cur?: number; mode?: string }) {
-  API.setConfig({ last: patch }).catch(() => {});
+  const flat: Record<string, unknown> = {};
+  if (patch.session !== undefined) flat.lastSession = patch.session;
+  if (patch.cur !== undefined) flat.lastCur = patch.cur;
+  if (patch.mode !== undefined) flat.lastMode = patch.mode;
+  API.setConfig(flat).catch(() => {});
 }
 
 export const useStore = create<AppState>((set, get) => ({
@@ -116,11 +123,14 @@ export const useStore = create<AppState>((set, get) => ({
     set({ ready: true });
 
     /* ★★ 恢复上次状态（SV 09-15：进来直接就是台，别停在主题列表）：
-       上次的主题 + 选到哪张 + 在哪个台 */
-    const last = cfg?.last;
-    if (last?.session && list.some((s) => s.name === last.session)) {
-      await get().enterSession(last.session, { silent: true });
-      set({ mode: last.mode === 'grade' ? 'grade' : 'pick', cur: last.cur || 0 });
+       上次的主题 + 选到哪张 + 在哪个台（平铺键，见 saveLast 注释） */
+    const lastSession = cfg?.lastSession;
+    if (lastSession && list.some((s) => s.name === lastSession)) {
+      await get().enterSession(lastSession, { silent: true });
+      set({
+        mode: cfg?.lastMode === 'grade' ? 'grade' : 'pick',
+        cur: Number(cfg?.lastCur) || 0,
+      });
     }
   },
 
