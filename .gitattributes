@@ -1,0 +1,9 @@
+# ★ Windows 批处理必须用 CRLF 换行 —— 用 LF 的话 cmd.exe 会静默失败
+#   （09-14 踩过：双击「启动svStudio.bat」黑窗口一闪就没了，
+#    排查半天以为是 Electron 的错，其实是这个文件是 LF 换行）。
+#   这里钉死：任何 .bat/.cmd 一律 CRLF，且**不许**被 git 的 autocrlf 改来改去。
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# 其余文本文件按仓库现状走（避免整库 diff 噪声）
+*       text=auto
