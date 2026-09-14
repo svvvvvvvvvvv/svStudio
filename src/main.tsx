@@ -4,6 +4,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { Theme } from '@radix-ui/themes';
 import { App } from './components/App';
+import { API } from './api';
 import { applyThemeVars } from './theme/apple';
 
 /* 把我们那套苹果风变量写进 :root（给图墙/分屏/悬浮预览这些自定义部分用；
@@ -18,7 +19,7 @@ const t0 = Date.now();
 function log(line: string) {
   try {
     const dt = ((Date.now() - t0) / 1000).toFixed(2);
-    (window as any).api?.logLine?.(`+${dt}s ${line}`);
+    API.logLine(`+${dt}s ${line}`);
   } catch { /* 日志失败不影响主流程 */ }
 }
 

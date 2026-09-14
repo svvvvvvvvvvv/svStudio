@@ -12,6 +12,8 @@
 declare global {
   interface Window {
     api: {
+      /** 渲染层日志（09-15 新增）：黑屏时助理读 _debug/_logs/svstudio_render.log */
+      logLine: (line: string) => Promise<boolean>;
       getConfig: () => Promise<any>;
       setConfig: (patch: any) => Promise<any>;
       pickDirectory: () => Promise<string | null>;
@@ -179,6 +181,9 @@ function api() {
 }
 
 export const API = {
+  /** 渲染层日志：写到 _debug/_logs/svstudio_render.log（黑屏定位用） */
+  logLine: (line: string) => api().logLine(line),
+
   /* 配置 */
   getConfig: () => api().getConfig(),
   setConfig: (patch: any) => api().setConfig(patch),

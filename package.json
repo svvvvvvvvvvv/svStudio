@@ -8,6 +8,10 @@
     "ui:dev": "vite",
     "ui:build": "vite build",
     "ui:watch": "vite build --watch",
+    "check": "node _check/ui_smoke.mjs && node _check/layout_check.mjs",
+    "check:static": "node _check/ui_smoke.mjs",
+    "check:layout": "node _check/layout_check.mjs",
+    "verify": "npx tsc --noEmit && vite build && node _check/ui_smoke.mjs && node _check/layout_check.mjs",
     "build": "vite build && electron-builder --win",
     "build:mac": "vite build && electron-builder --mac"
   },
