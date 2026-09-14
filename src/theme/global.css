@@ -12,6 +12,15 @@ html, body, #root {
   margin: 0;
 }
 
+/* ★★ 关键修复（09-15「底栏不在」的真根因）：
+   Radix <Theme> 会渲染一层 div.radix-themes 包住整棵树，这层**默认没有高度**
+   ⇒ 它下面所有 height:100% 全部无法解析（父没有确定高度，100% 退化成 auto）
+   ⇒ 整棵树由内容撑开 ⇒ 大图把底栏/星级/EXIF 顶出视口。
+   这层必须显式撑满，整条 100% 链路才通。 */
+.radix-themes {
+  height: 100%;
+}
+
 body {
   background: var(--bg, #1c1c1e);
   color: var(--text, #d1d1d6);
