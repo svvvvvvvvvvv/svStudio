@@ -52,12 +52,31 @@ _SF = [None]          # 懒加载的 spektrafilm 模块
 
 
 def _sf():
-    """懒加载 spektrafilm（**注意**：必须能找到它的 src 目录）。"""
+    """懒加载 spektrafilm（**注意**：必须能找到它的 src 目录）。
+
+    找的顺序（第一个存在的胜出）：
+      ① 环境变量 `SPEKTRAFILM_ROOT`
+      ② `<本仓库根>/_tools/spektrafilm/src`       ← 仓库自带（vendor 进来的，clone 完就有）
+      ③ `<本仓库根的上级>/_tools/spektrafilm/src` ← 老布局（引擎当年住在 摄影助手/svFilm 时用的）
+    都没有 ⇒ 直接报清楚该怎么办，别让它冒一个莫名其妙的 ImportError。
+    """
     if _SF[0] is None:
-        root = os.environ.get('SPEKTRAFILM_ROOT') or os.path.join(
-            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-            '_tools', 'spektrafilm', 'src')
-        if os.path.isdir(root) and root not in sys.path:
+        here = os.path.abspath(__file__)
+        repo = os.path.dirname(os.path.dirname(here))          # .../svFilm（仓库根）
+        cands = [
+            os.environ.get('SPEKTRAFILM_ROOT'),
+            os.path.join(repo, '_tools', 'spektrafilm', 'src'),
+            os.path.join(os.path.dirname(repo), '_tools', 'spektrafilm', 'src'),
+        ]
+        root = next((c for c in cands if c and os.path.isdir(c)), None)
+        if root is None:
+            raise RuntimeError(
+                '找不到 spektrafilm（真卷要用它）。三个办法任选一个：\n'
+                '  ① pip install -e <spektrafilm 目录>\n'
+                '  ② 设环境变量 SPEKTRAFILM_ROOT=<spektrafilm>/src\n'
+                '  ③ 把本仓库 clone 完整（自带 _tools/spektrafilm/）\n'
+                '下面这些位置都试过了，一个都不存在：\n    ' + '\n    '.join(str(c) for c in cands))
+        if root not in sys.path:
             sys.path.insert(0, root)
         from spektrafilm.runtime import init_params, simulate    # noqa: E402
         _SF[0] = (init_params, simulate)

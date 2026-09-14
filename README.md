@@ -35,18 +35,16 @@ npm run ui:build            # 构建界面产物（renderer/dist/）
 双击 启动svStudio.bat        # 选片台直接能用；调色台点「渲染」会自己把引擎拉起来
 ```
 
-引擎需要一份装了 `spektrafilm` 依赖（`colour` / `rawpy`）的 Python：
+引擎需要一份装了这些的 Python（`colour` / `rawpy` / `numpy` / `Pillow` / `opencv-python`）：
 
 ```bash
-pip install colour-science rawpy
-pip install -e /path/to/spektrafilm     # 真卷引擎，CC BY-SA 4.0
+pip install colour-science rawpy numpy Pillow opencv-python
 ```
 
-- 有了这份 venv，**真卷**（portra400 等）才能渲；只有 `neutral` 不需要它。
-- `启动调色台.bat` 里的 `PY` 变量是**作者本机的 venv 路径**，换机器改那一行即可
-  （写错了它会当场报「这份 Python 里没有 colour 库」）。
-- 想自己指定 spektrafilm 的位置：设环境变量 `SPEKTRAFILM_ROOT=<...>/spektrafilm/src`。
-  引擎默认会去找 `<svFilm 仓库的上级>/_tools/spektrafilm/src`（作者的目录布局）。
+- 真卷引擎 **spektrafilm 已经随仓库带在 `svFilm/_tools/spektrafilm/`**，不用自己装；
+  想用别处的，设 `SPEKTRAFILM_ROOT=<...>/spektrafilm/src` 覆盖。
+- 有了这份 Python，**真卷**（portra400 等）才能渲；只有 `neutral` 不需要它。
+- 用哪份 Python 见下面「引擎用哪份 Python」。
 
 ### 改完怎么自检
 

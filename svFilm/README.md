@@ -8,15 +8,13 @@
 ## 跑起来之前
 
 ```bash
-# ① 依赖（真卷必须，普通脚本也要）
+# 只装这些 —— 真卷引擎 spektrafilm 已经随仓库带在 _tools/spektrafilm/，不用自己装
 pip install numpy Pillow opencv-python rawpy colour-science
-# ② 真卷引擎 spektrafilm（CC BY-SA 4.0，本仓库不复制它的代码，只 import）
-pip install -e /path/to/spektrafilm
 ```
 
-⚠ **真卷（portra400 等）要 import `spektrafilm`**。找它的顺序：
-① 环境变量 `SPEKTRAFILM_ROOT` → ② 默认 `<本仓库上级>/_tools/spektrafilm/src`。
-只要 `import spektrafilm` 能成功（例如上面 `pip install -e` 过），本目录搬到哪都能跑。
+⚠ 真卷（portra400 等）要 import `spektrafilm`。引擎找它的顺序（`spektra.py` 的 `_sf()`）：
+① 环境变量 `SPEKTRAFILM_ROOT` → ② **`_tools/spektrafilm/src`（仓库自带，默认走这条）**
+→ ③ 上一级的 `_tools/spektrafilm/src`。三个都没有会直接报错、并列出试过的路径。
 
 自检：`python -m svFilm.selftest`（242 项全绿算过）。
 
