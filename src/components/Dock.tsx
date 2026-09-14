@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { API, Photo } from '../api';
 import { ratingKey, useStore, visiblePhotos } from '../store/useStore';
+import { HoverPreview } from './HoverPreview';
 
 /**
  * ★★ 底栏（横向缩略图条）—— 用 **react-virtuoso** 做虚拟滚动。
@@ -92,6 +93,7 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
   const ratings = useStore((s) => s.ratings);
   const sessionName = useStore((s) => s.sessionName);
   const setCur = useStore((s) => s.setCur);
+  const hostRef = useRef<HTMLDivElement>(null);
 
   // 调色台只收 ★≥1（SV 09-14 定死）
   const list = visiblePhotos(photos, sessionName, ratings, filter, mode === 'grade');
@@ -108,7 +110,9 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
 
   return (
     <div
+      ref={hostRef}
       style={{
+        position: 'relative',
         flex: '0 0 auto',
         height: 108,
         borderTop: '1px solid var(--line)',
@@ -116,6 +120,8 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
         padding: '6px 0',
       }}
     >
+      {/* ★ 悬浮大预览（高频值走 useRef，零重渲染） */}
+      <HoverPreview containerRef={hostRef} />
       <Virtuoso
         ref={virtuoso}
         horizontalDirection
@@ -126,6 +132,7 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
           return (
             <div
               onClick={() => setCur(gi)}
+              data-idx={gi}
               style={{ padding: '0 3px' }}
             >
               <Thumb p={photos[gi]} active={gi === cur} />

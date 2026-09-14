@@ -1,13 +1,21 @@
 import { useEffect, useRef } from 'react';
 import { Box, Flex, Text } from '@radix-ui/themes';
+import type { VirtuosoHandle } from 'react-virtuoso';
 import { useStore } from '../store/useStore';
 import { TopBar } from './TopBar';
 import { HomeView } from './HomeView';
 import { Dock } from './Dock';
 import { GradePanel } from './GradePanel';
+import { Viewer } from './Viewer';
+import { Stars, FilterChips, ExifBar } from './Stars';
 
 /**
- * 主布局：顶栏 + [左：会话列表] + [中：大图/分屏] + [右：参数] + 底栏
+ * 主布局：顶栏 + [中：大图/分屏 + 底栏] + [右：参数]
+ *
+ * ★ 老代码最大的结构性问题在这里被解决：
+ *   选片台大图和调色台分屏**两套都是 absolute+inset**，老代码切模式时只关掉一套，
+ *   结果出「三层叠影」。React 下不存在这个问题 —— 二选一渲染，
+ *   不显示的那套压根不会进 DOM。
  */
 export function App() {
   const loadSessions = useStore((s) => s.loadSessions);
@@ -19,18 +27,17 @@ export function App() {
   const toast = useStore((s) => s.toast);
   const photos = useStore((s) => s.photos);
   const cur = useStore((s) => s.cur);
-  const sessionPath = useStore((s) => s.sessionPath);
   const setCur = useStore((s) => s.setCur);
   const rate = useStore((s) => s.rate);
 
-  const virtuoso = useRef<import('react-virtuoso').VirtuosoHandle>(null);
+  const virtuoso = useRef<VirtuosoHandle>(null);
 
   useEffect(() => {
     loadSessions();
     loadEngine();
   }, [loadSessions, loadEngine]);
 
-  /* 键盘：←/→ 翻页，1~5 打星（老代码 bindUI 里那套） */
+  /* 键盘：←/→ 翻页，1~5 打星，0 清星 */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!photos.length) return;
@@ -44,60 +51,43 @@ export function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [photos.length, cur, setCur, rate]);
 
-  const curPhoto = photos[cur];
-
   return (
     <Flex direction="column" style={{ height: '100%' }}>
       <TopBar />
 
       <Flex style={{ flex: 1, minHeight: 0 }}>
-        {/* 主区 */}
-        <Box style={{ flex: 1, minWidth: 0, display: 'flex' }}>
+        {/* 主区：大图/分屏 + 底栏 */}
+        <Flex direction="column" style={{ flex: 1, minWidth: 0 }}>
           {!sessionName ? (
             <Box style={{ flex: 1, overflow: 'auto' }}>
               <HomeView />
             </Box>
           ) : (
-            <Flex
-              direction="column"
-              style={{ flex: 1, minWidth: 0 }}
-            >
-              {/* 中间：大图 / 分屏 */}
-              <Box
+            <>
+              <Viewer />
+
+              {/* 星级 + 筛选（调色台不显示筛选：那边定死只收 ★≥1） */}
+              <Flex
+                align="center"
+                gap="3"
+                px="3"
+                py="2"
                 style={{
-                  flex: 1,
-                  minHeight: 0,
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  background: 'var(--bg)',
-                  padding: 18,
-                  position: 'relative',
+                  borderTop: '1px solid var(--line)',
+                  background: 'var(--bg-panel)',
+                  flex: '0 0 auto',
                 }}
               >
-                {curPhoto ? (
-                  <img
-                    src={
-                      'file:///' +
-                      (sessionPath + '\\' + curPhoto.rel).replace(/\\/g, '/')
-                    }
-                    alt={curPhoto.name}
-                    style={{
-                      maxWidth: '100%',
-                      maxHeight: '100%',
-                      objectFit: 'contain',
-                      borderRadius: 'var(--r-md)',
-                    }}
-                  />
-                ) : (
-                  <Text style={{ color: 'var(--text-dim)' }}>没有照片</Text>
-                )}
-              </Box>
+                <Stars big />
+                <Box style={{ flex: 1 }} />
+                {mode === 'pick' && <FilterChips />}
+              </Flex>
 
+              <ExifBar />
               <Dock virtuoso={virtuoso} />
-            </Flex>
+            </>
           )}
-        </Box>
+        </Flex>
 
         {/* 右栏：调色台才显示 */}
         {mode === 'grade' && sessionName && <GradePanel />}
