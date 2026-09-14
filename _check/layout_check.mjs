@@ -40,6 +40,36 @@ if (!fs.existsSync(PAGE)) {
   process.exit(0);
 }
 
+/* ★★ 这个检测跑的是**构建产物**（renderer/dist/index.js），不是 TS 源码。
+   改了 src/ 却忘了 build ⇒ 它测的还是旧包 ⇒ 自检永远绿。
+   （09-15 验证"这张网能不能抓 bug"时就栽在这 —— 故意把 bug 放回去、跑检测，居然全绿。）
+   `npm run verify` 里是先 build 再测的，单独跑本脚本时靠这道守卫拦住。 */
+const BUNDLE = path.join(ROOT, 'renderer', 'dist', 'index.js');
+if (!fs.existsSync(BUNDLE)) {
+  console.log('  ✗ 没有构建产物 renderer/dist/index.js —— 先 npm run ui:build');
+  process.exit(1);
+}
+const newestInput = (() => {
+  let t = 0;
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) walk(f);
+      else t = Math.max(t, fs.statSync(f).mtimeMs);
+    }
+  };
+  walk(path.join(ROOT, 'src'));
+  for (const f of ['main.js', 'preload.js', 'vite.config.ts', 'renderer/index.html']) {
+    const p = path.join(ROOT, f);
+    if (fs.existsSync(p)) t = Math.max(t, fs.statSync(p).mtimeMs);
+  }
+  return t;
+})();
+if (newestInput > fs.statSync(BUNDLE).mtimeMs) {
+  console.log('  ✗ 构建产物比源码旧（src/ 更新过）⇒ 先 npm run ui:build，否则测的是旧包');
+  process.exit(1);
+}
+
 const browser = await chromium.launch({ executablePath: EDGE, headless: true });
 const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 } });
 const page = await ctx.newPage();
@@ -73,24 +103,36 @@ await page.addInitScript(() => {
     getExif: async () => ({ camera: 'X-T4', lens: 'XF35', iso: 400, fnum: 1.4, ss: '1/250', fl: '35mm' }),
     saveRatings: async () => true,
     engineHealth: async () => ({ ok: true }),
+    /* ⚠⚠ 这里的形状**必须照 main.js 的 IPC 处理器抄**。
+       09-15 就是 mock 跟着前端一起错（前端读 `{stocks}` / `r.id` / `r.bytes`，
+       而 main.js 实际给 `{items}` / `items[0].id` / `image`）⇒ 卷基准列表全空、
+       一张图都渲染不出来，**自检却全绿**。改 main.js 的返回，必须同步改这里。 */
     engineStocks: async () => ({
-      stocks: [
+      ok: true,
+      items: [
         { name: 'portra400', label: 'Portra 400', desc: '暖调', spek: true },
         { name: 'fuji_c200', label: 'C200', desc: '青绿', spek: true },
         { name: 'neutral', label: '中性', desc: '原样', spek: false },
       ],
     }),
-    engineBases: async () => ({ bases: [{ name: 'all', label: '全对齐' }, { name: 'hue', label: '只色相' }] }),
+    engineBases: async () => ({
+      ok: true,
+      items: [
+        { name: 'BASE_NONE', label: '不套基准', desc: '什么都不做' },
+        { name: 'BASE_FULL', label: '全对齐', desc: '全段对齐' },
+      ],
+    }),
     engineParams: async () => ({
-      params: [
+      ok: true,
+      items: [
         { k: 'SPEK_PE_SHIFT', name: '本张落点', lo: 0.5, hi: 2, step: 0.02, grp: '真卷', spek: true, d: '整张明暗' },
         { k: 'FACE_SPAN_KMAX', name: '脸的层次', lo: 1, hi: 4, step: 0.1, grp: '脸' },
         { k: 'TONE_LIFT', name: '提亮', lo: 0, hi: 1, step: 0.05, grp: '影调', spek: false },
       ],
     }),
-    engineLoad: async () => ({ ok: true, id: 'x1' }),
-    engineBase: async () => ({ bytes: mk(9) }),
-    engineRender: async () => ({ bytes: mk(5) }),
+    engineLoad: async () => ({ ok: true, items: [{ id: 1, path: 'x', ms: 12 }] }),
+    engineBase: async () => ({ ok: true, image: mk(9) }),
+    engineRender: async () => ({ ok: true, image: mk(5) }),
   };
 });
 
@@ -155,9 +197,23 @@ if (await gradeTab.count()) {
   const txt = await page.evaluate(() => document.body.innerText);
   check('切到调色台后出现「胶片卷」', txt.includes('胶片卷'));
   check('出现「成色基准」', txt.includes('成色基准'));
+  /* ★★ 09-15 回归：以前只查“标题在不在”—— 标题当然在，里面的列表是空的。
+     必须查**列表里真的有东西**（拿 mock 里那几条的文案当探针）。 */
+  check('★ 胶片卷列表真有内容（不是空列表）', txt.includes('暖调') || txt.includes('青绿'),
+    '', '卷列表是空的 ⇒ 前端读的字段名跟 main.js 对不上');
+  check('★ 成色基准列表真有内容', txt.includes('不套基准') || txt.includes('全对齐'),
+    '', '基准列表是空的');
   check('★ 真卷下不列「提亮」（不生效的）', !txt.includes('提亮'), '', '列了不该列的滑杆');
   check('列出了「本张落点」', txt.includes('本张落点'));
   check('列出了「脸的层次」', txt.includes('脸的层次'));
+  /* ★★ 端到端：分屏两栏都该拿到图，占位文案应该消失。
+     这条一下就能抓住“装载链断了”（engineLoad 读错字段 / engineBase 读错字段）。 */
+  await page.waitForTimeout(800);
+  const ph = await page.evaluate(
+    () => (document.body.innerText.split('按「渲染」出图').length - 1)
+  );
+  check('★ 分屏两栏都出图了（占位文案应为 0 个）', ph === 0, `占位 ${ph} 个`,
+    `还有 ${ph} 个占位 ⇒ 装载/渲染链断了（engineLoad / engineBase / engineRender 的返回形状）`);
 }
 
 /* ---------- 4. 打星联动 ---------- */

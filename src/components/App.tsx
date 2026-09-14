@@ -23,6 +23,7 @@ import { RenderBar } from './RenderBar';
 export function App() {
   const loadSessions = useStore((s) => s.loadSessions);
   const loadEngine = useStore((s) => s.loadEngine);
+  const ensureEngine = useStore((s) => s.ensureEngine);
   const sessionName = useStore((s) => s.sessionName);
   const mode = useStore((s) => s.mode);
   const busy = useStore((s) => s.busy);
@@ -39,6 +40,13 @@ export function App() {
     loadSessions();
     loadEngine();
   }, [loadSessions, loadEngine]);
+
+  /* ★ 一进调色台就把引擎拉起来（不等到点「渲染」）。
+     开机那一刻引擎通常还没起 ⇒ 上面那次 loadEngine 会失败、卷/基准/滑杆全是空的；
+     以前只能靠「选中一张图」触发 Viewer 里的 ensureEngine，没选中图就是一片空白。 */
+  useEffect(() => {
+    if (mode === 'grade') ensureEngine();
+  }, [mode, ensureEngine]);
 
   /* 键盘：←/→ 翻页，1~5 打星，0 清星 */
   useEffect(() => {

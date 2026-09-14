@@ -77,6 +77,7 @@ function SplitView() {
   const ensureEngine = useStore((s) => s.ensureEngine);
   const autoRender = useStore((s) => s.autoRender);
   const rendering = useStore((s) => s.rendering);
+  const showToast = useStore((s) => s.showToast);
 
   const p: Photo | undefined = photos[cur];
   const [before, setBefore] = useState<string | null>(null);
@@ -95,12 +96,19 @@ function SplitView() {
         if (!(await ensureEngine())) return;
         const full = sessionPath + '\\' + p.rel;
         const r = await API.engineLoad([full]);
-        if (!alive || !r?.id) return;
-        idRef.current = r.id;
-        const b = await API.engineBase(r.id);
-        if (alive && b && (b as { bytes?: string }).bytes) {
-          setBefore((b as { bytes: string }).bytes);
+        // ★ main.js 给的是 { ok, items:[{id,path,ms}|{path,error}] } —— 不是 { id }。
+        const item = r?.items?.[0];
+        if (!alive) return;
+        if (!item?.id) {
+          if (item?.error) showToast('装载失败：' + item.error);
+          else if (r?.error) showToast('装载失败：' + r.error);
+          return;
         }
+        idRef.current = String(item.id);
+        // ★ 原图栏也是 { ok, image }（data:URL），不是 { bytes }
+        const b = await API.engineBase(idRef.current);
+        if (alive && b?.image) setBefore(b.image);
+        else if (alive && b?.error) showToast('原图取不到：' + b.error);
       } finally {
         if (alive) setLoading(false);
       }
@@ -127,7 +135,11 @@ function SplitView() {
           base: grade.base,
           params: grade.params || {},
         });
-        if (alive && !cancelled && r?.bytes) setAfter(r.bytes);
+        // ★ 同样：main.js 给的是 { ok, image }（data:URL）
+        if (alive && !cancelled) {
+          if (r?.image) setAfter(r.image);
+          else if (r?.error) showToast('渲染失败：' + r.error);
+        }
       } finally {
         if (alive && !cancelled) setLoading(false);
       }

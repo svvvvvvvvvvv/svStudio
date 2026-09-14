@@ -38,21 +38,21 @@ declare global {
       /* ---- 调色台：svFilm 引擎（本机常驻 HTTP 服务） ---- */
       engineHealth: () => Promise<{ ok: boolean } & Record<string, any>>;
       engineStart: () => Promise<any>;
-      engineStocks: () => Promise<{ stocks: Stock[] }>;
-      engineBases: () => Promise<{ bases: Base[] }>;
-      engineParams: () => Promise<{ params: ParamDef[] }>;
+      engineStocks: () => Promise<{ ok?: boolean; items: Stock[]; error?: string }>;
+      engineBases: () => Promise<{ ok?: boolean; items: Base[]; error?: string }>;
+      engineParams: () => Promise<{ ok?: boolean; items: ParamDef[]; error?: string }>;
       engineScan: (
         dir: string,
         exts: string[],
         limit: number
-      ) => Promise<{ files: string[] }>;
+      ) => Promise<{ ok?: boolean; files: string[]; n?: number }>;
       engineLoad: (paths: string[]) => Promise<LoadResult>;
-      engineBase: (id: string) => Promise<{ bytes: string } | { ok: false }>;
-      engineRender: (id: string, opts: RenderOpts) => Promise<RenderResult>;
+      engineBase: (id: string) => Promise<ImageResult>;
+      engineRender: (id: string, opts: RenderOpts) => Promise<ImageResult>;
       engineRawUrl: (
         sessionPath: string,
         rel: string
-      ) => Promise<string | null>;
+      ) => Promise<ImageResult>;
       /* ---- 调色参数按主题存 ---- */
       getGrade: (themeName: string) => Promise<GradeState | null>;
       setGrade: (themeName: string, grade: GradeState) => Promise<boolean>;
@@ -148,10 +148,35 @@ export interface ParamDef {
   [k: string]: any;
 }
 
+/**
+ * ★★ 引擎侧返回形状的**唯一契约 = `main.js` 的 IPC 处理器**。
+ *    别在这个文件里自己发明字段（09-15 踩过：前端读 `r.id` / `r.bytes` / `{stocks}`，
+ *    而 main.js 实际给的是 `{items:[{id,…}]}` / `{image}` / `{items:[…]}`
+ *    ⇒ 卷/基准列表全空、一张图都渲染不出来，而且 mock 也跟着错、自检全绿）。
+ *
+ *    engine-load                      → { ok, items: [{id,path,ms} | {path,error}] }
+ *    engine-base / -render / -raw-url → { ok, image }   （image = data:URL 字符串）
+ *    engine-stocks / -bases / -params → { ok, items: [...] }
+ *    engine-scan                      → { ok, files, n }
+ */
+export interface LoadItem {
+  id?: number;
+  path?: string;
+  ms?: number;
+  error?: string;
+}
+
 export interface LoadResult {
   ok?: boolean;
-  id?: string;
-  [k: string]: any;
+  items?: LoadItem[];
+  error?: string;
+}
+
+export interface ImageResult {
+  ok?: boolean;
+  /** data:image/...;base64,... —— 直接塞 <img src> */
+  image?: string;
+  error?: string;
 }
 
 export interface RenderOpts {
@@ -163,8 +188,8 @@ export interface RenderOpts {
 
 export interface RenderResult {
   ok?: boolean;
-  bytes?: string;
-  [k: string]: any;
+  image?: string;
+  error?: string;
 }
 
 export interface GradeState {

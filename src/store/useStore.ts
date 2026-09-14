@@ -214,12 +214,14 @@ export const useStore = create<AppState>((set, get) => ({
         API.engineBases(),
         API.engineParams(),
       ]);
+      // ★ main.js 给的键是 `items`（不是 `stocks`/`bases`/`params`）—— 09-15 名字对不上，
+      //   三个列表永远是空的，卷/基准/滑杆全不显示。
       set({
         engineOk: true,
         engineMsg: '',
-        stocks: s?.stocks || [],
-        bases: b?.bases || [],
-        paramDefs: p?.params || [],
+        stocks: s?.items || [],
+        bases: b?.items || [],
+        paramDefs: p?.items || [],
       });
     } catch {
       set({ engineOk: false, engineMsg: '引擎未启动' });

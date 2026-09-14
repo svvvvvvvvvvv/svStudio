@@ -139,6 +139,40 @@ check('★ 调试产出根由 debugDir() 决定（配置里配，默认不写死
 /* ★ 同一类问题：所有相对 __dirname 的路径，目录不存在就得建 */
 check('★ 引擎 cwd 用仓库内相对路径（不是写死 E:\\）', /ENGINE_CWD\s*=\s*path\.join\(__dirname/.test(read('main.js')));
 
+/* ---------- 7. 引擎 IPC 返回形状的「两侧名字对得上」 ---------- */
+/* ★★ 09-15 真实事故：main.js 给 `{ items:[{id}] }` / `{ image }`，
+   而前端读 `{stocks}` / `r.id` / `r.bytes` ⇒ 卷/基准列表全空、一张图都渲染不出来，
+   而且**布局自检里的 mock 也跟着前端一起错**，所以全绿。
+   这里把两侧的 key 钉死，谁也改不歪。 */
+console.log('\n[7] 引擎返回形状（main.js ↔ 前端）');
+const mainJsSrc = read('main.js');
+const storeSrc = read('src/store/useStore.ts');
+const viewerSrc = read('src/components/Viewer.tsx');
+const listChans = (mainJsSrc.match(/return r\.ok \? \{ ok: true, items:/g) || []).length;
+check('★ main.js 列表类通道返回 items（stocks/bases/params/load）', listChans >= 4, `${listChans} 处`);
+const imgChans = (mainJsSrc.match(/ok: true, image:/g) || []).length;
+check('★ main.js 图片类通道返回 image（base/render/raw-url）', imgChans >= 3, `${imgChans} 处`);
+check(
+  '★ useStore 读的是 .items（不是自造的 .stocks/.bases/.params）',
+  /s\?\.items/.test(storeSrc) && /b\?\.items/.test(storeSrc) && /p\?\.items/.test(storeSrc),
+  '',
+  '读错 key ⇒ 卷/基准/滑杆列表永远空'
+);
+check(
+  '★ 前端没再读不存在的 .bytes / r?.id',
+  !/\.bytes/.test(viewerSrc) && !/r\?\.id\b/.test(viewerSrc),
+  '',
+  '又读回了 main.js 不存在的字段'
+);
+check('★ Viewer 从 items[0] 拿 id', /items\?\.\[0\]/.test(viewerSrc));
+check(
+  '★ 布局自检的 mock 也返回 items/image（不再比前端还错）',
+  /items: \[/.test(read('_check/layout_check.mjs')) &&
+    /engineRender: async \(\) => \(\{ ok: true, image:/.test(read('_check/layout_check.mjs')),
+  '',
+  'mock 形状跟 main.js 不一致，会骗过自检'
+);
+
 /* ---------- 汇总 ---------- */
 console.log('\n' + '-'.repeat(50));
 if (fail === 0) {
