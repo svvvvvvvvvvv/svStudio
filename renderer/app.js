@@ -234,9 +234,12 @@ function renderDock() {
   );
 
   const items = [];
+  const gradeOnly = mode === 'grade';   // ★ 调色台：底栏固定只列 ★≥1 的片
   photos.forEach((p, i) => {
     const v = ratings[curKey(p)];
-    if (!matchFilter(v)) return;
+    if (gradeOnly) {
+      if (!(v >= 1)) return;
+    } else if (!matchFilter(v)) return;
     items.push({ p, i, v });
   });
 
@@ -308,12 +311,15 @@ async function showAt(i) {
     // 等到新图像素 ready（fire-and-forget 不阻塞下面的渲染）：
     // 旧图层保持 .show 可见，新图层在底部等 decode。一旦 ready → 加 .show，
     // 旧图层同时 remove .show → CSS transition 同时淡出/淡入，cross-fade。
+    // ⚠ 调色台里不加 .show：那边看的是左右分屏，单张大图必须保持藏起来。
     try {
       await newImg.decode();
     } catch (e) { /* 解码失败也淡入，至少有图 */ }
     // 同一帧内做切换，让 transition 真正生效（不 microtask 推迟）
-    newImg.classList.add('show');
-    oldImg.classList.remove('show');
+    if (mode !== 'grade') {
+      newImg.classList.add('show');
+      oldImg.classList.remove('show');
+    }
     _bigCur = newId;
   } else {
     // url 为空：什么都不做（旧图保留）
@@ -1130,9 +1136,28 @@ function applyMode(m, opts) {
   $('#gradePane').classList.toggle('hidden', !isGrade);
   $('#renderBar').classList.toggle('hidden', !isGrade);
   $('#splitView').classList.toggle('hidden', !isGrade);
-  // 选片模式：大图区回到 A/B 交叉淡入（分屏藏起来）
-  if (!isGrade) { $('#splitBefore').removeAttribute('src'); $('#splitAfter').removeAttribute('src'); }
+  // ★ 调色台：底栏过滤条藏掉。那边定死只收 ★≥1 的片，
+  //   留着「全部 / 未评」这些档只会让人以为能切过去 —— 列出来的跟能调的会对不上。
+  $('#filterChips').classList.toggle('hidden', isGrade);
+  // ★★ 选片台的大图（A/B 两层交叉淡入那套）在调色台必须【整层藏掉】。
+  //    否则它会和分屏叠在一起 —— SV 09-14 看到的就是这个「三层叠影」：
+  //    底下是选片台的大图在亮着，上面分屏再半透明盖一层。
+  //    分屏自己是左右两栏，跟单张大图本来就不该同时存在。
+  if (isGrade) {
+    $('#bigImgA').classList.remove('show');
+    $('#bigImgB').classList.remove('show');
+  }
+  // 选片模式：分屏藏起来、把 src 清掉（省内存；回来时会重新载），
+  //            并把大图层恢复显示（调色台里把它藏了）
+  if (!isGrade) {
+    $('#splitBefore').removeAttribute('src');
+    $('#splitAfter').removeAttribute('src');
+    const cur = $('#bigImg' + _bigCur);
+    if (cur && cur.getAttribute('src')) cur.classList.add('show');
+    else if (idx >= 0) showAt(idx);          // 还没载过 ⇒ 重新出一张
+  }
   $('#rateOverlay').classList.toggle('hidden', isGrade);   // 调色模式不挡打星、也省地方
+  if (curSession) renderDock();   // ★ 底栏内容按模式不同（调色台只列有星的）⇒ 切模式要重建
   if (!opts || !opts.silent) window.api.setConfig({ mode: mode });
   if (isGrade) {
     if (!grade && curSession) { grade = gradeOf(curSession.name); paintGradeParams(); }

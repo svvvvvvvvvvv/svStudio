@@ -274,6 +274,9 @@ html, body {
   display: flex; gap: 10px;
   align-items: stretch; justify-content: center;
   min-height: 0;
+  /* ★ 给分屏一层不透明底：底下若还有点残留（切模式的瞬间），不会透出来变叠影 */
+  background: var(--bg);
+  z-index: 2;
 }
 .sp-side {
   position: relative;
@@ -314,6 +317,15 @@ html, body {
 
 /* ---------- 调色台：右栏（真卷 + 参数） ---------- */
 .grade-pane { width: 268px; }
+/* ★ 调色台的分组标题（胶片卷 / 成色基准 / 参数）要看得清：
+   之前是全局 .param-head 的暗灰，叠在深底上几乎糊成一片（SV 09-14 截图反馈）。 */
+.grade-pane .param-head.sub {
+  color: var(--text);
+  font-weight: 600;
+  letter-spacing: .8px;
+  opacity: .92;
+}
+.grade-pane .g-desc { color: #b6b6c2; }   /* 说明文字也提一档 */
 .g-photo {
   font-size: 12.5px; color: var(--accent);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -346,7 +358,7 @@ html, body {
 .g-select:focus { border-color: rgba(34,211,238,.5); }
 .g-select option { background: #1b1b21; color: var(--text); }
 .g-desc {
-  font-size: 11px; color: var(--text-dim);
+  font-size: 11px; color: #b6b6c2;
   line-height: 1.45; margin-top: 6px;
   min-height: 15px;
 }
@@ -361,7 +373,7 @@ html, body {
   margin-left: auto; color: var(--accent);
   font-variant-numeric: tabular-nums; font-size: 11.5px;
 }
-.g-pr-d { font-size: 10.5px; color: var(--text-dim); line-height: 1.4; }
+.g-pr-d { font-size: 10.5px; color: #a8a8b4; line-height: 1.4; }
 .g-range {
   -webkit-appearance: none; appearance: none;
   width: 100%; height: 3px;
