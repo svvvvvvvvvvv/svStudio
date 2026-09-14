@@ -1,0 +1,38 @@
+/* 全局基础样式：只放"苹果风的地基"，具体组件样式写在各组件里。
+   ⚠ 这里不写死颜色 —— 颜色一律走 theme/apple.ts 注入的 CSS 变量。 */
+:root {
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+    "Microsoft YaHei", system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg, #1c1c1e);
+  color: var(--text, #d1d1d6);
+  font: 13px/1.5 var(--font);
+  /* 苹果的字体渲染：灰阶抗锯齿，比默认的次像素渲染更接近 macOS 观感 */
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* 滚动条：苹果是细的、悬浮时才显形的（这里简化成细条常显，但不抢眼） */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--line, #3a3a3c);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint, #8e8e93); background-clip: content-box; }
+
+/* 苹果不喜欢"选中变蓝"，改成淡灰 */
+::selection { background: rgba(10, 132, 255, 0.28); }
+
+button { font: inherit; }

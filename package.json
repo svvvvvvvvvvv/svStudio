@@ -1,18 +1,33 @@
 {
   "name": "svstudio",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "svStudio 摄影工作台 - 选片台（打星选片·按星级归位）+ 调色台（真卷/参数实时渲染）二合一",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
-    "build": "electron-builder --win",
-    "build:mac": "electron-builder --mac"
+    "ui:dev": "vite",
+    "ui:build": "vite build",
+    "ui:watch": "vite build --watch",
+    "build": "vite build && electron-builder --win",
+    "build:mac": "vite build && electron-builder --mac"
   },
   "author": "SV",
   "license": "MIT",
+  "dependencies": {
+    "@radix-ui/themes": "^3.1.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-virtuoso": "^4.10.4",
+    "zustand": "^5.0.0"
+  },
   "devDependencies": {
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.2",
     "electron": "^33.4.11",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.9"
   },
   "build": {
     "appId": "com.sv.svstudio",
