@@ -50,9 +50,12 @@ interface AppState {
   engineOk: boolean;
   engineMsg: string;
   grade: GradeState;
-  /** 调色台：换图/换卷自动出图（老版 #chkAuto） */
-  autoRender: boolean;
-  rendering: boolean;
+  /** 有没有一发渲染正在跑（分屏置位；按钮和状态栏据此显示「出图中…」） */
+  renderBusy: boolean;
+  /** 「请渲染」的次数。★ 09-15 SV 定的策略：**任何操作都不自动出图**，
+   *  只有 ① 点「渲染」按钮 ② 切进/进入调色台 会让它 +1；分屏盯着它出图。
+   *  （用「次数」而不是 boolean —— 连点两次也能各触发一次，不会被合并掉。） */
+  renderTick: number;
 
   /* ---- actions ---- */
   setReady: (v: boolean) => void;
@@ -70,8 +73,9 @@ interface AppState {
   loadEngine: () => Promise<void>;
   ensureEngine: () => Promise<boolean>;
   setGrade: (patch: Partial<GradeState>) => void;
-  setAutoRender: (v: boolean) => void;
-  setRendering: (v: boolean) => void;
+  setRenderBusy: (v: boolean) => void;
+  /** 请分屏出一次图（右栏「渲染」按钮 / 切进调色台 都调它） */
+  requestRender: () => void;
 }
 
 /** 星级键：老代码 `keyForExif` 是 `sessionName + '||' + photo.name`，保持一致 */
@@ -115,8 +119,8 @@ export const useStore = create<AppState>((set, get) => ({
   engineOk: false,
   engineMsg: '',
   grade: { stock: 'portra400', base: 'all', params: {} },
-  autoRender: true,
-  rendering: false,
+  renderBusy: false,
+  renderTick: 0,
 
   setReady: (v) => set({ ready: v }),
   setLibRoot: (v) => set({ libRoot: v }),
@@ -254,8 +258,8 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setGrade: (patch) => set({ grade: { ...get().grade, ...patch } }),
-  setAutoRender: (v) => set({ autoRender: v }),
-  setRendering: (v) => set({ rendering: v }),
+  setRenderBusy: (v) => set({ renderBusy: v }),
+  requestRender: () => set((s) => ({ renderTick: s.renderTick + 1 })),
 }));
 
 /**

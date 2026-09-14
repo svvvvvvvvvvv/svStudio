@@ -38,6 +38,10 @@ function FilmIcon({ name, size = 40 }: { name: string; size?: number }) {
  * 调色台右栏。
  * ★ 这里是 React 化收益最明显的地方：老代码要 7 个 paintXxx 函数手搓 DOM，
  *   现在只是"把状态映射成 JSX"，参数变了界面自动更新，不用管重画时机。
+ *
+ * ★ 09-15 SV 定的渲染策略：**改任何东西都不自动出图**（换卷/换基准/拉滑杆/换图都不动画面），
+ *   只有两个触发点 —— ① 这里的「渲染」按钮 ② 切进/进入调色台。
+ *   所以按钮放在最显眼的「胶片卷」下面。
  */
 export function GradePanel() {
   const stocks = useStore((s) => s.stocks);
@@ -46,6 +50,8 @@ export function GradePanel() {
   const grade = useStore((s) => s.grade);
   const setGrade = useStore((s) => s.setGrade);
   const engineOk = useStore((s) => s.engineOk);
+  const renderBusy = useStore((s) => s.renderBusy);
+  const requestRender = useStore((s) => s.requestRender);
 
   const curStock = grade.stock || 'portra400';
   const isSpek = useMemo(
@@ -156,6 +162,25 @@ export function GradePanel() {
         <Text size="1" style={{ color: 'var(--text-dim)', marginTop: 6 }}>
           {stocks.find((s) => s.name === curStock)?.desc || ''}
         </Text>
+
+        {/* ★★ 「渲染」按钮（SV 09-15：放到胶片卷下面）。
+            改卷/改基准/拉滑杆/换图**都不会自动出图** —— 按下它才出，切进调色台时也会出一次。 */}
+        <Button
+          mt="3"
+          size="2"
+          variant="solid"
+          disabled={renderBusy}
+          onClick={requestRender}
+          style={{ width: '100%', cursor: renderBusy ? 'default' : 'pointer' }}
+        >
+          {renderBusy ? '出图中…' : '渲染'}
+        </Button>
+        <Text
+          size="1"
+          style={{ color: 'var(--text-faint)', marginTop: 5, display: 'block' }}
+        >
+          改完卷 / 基准 / 参数，按这里出图（不会自动出）
+        </Text>
       </div>
 
       {/* ---- 成色基准（竖排单选） ---- */}
@@ -169,7 +194,7 @@ export function GradePanel() {
         </Text>
         <Flex direction="column" gap="1" mt="1">
           {bases.map((b) => {
-            const on = (grade.base || 'all') === b.name;
+            const on = grade.base === b.name;
             return (
               <button
                 key={b.name}

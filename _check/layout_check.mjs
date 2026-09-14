@@ -81,8 +81,10 @@ page.on('console', (m) => { if (m.type() === 'error') pageErrors.push('console: 
 
 /* 注入 mock api —— 让界面在没有 Electron 时也能渲染出来 */
 await page.addInitScript(() => {
+  /* ★ 故意做成**竖构图**（3:4）+ 尺寸够大：真片子多是竖的，而"小窗被裁"这个 bug
+     只有在「按宽度缩放后的高度 > 面板可用高度」时才会暴露 ⇒ 横图测不出来。 */
   const mk = (n) => `data:image/svg+xml;utf8,${encodeURIComponent(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="#${((n * 37) % 900 + 100).toString(16)}44"/></svg>`
+    `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="#${((n * 37) % 900 + 100).toString(16)}44"/></svg>`
   )}`;
   window.api = {
     logLine: async () => true,
@@ -188,6 +190,10 @@ check(
 );
 check('底栏有高度', boxes.dock && boxes.dock.h > 20, JSON.stringify(boxes.dock));
 
+/* ★ SV 09-15：底部缩略图要能一眼看出「这张有没有 RAW」 */
+const rawBadges = await page.evaluate(() => document.querySelectorAll('[data-raw]').length);
+check('★ 底栏缩略图有 RAW 角标', rawBadges > 0, `${rawBadges} 个`);
+
 /* ---------- 3. 调色台 ---------- */
 console.log('\n[3] 调色台');
 const gradeTab = page.locator('button', { hasText: '调色台' }).first();
@@ -206,6 +212,15 @@ if (await gradeTab.count()) {
   check('★ 真卷下不列「提亮」（不生效的）', !txt.includes('提亮'), '', '列了不该列的滑杆');
   check('列出了「本张落点」', txt.includes('本张落点'));
   check('列出了「脸的层次」', txt.includes('脸的层次'));
+  /* ★ SV 09-15：「渲染按钮放到胶片卷下」+ 任何操作都不自动出图，只靠这个按钮。 */
+  const rBtn = page.locator('button', { hasText: /^渲染$/ }).first();
+  const rBox = (await rBtn.count()) ? await rBtn.boundingBox() : null;
+  check(
+    '★ 「渲染」按钮在右栏（胶片卷下面）',
+    !!rBox && rBox.x > 1440 - 340,
+    JSON.stringify(rBox),
+    '按钮不在右栏 —— 应该在胶片卷下面'
+  );
   /* ★★ 端到端：分屏两栏都该拿到图，占位文案应该消失。
      这条一下就能抓住“装载链断了”（engineLoad 读错字段 / engineBase 读错字段）。 */
   await page.waitForTimeout(800);
@@ -225,6 +240,66 @@ if ((await stars.count()) >= 3) {
   const t = await page.evaluate(() => document.body.innerText);
   check('打 3 星后顶栏计数变了', /3\s*\/\s*40|3 星/.test(t) || t.includes('★'), t.slice(0, 80).replace(/\n/g, ' '));
 }
+
+/* ---------- 5. 小窗下分屏不能被裁（SV 09-15 报「两张图被裁」） ---------- */
+/* ★ 病因：Pane 里那个装图的内容容器是个 flex 子项，默认 min-height:auto ⇒ **不肯收缩**
+   ⇒ 被图撑得比面板还高 ⇒ 图被外层 overflow:hidden 切掉。
+   这里把窗口调小，逐个量：图必须**整个落在它那个 overflow:hidden 的祖先里**，且长宽比不变。 */
+console.log('\n[5] 小窗下分屏不被裁');
+const SMALL = { width: 1080, height: 620 };
+await page.setViewportSize(SMALL);
+await page.waitForTimeout(700);
+const paneFit = await page.evaluate((vh) => {
+  const clipperOf = (el) => {
+    let n = el.parentElement;
+    while (n) {
+      if (getComputedStyle(n).overflow === 'hidden') return n;
+      n = n.parentElement;
+    }
+    return null;
+  };
+  const out = [];
+  for (const img of document.querySelectorAll('img')) {
+    const alt = img.getAttribute('alt');
+    if (alt !== '原图' && alt !== '调色后') continue;
+    const r = img.getBoundingClientRect();
+    const panel = clipperOf(img);
+    const pr = panel ? panel.getBoundingClientRect() : null;
+    out.push({
+      alt,
+      size: Math.round(r.width) + 'x' + Math.round(r.height),
+      clipped: pr
+        ? r.top < pr.top - 1 || r.bottom > pr.bottom + 1 || r.left < pr.left - 1 || r.right > pr.right + 1
+        : true,
+      objectFit: getComputedStyle(img).objectFit,
+      fitsInPane: pr ? r.width <= pr.width + 1 && r.height <= pr.height + 1 : false,
+      inView: r.bottom <= vh + 1 && r.top >= -1,
+    });
+  }
+  return out;
+}, SMALL.height);
+check('小窗下分屏两栏都量到了图', paneFit.length === 2, JSON.stringify(paneFit.map((x) => x.alt)));
+check(
+  '★ 小窗下两张图都没被裁（整图落在面板里）',
+  paneFit.length > 0 && paneFit.every((x) => !x.clipped),
+  JSON.stringify(paneFit.map((x) => x.alt + ' ' + x.size)),
+  '被裁了：' + JSON.stringify(paneFit)
+);
+/* ★ 09-15：不要再用「元素盒子的长宽比 == 原图长宽比」判变形 ——
+   改成绝对定位 + object-fit:contain 之后，盒子是面板大小、比例由 object-fit 保证。
+   真正要钉的是两条：① object-fit 必须是 contain ② 盒子不能比面板大。 */
+check(
+  '★ 小窗下两张图都是 contain（既不会被裁也不会被拉）',
+  paneFit.length > 0 && paneFit.every((x) => x.objectFit === 'contain'),
+  JSON.stringify(paneFit.map((x) => x.objectFit)),
+  'object-fit 不是 contain ⇒ 会裁掉或拉变形'
+);
+check(
+  '★ 小窗下两张图比面板小（确实跟着窗口缩了）',
+  paneFit.length > 0 && paneFit.every((x) => x.fitsInPane),
+  JSON.stringify(paneFit.map((x) => x.size)),
+  '图比面板还大 ⇒ 会被 overflow 裁掉'
+);
 
 console.log('\n' + '-'.repeat(50));
 if (fail === 0) console.log(`全部通过（${pass} 项）`);

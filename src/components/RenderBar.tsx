@@ -1,35 +1,24 @@
-import { Box, Button, Flex, Text } from '@radix-ui/themes';
+import { Box, Flex, Text } from '@radix-ui/themes';
 import { useStore } from '../store/useStore';
 
 /**
- * 调色台底栏（老版 #renderBar）：渲染按钮 + 自动出图 + 状态提示。
- * 渲染动作本身在 Viewer 的分屏里做（那才是显示结果的地方），
- * 这里只负责「手动点一下」和「自动出图开关」这两个意图。
+ * 调色台底栏 —— **只剩状态提示**。
+ *
+ * ★ 09-15 SV 定的策略：
+ *   ①「渲染」按钮搬到了右栏「胶片卷」下面（那才是手会停的地方）；
+ *   ② 换图/换卷/换基准/拉滑杆**都不再自动出图**，所以「换图/换卷自动出图」那个勾也没意义了，删掉。
+ *   现在只有两个触发点：右栏「渲染」按钮、切进调色台。
+ *
+ * 这一条留着的价值：引擎起不来时把原因显示出来（不然右栏是空的、中间两栏也没图，看不出为啥）。
  */
 export function RenderBar() {
   const engineOk = useStore((s) => s.engineOk);
   const engineMsg = useStore((s) => s.engineMsg);
-  const ensureEngine = useStore((s) => s.ensureEngine);
-  const auto = useStore((s) => s.autoRender);
-  const setAuto = useStore((s) => s.setAutoRender);
-  const rendering = useStore((s) => s.rendering);
+  const renderBusy = useStore((s) => s.renderBusy);
   const photos = useStore((s) => s.photos);
   const cur = useStore((s) => s.cur);
-  const setRendering = useStore((s) => s.setRendering);
 
   const hasPhoto = !!photos[cur];
-
-  /** 手动渲染：先确保引擎在，再触发重渲染（改一下 rendering 让分屏重跑） */
-  const doRender = async () => {
-    if (!hasPhoto) return;
-    setRendering(true);
-    try {
-      await ensureEngine();
-    } finally {
-      // 分屏那边靠 rendering 状态变化重新出图
-      setTimeout(() => setRendering(false), 30);
-    }
-  };
 
   return (
     <Flex
@@ -44,32 +33,16 @@ export function RenderBar() {
       }}
     >
       <Text size="1" style={{ color: 'var(--text-dim)' }}>
-        {engineOk ? '调色台 · 选中一张后按「渲染」' : (engineMsg || '引擎未启动')}
+        {!engineOk
+          ? engineMsg || '引擎未启动'
+          : renderBusy
+            ? '出图中…'
+            : hasPhoto
+              ? '改完卷 / 基准 / 参数，点右栏「渲染」出图'
+              : '调色台只列已打星（★≥1）的片子 —— 先去选片台打星'}
       </Text>
 
       <Box style={{ flex: 1 }} />
-
-      <label
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 5,
-          fontSize: 11.5,
-          color: 'var(--text-dim)',
-          cursor: 'pointer',
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={auto}
-          onChange={(e) => setAuto(e.target.checked)}
-        />
-        换图/换卷自动出图
-      </label>
-
-      <Button size="1" disabled={!hasPhoto || rendering} onClick={doRender}>
-        {rendering ? '出图中…' : '渲染'}
-      </Button>
     </Flex>
   );
 }

@@ -41,11 +41,15 @@ export function App() {
     loadEngine();
   }, [loadSessions, loadEngine]);
 
-  /* ★ 一进调色台就把引擎拉起来（不等到点「渲染」）。
-     开机那一刻引擎通常还没起 ⇒ 上面那次 loadEngine 会失败、卷/基准/滑杆全是空的；
-     以前只能靠「选中一张图」触发 Viewer 里的 ensureEngine，没选中图就是一片空白。 */
+  /* ★ 进调色台：① 先把引擎拉起来（开机那刻通常还没起，不拉的话卷/基准/滑杆全是空的）
+     ② 再自动出一次图 —— 这是 SV 09-15 定的两个渲染触发点之一，另一个是右栏的「渲染」按钮。
+     ⚠ 除此之外**任何操作都不自动出图**（换卷/换基准/拉滑杆/换图都只改参数，不动画面）。 */
   useEffect(() => {
-    if (mode === 'grade') ensureEngine();
+    if (mode !== 'grade') return;
+    (async () => {
+      await ensureEngine();
+      useStore.getState().requestRender();
+    })();
   }, [mode, ensureEngine]);
 
   /* 键盘：←/→ 翻页，1~5 打星，0 清星 */

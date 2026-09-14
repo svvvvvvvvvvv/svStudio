@@ -51,6 +51,7 @@ function Thumb({ p, active }: { p: Photo; active: boolean }) {
     >
       <div
         style={{
+          position: 'relative',   // ★ RAW 角标要挂在这上面
           height: 72,
           background: 'var(--bg)',
           borderRadius: 4,
@@ -69,6 +70,29 @@ function Thumb({ p, active }: { p: Photo; active: boolean }) {
           />
         ) : (
           <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>…</span>
+        )}
+        {/* ★ SV 09-15：缩略图要能一眼看出「这张有没有 RAW」
+            （选片台打星时要知道哪些片后面能拿 RAW 重调） */}
+        {p.hasRaw && (
+          <span
+            data-raw="1"
+            title="有 RAW（RAF 等原始文件）"
+            style={{
+              position: 'absolute',
+              right: 3,
+              top: 3,
+              fontSize: 9,
+              lineHeight: '13px',
+              padding: '0 4px',
+              borderRadius: 3,
+              background: 'rgba(0,0,0,.62)',
+              color: '#fff',
+              letterSpacing: 0.5,
+              pointerEvents: 'none',
+            }}
+          >
+            RAW
+          </span>
         )}
       </div>
       <div
