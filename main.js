@@ -4,6 +4,8 @@ const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
 const { spawn } = require('child_process');
+/* ★ 导入进度要用它把"一个汉字被切在两个 chunk 之间"接回来（否则进度条上出乱码） */
+const { StringDecoder } = require('string_decoder');
 
 /* 引擎启动用哪份 Python —— 必须是**装了 spektrafilm 依赖的那个解释器**
    （缺 `colour` 库的话，引擎起得来、但一 /render 就 ModuleNotFoundError）。
@@ -101,6 +103,11 @@ function defaultConfig() {
     enginePy: '',
     // ★ 调试产出根（日志/实验中间结果）。留空 = 应用自己的 userData/_debug
     debugDir: '',
+    // ★ 导入照片用的脚本（`import_photos.py` 那个现成脚本，复制这活不在这里重写）。
+    //   留空 = 环境变量 SVIMPORT_SCRIPT；都没配就明确报错，**不去猜路径**（要开源）。
+    importScript: '',
+    // ★ 跑导入脚本用哪份 Python（要能 import PIL 读 EXIF）。留空 = 跟引擎共用那份
+    importPy: '',
     lastSession: null,   // { name } 上次进入的主题
     lastIdx: -1,         // 上次离开的照片 index（重启后恢复）
     lastFilter: 'all',   // 上次的筛选档（重启后恢复）
@@ -1072,5 +1079,325 @@ ipcMain.handle('export-grade', async (e, payload) => {
   } catch (err) {
     return { ok: false, error: err.message };
   }
+});
+
+
+/* =========================================================
+   照片导入（SD 卡 / U 盘 → 照片库）
+   ---------------------------------------------------------
+   ★★ 契约：**复制这活不在这个仓库里重写** —— 直接调现成的导入脚本
+      （`photo-import` 那个 `import_photos.py`）。它已经把四件麻烦事做完了：
+        只复制不动源卡 / 目标盘自动排除系统盘并挑最空的 / 断点续传（同名同大小跳过）/
+        拷完按「文件数 + 总字节」校验。
+      自己再写一份的必然结局是：两边规则慢慢长歪，某个夜里把卡清了。
+
+   这一节只做四件事：
+     ① 找卡（扫 A–Z 看谁有 DCIM）        ② 表单 → 命令行参数（纯函数）
+     ③ 起子进程、把 stdout 逐行转成进度事件   ④ 输出 → 结构化结果（纯函数）
+
+   ★ 脚本/解释器路径走**配置 或 环境变量**，仓库里不写死任何个人路径（要开源）：
+       importScript : 配置项 `importScript` → 环境变量 `SVIMPORT_SCRIPT`
+       importPy     : 配置项 `importPy`     → 环境变量 `SVIMPORT_PY` → 引擎那份 Python
+     都没配就明确报「没找到导入脚本」，而不是猜一个路径然后跑失败。
+       ⇒ 所以在 SV 的机器上，他只用在台子里点一次「选择导入脚本…」，
+         路径就落进 `config.json`（用户目录，不进仓库）。
+
+   ★★ 目标库默认 = 工作台当前的照片库（`config.libRoot`）。
+      否则片导进另一个库，工作台扫不到 ⇒ 用户以为"导入没成功"。
+   ========================================================= */
+
+/** 导入脚本的路径（空串 = 没配） */
+function importScriptPath() {
+  let cfg = '';
+  try {
+    cfg = String(loadConfig().importScript || '').trim();
+  } catch (e) {
+    /* app 还没 ready 之类 */
+  }
+  const env = String(process.env.SVIMPORT_SCRIPT || '').trim();
+  for (const c of [env, cfg]) {
+    if (c && fs.existsSync(c)) return c;
+  }
+  return '';
+}
+
+/** 跑导入脚本用哪份 Python（脚本缺 PIL 也能跑，只是日期会回落到文件修改时间） */
+function importPy() {
+  let cfg = '';
+  try {
+    cfg = String(loadConfig().importPy || '').trim();
+  } catch (e) {
+    /* ignore */
+  }
+  const env = String(process.env.SVIMPORT_PY || '').trim();
+  for (const c of [env, cfg]) {
+    if (c && fs.existsSync(c)) return c;
+  }
+  return enginePy();
+}
+
+/** 照片/视频后缀 —— **必须和导入脚本里的 PHOTO_EXT|VIDEO_EXT 对齐**（只用来数个数、
+   告诉用户"这张卡上大概有几张"，不做筛选决策；真正的筛选在脚本里）。 */
+const MEDIA_EXT = /\.(raf|jpe?g|raw|cr2|cr3|nef|arw|dng|tiff?|heic|png|mov|mp4|mts|avi)$/i;
+
+/**
+ * 找卡：扫 A–Z 看谁的 `DCIM` 里有照片，返回每个子目录的张数（只 listdir，**不解码**）。
+ *
+ * ★ 为什么不用 drive type 判断"是不是可移动盘"：Node 里没有现成的（脚本是靠 ctypes
+ *   调 `GetDriveTypeW`）。这里退一步 —— **有 DCIM 就是卡**，够用了；
+ *   而且这样连"卡已经被拷到硬盘上"这种目录也能当源用（脚本的 `--src` 本来就支持）。
+ * ⚠ 纯只读：只 readdir，不动任何文件。
+ */
+function detectCards() {
+  const out = [];
+  for (const d of 'ABCDEFGHIJKLMNOPQRSTUVWXYZ') {
+    const root = d + ':\\';
+    try {
+      if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) continue;
+    } catch (e) {
+      continue;                       // 没插卡的盘 / 空光驱：existsSync 直接 false，这里兜异常
+    }
+    const dcim = path.join(root, 'DCIM');
+    let subs;
+    try {
+      if (!fs.statSync(dcim).isDirectory()) continue;
+      subs = fs.readdirSync(dcim);
+    } catch (e) {
+      continue;                       // 不是卡
+    }
+    for (const sub of subs) {
+      const p = path.join(dcim, sub);
+      let names;
+      try {
+        if (!fs.statSync(p).isDirectory()) continue;
+        names = fs.readdirSync(p);
+      } catch (e) {
+        continue;
+      }
+      const n = names.filter((f) => MEDIA_EXT.test(f)).length;
+      if (n) out.push({ drive: d, path: p, n });
+    }
+  }
+  out.sort((a, b) => b.n - a.n);
+  return out;
+}
+
+/**
+ * 表单 → 命令行参数。**纯函数**（静态自检直接把它抽出来在 Node 里跑）。
+ *
+ * ★ 一律用 `--key=value` 而不是 `--key value`：主题/地点万一以 `-` 开头，
+ *   argparse 会把它当选项名 ⇒ 参数串位（`--topic` 变成没值）。
+ * ★ 空值**不传**（而不是传空串）：传空串等于显式覆盖，脚本自己的默认（日期 auto=
+ *   从 EXIF 推断）就死了。这条是"预演和实跑结果不一致"的常见来源。
+ * ★ 主题/地点是脚本的必填项 ⇒ 这里先抛，别让子进程跑到一半才报 argparse 错
+ *   （那种错在 UI 上是一屏英文 usage）。
+ */
+function buildImportArgs(o, dryRun) {
+  const opts = o || {};
+  const clean = (v) => String(v == null ? '' : v).replace(/[\r\n]+/g, ' ').trim();
+  const topic = clean(opts.topic);
+  const place = clean(opts.place);
+  if (!topic) throw new Error('主题不能为空（文件夹名里的那一段）');
+  if (!place) throw new Error('地点不能为空（文件夹名里的那一段）');
+
+  const out = [];
+  const put = (k, v) => {
+    const s = clean(v);
+    if (s) out.push('--' + k + '=' + s);
+  };
+  put('topic', topic);
+  put('place', place);
+  // 'auto' 是脚本自己的默认值（从 EXIF 推断日期），别把它当"用户填了日期"传过去
+  if (clean(opts.date) && clean(opts.date) !== 'auto') put('date', opts.date);
+  put('src', opts.src);
+  put('dest-root', opts.destRoot);
+  put('dest-drive', opts.destDrive);
+  put('folder', opts.folder);
+  if (opts.keepFlat) out.push('--keep-flat');
+  if (opts.noVerify) out.push('--no-verify');
+  if (dryRun) out.push('--dry-run');
+  return out;
+}
+
+/**
+ * 脚本 stdout → 结构化结果。**纯函数**。
+ *
+ * ★ 锚的是脚本里那几句**固定台词**（`源目录 :` / `文件数 :` / `目标目录:` /
+ *   `复制完成：新增 N，跳过(已存在) N，失败 N` / `耗时 N 秒` / `导入位置：`）。
+ *   ⚠ 改脚本台词必须回来改这里 —— `_check/ui_smoke.mjs` 里有静态检查钉着这两边。
+ */
+function parseImportOutput(text) {
+  const t = String(text || '');
+  const g = (re) => {
+    const m = t.match(re);
+    return m ? String(m[1]).trim() : '';
+  };
+  const gi = (re) => {
+    const m = t.match(re);
+    return m ? parseInt(m[1], 10) : null;
+  };
+  const r = {
+    src: g(/^源目录\s*[:：]\s*(.+)$/m),
+    files: gi(/^文件数\s*[:：]\s*(\d+)/m),
+    total: g(/^文件数\s*[:：]\s*\d+\s*个\s+总大小\s*(.+?)\s*$/m),
+    types: g(/^\s*类型\s*[:：]\s*(.+)$/m),
+    dates: g(/^\s*日期\s*[:：]\s*(.+)$/m),
+    candidates: g(/^候选盘\s*[:：]\s*(.+)$/m),
+    destDrive: g(/^目标盘\s*[:：]\s*(.+)$/m),
+    dest: g(/^目标目录\s*[:：]\s*(.+)$/m),
+    copied: gi(/复制完成[：:]\s*新增\s*(\d+)/),
+    skipped: gi(/复制完成[：:]\s*新增\s*\d+[，,]\s*跳过\(已存在\)\s*(\d+)/),
+    failed: gi(/复制完成[：:][^\n]*?失败\s*(\d+)/),
+    elapsed: g(/^耗时\s*([\d.]+)\s*秒/m),
+    verified: /^校验通过/m.test(t),
+    dryRun: /^\[dry-run\]/m.test(t),
+    renamed: g(/^\[提示\]\s*(.+)$/m),
+    warning: g(/^\[警告\]\s*(.+)$/m),
+    error: g(/^\[错误\]\s*(.+)$/m),
+  };
+  // 文件夹名 + 库根（界面靠它"跑完直接进新主题的选片台"）
+  r.folder = r.dest ? path.basename(r.dest) : '';
+  r.destRoot = r.dest ? path.dirname(r.dest) : '';
+  return r;
+}
+
+/**
+ * 起子进程跑导入脚本，stdout/stderr 逐行转给 `onLine`。
+ *
+ * ★ 为什么不用 `exec`：一次导入可能十几分钟、几百行输出；`exec` 要等进程退出才把
+ *   结果给你 ⇒ 界面全程"卡住"，用户看不到 `50/524 已复制 1.2 GB (80 MB/s)`，
+ *   会以为死机了然后强杀 —— 而这正是最不该中断的操作。
+ * ★ 编码：脚本自己 `reconfigure(encoding='utf-8', line_buffering=True)`；
+ *   这里用 `StringDecoder` 兜住"一个汉字被切在两个 chunk 边界上"。
+ * ★ 按 \n 切、把最后一段留在 `pending` 里 —— 一个 chunk 的尾巴很可能只是半行。
+ */
+function runImport(args, onLine) {
+  const script = importScriptPath();
+  if (!script) {
+    return Promise.resolve({
+      ok: false,
+      text: '',
+      error: '没配置导入脚本路径（配置项 importScript 或环境变量 SVIMPORT_SCRIPT）',
+    });
+  }
+  const py = importPy();
+  return new Promise((resolve) => {
+    let child;
+    try {
+      child = spawn(py, [script].concat(args || []), { windowsHide: true });
+    } catch (err) {
+      return resolve({ ok: false, text: '', error: '起不了导入进程：' + err.message });
+    }
+    const dec = new StringDecoder('utf8');
+    let text = '';
+    let pending = '';
+    const emit = (s) => {
+      text += s;
+      if (!onLine) return;
+      pending += s;
+      const parts = pending.split('\n');
+      pending = parts.pop();          // 尾巴可能只是半行，留着等下一个 chunk
+      for (const raw of parts) {
+        const line = raw.replace(/\r$/, '');
+        if (line.trim()) onLine(line);
+      }
+    };
+    if (child.stdout) child.stdout.on('data', (b) => emit(dec.write(b)));
+    if (child.stderr) child.stderr.on('data', (b) => emit(dec.write(b)));
+    child.on('error', (err) => resolve({ ok: false, text, error: err.message }));
+    child.on('close', (code) => {
+      emit(dec.end());
+      if (pending.trim() && onLine) onLine(pending.replace(/\r$/, ''));
+      resolve({ ok: code === 0, code, text });
+    });
+  });
+}
+
+/** 目标库根：没指定就用工作台当前的照片库（见本节顶部注释） */
+function withImportLibRoot(o) {
+  const opts = Object.assign({}, o || {});
+  if (!opts.destRoot) {
+    try {
+      opts.destRoot = String(loadConfig().libRoot || '').trim();
+    } catch (e) {
+      /* ignore */
+    }
+  }
+  return opts;
+}
+
+/** 进度事件推给界面（`import-progress`）。窗口可能已经关了 ⇒ 静默。 */
+function sendImportProgress(line) {
+  try {
+    if (win && !win.isDestroyed()) win.webContents.send('import-progress', line);
+  } catch (e) {
+    /* 窗口没了就算了 —— 导入本身还在跑，不该因此中断 */
+  }
+}
+
+/* ---- 选一个文件（挑导入脚本用；也留给以后别的"选文件"场景） ---- */
+ipcMain.handle('pick-file', async (e, opts) => {
+  const o = opts || {};
+  const res = await dialog.showOpenDialog(win, {
+    title: o.title || '选择文件',
+    properties: ['openFile'],
+    filters: o.filters || [{ name: '所有文件', extensions: ['*'] }],
+  });
+  if (res.canceled || !res.filePaths.length) return null;
+  return res.filePaths[0];
+});
+
+/* ---- ① 找卡 + 报"脚本配了没 / 库在哪"（界面据此决定提示什么） ---- */
+ipcMain.handle('import-detect', () => {
+  let cards = [];
+  try {
+    cards = detectCards();
+  } catch (e) {
+    /* 扫盘失败不该让界面崩 */
+  }
+  let libRoot = '';
+  try {
+    libRoot = String(loadConfig().libRoot || '');
+  } catch (e) {
+    /* ignore */
+  }
+  return { ok: true, cards, script: importScriptPath(), libRoot };
+});
+
+/* ---- ② 预演（脚本的 --dry-run）：**只看不复制** ---- */
+ipcMain.handle('import-preview', async (e, opts) => {
+  let args;
+  try {
+    args = buildImportArgs(withImportLibRoot(opts), true);
+  } catch (err) {
+    return { ok: false, error: err.message, text: '', plan: null };
+  }
+  const r = await runImport(args, (line) => sendImportProgress(line));
+  const plan = parseImportOutput(r.text);
+  return {
+    ok: r.ok && !plan.error,
+    text: r.text,
+    plan,
+    error: r.error || plan.error || '',
+  };
+});
+
+/* ---- ③ 真跑。进度靠 `import-progress` 事件流出去（不是返回值） ---- */
+ipcMain.handle('import-run', async (e, opts) => {
+  let args;
+  try {
+    args = buildImportArgs(withImportLibRoot(opts), false);
+  } catch (err) {
+    return { ok: false, error: err.message, text: '', plan: null };
+  }
+  sendImportProgress('开始复制…（源卡只读，不会被动一个字节）');
+  const r = await runImport(args, (line) => sendImportProgress(line));
+  const plan = parseImportOutput(r.text);
+  return {
+    ok: r.ok && !plan.error,
+    text: r.text,
+    plan,
+    error: r.error || plan.error || '',
+  };
 });
 

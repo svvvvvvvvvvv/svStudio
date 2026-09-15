@@ -15,7 +15,8 @@ export function HomeView() {
       <Flex align="center" justify="center" style={{ height: '100%' }}>
         <Callout.Root color="gray">
           <Callout.Text>
-            没有找到主题。先点右上角「切换照片库」选一个照片库目录。
+            这个库里还没有主题。插好卡后点左侧「导入照片」把片拷进来，
+            或者点左侧「换图库」换一个照片库目录。
           </Callout.Text>
         </Callout.Root>
       </Flex>

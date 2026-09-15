@@ -94,21 +94,46 @@ await page.addInitScript(() => {
   const mk = (n) => `data:image/svg+xml;utf8,${encodeURIComponent(
     `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800"><rect width="600" height="800" fill="#${((n * 37) % 900 + 100).toString(16)}44"/></svg>`
   )}`;
+  /* ★ 导入计划的假数据 —— **照 `main.js` 的 `parseImportOutput()` 解出来的形状**抄
+     （字段名、类型都要一致）。这是 mock 第二次踩"自己发明字段"的地方：
+     09-15 引擎那次的教训是"mock 跟着前端一起错，自检全绿"。 */
+  const IMPORT_PLAN = {
+    src: 'J:\\DCIM\\100_FUJI',
+    files: 524,
+    total: '12.34 GB',
+    types: 'JPG×300, RAF×224',
+    dates: '2026-04-24 ~ 2026-04-25',
+    dest: 'D:\\lib\\2026-04-24_旅行_长洲岛',
+    folder: '2026-04-24_旅行_长洲岛',
+    destRoot: 'D:\\lib',
+    copied: 524,
+    skipped: 0,
+    failed: 0,
+    elapsed: '45.2',
+    verified: true,
+    dryRun: true,
+  };
   window.api = {
     logLine: async () => true,
     getConfig: async () => ({ libRoot: 'D:\\lib' }),
-    scanSessions: async () => [
-      { name: '主题A', count: 12 },
-      { name: '主题B', count: 34 },
-    ],
+    /* ⚠ 主题列表要**能变**：导入完 `refreshSessions()` 会重扫，
+       新主题必须出现（否则"导入完直接进新主题"这条根本测不到）。
+       照生产端抄：列表是"扫出来的"，不是写死的常量。 */
+    scanSessions: async () =>
+      window.__sessions ||
+      (window.__sessions = [
+        { name: '主题A', count: 12 },
+        { name: '主题B', count: 34 },
+      ]),
     /* ★★ 出图源也要照生产端抄：`main.js` 的 `attachLoadPath()` 会给每张算出 `loadPath`
        （**同名 RAW 优先**，没有 RAW 的主题才回落 JPG）。这里故意混着给：
        i=1,5,9… 是"只有 JPG"的，用来测回落那一档。
        ★ 照片名**按主题区分**（照生产端：不同主题是不同批照片）——
-         两个主题发同一批名字的话，「切主题之后看的是另一张」根本测不出来。 */
+         两个主题发同一批名字的话，「切主题之后看的是另一张」根本测不出来。
+       ★ 导入出来的新主题给第三段号段（3000+）：这样"到底进没进新主题"一眼看得出。 */
     listPhotos: async (sessionPath) => {
       const theme = String(sessionPath || '').split(/[\\/]/).filter(Boolean).pop() || '主题A';
-      const base = theme === '主题B' ? 2000 : 1000;
+      const base = theme === '主题B' ? 2000 : /^\d{4}-/.test(theme) ? 3000 : 1000;
       return Array.from({ length: 40 }, (_, i) => {
         const jpg = `DSCF${base + i}.JPG`;
         const isRaw = i % 4 !== 1;
@@ -213,6 +238,49 @@ await page.addInitScript(() => {
         base: opts && opts.base,
       });
       return { ok: true, image: mk(5) };
+    },
+    /* ---- 照片导入（SD 卡 / U 盘 → 照片库） ----
+       ⚠⚠ mock **必须实现前端会调的每一个 IPC**：漏一个 ⇒ 那次调用**同步抛 TypeError**、
+       `.catch` 根本没机会接 ⇒ 一路往控制台丢未捕获异常，而检查只看接口，看不见
+       （09-15 漏 `setConfig` 就是这么漏过去的）。
+       ★ 形状照 `main.js` 的 IPC 处理器抄：
+         import-detect        → { ok, cards:[{drive,path,n}], script, libRoot }
+         import-preview/-run  → { ok, text, plan, error }
+         onImportProgress     → 返回**取消订阅函数**（生产端 preload 也是这么给的） */
+    pickFile: async () => 'D:\\tools\\import_photos.py',
+    importDetect: async () => ({
+      ok: true,
+      cards: [{ drive: 'J', path: 'J:\\DCIM\\100_FUJI', n: 524 }],
+      script: 'D:\\tools\\import_photos.py',
+      libRoot: 'D:\\lib',
+    }),
+    importPreview: async () => {
+      window.__previews = (window.__previews || 0) + 1;
+      return { ok: true, text: '', plan: { ...IMPORT_PLAN, copied: null } };
+    },
+    importRun: async () => {
+      window.__importRuns = (window.__importRuns || 0) + 1;
+      /* ★ 照生产端：进度是**主进程逐行推过来的**（不是等进程结束给一个结果）。
+         这里故意留 500 ms 再让 Promise 结掉 —— 真导入要几分钟，
+         界面必须**在跑的过程中**就能看到这些行；自检靠这一点断言"进度真的到了界面"。 */
+      const push = window.__importCb;
+      if (push) {
+        push('开始复制…（源卡只读，不会被动一个字节）');
+        push('  100/524  已复制 2.30 GB  (85 MB/s)');
+      }
+      await new Promise((r) => setTimeout(r, 500));
+      if (push) push('复制完成：新增 524，跳过(已存在) 0，失败 0');
+      /* 导出来的新主题要出现在列表里（`refreshSessions()` 会重扫） */
+      window.__sessions = (window.__sessions || []).concat([
+        { name: '2026-04-24_旅行_长洲岛', count: 524 },
+      ]);
+      return { ok: true, text: '', plan: { ...IMPORT_PLAN, dryRun: false } };
+    },
+    onImportProgress: (cb) => {
+      window.__importCb = cb;
+      return () => {
+        window.__importCb = null;
+      };
     },
   };
 });
@@ -739,6 +807,71 @@ console.log('\n[11] 恢复上次状态');
   const nm = await curName();
   check('★ 超范围的下标被夹到最后一张（不是第 0 张也不是空）', /DSCF1039/.test(nm),
     nm || '(没读到)', `期望夹到 DSCF1039（40 张里的最后一张），实际 ${nm || '空'}`);
+}
+
+/* ---------- 12. 导入照片（左栏入口 → 对话框 → 预演 → 真导入 → 落到新主题） ---------- */
+/* ★ 这一组存在的理由：导入是**唯一一个会真写盘、真动几百个文件**的功能。
+   它坏掉的方式不是"界面不好看"，是"片导错地方 / 用户以为没导进去"。所以四条都盯着行为：
+     ① 入口在**没进主题**时也点得到（空库/新库恰恰是最需要导入的时候）
+     ② 先看后拷（没预演过，开始导入是禁用的）
+     ③ 进度**在跑的过程中**就到界面（看不到进度 = 用户以为死机 = 去强杀）
+     ④ 跑完直接落在新主题、左栏也刷新了 */
+console.log('\n[12] 导入照片');
+{
+  const back = page.locator('button', { hasText: '主题列表' }).first();
+  if (await back.count()) {
+    await back.click();
+    await page.waitForTimeout(600);
+  }
+  const homeTxt = await page.evaluate(() => document.body.innerText);
+  const openBtn = page.locator('[data-import-open]').first();
+  check('★ 在「主题列表」页（**没进任何主题**）左栏也常显、也点得到导入',
+    /共 2 个主题/.test(homeTxt) && (await openBtn.count()) > 0,
+    '', '左栏还挂在 sessionName 上 ⇒ 空库/新库里"导入照片"永远点不到（而新库最需要它）');
+  if (await openBtn.count()) await openBtn.click();
+  await page.waitForTimeout(700);
+  check('★ 点开有导入对话框', (await page.locator('[data-import-dialog]').count()) > 0, '',
+    '点了没反应');
+  const cardBtn = page.locator('[data-card]').first();
+  const cardTxt = ((await cardBtn.innerText().catch(() => '')) || '').replace(/\n/g, ' ');
+  check('★ 自动扫到卡、还把张数摆出来（不用用户手敲路径）',
+    (await cardBtn.count()) > 0 && /100_FUJI/.test(cardTxt) && /524/.test(cardTxt),
+    cardTxt, '没扫到卡 ⇒ 用户得自己填源目录');
+  await page.locator('[data-import-field="主题"]').fill('旅行');
+  await page.locator('[data-import-field="地点"]').fill('长洲岛');
+  const runBtn = page.locator('[data-import-run]');
+  check('★ 「开始导入」在没预演之前是禁用的（先看后拷）',
+    (await runBtn.count()) > 0 && (await runBtn.isDisabled()), '',
+    '没看计划就能直接开拷 ⇒ 几百张往盘上写之前连"拷到哪"都不知道');
+  await page.locator('[data-import-preview]').click();
+  await page.waitForTimeout(800);
+  const planTxt = ((await page.locator('[data-import-plan]').innerText().catch(() => '')) || '')
+    .replace(/\n/g, ' ');
+  check('★ 预演把「要拷几个 / 多大 / 拷到哪」摆出来了',
+    /524/.test(planTxt) && /12\.34 GB/.test(planTxt) && /2026-04-24_旅行_长洲岛/.test(planTxt),
+    planTxt.slice(0, 120), '预览说不出"要拷多少 / 拷到哪"');
+  check('★ 预演**没有**真拷（一次真导入都没发出去）',
+    (await page.evaluate(() => window.__importRuns || 0)) === 0, '',
+    '预演就真拷了 —— 那就不叫"先看后拷"了');
+  check('预演之后「开始导入」可用了', !(await runBtn.isDisabled()));
+  await runBtn.click();
+  await page.waitForTimeout(320);
+  const logTxt = ((await page.locator('[data-import-log]').innerText().catch(() => '')) || '')
+    .replace(/\n/g, ' ');
+  check('★ 复制过程中进度**真的到了界面**（不是等跑完才给）',
+    /已复制 2\.30 GB/.test(logTxt), logTxt.slice(0, 120),
+    '进度推不过来 ⇒ 用户看着像死机，会去强杀 —— 而这正是最不该中断的一步');
+  await page.waitForTimeout(1600);
+  check('★ 导入跑完对话框自己关了', (await page.locator('[data-import-dialog]').count()) === 0);
+  const nm = await curName();
+  check('★ 导完**直接进新主题**（新主题的照片读出来了，没停在家页）',
+    /DSCF3000/.test(nm), nm || '(没读到)',
+    `期望新主题的照片 DSCF3000，实际 ${nm || '空'}`);
+  const after = await page.evaluate(() => document.body.innerText);
+  check('★ 新主题立刻出现在左栏「图库目录」里（列表真刷新了）',
+    /2026-04-24_旅行_长洲岛/.test(after), '', '左栏没刷新 ⇒ 用户以为白导了');
+  check('★ 导入没把界面弄炸（还在，不是白屏）',
+    (await page.evaluate(() => (document.getElementById('root')?.innerHTML || '').length)) > 500);
 }
 
 /* ---------- 收尾：整轮跑下来有没有未捕获报错 ---------- */
