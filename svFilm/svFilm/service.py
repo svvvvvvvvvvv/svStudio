@@ -292,7 +292,14 @@ class _H(BaseHTTPRequestHandler):
                 out = []
                 for n, d in (C.BASE_TABLE or {}).items():
                     out.append(dict(name=n, label=d.get('label') or n,
-                                    desc=d.get('desc') or ''))
+                                    desc=d.get('desc') or '',
+                                    # ★ 哪一支是引擎当前配置的默认（`config.BASE`）。
+                                    #   前端据此**选初值** —— 不许自己写死基准名。
+                                    #   过去前端写死 'all'，而 'all' 不在表里 ⇒
+                                    #   `stocks.resolve_base` **静默**回落成 `BASE_NONE`
+                                    #   （"不套基准"）⇒ 默认出图等于没套基准，
+                                    #   界面上还一支都选不中（看不出哪里不对）。
+                                    isDefault=bool(n == getattr(C, 'BASE', None))))
                 return self._json(out)
             if u.path in ('/', '/index.html') and _WEB[0]:
                 # ★ 可选：把工作台的静态页 serve 出来（路径由 `--web` 给，**不写死** ⇒ 边界不破）

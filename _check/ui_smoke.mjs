@@ -532,6 +532,70 @@ check('★ 布局自检的 mock 也实现了导入通道（否则那条真浏览
     /onImportProgress:/.test(mockSrcFlat),
   '', 'mock 少一个 ⇒ 点下去静默抛错，检查看不见');
 
+/* ---------- [10] 基准默认 / 右栏两个按钮 / 按主题存配方（09-15） ---------- */
+/* ★ 这一组对着三个真问题：
+   ① 「成色基准」默认值是前端写死的 `'all'`，而引擎基准表（`config.BASE_TABLE`）里
+      没有这一支 ⇒ 引擎 `stocks.resolve_base` **静默**回落成 `BASE_NONE`（"不套基准"），
+      界面上四支**一支都不亮** —— 画面错了、还看不出来。
+      ⇒ 规矩：**默认值由引擎给**（`/bases` 每条带 `isDefault`），**前端不许出现基准名**。
+   ② 右下角「恢复默认」「存到主题」**没有 onClick**（死按钮：界面在、功能不在）。
+   ③ 「存到主题」的四个接口（main.js / preload / 类型 / 封装）早就写好了，
+      前端从来没调过 —— 不是缺功能，是**接了半截**。 */
+console.log('\n[10] 基准默认 / 右栏两个按钮 / 按主题存配方');
+
+check('★ 引擎 /bases 标出了"哪一支是默认"（前端据此定初值）',
+  /isDefault=bool\(n == getattr\(C, 'BASE', None\)\)/.test(svcSrc), '',
+  '引擎不给默认标志 ⇒ 前端只能自己猜，迟早又写出一个写死的名字');
+/* ★ 取默认基准有**三处**，每一处都必须读引擎的 `isDefault`：
+     ① `loadEngine`（引擎元数据回来时定初值）
+     ② `enterSession`（进主题、而该主题没存过配方时回出厂）
+     ③ `resetGrade`（点「恢复默认」时回默认）
+   ⚠★ 为什么必须"三处一起盯"：**只改其中一处会全绿** —— 09-15 破法验证时发现的：
+        只把 ① 改成"取列表第一支"，检查竟然一条都不红，因为 ② 紧接着又把 base 设对了。
+        （同款"假绿"见过三次了：React bail-out、被 goHome 兜住的归零、这次是路径互相兜。）
+   ⇒ 所以这条用的是**计数**，不是"文件里出现过"。 */
+check('★ 三处取默认基准都读的是引擎的 isDefault（加载时 / 进主题时 / 恢复默认时）',
+  (storeCode.match(/\.find\(\(x\) => x\.isDefault\)/g) || []).length >= 3,
+  '', '有一处没读 isDefault ⇒ 那条路径会给出一个"前端猜的名字"；而且往往被别的路径兜住、看不出来');
+check('★ 前端不再写死基准名（store 里一个 BASE_* 都不许有）',
+  !/BASE_[A-Z]+/.test(storeCode), '',
+  '前端写死基准名 ⇒ 引擎改配置就静默错位（过去写死「all」就是这么错的）');
+check('★ 基准初值是空串（等引擎回来填），不是某个猜出来的名字',
+  /base: ''/.test(storeSrc), '',
+  '初值又写成某个名字 ⇒ 引擎表里没有就静默回落成"不套基准"');
+/* ⚠ 必须**剥掉注释再查**：上面那段说明注释里本来就写着 `base: 'all'`，
+   不剥注释的话这条会被**自己的注释**判红（09-15 踩过同款：注释里出现 `export const API`
+   ⇒ 锚点落到注释上、误报一整串）。 */
+const gpCode = gradeSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+check('★ 「恢复默认」「存到主题」两个按钮**都接上线了**（真 onClick）',
+  /onClick=\{resetGrade\}/.test(gpCode) && /onClick=\{saveGradeToTheme\}/.test(gpCode), '',
+  '没有 onClick = 死按钮（界面在、功能不在，最难自己发现）');
+check('★ 两个按钮指向 store 里真实存在的 action',
+  /resetGrade: \(\) =>/.test(storeCode) && /saveGradeToTheme: async \(\) =>/.test(storeCode),
+  '', '按钮指向一个不存在的 action ⇒ 点下去就抛错');
+check('★ 「存到主题」真的落盘（走 setGrade 通道）',
+  /API\.setGrade\(name, get\(\)\.grade\)/.test(storeCode), '',
+  '没落盘 ⇒ 重启就没了，用户以为存上了');
+check('★ 「存到主题」还**读回来**（进主题时把配方套回）',
+  /API\.getGrade\(name\)/.test(storeCode), '',
+  '只写不读 = 存了个寂寞（本项目最忌的"看着对、其实对不上"）');
+check('★ 没存过的主题回出厂（不把上一个主题的调整带过去）',
+  /base: dflt\?\.name \?\? '', params: \{\}/.test(storeSrc), '',
+  '沿用上一个主题的值 ⇒ 主题之间串味（在 A 拧过的滑杆跟着进 B）');
+const resetM = storeCode.match(/resetGrade: \(\) => \{[\s\S]*?\n  \},/);
+check('★ 「恢复默认」**不动卷**（只清滑杆 + 基准回默认）',
+  !!resetM && /\.\.\.get\(\)\.grade/.test(resetM[0]) && !/\bstock\b/.test(resetM[0]), '',
+  '顺手把卷也抹了 ⇒ 用户会莫名其妙换了个胶片（卷是"拍什么"，不是调出来的）');
+check('★ 基准那一排有可断言的选中标记（不是靠认颜色/边框）',
+  /data-base-on=/.test(gradeSrc), '',
+  '没有标记 ⇒ 布局自检只能去认颜色，改皮肤就废');
+check('★ 布局自检的 mock 实现了 getGrade / setGrade（否则那条真浏览器检查是空转）',
+  /getGrade: async \(name\)/.test(mockSrcFlat) && /setGrade: async \(name, g\)/.test(mockSrcFlat),
+  '', 'mock 少一个 ⇒ enterSession 里那次调用静默抛错，检查看不见（漏 setConfig 那次的翻版）');
+check('★ 布局自检 mock 的基准列表照生产端带了 isDefault（形状 + 数据都要照抄）',
+  /isDefault: true/.test(mockSrcFlat), '',
+  'mock 不带这个字段 ⇒「选中的是引擎给的默认那支」这条测不到（绿着但没有意义）');
+
 /* ---------- 汇总 ---------- */
 console.log('\n' + '-'.repeat(50));
 if (fail === 0) {

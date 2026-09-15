@@ -49,6 +49,14 @@ export function GradePanel() {
   const paramDefs = useStore((s) => s.paramDefs);
   const grade = useStore((s) => s.grade);
   const setGrade = useStore((s) => s.setGrade);
+  /* ★ 09-15 补：右下角那两个按钮原来是**死的**（没有 onClick），
+     而主进程的 `get-grade` / `set-grade` 接口早就写好了、前端从来没调过 ——
+     不是"缺功能"，是"接了半截"。
+     「恢复默认」= 23 根滑杆回引擎出厂 + 基准回引擎默认（**不动卷**：卷是"拍什么"，
+     不是"调出来的"）；「存到主题」= 把当前卷/基准/滑杆值写进 `config.grades[主题名]`，
+     下次进这个主题自动套回。⚠ 两个都不自动出图（沿用"只有两个触发点"的规矩）。 */
+  const resetGrade = useStore((s) => s.resetGrade);
+  const saveGradeToTheme = useStore((s) => s.saveGradeToTheme);
   const engineOk = useStore((s) => s.engineOk);
   const renderBusy = useStore((s) => s.renderBusy);
   const requestRender = useStore((s) => s.requestRender);
@@ -195,9 +203,16 @@ export function GradePanel() {
         <Flex direction="column" gap="1" mt="1">
           {bases.map((b) => {
             const on = grade.base === b.name;
+            /* ★ `data-base-on` = 「这支是不是当前选中的」——
+               布局自检靠它断言"基准**必须有且只有一支**选中"。
+               不去认颜色/边框（那是皮肤，改样式就废了），也不去数"有没有高亮"。
+               为什么值得钉死：默认值曾经是前端写死的 `'all'`，而引擎基准表里没有这一支
+               ⇒ **四支一支都选不中**，同时引擎静默按"不套基准"出图（画面是错的、还看不出来）。 */
             return (
               <button
                 key={b.name}
+                data-base={b.name}
+                data-base-on={on ? '1' : '0'}
                 onClick={() => setGrade({ base: b.name })}
                 style={{
                   display: 'flex',
@@ -282,10 +297,11 @@ export function GradePanel() {
       ))}
 
       <Flex gap="2" mt="1">
-        <Button size="1" variant="ghost">
+        {/* ★ 这两个按钮 09-15 之前是**死的**（没有 onClick，点了什么都不发生） */}
+        <Button size="1" variant="ghost" onClick={resetGrade} title="滑杆回出厂、基准回默认（卷不动）">
           恢复默认
         </Button>
-        <Button size="1" variant="ghost">
+        <Button size="1" variant="ghost" onClick={saveGradeToTheme} title="把这个主题的配方记住，下次进来自动套回">
           存到主题
         </Button>
       </Flex>

@@ -188,13 +188,34 @@ await page.addInitScript(() => {
         { name: 'neutral', label: '中性', desc: '原样', spek: false },
       ],
     }),
+    /* ★★ 基准列表**照生产端数据**抄：`main.js` 转发引擎 `/bases`，引擎现在每条带
+       `isDefault`（`config.BASE` 那条为 true，这里是 `BASE_FULL`）。
+       前端只认这个来定初值 —— **不许自己写死基准名**
+       （过去写死 `'all'`，而引擎的基准表里没有 `'all'` ⇒ `resolve_base` **静默**
+        回落成 `BASE_NONE`「不套基准」⇒ 默认出图等于"什么都没套"，界面上还一支都选不中）。
+       ⚠ 顺序也照 `config.BASE_TABLE` 抄：默认那支**故意不排第一个** ——
+         只有这样才测得动"取的是 `isDefault` 那条"，而不是"腿短取 `list[0]`"。 */
     engineBases: async () => ({
       ok: true,
       items: [
         { name: 'BASE_NONE', label: '不套基准', desc: '什么都不做' },
-        { name: 'BASE_FULL', label: '全对齐', desc: '全段对齐' },
+        { name: 'BASE_FOG', label: '只加雾', desc: '黑位抬起来' },
+        { name: 'BASE_DEYELLOW', label: '退黄+加雾', desc: '没那么黄' },
+        { name: 'BASE_FULL', label: '全对齐', desc: '全段对齐', isDefault: true },
       ],
     }),
+    /* ★ 按主题存配方（`main.js` 的 `get-grade` / `set-grade`，09-15 起前端才真调）。
+       ⚠⚠ 这个 mock **必须给**：`enterSession` 现在会调 `getGrade` 套回配方，
+         漏一个就是**同步抛 TypeError**、`.catch` 接不到（`setConfig` 那次的老坑）。
+       ★ 形状照 `main.js` 的 IPC 处理器抄：`get-grade` 返回 **grade 对象本身或 null**
+         （外面没有 `{ok}` 包壳），`set-grade` 返回 boolean。 */
+    getGrade: async (name) => (window.__grades || {})[name] || null,
+    setGrade: async (name, g) => {
+      /* 深拷一份 —— 存的是"那一刻"的值，不能跟着 store 后续改动一起变 */
+      window.__grades = { ...(window.__grades || {}), [name]: JSON.parse(JSON.stringify(g)) };
+      window.__gradeSaves = (window.__gradeSaves || 0) + 1;
+      return true;
+    },
     engineParams: async () => ({
       ok: true,
       /* ★★ 这份假数据**必须照生产端抄**（`svFilm/service.py` 的 `PARAMS`）——
@@ -880,6 +901,115 @@ console.log('\n[12] 导入照片');
     /2026-04-24_旅行_长洲岛/.test(after), '', '左栏没刷新 ⇒ 用户以为白导了');
   check('★ 导入没把界面弄炸（还在，不是白屏）',
     (await page.evaluate(() => (document.getElementById('root')?.innerHTML || '').length)) > 500);
+}
+
+/* ---------- 13. 右栏：基准默认 / 恢复默认 / 存到主题 ---------- */
+/* ★ 这一组对着 09-15 修的三个真问题：
+   ① **基准成色一支都没选中**：前端默认发 `'all'`，而引擎基准表（`config.BASE_TABLE`）
+      里没有这一支 ⇒ `stocks.resolve_base` **静默**回落成 `BASE_NONE`（"不套基准"）
+      ⇒ 默认出图等于"什么都没套"，界面上四支**一支都不亮**（画面错了还看不出来）。
+      修法：默认值**由引擎给**（`/bases` 每条带 `isDefault`），前端不许写死基准名。
+   ② 右下角「恢复默认」「存到主题」两个按钮**没有 onClick**（点了什么都不发生）——
+      典型"死按钮"：界面在、功能不在，最难自己发现。
+   ③ 「存到主题」要是**只写不读**（存了不套回来）就是存了个寂寞 ——
+      所以要连"切走再回来，配方真套回来了"一起钉。 */
+console.log('\n[13] 右栏：基准默认 / 恢复默认 / 存到主题');
+{
+  /* ⚠ 前面 [10] 为了测"引擎没起"注入过 `__FAIL_HEALTH = true`（initScript 会一直生效），
+     这里必须显式关掉 —— 否则调色台只剩一句「引擎未启动」，右栏根本没滑杆和按钮可测。
+     （这也是本组最容易写出"假绿"的地方：不关它，下面每条都测到空气。） */
+  await page.addInitScript(() => {
+    window.__FAIL_HEALTH = false;
+  });
+  await page.reload();
+  await page.waitForTimeout(1800);
+  const gradeTab3 = page.locator('button', { hasText: '调色台' }).first();
+  if (await gradeTab3.count()) {
+    await gradeTab3.click();
+    await page.waitForTimeout(1500);
+  }
+
+  /* ---- ① 基准：有且只有一支选中，且是引擎标了 isDefault 的那支 ---- */
+  const baseState = await page.evaluate(() => {
+    const all = [...document.querySelectorAll('[data-base]')];
+    return {
+      n: all.length,
+      names: all.map((x) => x.getAttribute('data-base')),
+      on: all.filter((x) => x.getAttribute('data-base-on') === '1')
+        .map((x) => x.getAttribute('data-base')),
+    };
+  });
+  check('右栏列出了基准（这条不成立，下面全是空转）', baseState.n >= 3, `${baseState.n} 支`);
+  check('★ 基准**有且只有一支**是选中的',
+    baseState.on.length === 1, `选中 [${baseState.on.join(',')}] / 共 ${baseState.n} 支`,
+    '一支都不选（或选了两支）⇒ 引擎收到无效名字、静默按"不套基准"出图，界面上还看不出来');
+  /* ★ 关键：mock 里默认那支是**最后一个**（照 `config.BASE_TABLE` 的顺序抄）——
+     所以这条能区分"读了引擎的 isDefault"和"腿短取了列表第一个"。 */
+  check('★ 选中的是**引擎给的默认那支**（不是前端写死的名字、也不是列表第一个）',
+    baseState.on[0] === 'BASE_FULL' && baseState.names[0] !== 'BASE_FULL',
+    `选中 ${baseState.on[0]}；列表顺序 [${baseState.names.join(',')}]`,
+    '前端自己写死基准名（过去写死「all」⇒ 引擎静默回落「不套基准」）');
+
+  /* ---- ② 「恢复默认」：滑杆真回出厂，而且**不自动出图** ---- */
+  const sl3 = page.locator('[role="slider"]');
+  const nSl3 = await sl3.count();
+  check('右栏有滑杆可拖（否则下面两条是空转）', nSl3 > 0, `${nSl3} 根`);
+  const v0 = await sl3.first().getAttribute('aria-valuenow');
+  await sl3.first().focus();
+  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(400);
+  const v1 = await sl3.first().getAttribute('aria-valuenow');
+  check('先把它拖离出厂值（否则"恢复默认"测不出东西）', !!v1 && v1 !== v0, `${v0} → ${v1}`);
+  const rBefore = await page.evaluate(() => window.__renders || 0);
+  await page.locator('button', { hasText: '恢复默认' }).first().click();
+  await page.waitForTimeout(500);
+  const v2 = await sl3.first().getAttribute('aria-valuenow');
+  check('★ 「恢复默认」真把滑杆拉回出厂值', v2 === v0, `${v1} → ${v2}（出厂 ${v0}）`,
+    '按钮没接线（09-15 之前它**没有 onClick**，点了什么都不发生）');
+  check('★ 「恢复默认」不自动出图（沿用"只有两个触发点"）',
+    (await page.evaluate(() => window.__renders || 0)) === rBefore, '',
+    '恢复默认顺手出了一张 —— 违反"只有两个触发点"');
+
+  /* ---- ③ 「存到主题」：真写进去；切走再回来真套回 ---- */
+  await sl3.first().focus();
+  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(400);
+  const vSaved = await sl3.first().getAttribute('aria-valuenow');
+  check('先拖到一个"记得住"的值（否则下面断言没意义）', !!vSaved && vSaved !== v0, String(vSaved));
+  await page.locator('button', { hasText: '存到主题' }).first().click();
+  await page.waitForTimeout(500);
+  const saved = await page.evaluate(() => window.__grades || {});
+  const keyA = Object.keys(saved)[0];
+  const savedVals = keyA ? Object.values(saved[keyA].params || {}) : [];
+  check('★ 「存到主题」真写进去了（参数不是空对象）',
+    !!keyA && savedVals.length >= 1,
+    keyA ? `${keyA} ⇒ ${JSON.stringify(saved[keyA].params)}` : '(一条都没存)',
+    '按钮没接线，或者存了个空参数（等于存了没用的东西）');
+  check('★ 存下来的就是**刚才拧到的那个值**（不是出厂值、不是别的）',
+    savedVals.map(String).includes(String(vSaved)),
+    `存了 ${JSON.stringify(savedVals)}，刚拧到 ${vSaved}`,
+    '存的不是当前值 ⇒ 下次套回来是错的');
+
+  /* 切到主题B（**没存过**）⇒ 应该回出厂；再切回主题A ⇒ 套回刚才存的那份 */
+  const openTheme3 = async (n) => {
+    const b = page.locator('button', { hasText: n }).first();
+    if (await b.count()) {
+      await b.click();
+      await page.waitForTimeout(1000);
+    }
+  };
+  await openTheme3('主题B');
+  const vB = await page.locator('[role="slider"]').first().getAttribute('aria-valuenow');
+  check('★ 切到**没存过**的主题 ⇒ 滑杆回出厂（不把上一个主题的调整带过去）',
+    vB === v0, `${vB}（出厂 ${v0}）`,
+    '主题之间串味 ⇒ 在 A 里拧过的滑杆跟着进了 B');
+  await openTheme3('主题A');
+  const vBack = await page.locator('[role="slider"]').first().getAttribute('aria-valuenow');
+  check('★ 切回主题A ⇒ **套回存过的那份配方**（存了就得用上）',
+    vBack === vSaved, `${vBack}（存的是 ${vSaved}）`,
+    '只写不读 = 存了个寂寞（本项目最忌的"看着对、其实对不上"）');
+  check('★ 这一轮也没把界面弄炸（右栏还在）',
+    (await page.locator('button', { hasText: '恢复默认' }).count()) > 0);
 }
 
 /* ---------- 收尾：整轮跑下来有没有未捕获报错 ---------- */

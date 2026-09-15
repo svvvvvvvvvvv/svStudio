@@ -152,6 +152,11 @@ export interface Base {
   name: string;
   label?: string;
   desc?: string;
+  /** ★★ 引擎当前配置的默认基准（引擎侧 `config.BASE`，`/bases` 里恰好一条为 true）。
+   *  前端**只认这个**来定初值 —— 不许自己写死基准名：
+   *  过去写死 `'all'`，而引擎的基准表里没有 `'all'` ⇒ `resolve_base` **静默**回落成
+   *  `BASE_NONE`（"不套基准"）⇒ 默认出图等于没套基准，且界面上四支**一支都选不中**。 */
+  isDefault?: boolean;
 }
 
 export interface ParamDef {

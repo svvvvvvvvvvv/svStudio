@@ -114,6 +114,10 @@ interface AppState {
   loadEngine: () => Promise<void>;
   ensureEngine: () => Promise<boolean>;
   setGrade: (patch: Partial<GradeState>) => void;
+  /** 右栏「恢复默认」：滑杆清空（回引擎出厂）+ 基准回引擎默认；**不动卷**；不自动出图 */
+  resetGrade: () => void;
+  /** 右栏「存到主题」：把当前卷/基准/滑杆值写进 `config.grades[主题名]`（进主题时自动套回） */
+  saveGradeToTheme: () => Promise<void>;
   setRenderBusy: (v: boolean) => void;
   /** 请分屏出一次图（右栏「渲染」按钮 / 切进调色台 都调它） */
   requestRender: () => void;
@@ -173,7 +177,12 @@ export const useStore = create<AppState>((set, get) => ({
   paramDefs: [],
   engineOk: false,
   engineMsg: '',
-  grade: { stock: 'portra400', base: 'all', params: {} },
+  /* ★★ 基准初值**故意留空串**：真正的默认由引擎给（`/bases` 里带 `isDefault` 的那条，
+     见下面 loadEngine）。过去这里写死 'all'，而引擎的基准表（config.BASE_TABLE）里
+     根本没有 'all' ⇒ `stocks.resolve_base` **静默**回落成 `BASE_NONE`（"不套基准"）
+     ⇒ 默认出图等于"什么都没套"，界面上四支**一支都选不中**（还看不出哪里不对）。
+     ⚠ 规矩同滑杆那条：**前端不许自己发明初值**。 */
+  grade: { stock: 'portra400', base: '', params: {} },
   renderBusy: false,
   renderTick: 0,
 
@@ -257,6 +266,31 @@ export const useStore = create<AppState>((set, get) => ({
             重启后恢复成不存在的第 N 张 ⇒ 打开就白屏）。 */
       saveLast({ session: name, cur: 0 });
     }
+    /* ★ 按主题**套回配方**（「存到主题」存下的那份，`config.grades[主题名]`）。
+       没存过就什么都不动 —— 保持当前状态。
+       ⚠ 不加这一步「存到主题」就是**只写不读**（存了个寂寞），正是本项目最忌的
+         "看着对、其实对不上"；也所以它没有单独一个按钮的必要 —— 存了就得用上。
+       ⚠ 只改状态、**不出图**（沿用"只有两个触发点"的规矩）。 */
+    try {
+      const g = await API.getGrade(name);
+      if (g && typeof g === 'object') {
+        /* 这个主题存过配方 ⇒ 原样套回 */
+        set({ grade: { ...get().grade, ...g } });
+      } else {
+        /* 没存过 ⇒ **回出厂**（滑杆清空 + 基准回引擎默认）。
+           为什么不"保持上一个主题的值"：那样主题之间会**互相串味**
+           （在 A 里拧过的滑杆跟着你进 B），正是本项目最忌的那类"看着对、其实对不上"。
+           代价照实说：在 A 里**没存**的临时改动，切走一趟回来就没了
+           —— 这恰恰是「存到主题」这个按钮存在的意义。 */
+        const list = get().bases;
+        const dflt = list.find((x) => x.isDefault) || list[0];
+        set({
+          grade: { stock: get().grade.stock, base: dflt?.name ?? '', params: {} },
+        });
+      }
+    } catch {
+      /* 读不到就当没存过，不吵 */
+    }
   },
 
   goHome: () => set({ sessionPath: '', sessionName: '', photos: [], cur: 0 }),
@@ -314,13 +348,23 @@ export const useStore = create<AppState>((set, get) => ({
       ]);
       // ★ main.js 给的键是 `items`（不是 `stocks`/`bases`/`params`）—— 09-15 名字对不上，
       //   三个列表永远是空的，卷/基准/滑杆全不显示。
+      const baseList: Base[] = b?.items || [];
       set({
         engineOk: true,
         engineMsg: '',
         stocks: s?.items || [],
-        bases: b?.items || [],
+        bases: baseList,
         paramDefs: p?.items || [],
       });
+      /* ★ 基准成色的初值**由引擎给**（同滑杆的 `dv` 规矩）：
+         当前值不在引擎列表里（首次 = 空串；或引擎改了基准表）⇒ 取引擎标了
+         `isDefault` 的那条；引擎万一没标，退到第一支。
+         ⚠ **这里不许出现任何写死的基准名** —— 写死就会在引擎改配置后静默错位。 */
+      const curBase = get().grade.base;
+      if (baseList.length && !baseList.some((x) => x.name === curBase)) {
+        const dflt = baseList.find((x) => x.isDefault) || baseList[0];
+        set({ grade: { ...get().grade, base: dflt.name } });
+      }
     } catch {
       set({ engineOk: false, engineMsg: '引擎未启动' });
     }
@@ -352,6 +396,37 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   setGrade: (patch) => set({ grade: { ...get().grade, ...patch } }),
+
+  /* ★ 右栏「恢复默认」（09-15 接上 —— 之前这个按钮**没有 onClick**，点了什么都不发生）：
+     只清「调出来的东西」= 23 根滑杆全清（引擎自动回到它自己 `config` 里的出厂值）+
+     基准回引擎默认那支。
+     ⚠ **不动卷**：卷（portra400 / cinestill800t…）是"这张要弄成什么"，不是调出来的，
+     被「恢复默认」顺手抹掉会很意外。
+     ⚠ 也不自动出图 —— 沿用 SV 定的"只有两个触发点"（右栏「渲染」/ 切进调色台）。 */
+  resetGrade: () => {
+    const list = get().bases;
+    const dflt = list.find((x) => x.isDefault) || list[0];
+    set({ grade: { ...get().grade, base: dflt?.name ?? '', params: {} } });
+    get().showToast('滑杆已回出厂（卷没动）—— 点「渲染」看效果');
+  },
+
+  /* ★ 右栏「存到主题」（09-15 接上）：一个主题一份配方，写进 `config.grades[主题名]`。
+     ⚠ 主进程的 `get-grade` / `set-grade` 早就写好了，是前端一直没调
+     —— 所以这不是"缺功能"，是"接了半截"。 */
+  saveGradeToTheme: async () => {
+    const name = get().sessionName;
+    if (!name) {
+      get().showToast('还没进主题，没地方存');
+      return;
+    }
+    try {
+      await API.setGrade(name, get().grade);
+      get().showToast(`配方已存到「${name}」`);
+    } catch (e) {
+      get().showToast('存失败：' + String(e));
+    }
+  },
+
   setRenderBusy: (v) => set({ renderBusy: v }),
   requestRender: () => set((s) => ({ renderTick: s.renderTick + 1 })),
 
