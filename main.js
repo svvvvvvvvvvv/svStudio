@@ -1435,8 +1435,22 @@ function engineGet(pathname, timeoutMs) {
 
 ipcMain.handle('engine-health', () => engineGet('/health', 1500));
 
-/** 一键把引擎拉起来（本机、后台、不弹窗）。已在跑则直接返回健康状态。 */
-ipcMain.handle('engine-start', async () => {
+/** 一键把引擎拉起来（本机、后台、不弹窗）。已在跑则直接返回健康状态。
+ *
+ * ★★★ 09-15（SV 报「点出图没反应，后台也没动静」）—— 这一条是**根因守卫**：
+ *   进调色台时**两个地方会同时**调 `engine-start`（Viewer 装载那条 effect + 右栏拉参数那条），
+ *   而下面第一句就是 `await engineGet('/health')`，引擎冷启动要 10~20 秒 ⇒
+ *   **两个调用都看到"没人应答"** ⇒ 各自 spawn 一个 ⇒ 两个都绑上 8765。
+ *   ⚠ Windows 上这**不报错**：`ThreadingHTTPServer.allow_reuse_address=1` 走的是 SO_REUSEADDR，
+ *     语义是"可以抢"而不是"用完能重绑"（POSIX 只管 TIME_WAIT）⇒ 第二个 bind 照样成功。
+ *   ⇒ 后果：请求被两个进程分掉。落到"刚起、什么都没载入"的那个空引擎上的请求**瞬间失败**，
+ *     而真正在干活的那个 CPU 一动不动 —— 正是他描述的现象（`engine_start.log` 里
+ *     spawn 一律成对出现、`netstat` 里两个 PID 同时 LISTENING 8765，都验过）。
+ *   ⇒ 守卫放在**唯一的 spawn 点**（就是这里），别的调用点不必各写一遍。
+ *   另一道闸在引擎那侧（`service.py::_port_taken`）：端口有人应答就响亮退出，绝不静默开第二个。 */
+let engineStartInflight = null;
+
+async function doEngineStart() {
   const alive = await engineGet('/health', 1200);
   if (alive.ok) return { ok: true, already: true, data: alive.data };
   const py = enginePy();
@@ -1474,6 +1488,15 @@ ipcMain.handle('engine-start', async () => {
     if (h.ok) return { ok: true, started: true, seconds: (i + 1) * 0.5, data: h.data };
   }
   return { ok: false, error: '引擎启动了但 20 秒内没响应（看引擎日志：' + engineLogFile() + '）' };
+}
+
+ipcMain.handle('engine-start', () => {
+  /* ★ 一句话守卫：同一时刻只许有**一次**"起引擎"在飞（后到的直接接上同一个 Promise，
+     而不是各起一个进程）。跑完就放开 —— 引擎真挂了还能再拉。 */
+  if (!engineStartInflight) {
+    engineStartInflight = doEngineStart().finally(() => { engineStartInflight = null; });
+  }
+  return engineStartInflight;
 });
 
 ipcMain.handle('engine-stocks', async () => {

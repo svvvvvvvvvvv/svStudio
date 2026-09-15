@@ -2548,6 +2548,115 @@ def t_preview_side():
           's, _ms = _load_one(row.get(\'path\'), want)' in src)
 
 
+def t_single_engine():
+    r"""★★ 09-15 深夜（SV 报「点出图没反应，我看后台也没动静」）—— 守「**一个端口上只许有一个引擎**」。
+
+    事故现场（都是实测，不是推理）：
+      · `engine_start.log` 里 `[spawn] pid=…` **一律成对出现**；
+      · `netstat` 里 `8765 LISTENING` **同时挂着两个 PID**（11580 和 36448）；
+      · `_cpu_probe.py` 采 5 秒：36448 用掉 4.53 CPU 秒、内存 8686 MB；11580 用掉 **0.00** 秒、41 MB
+        —— 一个在干活、另一个从启动起一步没动；
+      · `svstudio_render.log` 里**一条渲染记录都没有** ⇒ 从界面按下的那一发**从未到达引擎**。
+    机理：请求被两个进程分掉。落到"刚起、什么都没载入"的空引擎上时，它瞬间回一句
+      「id 不在缓存里」就完事（`_cache_get` 对不存在的 id 是秒回），而真在干活的那个 CPU 一动不动。
+    根因：`http.server.HTTPServer.allow_reuse_address = 1` ⇒ `setsockopt(SO_REUSEADDR)`。
+      POSIX 上它只管「TIME_WAIT 能重绑」，**Windows 上语义是"可以抢"** ⇒ 第二个 `bind` 不报错。
+    触发：进调色台时**两个地方同时**调 `engine-start`（Viewer 装载 + 右栏拉参数），
+      而 `engine-start` 第一句 `await engineGet('/health')` 要等引擎冷启动 10~20 秒
+      ⇒ 两个调用都看到"没人应答" ⇒ 各 spawn 一个。
+
+    两道闸，这里钉引擎侧这道（台子侧的单飞守卫在 `_check/ui_smoke.mjs`）：
+      ① `_Server.allow_reuse_address = False` —— 让第二次 bind **老实报错**；
+      ② `serve()` 先 `_port_taken()` —— 有人应答就**响亮退出**，绝不静默开第二个。
+    """
+    import socket
+    import subprocess
+    import time
+    from http.server import ThreadingHTTPServer
+    from . import service as _svc
+
+    # 引擎的 cwd（= svFilm 仓库根）：`python -m svFilm.service` 得在这里跑
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+    print('[一个端口只许一个引擎]')
+
+    # ---- ① 属性：必须**显式**关掉，而且父类默认是开的（不然这条改动没有意义） ----
+    check('★ `_Server` 显式关掉 allow_reuse_address（父类默认是 **开**的）',
+          _svc._Server.allow_reuse_address is False
+          and bool(ThreadingHTTPServer.allow_reuse_address) is True,
+          '_Server=%r 父类=%r' % (_svc._Server.allow_reuse_address,
+                                  ThreadingHTTPServer.allow_reuse_address))
+
+    # ---- ② 行为才是真话：拿**真的 bind**试，不只看那个属性 ----
+    def _double_bind(cls):
+        """同一端口上绑两个 —— 返回 'both'（两个都绑住了）/ 'refused'（第二个被拒）。"""
+        a = cls(('127.0.0.1', 0), None)
+        try:
+            try:
+                b = cls(('127.0.0.1', a.server_address[1]), None)
+            except OSError:
+                return 'refused'
+            b.server_close()
+            return 'both'
+        finally:
+            a.server_close()
+
+    if sys.platform.startswith('win'):
+        # ★ 这一条是**把病本身**量出来：改之前两个引擎就是这么同时挂上 8765 的。
+        #   ⚠ 说明要放 `why`（只在失败时打印）—— 放 `extra` 的话，通过时也印一句
+        #     "第二个没被拒"，读起来像在报错（自己先踩过这个坑）。
+        got_base = _double_bind(ThreadingHTTPServer)
+        check('★★ 底层的病（只在本机能证）：默认设置下两个 server **能同时绑住同一个端口**',
+              got_base == 'both', '观察到：' + got_base,
+              '第二个没被拒 ⇒ 这就是当初两个引擎同时挂在 8765 上的原因')
+    else:
+        skip('「默认设置下两个 server 能双绑」这条只在 Windows 上成立'
+             '（POSIX 的 SO_REUSEADDR 只管 TIME_WAIT，不会有这种事）')
+    # ★ 这一条是**破法会红**的那种：谁把 allow_reuse_address 改回 True，它立刻从 refused 变 both。
+    got_ours = _double_bind(_svc._Server)
+    check('★★ 我们的 `_Server` 拦住了第二个（bind 直接报 OSError）',
+          got_ours == 'refused', '观察到：' + got_ours,
+          '又变回"能抢"了 ⇒ 两个引擎会同时挂在同一个端口上，请求被分掉 = 点了像没反应')
+
+    # ---- ③ `_port_taken` 三个状态（它就是那道"先探一下"的闸） ----
+    s = socket.socket()
+    s.bind(('127.0.0.1', 0))
+    free_port = s.getsockname()[1]
+    check('没人在上面 ⇒ False', _svc._port_taken(free_port) is False)
+    s.listen(1)
+    check('有人在应答 ⇒ True', _svc._port_taken(free_port) is True)
+    s.close()
+    check('关掉之后又变回 False（不是把结果记死了一次）',
+          _svc._port_taken(free_port) is False)
+
+    # ---- ④ 端到端：真起第二个引擎，它必须**自己退出**，而不是悄悄挂上 ----
+    #   ★ 只查"源码里有 `_port_taken` 这几个字"是假绿（那个字串到处都是）。
+    #     真起一个进程，看它的退出码和人话 —— 顺带证明它**不会挂住**：
+    #     没有这道闸的话它会 bind 成功然后 serve_forever，这里只能等到超时。
+    def _spawn_second(port):
+        env = dict(os.environ)
+        env['PYTHONIOENCODING'] = 'utf-8'
+        try:
+            p = subprocess.run(
+                [sys.executable, '-u', '-m', 'svFilm.service', '--port', str(port)],
+                cwd=root, capture_output=True, timeout=60, env=env,
+                encoding='utf-8', errors='replace')
+            return p.returncode, (p.stdout or '') + (p.stderr or '')
+        except subprocess.TimeoutExpired:
+            return None, '<超时：它没退出，在 serve_forever 里挂住了>'
+
+    holder = socket.socket()
+    holder.bind(('127.0.0.1', 0))
+    holder.listen(1)                       # 有人在应答 = 真引擎在跑的样子
+    busy = holder.getsockname()[1]
+    rc, out = _spawn_second(busy)
+    holder.close()
+    check('★★ 端口上已经有一个引擎 ⇒ 第二个**自己退出**（非 0，且不挂住）',
+          rc == 1, 'rc=%r\n%s' % (rc, out.strip()[:400]))
+    check('★★ 而且**说人话**讲清为什么（不是静默退出 —— 静默正是这次查半天的原因）',
+          '已经有一个' in out, out.strip()[:300])
+
+
 def main():
     for fn in (t_color, t_analyze, t_tone_mid_target, t_tone_monotone, _legacy(t_style_lock),
                _legacy(t_style_contrast_direction), _legacy(t_style_tone_curve), _legacy(t_style_chroma_ends), t_denoise,
@@ -2568,7 +2677,11 @@ def main():
                # 09-15 晚（第二轮）：调色台预览的 `side` 以前**收下就扔**
                #   ⇒ 700 / 1400 / 2048 三发回来字节完全相同 ⇒ 「1:1」永远看不到像素、
                #     "脸在预览里只有 41x51 像素"也没法靠加尺寸解决
-               t_preview_side):
+               t_preview_side,
+               # 09-15 深夜：SV 报「点出图没反应、后台也没动静」⇒ 台子每次起**两个**引擎、
+               #   两个都绑 8765（Windows 上 SO_REUSEADDR 不报错）⇒ 请求被分掉。
+               #   ⇒ 必须钉住「一个端口只许一个引擎」（引擎侧这道闸）
+               t_single_engine):
         fn()
     print('-' * 52)
     if FAIL:

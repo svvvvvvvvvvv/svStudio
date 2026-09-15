@@ -681,6 +681,58 @@ check('★★ 切档**不碰渲染**（换看法 ≠ 重新出一张；`setView`
     !/onChange=\{setView\}[\s\S]{0,200}?requestRender\(\)/.test(viewerCode), '',
   '切个视图就重出一张 ⇒ 变成"切档等 6 秒"（那张 dataURL 本来就还在手上）');
 
+/* ---------- [11.5] 起引擎：只许有**一个** spawn 点 + 单飞守卫（09-15 SV 报「点出图没反应」） ----------
+   ★ 事故：台子每次启动起了**两个**引擎，两个都 LISTENING 8765。机理与证据（都实测过）：
+     · `engine_start.log` 里 `[spawn] pid=…` **一律成对出现**；
+     · `netstat` 里 8765 同时挂着两个 PID；CPU 采样一个用掉 4.53 CPU 秒、另一个 0.00；
+     · `ThreadingHTTPServer.allow_reuse_address = 1` 在 Windows 上走 SO_REUSEADDR，
+       语义是"**可以抢**"（不是 POSIX 的"TIME_WAIT 能重绑"）⇒ 第二个 bind **不报错**。
+     ⇒ 请求被两进程分掉，落在"刚起、什么都没载入"的空引擎上的**瞬间失败**
+       （`_cache_get` 对不存在的 id 是秒回），而真在干活的那个 CPU 一动不动。
+   ★ 触发：进调色台时**两个地方同时**调 `engine-start`（Viewer 装载 effect + 右栏拉参数），
+     而 `engine-start` 第一句 `await engineGet('/health')` 要等冷启动 10~20 秒
+     ⇒ 两个调用**都**看到"没人应答" ⇒ 各 spawn 一个。
+   ★ 这一节盯台子侧那道闸；引擎侧那道（`_Server.allow_reuse_address = False` + `_port_taken`）
+     在引擎自检 `t_single_engine` 里。两边缺一不可：这里拦"我们自己的重复调用"，
+     那边拦"任何来源的第二份"，还顺手把"绑不上"这件事**说人话**。
+   ⚠ 只查"源码里有 `engineStartInflight` 这几个字"是假绿 —— 守卫被绕过、字串还在。
+     所以下面**数 `spawn(` 的出现次数**：起引擎那条路必须全仓库只有一处。 */
+
+console.log('\n[11.5] 起引擎：唯一的 spawn 点 + 单飞守卫');
+{
+  const gM = mainJsCode.match(/let engineStartInflight = null;[\s\S]*?ipcMain\.handle\('engine-start'[\s\S]*?\n\}\);\n/);
+  check('★★ 能抽出「单飞守卫 + engine-start 处理函数」整段（抽不出来 ⇒ 下面全是空转）',
+    !!gM, '', '改名/挪位置了，这一节必须跟着改，别让它悄悄变绿');
+  const gCode = gM ? gM[0] : '';
+
+  check('★★★ 起引擎这条路上全仓库**只有一处** `spawn(py, [` —— 多的那处就是第二个引擎',
+    (mainJsCode.match(/spawn\(py, \['-u', '-m', 'svFilm\.service'/g) || []).length === 1, '',
+    '两处 spawn ⇒ 进调色台时两个调用各起一个，两个都绑上 8765（Windows 上不报错），' +
+    '请求被分掉 = 点了像没反应');
+
+  check('★★ 同一时刻只许一次"起引擎"在飞（后到的接上同一个 Promise，不是再起一个进程）',
+    /if \(!engineStartInflight\) \{/.test(gCode) &&
+      /engineStartInflight = doEngineStart\(\)/.test(gCode) &&
+      /return engineStartInflight;/.test(gCode), '',
+    '少了这个 if ⇒ 两个并发调用各进一次 doEngineStart，守卫等于没写');
+
+  check('★★ 跑完要**放开**（`.finally` 里清空）—— 引擎真挂了还得能再拉一次',
+    /\.finally\(\(\) => \{ engineStartInflight = null; \}\)/.test(gCode), '',
+    '不放开 ⇒ 引擎崩了之后永远拉不起来，症状还是"点了没反应"');
+
+  check('★ 处理函数本身**不许**直接调 doEngineStart（必须经过守卫）',
+    !/ipcMain\.handle\('engine-start',\s*(async\s*)?\(\)\s*=>\s*doEngineStart\(\)/.test(mainJsCode), '',
+    '绕过守卫直接起 ⇒ 又是一个只有一处 spawn 但每次都能开两个的写法');
+
+  check('★ 起引擎前先探 `/health`（已在跑就别再 spawn）—— 探测的等待就是双 spawn 的窗口',
+    /const alive = await engineGet\('\/health'/.test(gCode) &&
+      /if \(alive\.ok\) return \{ ok: true, already: true/.test(gCode), '');
+
+  check('★ 子进程的 stdout/stderr 落**日志文件**（静默正是这次查半天的原因）',
+    /stdio: \['ignore', fs\.openSync\(engineLogFile\(\), 'a'\)/.test(gCode), '',
+    'stdio 全 ignore ⇒ 引擎起不来时一点线索都没有');
+}
+
 /* ---------- 12. 相纸（09-15 SV 选「C」） ----------
    ★ 为什么单开一组：一张真卷出图 = **(负片, 相纸)** 二元组。原来只开放了负片那一半
      （`init_params(film_profile=…)` 里的相纸是写死的）—— 而**相纸是最终成色的另一半**：

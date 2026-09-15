@@ -898,10 +898,64 @@ _CACHE_MAX = [DEFAULT_CACHE]
 _WEB = [None]        # --web <dir>：要不要顺手 serve 一个静态前端（可选）
 
 
+def _port_taken(port, host='127.0.0.1', timeout=2.0):
+    r"""端口上**已经有人应答**了吗？（只连一下，不发请求）
+
+    ★★★ 09-15（SV 报「点出图没反应，后台也没动静」）挖出来的：
+      台子每次启动**都起了两个引擎**（`engine_start.log` 里 spawn 一律成对出现），
+      两个都 LISTENING 8765 —— 因为 `ThreadingHTTPServer.allow_reuse_address = 1`
+      在 Windows 上走的是 **SO_REUSEADDR**，语义是"**可以抢**"而不是"用完立刻能重绑"：
+      **第二个 bind 不报错**，两个进程就这么同时挂在一个端口上（POSIX 上 SO_REUSEADDR
+      只管 TIME_WAIT，不会有这种事 —— 这是 Windows 特有的坑）。
+      ⇒ 后果是**请求被哪个进程收到不确定**：落在"那个刚起、什么都没载入"的空引擎上时，
+        它会瞬间回一句"id 不在缓存里"就完事 ⇒ 界面上"点了没反应"、而那个真在干活的引擎
+        CPU 一动不动 —— 正是 SV 描述的现象。
+      ⇒ 所以：**启动前先探一下端口**，有人应答就**响亮地退出**，绝不静默开第二个。
+    """
+    import socket
+    s = socket.socket()
+    s.settimeout(timeout)
+    try:
+        s.connect((host, int(port)))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+class _Server(ThreadingHTTPServer):
+    r"""★ 只给本机用的 HTTP 服务器 —— **故意关掉 `allow_reuse_address`**。
+
+    `http.server.HTTPServer` 默认 `allow_reuse_address = 1`，也就是 `setsockopt(SO_REUSEADDR)`。
+    POSIX 上它只管「TIME_WAIT 的端口可以重绑」，**Windows 上语义不一样：它是"可以抢"**
+    —— 第二个进程 `bind` 同一个端口**不报错**，于是两个引擎会同时挂在 8765 上，
+    请求随机落到其中一个（09-15 那个「点出图没反应」就是这么来的，详见 `_port_taken`）。
+
+    关掉之后 Windows 上第二次 bind 会**老实报错**（`serve()` 里接住并打印原因），
+    POSIX 上唯一的代价是「刚停掉的一瞬间重绑可能失败」，对本机常驻服务无所谓。
+    真要并排跑两个引擎，显式换 `--port`。
+    """
+    allow_reuse_address = False
+
+
 def serve(port=DEFAULT_PORT, host='127.0.0.1', cache=DEFAULT_CACHE, web=None):
     _CACHE_MAX[0] = int(cache)
     _WEB[0] = web
-    srv = ThreadingHTTPServer((host, int(port)), _H)
+    # ★★★ 拒绝"悄悄开第二个"（见 `_port_taken` 的说明）——
+    #   这一条只防**我们自己的重复启动**；真要并排放两个，显式换 `--port`。
+    if _port_taken(port, host):
+        print('!! 端口 %d 上已经有一个 svFilm 引擎在跑了 —— 这次启动**直接退出**，不会开第二个。' % port)
+        print('   · 想用它：什么都不用做（台子会自己接上去）')
+        print('   · 想重启：先把那个进程杀掉（任务管理器里的 python.exe / `taskkill`）')
+        print('   · 想并排放一个：显式给别的端口，例如 --port 8766')
+        return 1
+    try:
+        srv = _Server((host, int(port)), _H)
+    except OSError as e:
+        print('!! 端口 %d 绑不上：%s' % (port, e))
+        print('   （多半是已经有一个引擎在跑 —— 见上一段的三种处理办法）')
+        return 1
     srv.daemon_threads = True
     print('svFilm 服务已起： http://%s:%d   （缓存上限 %d 张，预览长边 %d）'
           % (host, port, _CACHE_MAX[0], DEFAULT_SIDE))
@@ -927,7 +981,11 @@ def main(argv=None):
     a = ap.parse_args(argv)
     if a.no_stage_cache:
         _STAGES[0] = None
-    serve(a.port, a.host, a.cache, a.web)
+    # ★ `serve()` 返回非 0 = **没有起来**（端口上已经有一个，或绑不上）——
+    #   用非 0 退出码说出去，台子那边 `[child exit] code=1` 就能和日志对上。
+    rc = serve(a.port, a.host, a.cache, a.web)
+    if rc:
+        raise SystemExit(rc)
 
 
 if __name__ == '__main__':
