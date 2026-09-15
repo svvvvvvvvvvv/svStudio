@@ -802,13 +802,23 @@ console.log('\n[11.6] 出图请求的痕迹（发出去 / 回来，各一行）'
     /* ---- engineTraceQ：纯函数，直接喂 ----
        ⚠ 这里**必须用假路径**（`X:\示例库\主题A`）——真实拍摄信息不许进仓库。 */
     const q = M.engineTraceQ;
-    const red = q('?paths=' + encodeURIComponent('X:\\示例库\\主题A\\示例0001.RAF'));
+    /* ⚠ 这两条的**失败详情不许把原始路径打出来** —— 守隐私的检查自己漏路径就成了笑话，
+       而且自检输出经常被整段贴进对话/记忆里。只报"文件名在不在、目录名在不在"这三个事实。
+       ⚠⚠ 断言前**必须先解码**：真实调用是 encodeURIComponent 过的，而脱敏只对**路径键**做
+          decode ⇒ 没脱敏时拿到的是 `X%3A%5C...`（百分号编码）。不先解码的话，
+          检查会靠"找不到文件名"才红 —— **红的理由不对**，summary 也会说谎
+          （破法当场逮到过：显示 `含目录名=false`，其实目录名就在里面，只是编码了）。 */
+    const show = (s) => { try { return decodeURIComponent(s); } catch (e) { return s; } };
+    const said = (s) => '含文件名=' + (s.indexOf('示例0001.RAF') >= 0 || s.indexOf('示例0002.RAF') >= 0) +
+      ' 含目录名=' + (s.indexOf('示例库') >= 0) + ' 含子目录=' + (s.indexOf('主题A') >= 0);
+    const red = show(q('?paths=' + encodeURIComponent('X:\\示例库\\主题A\\示例0001.RAF')));
     check('★★ 路径只剩**文件名**（日志不该出现真实目录名）',
-      red.indexOf('示例0001.RAF') >= 0 && red.indexOf('示例库') < 0 && red.indexOf('主题A') < 0, '', red);
-    const red2 = q('?src=' + encodeURIComponent('X:\\示例库\\主题A\\示例0002.RAF') +
-      '&path=' + encodeURIComponent('X:\\示例库\\主题A\\示例0002_svfilm.jpg'));
+      red.indexOf('示例0001.RAF') >= 0 && red.indexOf('示例库') < 0 && red.indexOf('主题A') < 0,
+      '', said(red));
+    const red2 = show(q('?src=' + encodeURIComponent('X:\\示例库\\主题A\\示例0002.RAF') +
+      '&path=' + encodeURIComponent('X:\\示例库\\主题A\\示例0002_svfilm.jpg')));
     check('★★ src / path 一样只留文件名（导出那条路也带真实目录）',
-      red2.indexOf('示例0002.RAF') >= 0 && red2.indexOf('示例库') < 0, '', red2);
+      red2.indexOf('示例0002.RAF') >= 0 && red2.indexOf('示例库') < 0, '', said(red2));
     check('★ 不是路径的键**原样保留**（别把真正要看的信息也脱敏掉）',
       q('?id=7&stock=portra400&side=700') === 'id=7&stock=portra400&side=700', '', q('?id=7'));
     const long = q('?params=' + 'K'.repeat(900));
@@ -829,10 +839,12 @@ console.log('\n[11.6] 出图请求的痕迹（发出去 / 回来，各一行）'
   check('★★★ `engineGetRaw(` 全仓库只出现**两处**（定义 + 包装里那一次）—— 没人绕过日志',
     rawCalls === 2, '实际 ' + rawCalls + ' 处',
     '有调用点绕过 ⇒ 那条路出图不留痕迹，症状还是"点了没反应、查不到"');
+  const nOut = (mainJsCode.match(/engineTrace\('\[→\] /g) || []).length;
+  const nBack = (mainJsCode.match(/engineTrace\('\[←\] /g) || []).length;
   check('★ 「发出」「回来」各只有一处（`[→]` / `[←]`）',
-    (mainJsCode.match(/engineTrace\('\[→\] /g) || []).length === 1 &&
-    (mainJsCode.match(/engineTrace\('\[←\] /g) || []).length === 1, '',
-    '两处以上 ⇒ 同一次请求会写重复的行，读数的时候会以为自己看错了');
+    nOut === 1 && nBack === 1, '发出 ' + nOut + ' 处 / 回来 ' + nBack + ' 处',
+    '**少了** ⇒ 就分不出"卡在引擎里"和"压根没发出去"（这两件事表现一模一样、成因完全不同）；' +
+    '**多了** ⇒ 同一次请求写重复的行，读数时以为自己看错了');
   check('★ 和界面日志**同一个文件**（出事时只看一个地方）',
     /svstudio_render\.log/.test(traceBody), '', '写到别处去了 ⇒ 查问题时得知道去哪个文件翻');
   check('★★ 写日志失败**不许影响出图**（appendFileSync 外面必须有 try）',
