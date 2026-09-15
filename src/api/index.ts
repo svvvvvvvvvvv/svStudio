@@ -223,9 +223,23 @@ export interface ParamDef {
    *   （「整张浓淡」显示 0.50 / 实际 0.00）。别再退回中点。
    * ⚠ `inv` 的项，dv 已经翻成"人话方向"了（显示值），别自己再换算。
    */
-  dv?: number;
-  /** 分组：真卷 / 脸 / 影调 / 质感 */
+  dv?: number | boolean | string;
+  /** 分组：影调 / 真卷 / 质感 / 脸（顺序就是右栏从上到下的顺序） */
   grp?: string;
+  /**
+   * ★★ 09-15（B3）：这一行画什么控件 —— **由引擎给，前端不许自己猜**。
+   *   `num`（默认）= 滑杆；`bool` = 勾选框（整层开关）；`enum` = 下拉（选项在 `opts`）。
+   */
+  kind?: 'num' | 'bool' | 'enum';
+  /** 下拉的选项：`v` = 传给引擎的值（也是 `dv` 的取值域），`t` = 给人看的名字 */
+  opts?: { v: string; t: string }[];
+  /**
+   * ★★ 这一行**管的那个「整层开关」**（config 里 `*_ENABLE` 的名字，例如 `GRAIN_ENABLE`）。
+   *  勾选框画在参数名**前面**；勾掉 = 那一层完全不跑（**不是**把强度拧到 0）。
+   *  `gate_dv` 是它此刻的值（由引擎现读，前端不许写死）。
+   */
+  gate?: string;
+  gate_dv?: boolean;
   /** true=只真卷下生效；false=只非真卷下生效；undefined=都生效 */
   spek?: boolean;
   d?: string;
@@ -271,7 +285,8 @@ export interface RenderOpts {
   /** ★★ 相纸（真卷专用）。空串 = 用这一卷的配套纸（引擎侧 `resolve_paper()` 兜底）。
    *  名字不认得时引擎回落并标出来，不会崩 —— 别在前端自己兜。 */
   paper?: string;
-  params?: Record<string, number>;
+  /** ⚠ 除了数字，还有整层开关（boolean）和下拉型号（string）—— 见 `ParamDef.kind` */
+  params?: Record<string, number | boolean | string>;
   [k: string]: any;
 }
 
@@ -286,7 +301,8 @@ export interface GradeState {
   base?: string;
   /** ★★ 相纸（真卷专用，按主题存）。老配方里没有这个字段 ⇒ undefined = 用配套纸。 */
   paper?: string;
-  params?: Record<string, number>;
+  /** ⚠ 除了数字，还有整层开关（boolean）和下拉型号（string）—— 见 `ParamDef.kind` */
+  params?: Record<string, number | boolean | string>;
   [k: string]: any;
 }
 

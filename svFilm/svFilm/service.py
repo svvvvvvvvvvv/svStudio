@@ -583,6 +583,21 @@ PARAM_BLOCK = ('ENTRY_CURVE', 'ENTRY_SHOULDER_KIND', 'LUT_PATH', 'BASE', 'STOCK'
                'CHROMA_REF')                             # 彩度 gamma 的参考点
 
 
+# ★ 09-15（B3）：布尔开关的几种写法都认（前端发的是 1/0，手写 A/B 时可能写 true/false）。
+#   认不出来 ⇒ 返回 None ⇒ **丢掉**（不是当成 False：那会把"写错了"变成"悄悄关掉一层"）。
+_TRUE_WORDS = ('1', 'true', 'yes', 'on', 't', 'y')
+_FALSE_WORDS = ('0', 'false', 'no', 'off', 'f', 'n')
+
+
+def _as_bool(v):
+    s = (v or '').strip().lower()
+    if s in _TRUE_WORDS:
+        return True
+    if s in _FALSE_WORDS:
+        return False
+    return None
+
+
 def _parse_params(txt):
     """`KEY:VAL,KEY:VAL` → dict。不合法/不在白名单的**静默丢掉**（不让前端报错卡住）。
 
@@ -604,7 +619,21 @@ def _parse_params(txt):
         if not hasattr(C, k):
             continue
         cur = getattr(C, k)
-        if isinstance(cur, (int, float)) and not isinstance(cur, bool):
+        # ★★ 09-15（B3）三类控件：数字 / 整层开关（bool）/ 下拉（enum）。
+        #   `kind` **由 PARAMS 表给**（单一真相源，所以这里不许写死参数名）。
+        #   ⚠ 这条闸原来只认 `(int, float)` —— `DENOISE_ENABLE` 这种 bool 被
+        #     `not isinstance(cur, bool)` 挡掉、`SPEK_DIFFUSION_FAMILY` 这种字符串连
+        #     `float()` 都过不去 ⇒ **界面上有控件、拧不动、还不报错**（本项目最阴的一类）。
+        kind = _PARAM_KIND.get(k, 'num')
+        if kind == 'bool':
+            _b = _as_bool(v)
+            if _b is not None:
+                out[k] = _b
+        elif kind == 'enum':
+            # 表里没有的名字**一律丢掉** —— 不能让 vendor 拿到编不出来的型号（那是崩，不是"没反应"）
+            if v in _PARAM_OPTS.get(k, ()):
+                out[k] = v
+        elif isinstance(cur, (int, float)) and not isinstance(cur, bool):
             try:
                 out[k] = float(v)
             except ValueError:
@@ -632,7 +661,16 @@ class _Overrides:
         for k, v in self.kv.items():
             self.old[k] = getattr(C, k)
             cur = self.old[k]
-            setattr(C, k, int(round(v)) if isinstance(cur, int) else float(v))
+            # ⚠ 顺序要紧：`isinstance(True, int)` **也是 True** ⇒ bool 必须先判，
+            #   否则开关会被写成 0/1 整数（下游 `bool(...)` 虽然还能用，但类型就脏了）。
+            if isinstance(cur, bool):
+                setattr(C, k, bool(v))
+            elif isinstance(cur, str):
+                setattr(C, k, str(v))
+            elif isinstance(cur, int):
+                setattr(C, k, int(round(v)))
+            else:
+                setattr(C, k, float(v))
         return self
 
     def __exit__(self, *a):
@@ -655,55 +693,13 @@ class _Overrides:
 #   方向统一成**右 = 强、左端 = 关掉/不动**（唯一例外是「整张亮暗」，它靠 `inv` 翻正）。
 # ★ 「对齐大师」那一档都写进 `d` 里了 —— 这是 SV 定的规矩：每个菜单都要有"照大师那一栏"。
 PARAMS = [
-    # ================= 真卷（物理链）专属 =================
-    dict(k='SPEK_PE_SHIFT',   name='整张亮暗',   lo=0.62, hi=1.43, step=0.01, grp='真卷', spek=True,
-         inv=True,
-         d='整张更亮还是更暗。1.00 = 不动，越大越亮。相机给多了曝光的片（闪光顶亮、脸发白）'
-           '往左拉回来。⚠ 往右别拉到头，高光会先顶'),
-    dict(k='SPEK_COUPLERS',   name='整张浓淡',   lo=0.0,  hi=0.5,  step=0.01, grp='真卷', spek=True,
-         d='彩度（胶片层间抑制的强度）。越小越淡。0 = 关掉这道过程（画面彩度 7.57，作者线的靶 '
-           '6.79，已经很贴）；1.0 = 出厂物理值（12.13，明显更艳）。它不动明暗对比'),
-    dict(k='SPEK_MORPH_GAMMA', name='印相反差',  lo=1.00, hi=1.30, step=0.01, grp='真卷', spek=True,
-         d='相纸曲线的陡度 —— 改的是对比的"形状"（不是加滤镜）。1.00 = 关掉；越大画面越硬、'
-           '层次往亮部靠。⚠ 它一动，整张的落点也跟着动，要配着「整张亮暗」一起看'),
-    dict(k='SPEK_DIFFUSION_STRENGTH', name='柔光', lo=0.0, hi=0.5, step=0.01, grp='真卷', spek=True,
-         d='放大机端的黑柔（颗粒保持锐利）。0 = 关；0.25 ≈ 1/4 档。⚠ 大师的柔度是 11.19，'
-           '我们关掉就已经 9.72 ⇒ 我们本来比大师更柔，想照大师对齐就拉到 0'),
-    dict(k='SPEK_SCANNER_LENS_BLUR', name='成片锐度', lo=0.0, hi=1.5, step=0.05, grp='真卷', spek=True,
-         d='扫描端的锐化强度。0 = 不锐化（画面更软），0.60 = 出厂'),
-
-    # ================= 脸（两条路都生效：L3 肤色层是保留的）=================
-    dict(k='FACE_SPAN_KMAX',  name='脸的层次',   lo=1.0,  hi=3.0,  step=0.05, grp='脸',
-         d='脸内部明暗最多拉开几倍。1.0 = 不动，越大越立体。2.0 = 作者线那一档（就是出厂值），'
-           '再往上容易显脏'),
-    dict(k='FACE_TGT_SPAN',   name='脸的靶跨度', lo=20.0, hi=50.0, step=0.5, grp='脸',
-         d='脸的明暗想拉到多开（配合上一根用）。35 = 作者线的下限，就是出厂值；'
-           '调大 = 想要更立体的脸'),
-    dict(k='SKIN_FLOOR_A',    name='脸的红绿',   lo=11.0, hi=20.0, step=0.1, grp='脸',
-         d='脸的 a*（+ 偏红润 / − 偏绿）。**16.3 = 33 位大师脸的中间值**（照大师对齐选它）；'
-           '出厂 14.5 是"作者线那档"，更淡'),
-    dict(k='SKIN_FLOOR_B',    name='脸的黄蓝',   lo=12.0, hi=22.0, step=0.1, grp='脸',
-         d='脸的 b*（+ 偏黄暖 / − 偏蓝冷）。**18.5 = 33 位大师脸的中间值**；出厂 16.5 更冷一点'),
-    dict(k='SKIN_PROTECT_STRENGTH', name='肤色保护', lo=0.0, hi=1.0, step=0.02, grp='脸',
-         d='风格层压彩度时，脸少降多少。0 = 不保护（脸跟着整张一起变淡），1 = 脸完全不掉色'),
-    # ★★ 09-15 SV 选「D」：把"收脸"放出来，但**默认 0 = 一个像素都不动**。
-    #   为什么单开一根而不是直接改默认：09-14 定的「只提不压」是**故意**的
-    #   （两个方向都锚会把整张亮度分布拉散，实测 L50 由 41~68 → 35~84）
-    #   ⇒ 做成滑杆 ⇒ 拖了才生效，**出厂结果逐位不变**。
-    dict(k='ANCHOR_DOWN_GAIN', name='脸太亮收回', lo=0.0, hi=1.0, step=0.02, grp='脸',
-         d='脸**比该有的亮度还亮**（发白）时，往靶收多少。**0.00 = 完全不动（出厂）**；'
-           '1.00 = 完全收到靶 68 —— 那就是 33 位大师脸的中位 67.9，也是'
-           '「脸的红绿 / 黄蓝」正在对齐的同一个数（实测一张中位 89 的脸 ⇒ 68.0）。'
-           '⚠ 它是整张乘**同一个**增益（不分区）⇒ 脸回来了，背景也跟着暗一些，'
-           '所以出厂没开。脸本来就偏暗的片**不受影响**（只收不回）。'
-           '⚠ 别再拿「整张亮暗」去救发白的脸：那根在印相那一步，压在相纸曲线的平肩上'
-           '（实测整张掉 11 L* 而脸只掉 0.5）。'),
-
-    # ================= 影调 =================
+    # ========== 影调（★ 09-15 SV 定的右栏顺序：影调 → 真卷 → 物理/质感 → 脸）==========
     dict(k='ENTRY_SETTLE_SHIFT_EV', name='整张亮暗(总)', lo=-1.0, hi=1.5, step=0.05, grp='影调',
          d='在"听相机曝光"之上，整体再提亮 / 压暗（单位：档）。0 = 不动。'
-           '⚠ 只对 **RAW** 有效（JPG 的相机曲线已经压过了，入口这一段不跑）；'
-           '⚠ 只对量过落点规律的机型有效，没量过的机型这条不生效。'
+           '★ 09-15 修：**任何机型都通电**。以前只有量过落点规律的机型才认这个数，'
+           '别的机身上它被**静默丢掉**（拧了、点渲染都不动）；现在没量过的机身走全局落点，'
+           '一样按这一档平移。'
+           '⚠ 只对 **RAW** 有效（JPG 的相机曲线已经压过了，入口这一段不跑）。'
            '⚠ 大师的中灰是 58，我们够不到（那个数绑着别人的场景+曝光+冲扫）⇒ '
            '这是"朝那个方向偏"，不是"对齐到 58"'),
     dict(k='ENTRY_TOE',       name='暗部亮度',   lo=0.0,  hi=1.0,  step=0.02, grp='影调',
@@ -726,26 +722,126 @@ PARAMS = [
          d='高光段整段下收多少。2.0 = 出厂值（大师的高光顶实测 97.0，肩部 2 正好对上）；'
            '0 = 开顶（白能真到白，代价是高光偏暖的胶片味会淡）'),
 
-    # ================= 质感 =================
+    # ========== 真卷（物理链：落点 / 印相曲线 / 预闪 / 扫描）==========
+    dict(k='SPEK_PE_SHIFT',   name='整张亮暗',   lo=0.62, hi=1.43, step=0.01, grp='真卷', spek=True,
+         inv=True,
+         d='整张更亮还是更暗。1.00 = 不动，越大越亮。相机给多了曝光的片（闪光顶亮、脸发白）'
+           '往左拉回来。⚠ 往右别拉到头，高光会先顶'),
+    dict(k='SPEK_COUPLERS',   name='整张浓淡',   lo=0.0,  hi=0.5,  step=0.01, grp='真卷', spek=True,
+         d='彩度（胶片层间抑制的强度）。越小越淡。0 = 关掉这道过程（画面彩度 7.57，作者线的靶 '
+           '6.79，已经很贴）；1.0 = 出厂物理值（12.13，明显更艳）。它不动明暗对比'),
+    dict(k='SPEK_MORPH_GAMMA', name='印相反差',  lo=1.00, hi=1.30, step=0.01, grp='真卷', spek=True,
+         d='相纸曲线的陡度 —— 改的是对比的"形状"（不是加滤镜）。1.00 = 关掉；越大画面越硬、'
+           '层次往亮部靠。⚠ 它一动，整张的落点也跟着动，要配着「整张亮暗」一起看'),
+    dict(k='SPEK_MORPH_FAST',  name='印相·快层', lo=0.80, hi=1.40, step=0.02, grp='真卷', spek=True,
+         d='只加在"快层"（颗粒最细那一层）上的额外陡度。1.00 = 不动。'
+           '⚠ 它和「印相反差」是**相乘**的；只动这一根会让三个通道的曲线不同步（画面偏色），'
+           '要试就把快慢两层给同一个数'),
+    dict(k='SPEK_MORPH_SLOW',  name='印相·慢层', lo=0.80, hi=1.40, step=0.02, grp='真卷', spek=True,
+         d='只加在"慢层"（颗粒最粗那一层）上的额外陡度。1.00 = 不动。⚠ 和快层成对用，理由同上'),
+    dict(k='SPEK_MORPH_EXHAUST', name='显影疲劳', lo=0.0, hi=1.0,  step=0.02, grp='真卷', spek=True,
+         d='显影液用旧了（局部耗尽）的效果：把每层曲线往一起拉，**中灰不动**。0 = 关。'
+           '越大越"闷"、暗部层次越挤'),
+    dict(k='SPEK_PREFLASH',    name='预闪',      lo=0.0,  hi=0.05, step=0.001, grp='真卷', spek=True,
+         d='暗房技法：不放底片、只让灯透过片基先给相纸一点均匀曝光。0 = 关。'
+           '⚠ **方向是反的** —— 实测 0.10 就让画面中位从 74.5 掉到 48.0、亮部 86.2→64.2'
+           '（相纸多吃光 = 整张往下压）⇒ 这里只开到 0.05，一格一格试'),
+    dict(k='SPEK_PREFLASH_Y_SHIFT', name='预闪偏黄', lo=-1.0, hi=1.0, step=0.02, grp='真卷', spek=True,
+         d='预闪那束光偏黄多少（暖）。0 = 中性。⚠ 只有「预闪」不是 0 的时候才看得出来'),
+    dict(k='SPEK_PREFLASH_M_SHIFT', name='预闪偏品红', lo=-1.0, hi=1.0, step=0.02, grp='真卷', spek=True,
+         d='预闪那束光偏品红多少。0 = 中性。⚠ 只有「预闪」不是 0 的时候才看得出来'),
+    dict(k='SPEK_SCANNER_LENS_BLUR', name='成片锐度', lo=0.0, hi=1.5, step=0.05, grp='真卷', spek=True,
+         d='扫描端的锐化强度。0 = 不锐化（画面更软），0.60 = 出厂'),
+
+    # ========== 质感（空间光学：柔光族 / 镜头 / 降噪 / 颗粒 / 黑柔 / 晕圈）==========
+    dict(k='SPEK_DIFFUSION_STRENGTH', name='柔光', lo=0.0, hi=0.5, step=0.01, grp='质感', spek=True,
+         d='柔光的强度（挂放大机时颗粒保持锐利）。0 = 关；0.25 ≈ 1/4 档。'
+           '⚠ 大师的柔度是 11.19，我们关掉就已经 9.72 ⇒ 我们本来比大师更柔，'
+           '想照大师对齐就拉到 0'),
+    dict(k='SPEK_DIFFUSION_FAMILY', name='柔光型号', kind='enum', grp='质感', spek=True,
+         opts=(('black_pro_mist', '黑柔（BPM）'), ('pro_mist', '白柔（Pro Mist）'),
+               ('glimmerglass', '微光（Glimmerglass）'), ('cinebloom', '电影柔光（CineBloom）')),
+         d='柔光的"牌子" —— 决定化开的形状、晕圈大小、纱雾轻重。'
+           '★ 同一个档位**电影柔光比黑柔柔得多**：实测中尺度柔度（越小越柔）'
+           '关 9.72 → 黑柔1/2 8.55 → 电影1/2 6.18；黑柔最保分辨率、电影柔光晕开最大、微光居中。'
+           '⚠ 换型号画面立刻变（这是重新渲染一发的量级）'),
+    dict(k='SPEK_DIFFUSION_ENLARGER', name='柔光挂放大机', kind='bool', grp='质感', spek=True,
+         d='把柔光挂在**放大机**上（印相那一步、颗粒画出来之前）⇒ 光化开了但**颗粒还是锐的**'
+           '（09-15 你选的就是这一支）'),
+    dict(k='SPEK_DIFFUSION_CAMERA', name='柔光挂相机', kind='bool', grp='质感', spek=True,
+         d='把柔光挂在**相机**上（RAW 那一端）⇒ **颗粒跟着一起柔**、整张更"化"。'
+           '⚠ 两个都挂 = 两处各柔一遍，力度会叠起来'),
+    dict(k='SPEK_DIFFUSION_SCALE', name='柔光尺度', lo=0.3, hi=3.0, step=0.1, grp='质感', spek=True,
+         d='化开的范围有多大。1.0 = 出厂。越大 = 大范围柔（像隔一层玻璃）；越小 = 只柔细节'),
+    dict(k='SPEK_CAMERA_LENS_BLUR_UM', name='镜头模糊', lo=0.0, hi=40.0, step=1.0, grp='质感',
+         spek=True,
+         d='镜头本身的像差（单位 μm，按出图尺寸换算成像素 ⇒ 出图越大它越明显）。'
+           '10 = 出厂；0 = 一点都不加（画面最"数码"地锐）。'
+           '⚠ 它和「成片锐度」是一糊一锐两头，两个一起拉会互相抵消'),
+    dict(k='DENOISE_ENABLE', name='降噪', kind='bool', grp='质感',
+         d='RAW 提亮之后暗部的色斑/噪点要不要收拾。默认开，只在"暗部 + 平坦区"下手、'
+           '边缘和细节一个像素不动 ⇒ 关掉只会让暗部更脏，不会让细节更多'),
     dict(k='GRAIN_AMOUNT',    name='颗粒',       lo=0,  hi=0.06, step=0.002, grp='质感', spek=False,
-         d='颗粒强度。0 = 关。高光端本来就精确归零、暗部也会淡出 ⇒ 它主要作用在中间调'),
+         gate='GRAIN_ENABLE',
+         d='颗粒强度。0 = 关。高光端本来就精确归零、暗部也会淡出 ⇒ 它主要作用在中间调。'
+           '⚠ 名字前面那个勾 = 这一整层开不开（关掉 = 这层不跑，不是把强度拧到 0）'),
     dict(k='GRAIN_SIZE',      name='颗粒大小',   lo=0.6, hi=2.5, step=0.05, grp='质感', spek=False,
          d='颗粒的尺度（高斯半径 px @2048 长边）。小 = 细盐，大 = 粗砂'),
     dict(k='BLOOM_AMOUNT',    name='黑柔',       lo=0,  hi=0.20, step=0.005, grp='质感', spek=False,
-         pair='BLOOM_SPREAD',
+         pair='BLOOM_SPREAD', gate='BLOOM_ENABLE',
          d='黑柔的强度（高光外溢）。0 = 关。⚠ 它和「化开」必须**成对相等**才能量守恒'
-           '（加进去的光 = 扣掉的）—— 引擎已经自动同步，你只拧这一根就行，别去碰另一个'),
+           '（加进去的光 = 扣掉的）—— 引擎已经自动同步，你只拧这一根就行，别去碰另一个。'
+           '⚠ 名字前面那个勾 = 这一整层开不开'),
     dict(k='HALATION_AMOUNT', name='红橙晕圈',   lo=0,  hi=0.25, step=0.01, grp='质感', spek=False,
-         d='高光边缘的红橙光晕（电影卷片基把红光散射回来）。0 = 关'),
+         gate='HALATION_ENABLE',
+         d='高光边缘的红橙光晕（电影卷片基把红光散射回来）。0 = 关。'
+           '⚠ 名字前面那个勾 = 这一整层开不开'),
     dict(k='HALATION_RADIUS', name='晕圈半径',   lo=8.0, hi=30.0, step=0.5, grp='质感', spek=False,
          d='红边的扩散半径。小 = 贴着亮边一条硬红边，大 = 糊开一大片'),
     dict(k='WHITE_MICRO',     name='白区层次',   lo=0,  hi=1.5, step=0.05, grp='质感',
          d='白衣 / 白墙那块的中尺度微反差。0 = 不动。1.00 = 出厂，'
            '**这就是"够得着的上限"** —— 大师的 4.69 追不到，那道差是内容差（人家的白是天空和阳光）'),
+
+    # ========== 脸（两条路都生效：L3 肤色层是保留的）=========
+    dict(k='FACE_SPAN_KMAX',  name='脸的层次',   lo=1.0,  hi=3.0,  step=0.05, grp='脸',
+         gate='FACE_DEPTH_ENABLE',
+         d='脸内部明暗最多拉开几倍。1.0 = 不动，越大越立体。2.0 = 作者线那一档（就是出厂值），'
+           '再往上容易显脏。'
+           '⚠ 名字前面那个勾 = 这道"收脸"整道关掉（连下面那根「脸的靶跨度」一起停）'),
+    dict(k='FACE_TGT_SPAN',   name='脸的靶跨度', lo=20.0, hi=50.0, step=0.5, grp='脸',
+         d='脸的明暗想拉到多开（配合上一根用）。35 = 作者线的下限，就是出厂值；'
+           '调大 = 想要更立体的脸'),
+    dict(k='SKIN_FLOOR_A',    name='脸的红绿',   lo=11.0, hi=20.0, step=0.1, grp='脸',
+         d='脸的 a*（+ 偏红润 / − 偏绿）。**16.3 = 33 位大师脸的中间值**（照大师对齐选它）；'
+           '出厂 14.5 是"作者线那档"，更淡'),
+    dict(k='SKIN_FLOOR_B',    name='脸的黄蓝',   lo=12.0, hi=22.0, step=0.1, grp='脸',
+         d='脸的 b*（+ 偏黄暖 / − 偏蓝冷）。**18.5 = 33 位大师脸的中间值**；出厂 16.5 更冷一点'),
+    dict(k='SKIN_PROTECT_STRENGTH', name='肤色保护', lo=0.0, hi=1.0, step=0.02, grp='脸',
+         d='风格层压彩度时，脸少降多少。0 = 不保护（脸跟着整张一起变淡），1 = 脸完全不掉色'),
+    # ★★ 09-15 SV 选「D」：把"收脸"放出来，但**默认 0 = 一个像素都不动**。
+    #   为什么单开一根而不是直接改默认：09-14 定的「只提不压」是**故意**的
+    #   （两个方向都锚会把整张亮度分布拉散，实测 L50 由 41~68 → 35~84）
+    #   ⇒ 做成滑杆 ⇒ 拖了才生效，**出厂结果逐位不变**。
+    dict(k='ANCHOR_DOWN_GAIN', name='脸太亮收回', lo=0.0, hi=1.0, step=0.02, grp='脸',
+         d='脸**比该有的亮度还亮**（发白）时，往靶收多少。**0.00 = 完全不动（出厂）**；'
+           '1.00 = 完全收到靶 68 —— 那就是 33 位大师脸的中位 67.9，也是'
+           '「脸的红绿 / 黄蓝」正在对齐的同一个数（实测一张中位 89 的脸 ⇒ 68.0）。'
+           '⚠ 它是整张乘**同一个**增益（不分区）⇒ 脸回来了，背景也跟着暗一些，'
+           '所以出厂没开。脸本来就偏暗的片**不受影响**（只收不回）。'
+           '⚠ 别再拿「整张亮暗」去救发白的脸：那根在印相那一步，压在相纸曲线的平肩上'
+           '（实测整张掉 11 L* 而脸只掉 0.5）。'),
 ]
 _PARAM_KEYS = tuple(p['k'] for p in PARAMS)
 _PARAM_INV = frozenset(p['k'] for p in PARAMS if p.get('inv'))
 _PARAM_PAIR = {p['k']: p['pair'] for p in PARAMS if p.get('pair')}
+# ★★ 09-15（B3）：这一行的 `kind` / `opts` / `gate` 全由 PARAMS 表驱动 ——
+#   `_parse_params` 靠前两个决定"怎么解析"，前端靠全部三个决定"画什么控件"。
+_PARAM_KIND = {p['k']: p.get('kind', 'num') for p in PARAMS}
+_PARAM_OPTS = {p['k']: tuple(o[0] for o in p['opts']) for p in PARAMS if p.get('opts')}
+# ⚠⚠ 「整层开关」那几根键（GRAIN_ENABLE / BLOOM_ENABLE / HALATION_ENABLE / FACE_DEPTH_ENABLE）
+#    **只在 `gate=` 里出现过、自己不是一行参数** ⇒ 不补进来的话它们会落回默认的 'num'，
+#    而 `isinstance(True, bool)` 会被数字那条闸挡掉 ⇒ **勾掉开关静默发不出去**（勾了没反应）。
+_PARAM_KIND.update({p['gate']: 'bool' for p in PARAMS if p.get('gate')})
 
 
 def _param_defs():
@@ -759,18 +855,30 @@ def _param_defs():
       ⚠ 画面本身没错（没拧过的键不参与覆盖，引擎照出厂走）—— **错的是那行字**。
       现在从 config 现读，以后改出厂值它自动跟上，永远不会再漂。
     ⚠ `inv` 的项要给**显示值**（= 1 / 引擎值），否则滑杆一跳就跳到倒数上去。
+    ★ 09-15（B3）：`dv` 的类型跟着 `kind` 走 —— 数字给 float、整层开关（`kind='bool'`）
+      给 bool、下拉（`kind='enum'`）给选项名；挂了 `gate` 的那几根再补一个 `gate_dv`。
+      **控件的初值只能由引擎给**（前端不许自己编默认），这一条对三种控件都成立。
     """
     out = []
     for p in PARAMS:
         q = dict(p)
         cur = getattr(C, q['k'], None)
-        if isinstance(cur, (int, float)) and not isinstance(cur, bool):
+        # ⚠ bool **必须先判**：`isinstance(True, int)` 也成立 ⇒ 顺序反了开关的 dv 会变 1/0
+        if isinstance(cur, bool):
+            q['dv'] = bool(cur)
+        elif isinstance(cur, (int, float)):
             cur = float(cur)
             if q.get('inv') and abs(cur) > 1e-9:
                 cur = 1.0 / cur
             q['dv'] = cur
+        elif isinstance(cur, str):
+            q['dv'] = cur                       # 下拉（柔光型号）
         else:
-            q['dv'] = None                     # 不是数（理论上不会发生，自检盯着）
+            q['dv'] = None                      # 理论上不会发生，自检盯着
+        # ★ 带「整层开关」的那几根：把开关**此刻的值**一起给前端（勾选框的初值）
+        _g = q.get('gate')
+        if _g:
+            q['gate_dv'] = bool(getattr(C, _g, False))
         out.append(q)
     return out
 

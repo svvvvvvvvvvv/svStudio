@@ -1530,7 +1530,10 @@ ipcMain.handle('engine-base', async (e, id) => {
  *      ⚠ 上一轮的自检只验到"引擎收得下参数"，没验到"前端发得出参数" —— 闸挡住了 ≠ 没脸。
  *
  *  收口在这里（IPC 边界）而不是前端：这样以后不管谁调 `engine-render` 都不会再踩。
- *  字符串照原样透传（留给脚本风格的 A/B 调用），非数字/NaN 一律丢掉（别污染 float() 解析）。
+ *  布尔写成 1/0（整层开关）、字符串照原样透传（脚本风格的 A/B 调用 + 柔光型号那种下拉值），
+ *  其余非数字/NaN 一律丢掉（别污染引擎的 float() 解析）。
+ *  ★★ 09-15（B3）：不放行这两类的话，"勾选框 / 下拉"会跟老 bug 一样**静默发不出去**
+ *    （界面上有控件、画面不动），而且**不报错** —— 那正是本项目最阴的一类坑。
  */
 function paramStr(p) {
   if (!p) return '';
@@ -1539,6 +1542,15 @@ function paramStr(p) {
   const out = [];
   for (const k of Object.keys(p)) {
     const v = p[k];
+    if (typeof v === 'boolean') {
+      out.push(k + ':' + (v ? '1' : '0'));
+      continue;
+    }
+    if (typeof v === 'string') {
+      // ⚠ 分隔符不许出现在值里（`KEY:VAL,KEY:VAL` 的语法靠它切段）⇒ 含 ':' / ',' 的直接丢
+      if (v && v.indexOf(':') < 0 && v.indexOf(',') < 0) out.push(k + ':' + v);
+      continue;
+    }
     if (typeof v !== 'number' || !isFinite(v)) continue;
     out.push(k + ':' + v);
   }

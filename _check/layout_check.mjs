@@ -281,7 +281,16 @@ await page.addInitScript(() => {
             `dv` 不是区间中点（中点 0.5 会把每张片子的脸都往下收），必须跟引擎的出厂值一致。 */
       items: [
         { k: 'SPEK_PE_SHIFT', name: '整张亮暗', lo: 0.62, hi: 1.43, step: 0.01, grp: '真卷', spek: true, dv: 1.0, inv: true, d: '整张更亮还是更暗' },
-        { k: 'FACE_SPAN_KMAX', name: '脸的层次', lo: 1.0, hi: 3.0, step: 0.05, grp: '脸', dv: 2.0, d: '脸内部明暗最多拉开几倍' },
+        { k: 'FACE_SPAN_KMAX', name: '脸的层次', lo: 1.0, hi: 3.0, step: 0.05, grp: '脸', dv: 2.0,
+          gate: 'FACE_DEPTH_ENABLE', gate_dv: true, d: '脸内部明暗最多拉开几倍' },
+        /* ★★ 09-15（B3）：新放的两种控件各留一条 —— 静态自检只钉"引擎表里有 kind"，
+           "选下去 / 勾下去到底有没有发出去"由下面的 [7.6] 真点一遍。 */
+        { k: 'SPEK_DIFFUSION_FAMILY', name: '柔光型号', kind: 'enum', grp: '质感', spek: true,
+          opts: [{ v: 'black_pro_mist', t: '黑柔（BPM）' }, { v: 'pro_mist', t: '白柔（Pro Mist）' },
+                 { v: 'glimmerglass', t: '微光（Glimmerglass）' }, { v: 'cinebloom', t: '电影柔光（CineBloom）' }],
+          dv: 'black_pro_mist', d: '柔光的牌子（同样是 0.5 档，电影柔光比黑柔柔得多）' },
+        { k: 'DENOISE_ENABLE', name: '降噪', kind: 'bool', grp: '质感', dv: true,
+          d: '暗部色斑/噪点要不要收拾（关掉只会更脏，不会让细节更多）' },
         { k: 'SKIN_FLOOR_A', name: '脸的红绿', lo: 11.0, hi: 20.0, step: 0.1, grp: '脸', dv: 14.5, d: '脸偏红还是偏绿' },
         { k: 'ANCHOR_DOWN_GAIN', name: '脸太亮收回', lo: 0.0, hi: 1.0, step: 0.02, grp: '脸', dv: 0.0, d: '脸比该有的亮度还亮时，往靶收多少（0 = 不动）' },
         { k: 'TONE_LIFT', name: '中高调抬起', lo: 0, hi: 14, step: 0.5, grp: '影调', spek: false, dv: 9.0, d: '整张变亮' },
@@ -878,9 +887,11 @@ const goTheme = async (n) => {
    ⇒ 只有点开那一刻才渲染。 */
 {
   const nHelp = await page.locator('[data-param-help]').count();
-  const nSlider = await page.locator('[role="slider"]').count();
-  check('★ 每根滑杆后面都有一个「?」（数量对得上）', nHelp > 0 && nHelp === nSlider,
-    `${nHelp} 个「?」/ ${nSlider} 根滑杆`, '数量对不上 ⇒ 有滑杆点不到说明');
+  /* ⚠ 09-15（B3）：分母不能再是 `[role="slider"]` 了 —— 下拉（柔光型号）和整层开关
+     没有滑杆，但**一样要能点开说明**。改成"每一行都有的 ↺ 重置按钮"当分母。 */
+  const nRow = await page.locator('[data-param-reset]').count();
+  check('★ 每一行参数后面都有一个「?」（数量对得上，不只剩下滑杆）', nHelp > 0 && nHelp === nRow,
+    `${nHelp} 个「?」/ ${nRow} 行`, '数量对不上 ⇒ 有参数点不到说明');
   if (nHelp > 0) {
     const hb = page.locator('[data-param-help]').first();
     const k1 = await hb.getAttribute('data-param-help');
@@ -927,6 +938,73 @@ const goTheme = async (n) => {
 }
 
 /* ---------- 8. 选片台（筛选 / 点缩略图 / 打星落盘） ---------- */
+/* ---------- 7.6 ★ 09-15（B3）：三种控件（数字滑杆 / 整层开关 / 下拉型号） ----------
+   ★ 为什么必须"真点一遍"：新放的两种控件走的**全是"静默丢弃"那条老路** ——
+     引擎 `_parse_params` 原来只认数字（bool 被 `not isinstance(cur,bool)` 挡掉、
+     字符串连 `float()` 都过不去）、`main.js` 的 `paramStr` 原来也只放行数字
+     ⇒ **界面上有控件、点下去没反应、还不报错**。静态自检只钉"结构在不在"，
+     "选下去到底发没发出去"只能在这里验。 */
+console.log('\n[7.6] 三种控件（整层开关 / 下拉型号）');
+await page.setViewportSize({ width: 1440, height: 900 });
+await goGrade();
+{
+  /* 先钉在一卷真卷上（下拉与整层开关都在真卷下才出现） */
+  const pv = page.locator('button').filter({ hasText: /^Portra 400/ }).first();
+  if (await pv.count()) { await pv.click(); await page.waitForTimeout(600); }
+
+  const nEnum = await page.locator('[data-param-enum]').count();
+  check('★ 真卷下出现「柔光型号」下拉（引擎 PARAMS 里 kind=enum 的那一根）', nEnum >= 1,
+    `${nEnum} 个下拉`, '下拉没画出来 ⇒ 新的控件类型没接上前端');
+  if (nEnum > 0) {
+    const sel = page.locator('[data-param-enum]').first();
+    const k = await sel.getAttribute('data-param-enum');
+    const nOpt = await sel.locator('option').count();
+    check('★ 下拉的选项数照引擎 opts 来（4 支柔光型号）', nOpt === 4, `${nOpt} 项`,
+      '选项是前端自己编的 ⇒ 编错了引擎会静默丢（画面一点不变）');
+    const b = await renders();
+    await sel.selectOption('cinebloom');
+    await page.waitForTimeout(500);
+    const a = await renders();
+    check('★ 选型号**不自动出图**（沿用"只有两个触发点"：右栏「渲染」/ 切进调色台）',
+      a === b, `渲染 ${b} → ${a} 发`, '选个下拉就出图 ⇒ 违反"只有两个触发点"');
+    const rb = page.locator('button').filter({ hasText: /^渲染$/ }).first();
+    if (await rb.count()) { await rb.click(); await page.waitForTimeout(900); }
+    const lp = await latestParams();
+    check('★★ 引擎收到的参数里**真的有这个型号**（参数串放了字符串）',
+      lp[k] === 'cinebloom', `${k}=${JSON.stringify(lp[k])}`,
+      '没发出去 ⇒ 前端 / paramStr 把字符串静默丢了，选了下拉等于没选');
+    await sel.selectOption('black_pro_mist');
+    await page.waitForTimeout(300);
+  }
+
+  const nSw = await page.locator('[data-param-sw]').count();
+  /* ⚠ 这里跑的是**布局自检自己那份 mock**（只有 2 条带开关的 + 1 条下拉）⇒ 阈值取 2。
+     真面板上的开关远不止这些（见引擎 PARAMS 的 `gate=`）。 */
+  check('★ 出现「整层开关」勾选框（勾在参数名前面）',
+    nSw >= 2, `${nSw} 个`, '整层开关没画出来');
+  if (nSw > 0) {
+    const on0 = await page.locator('[data-param-sw-on="1"]').count();
+    check('★ 整层开关默认是**勾上**的（出厂全开：DENOISE/GRAIN/BLOOM/HALATION/FACE_DEPTH）',
+      on0 >= 2, `${on0} 个勾着`, '默认没勾 ⇒ 一进来就把整层关了（画面直接不对）');
+    const one = page.locator('[data-param-sw]').first();
+    const gk = await one.getAttribute('data-param-sw');
+    const b = await renders();
+    await one.uncheck();
+    await page.waitForTimeout(500);
+    const a = await renders();
+    check('★ 勾掉开关**不自动出图**（它和"换卷/换基准"同类，不是滑杆）', a === b,
+      `渲染 ${b} → ${a} 发`, '勾一下开关就重出一张 ⇒ 违反"只有两个触发点"');
+    const rb2 = page.locator('button').filter({ hasText: /^渲染$/ }).first();
+    if (await rb2.count()) { await rb2.click(); await page.waitForTimeout(900); }
+    const lp2 = await latestParams();
+    check('★★ 勾掉之后引擎真的收到 `开关=0`（布尔也进了参数串）',
+      lp2[gk] === false, `${gk}=${JSON.stringify(lp2[gk])}`,
+      '布尔没发出去 ⇒ 勾了没反应');
+    await one.check();
+    await page.waitForTimeout(300);
+  }
+}
+
 console.log('\n[8] 选片台行为');
 const dockThumbs = () => page.locator('[data-idx]').count();
 /* 底栏上方那行显示"当前是哪张"（`Stars.tsx` 的 ExifBar，居中的纯文本 div）。

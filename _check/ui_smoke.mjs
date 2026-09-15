@@ -302,8 +302,22 @@ if (typeof ps === 'function') {
   check('paramStr 对字符串原样透传（脚本风格的 A/B 调用）',
     ps('TONE_TOE:0.5') === 'TONE_TOE:0.5', '', String(ps('TONE_TOE:0.5')));
   check('paramStr 丢掉 NaN / 非数字（不污染引擎的 float() 解析）',
-    ps({ A: 1, B: NaN, C: 'x', D: 2 }) === 'A:1,D:2',
-    '', String(ps({ A: 1, B: NaN, C: 'x', D: 2 })));
+    ps({ A: 1, B: NaN, D: 2 }) === 'A:1,D:2',
+    '', String(ps({ A: 1, B: NaN, D: 2 })));
+  /* ★★ 09-15（B3）：新放的两种控件（整层开关 / 下拉型号）走的**全是这条函数** ——
+     它不放行，勾选框和下拉就是"点了没反应、还不报错"的老 bug 复刻。 */
+  check('★ paramStr 放行**布尔**（整层开关）—— 写成 1/0',
+    ps({ GRAIN_ENABLE: false, BLOOM_ENABLE: true }) === 'GRAIN_ENABLE:0,BLOOM_ENABLE:1',
+    String(ps({ GRAIN_ENABLE: false, BLOOM_ENABLE: true })),
+    '布尔被丢掉 ⇒ 勾选框勾了画面一个像素都不动');
+  check('★ paramStr 放行**字符串**（柔光型号那种下拉值）',
+    ps({ SPEK_DIFFUSION_FAMILY: 'cinebloom' }) === 'SPEK_DIFFUSION_FAMILY:cinebloom',
+    String(ps({ SPEK_DIFFUSION_FAMILY: 'cinebloom' })),
+    '下拉值被丢掉 ⇒ 选了等于没选');
+  check('★ 值里带 `:` / `,` 的字符串仍然丢掉（那个语法靠这两个字符切段）',
+    ps({ A: 'x:y' }) === '' && ps({ A: 'x,y' }) === '',
+    `${String(ps({ A: 'x:y' }))} / ${String(ps({ A: 'x,y' }))}`,
+    '把分隔符放进值里 ⇒ 后面所有参数一起错位');
   check('paramStr 空输入给空串', ps(null) === '' && ps({}) === '',
     '', `${JSON.stringify(ps(null))} / ${JSON.stringify(ps({}))}`);
 }

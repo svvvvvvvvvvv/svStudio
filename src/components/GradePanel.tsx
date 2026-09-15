@@ -46,6 +46,13 @@ function FilmIcon({ name, size = 40 }: { name: string; size?: number }) {
  * ★ 09-15 SV 选「C」：**相纸做成第二个下拉**。一张真卷出图 = (负片, 相纸) 二元组，
  *   负片决定"什么胶卷"、相纸决定"冲印在什么纸上"（肤色/冷暖/饱和/暗部厚薄）。
  *   原来只开放了负片那一半 —— 这是人像成色的另一半。
+ *
+ * ★★ 09-15（B3）右栏顺序（SV 口头定的，从上到下）：
+ *    交卷（胶片卷）→ 渲染 → 出片（导出成片）→ 影调 → 真卷 → 物理（质感）→ 脸 →
+ *    相纸 → 成色基准。
+ *    ⚠ 参数那四组的**组名与组序都不在这里维护** —— 它是 `svFilm/service.py` 的 `PARAMS`
+ *      顺序 + `grp` 字段决定的（这里是按 `defs` 的先后分组），改顺序就改引擎那张表。
+ *    ⚠ 「相纸」原来排在滑杆**上面**，把参数往下推了；现在挪到参数之后、基准之前。
  */
 export function GradePanel() {
   const stocks = useStore((s) => s.stocks);
@@ -238,6 +245,257 @@ export function GradePanel() {
         </Text>
       </div>
 
+      {/* ---- 参数（按组平铺） ---- */}
+      {groups.map(([g, list]) => (
+        <div key={g}>
+          <Text
+            size="1"
+            weight="bold"
+            style={{ color: 'var(--text-dim)', letterSpacing: 1 }}
+          >
+            {g}
+          </Text>
+          <Flex direction="column" gap="3" mt="2">
+            {list.map((d) => {
+              /* ★★ 初值必须用引擎给的 `dv`（= 引擎此刻实际在用的值），**不许退回区间中点**。
+                 过去这里写的是 `(d.lo + d.hi) / 2`，而引擎用的是 config 出厂值
+                 ⇒ 13 根滑杆里有 12 根显示的数字和实际生效的对不上
+                 （「整张浓淡」显示 0.50 / 实际 0.00，彩度差一档半；「颗粒」显示 0.050 / 实际 0.024）。
+                 画面本身没错（没拧过的键不参与覆盖），**错的是那行字**。
+                 最后那个中点只作为"引擎漏给 dv"的兜底，正常永远走不到。 */
+              /* ★★ 初值必须用引擎给的 `dv`（= 引擎此刻实际在用的值），**不许退回区间中点**。
+                 过去这里写的是 `(d.lo + d.hi) / 2`，而引擎用的是 config 出厂值
+                 ⇒ 13 根滑杆里有 12 根显示的数字和实际生效的对不上
+                 （「整张浓淡」显示 0.50 / 实际 0.00，彩度差一档半；「颗粒」显示 0.050 / 实际 0.024）。
+                 画面本身没错（没拧过的键不参与覆盖），**错的是那行字**。
+                 最后那个中点只作为"引擎漏给 dv"的兜底，正常永远走不到。 */
+              const v = params[d.k] ?? d.dv ?? (d.lo + d.hi) / 2;
+              /* ★★ 09-15（B3）：这一行画什么**由引擎的 `kind` 决定，前端不许自己猜** ——
+                 ① `num`（默认）= 滑杆；② `bool` = 勾选框（整层开关）；
+                 ③ `enum` = 下拉（柔光型号那一类）。 */
+              const kind = d.kind || 'num';
+              const isEnum = kind === 'enum';
+              const isBool = kind === 'bool';
+              /* 只有"本来就是数"的那几根才有滑杆/数字；开关和下拉不算数 */
+              const num = typeof v === 'number' ? v : 0;
+              /* 小数位跟着 step 走 —— 原来一律 toFixed(2)，「颗粒」的实际值 0.024 会显示成
+                 "0.02"（step 是 0.002，白丢了精度）。 */
+              const dp = d.step >= 1 ? 0 : d.step >= 0.1 ? 1 : d.step >= 0.01 ? 2 : 3;
+              /* ★★ 「整层开关」（09-15 B3）：挂在名字**前面**的那个小勾。
+                  它管的是这一根/这一道**要不要跑**（`d.gate` = config 里那个 `*_ENABLE`）。
+                  · 单独成行的开关（如「降噪」）：勾就是这根参数自己的值（`d.k` 本身）；
+                  · 挂在滑杆上的（颗粒 / 黑柔 / 红橙晕圈 / 脸的层次）：勾的是它管的那一层。
+                  ⚠ 关掉一层 **≠** 把强度拧到 0：关掉是"这一层不跑"，连淡出/守恒都不做。 */
+              const swKey = isBool ? d.k : d.gate;
+              const swOn = isBool
+                ? !!v
+                : d.gate
+                  ? params[d.gate] !== undefined ? !!params[d.gate] : !!d.gate_dv
+                  : false;
+              /* ★ 「这根动过没有」= 参数串里**有没有这个键**（键在 = 有覆盖 = 动过）。
+                 用它决定重置按钮亮不亮 —— 一眼看出哪几根动过（30 多根里找"我改了哪几根"很费眼）。
+                 ⚠ 带开关的那几根**开关也算**：只关层不拧滑杆也是"动过"，
+                   否则关着的时候 ↺ 是灰的、想开回来点不了。 */
+              const touched =
+                params[d.k] !== undefined || (!!d.gate && params[d.gate] !== undefined);
+              return (
+                <div key={d.k}>
+                  <Flex justify="between" align="center" gap="2">
+                    <Flex align="center" gap="1" style={{ minWidth: 0 }}>
+                      {/* ★★ 参数名（09-15 SV）：
+                          ① **字号**：原来 Radix size="1" = 12px ⇒ 先放大 1.5 倍到 18px，
+                             当晚再定「缩到当前的 0.9 左右」⇒ **16px**；
+                          ② **不要悬停提示** —— 那段说明挂在悬停上根本看不清（得悬着不动、还老
+                             在鼠标划过时蹦出来），改成后面这个「?」点开看。
+                          ⚠ 名字和数字原来都吃 size="1"（12px）；那行**不能带 size** ——
+                             Radix 的 size="1" 会盖住 inline fontSize（踩过）。 */}
+                      <Text style={{ fontSize: 16, lineHeight: 1.35 }}>{d.name}</Text>
+                      {/* ★★ 「?」= 详细说明（09-15 SV 选的做法）。内容就是引擎 `PARAMS` 里那段
+                          `d`（`svFilm/service.py` 写的，带数字和 ⚠ 提醒），**前端不许自己编文案**。
+                          用 Popover 不用 Dialog：贴着这一根弹出来、点别处就关，不打断手感。
+                          ⚠ 说明**不许常驻 DOM**（常驻的话右栏文字里到处都是说明，自检也读不准）
+                          ⇒ 只有点开那一刻才渲染。 */}
+                      <Popover.Root>
+                        <Popover.Trigger>
+                          <button
+                            data-param-help={d.k}
+                            aria-label={`${d.name} 的说明`}
+                            style={{
+                              flex: '0 0 auto',
+                              width: 16,
+                              height: 16,
+                              padding: 0,
+                              borderRadius: 999,
+                              border: '1px solid var(--line)',
+                              background: 'transparent',
+                              color: 'var(--text-dim)',
+                              fontSize: 11,
+                              lineHeight: '14px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            ?
+                          </button>
+                        </Popover.Trigger>
+                        <Popover.Content width="330px" data-param-help-pop={d.k}>
+                          <Flex direction="column" gap="2">
+                            <Text size="2" weight="bold">
+                              {d.name}
+                            </Text>
+                            <Text
+                              size="1"
+                              style={{
+                                color: 'var(--text-dim)',
+                                whiteSpace: 'pre-wrap',
+                                lineHeight: 1.7,
+                              }}
+                            >
+                              {d.d || '这一根引擎侧没有写说明'}
+                            </Text>
+                            {/* 顺带把"这个数怎么读"给出来：范围 / 每格 / 出厂值。
+                                ⚠ 出厂值用引擎给的 `dv`，不是前端算的区间中点（老 bug 见 §9）。 */}
+                            {/* ⚠ 只有"数字"那几行才有范围 / 每格 / 出厂 —— 整层开关和下拉
+                                没有这些（硬画会变成"范围 undefined ~ undefined"）。 */}
+                            {kind === 'num' && (
+                              <Text size="1" style={{ color: 'var(--text-faint)' }}>
+                                范围 {d.lo} ~ {d.hi} · 每格 {d.step} · 出厂{' '}
+                                {Number(d.dv ?? (d.lo + d.hi) / 2).toFixed(dp)}
+                              </Text>
+                            )}
+                          </Flex>
+                        </Popover.Content>
+                      </Popover.Root>
+                    </Flex>
+                    <Flex align="center" gap="2" style={{ flex: '0 0 auto' }}>
+                      {/* 数字只给"本来就是数"的那几根；开关说 开/关，下拉不给数字 */}
+                      <Text size="1" style={{ color: 'var(--text-dim)' }}>
+                        {isBool ? (v ? '开' : '关') : isEnum ? '' : num.toFixed(dp)}
+                      </Text>
+                      {/* ★★ 每根滑杆一个重置（09-15 SV）。
+                          做法：把这个键**从参数串里删掉** ⇒ 这根回到引擎给的值（`dv`）。
+                          ⚠ 必须是"删键"，**不能**写回 `dv` —— 「没碰过的键不进参数串」是一条
+                             契约（自检 `[7]` 钉着它：未触碰 = 用引擎出厂值）。写回去等于把
+                             出厂值也塞进请求，和引擎的出厂打架。
+                          ⚠ 没拧过的这根灰着、点不动：既说明"这根还没动过"，也避免手一滑把
+                             别的根改了。 */}
+                      <button
+                        data-param-reset={d.k}
+                        data-param-reset-on={touched ? '1' : '0'}
+                        disabled={!touched}
+                        onClick={() => {
+                          const np = { ...params };
+                          delete np[d.k];
+                          // 开关也一起复原（不然 ↺ 之后那一层还关着，看着"没回到默认"）
+                          if (d.gate) delete np[d.gate];
+                          setGrade({ params: np });
+                          /* 和「拖滑杆」同一条规矩：松开就出图。不同步出图的话数字回到默认、
+                             画面还停在拧过的样子 —— 那正是本项目最烦的"看着对、其实对不上"。 */
+                          requestRender();
+                        }}
+                        aria-label={`${d.name} 回到默认`}
+                        style={{
+                          flex: '0 0 auto',
+                          width: 18,
+                          height: 18,
+                          padding: 0,
+                          borderRadius: 999,
+                          border: touched
+                            ? '1px solid var(--accent)'
+                            : '1px solid var(--line)',
+                          background: 'transparent',
+                          color: touched ? 'var(--accent)' : 'var(--text-faint)',
+                          fontSize: 11,
+                          lineHeight: '15px',
+                          cursor: touched ? 'pointer' : 'default',
+                          opacity: touched ? 1 : 0.45,
+                        }}
+                      >
+                        ↺
+                      </button>
+                    </Flex>
+                  </Flex>
+                  {/* ★★ 三种控件在这里分叉（09-15 B3）。都用同一个 `setGrade`，
+                      都**不自动出图** —— 沿用"只有两个触发点：右栏「渲染」/ 进调色台"，
+                      唯一的例外是滑杆（拖到哪出到哪）。 */}
+                  {swKey && (
+                    <Flex align="center" gap="1" mt="1">
+                      <input
+                        type="checkbox"
+                        data-param-sw={swKey}
+                        data-param-sw-on={swOn ? '1' : '0'}
+                        checked={swOn}
+                        onChange={(e) =>
+                          setGrade({
+                            params: { ...params, [swKey]: e.target.checked },
+                          })
+                        }
+                        aria-label={`${d.name} 这一层开不开`}
+                        style={{ flex: '0 0 auto', cursor: 'pointer', margin: 0 }}
+                      />
+                      <Text size="1" style={{ color: 'var(--text-faint)' }}>
+                        {isBool ? '这一层要不要跑' : '这一层开不开'}
+                      </Text>
+                    </Flex>
+                  )}
+                  {isEnum ? (
+                    /* 下拉：选项**照引擎的 `opts` 抄**（前端不许自己编型号名 —— 编错了
+                       引擎会当成"名字不认得"静默丢掉，画面一点不变）。 */
+                    <select
+                      data-param-enum={d.k}
+                      data-param-enum-on={String(v)}
+                      value={String(v)}
+                      onChange={(e) =>
+                        setGrade({ params: { ...params, [d.k]: e.target.value } })
+                      }
+                      style={{
+                        width: '100%',
+                        marginTop: 6,
+                        padding: '6px 7px',
+                        borderRadius: 'var(--r-sm)',
+                        border: '1px solid var(--line)',
+                        background: 'var(--bg-hover)',
+                        color: 'var(--text)',
+                        fontSize: 11.5,
+                        cursor: 'pointer',
+                      }}
+                    >
+                      {(d.opts || []).map((o) => (
+                        <option
+                          key={o.v}
+                          value={o.v}
+                          style={{ color: '#111', background: '#fff' }}
+                        >
+                          {o.t}
+                        </option>
+                      ))}
+                    </select>
+                  ) : isBool ? null : (
+                  <Slider
+                    size="1"
+                    min={d.lo}
+                    max={d.hi}
+                    step={d.step}
+                    value={[num]}
+                    /* ★★ 09-15 SV 选「A」：**拖着滑杆就出图**（"滑动每个参数都能实时预览"）。
+                       两条护栏都在 Viewer 那边，这里不许自己加节流：
+                         ① 合并 —— 同时只跑一发，跑完发现"参数又变了"就补发**最新那一发**；
+                         ② 防抖 —— 60ms 内的连续变化只发起一次。
+                       ⚠ 这里要**每一格都发**：真正"松手后停在旧画面"的那个 bug，
+                         根因是上游把请求丢了（Viewer 忙着时直接 return），不是发得太多。
+                         在这儿省一发 = 把"最后一发"也省掉 ⇒ 松手后画面停在中间某一格。 */
+                    onValueChange={([nv]) => {
+                      setGrade({ params: { ...params, [d.k]: nv } });
+                      requestRender();
+                    }}
+                  />
+                  )}
+                </div>
+              );
+            })}
+          </Flex>
+        </div>
+      ))}
+
       {/* ---- 相纸（09-15 SV 选「C」）----
           ★★ 只在真卷下出现：中性卷走的是 Lab 引擎，根本没有「负片 + 相纸」这个二元组，
              引擎对中性卷返回的是**空表**（见 `spektra.papers()`），这里自然就不显示。
@@ -298,165 +556,6 @@ export function GradePanel() {
           </Text>
         </div>
       )}
-
-      {/* ---- 参数（按组平铺） ---- */}
-      {groups.map(([g, list]) => (
-        <div key={g}>
-          <Text
-            size="1"
-            weight="bold"
-            style={{ color: 'var(--text-dim)', letterSpacing: 1 }}
-          >
-            {g}
-          </Text>
-          <Flex direction="column" gap="3" mt="2">
-            {list.map((d) => {
-              /* ★★ 初值必须用引擎给的 `dv`（= 引擎此刻实际在用的值），**不许退回区间中点**。
-                 过去这里写的是 `(d.lo + d.hi) / 2`，而引擎用的是 config 出厂值
-                 ⇒ 13 根滑杆里有 12 根显示的数字和实际生效的对不上
-                 （「整张浓淡」显示 0.50 / 实际 0.00，彩度差一档半；「颗粒」显示 0.050 / 实际 0.024）。
-                 画面本身没错（没拧过的键不参与覆盖），**错的是那行字**。
-                 最后那个中点只作为"引擎漏给 dv"的兜底，正常永远走不到。 */
-              const v = params[d.k] ?? d.dv ?? (d.lo + d.hi) / 2;
-              /* 小数位跟着 step 走 —— 原来一律 toFixed(2)，「颗粒」的实际值 0.024 会显示成
-                 "0.02"（step 是 0.002，白丢了精度）。 */
-              const dp = d.step >= 1 ? 0 : d.step >= 0.1 ? 1 : d.step >= 0.01 ? 2 : 3;
-              /* ★ 「这根拧过没有」= 参数串里**有没有这个键**（键在 = 有覆盖 = 拧过）。
-                 用它决定重置按钮亮不亮 —— 一眼看出哪几根动过（23 根里找"我改了哪几根"很费眼）。 */
-              const touched = params[d.k] !== undefined;
-              return (
-                <div key={d.k}>
-                  <Flex justify="between" align="center" gap="2">
-                    <Flex align="center" gap="1" style={{ minWidth: 0 }}>
-                      {/* ★★ 参数名（09-15 SV）：
-                          ① **字号**：原来 Radix size="1" = 12px ⇒ 先放大 1.5 倍到 18px，
-                             当晚再定「缩到当前的 0.9 左右」⇒ **16px**；
-                          ② **不要悬停提示** —— 那段说明挂在悬停上根本看不清（得悬着不动、还老
-                             在鼠标划过时蹦出来），改成后面这个「?」点开看。
-                          ⚠ 名字和数字原来都吃 size="1"（12px）；那行**不能带 size** ——
-                             Radix 的 size="1" 会盖住 inline fontSize（踩过）。 */}
-                      <Text style={{ fontSize: 16, lineHeight: 1.35 }}>{d.name}</Text>
-                      {/* ★★ 「?」= 详细说明（09-15 SV 选的做法）。内容就是引擎 `PARAMS` 里那段
-                          `d`（`svFilm/service.py` 写的，带数字和 ⚠ 提醒），**前端不许自己编文案**。
-                          用 Popover 不用 Dialog：贴着这一根弹出来、点别处就关，不打断手感。
-                          ⚠ 说明**不许常驻 DOM**（常驻的话右栏文字里到处都是说明，自检也读不准）
-                          ⇒ 只有点开那一刻才渲染。 */}
-                      <Popover.Root>
-                        <Popover.Trigger>
-                          <button
-                            data-param-help={d.k}
-                            aria-label={`${d.name} 的说明`}
-                            style={{
-                              flex: '0 0 auto',
-                              width: 16,
-                              height: 16,
-                              padding: 0,
-                              borderRadius: 999,
-                              border: '1px solid var(--line)',
-                              background: 'transparent',
-                              color: 'var(--text-dim)',
-                              fontSize: 11,
-                              lineHeight: '14px',
-                              cursor: 'pointer',
-                            }}
-                          >
-                            ?
-                          </button>
-                        </Popover.Trigger>
-                        <Popover.Content width="330px" data-param-help-pop={d.k}>
-                          <Flex direction="column" gap="2">
-                            <Text size="2" weight="bold">
-                              {d.name}
-                            </Text>
-                            <Text
-                              size="1"
-                              style={{
-                                color: 'var(--text-dim)',
-                                whiteSpace: 'pre-wrap',
-                                lineHeight: 1.7,
-                              }}
-                            >
-                              {d.d || '这一根引擎侧没有写说明'}
-                            </Text>
-                            {/* 顺带把"这个数怎么读"给出来：范围 / 每格 / 出厂值。
-                                ⚠ 出厂值用引擎给的 `dv`，不是前端算的区间中点（老 bug 见 §9）。 */}
-                            <Text size="1" style={{ color: 'var(--text-faint)' }}>
-                              范围 {d.lo} ~ {d.hi} · 每格 {d.step} · 出厂{' '}
-                              {Number(d.dv ?? (d.lo + d.hi) / 2).toFixed(dp)}
-                            </Text>
-                          </Flex>
-                        </Popover.Content>
-                      </Popover.Root>
-                    </Flex>
-                    <Flex align="center" gap="2" style={{ flex: '0 0 auto' }}>
-                      <Text size="1" style={{ color: 'var(--text-dim)' }}>
-                        {v.toFixed(dp)}
-                      </Text>
-                      {/* ★★ 每根滑杆一个重置（09-15 SV）。
-                          做法：把这个键**从参数串里删掉** ⇒ 这根回到引擎给的值（`dv`）。
-                          ⚠ 必须是"删键"，**不能**写回 `dv` —— 「没碰过的键不进参数串」是一条
-                             契约（自检 `[7]` 钉着它：未触碰 = 用引擎出厂值）。写回去等于把
-                             出厂值也塞进请求，和引擎的出厂打架。
-                          ⚠ 没拧过的这根灰着、点不动：既说明"这根还没动过"，也避免手一滑把
-                             别的根改了。 */}
-                      <button
-                        data-param-reset={d.k}
-                        data-param-reset-on={touched ? '1' : '0'}
-                        disabled={!touched}
-                        onClick={() => {
-                          const np = { ...params };
-                          delete np[d.k];
-                          setGrade({ params: np });
-                          /* 和「拖滑杆」同一条规矩：松开就出图。不同步出图的话数字回到默认、
-                             画面还停在拧过的样子 —— 那正是本项目最烦的"看着对、其实对不上"。 */
-                          requestRender();
-                        }}
-                        aria-label={`${d.name} 回到默认`}
-                        style={{
-                          flex: '0 0 auto',
-                          width: 18,
-                          height: 18,
-                          padding: 0,
-                          borderRadius: 999,
-                          border: touched
-                            ? '1px solid var(--accent)'
-                            : '1px solid var(--line)',
-                          background: 'transparent',
-                          color: touched ? 'var(--accent)' : 'var(--text-faint)',
-                          fontSize: 11,
-                          lineHeight: '15px',
-                          cursor: touched ? 'pointer' : 'default',
-                          opacity: touched ? 1 : 0.45,
-                        }}
-                      >
-                        ↺
-                      </button>
-                    </Flex>
-                  </Flex>
-                  <Slider
-                    size="1"
-                    min={d.lo}
-                    max={d.hi}
-                    step={d.step}
-                    value={[v]}
-                    /* ★★ 09-15 SV 选「A」：**拖着滑杆就出图**（"滑动每个参数都能实时预览"）。
-                       两条护栏都在 Viewer 那边，这里不许自己加节流：
-                         ① 合并 —— 同时只跑一发，跑完发现"参数又变了"就补发**最新那一发**；
-                         ② 防抖 —— 60ms 内的连续变化只发起一次。
-                       ⚠ 这里要**每一格都发**：真正"松手后停在旧画面"的那个 bug，
-                         根因是上游把请求丢了（Viewer 忙着时直接 return），不是发得太多。
-                         在这儿省一发 = 把"最后一发"也省掉 ⇒ 松手后画面停在中间某一格。 */
-                    onValueChange={([nv]) => {
-                      setGrade({ params: { ...params, [d.k]: nv } });
-                      requestRender();
-                    }}
-                  />
-                </div>
-              );
-            })}
-          </Flex>
-        </div>
-      ))}
 
       {/* ---- 成色基准（★ 09-15 SV：从上面挪到**这里**）----
           为什么挪：它对画面成色的影响很大（不套基准 / 只加雾 / 退黄+加雾 / 全对齐），

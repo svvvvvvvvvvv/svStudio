@@ -1685,16 +1685,30 @@ def t_sliders():
     check('滑杆不重名', len(ks) == len(set(ks)), '%d 根' % len(ks))
     bad_exist = [k for k in ks if not hasattr(C, k)]
     check('每根滑杆的参数在 config 里真的存在（防打错字）', not bad_exist, '查无此键: %s' % bad_exist)
-    bad_rng = [p['k'] for p in ps
-               if not (float(p['lo']) < float(p['hi'])) or float(p['step']) <= 0]
-    check('每根滑杆的区间/步长合法（lo < hi、step > 0）', not bad_rng, '坏: %s' % bad_rng)
+    # ⚠ 只有"数字"那几行才有区间/步长：整层开关（bool）和下拉（enum）**没有 lo/hi**
+    #   ⇒ 直接 `p['lo']` 会 KeyError（09-15 加这两种控件时踩到）。
+    bad_rng = [p['k'] for p in ps if p.get('kind', 'num') == 'num'
+               and (not (float(p['lo']) < float(p['hi'])) or float(p['step']) <= 0)]
+    bad_kind = [p['k'] for p in ps if p.get('kind', 'num') not in ('num', 'bool', 'enum')]
+    check('每根滑杆的区间/步长合法（lo < hi、step > 0；开关/下拉不适用）', not bad_rng,
+          '坏: %s' % bad_rng)
+    check('kind 只有三种（num / bool / enum）', not bad_kind, '怪的: %s' % bad_kind)
     bad_grp = [p['k'] for p in ps if not p.get('grp') or not p.get('name') or not p.get('d')]
     check('每根滑杆都有 名字 / 分组 / 说明（前端全靠这三个画）', not bad_grp, '缺: %s' % bad_grp)
 
     print('[滑杆：初值 dv = 引擎此刻实际在用的值]')
     defs = _svc._param_defs()
-    no_dv = [q['k'] for q in defs if not isinstance(q.get('dv'), float)]
-    check('每根滑杆都算得出 dv', not no_dv, '算不出: %s' % no_dv)
+    def _dv_ok(q):
+        """`dv` 的类型由 `kind` 定：数字=float / 整层开关=bool / 下拉=选项名之一。"""
+        dv, kind = q.get('dv'), q.get('kind', 'num')
+        if kind == 'bool':
+            return isinstance(dv, bool)
+        if kind == 'enum':
+            return isinstance(dv, str) and dv in tuple(o[0] for o in q.get('opts', ()))
+        return isinstance(dv, float)
+    no_dv = [q['k'] for q in defs if not _dv_ok(q)]
+    check('每根参数都算得出 dv（数字给 float / 开关给 bool / 下拉给选项名）', not no_dv,
+          '算不出: %s' % no_dv)
     out_rng = [q['k'] for q in defs
                if isinstance(q.get('dv'), float)
                and not (q['lo'] - 1e-9 <= q['dv'] <= q['hi'] + 1e-9)]
@@ -1733,8 +1747,13 @@ def t_sliders():
           _svc._parse_params('BLOOM_SPREAD:0.05') == {'BLOOM_SPREAD': 0.05})
 
     print('[滑杆：白名单（"静默丢弃"只许发生在我们允许的地方）]')
-    never = [q['k'] for q in defs if q['k'] not in _svc._parse_params('%s:1' % q['k'])]
-    check('★ 每一根滑杆都真的能传进引擎（传不进去 = 拧了没反应）', not never,
+    # ⚠ 探针值按 `kind` 给：开关给 '1'、下拉给**第一项的名字** ——
+    #   拿 '1' 去试下拉是**必被丢掉**的（名字不认得 ⇒ 丢弃），那是故意守的门，不是 bug。
+    def _probe(q):
+        return str(q['opts'][0][0]) if q.get('kind') == 'enum' else '1'
+    never = [q['k'] for q in defs
+             if q['k'] not in _svc._parse_params('%s:%s' % (q['k'], _probe(q)))]
+    check('★ 每一根参数都真的能传进引擎（传不进去 = 拧了没反应）', not never,
           '被丢掉: %s' % never)
     blocked = [k for k in ('CONTRAST_S_SCALE', 'CONTRAST_S_CLAMP', 'CHROMA_REF',   # 内部系数
                            'ENTRY_SHOULDER_KIND', 'ENTRY_CURVE', 'LUT_PATH', 'BASE', 'STOCK')
@@ -1800,6 +1819,91 @@ def t_sliders():
 #   t_routing_contract  ← 改路由时真卷被误走 Lab 路，画面味道全变但没人发现
 #   t_pipeline_e2e      ← 单层各自都对、装配起来的整链崩
 # ============================================================================
+
+def t_param_kinds():
+    r"""三种控件（09-15 B3）：数字滑杆 / 整层开关（bool）/ 下拉（enum）。
+
+    为什么单开一组：多出来的这两种类型，走的**全是"静默丢弃"那条老路** ——
+    `_parse_params` 原来只认 `(int, float)`：`DENOISE_ENABLE=True` 被
+    `not isinstance(cur, bool)` 挡掉、`SPEK_DIFFUSION_FAMILY` 这种字符串连 `float()`
+    都过不去 ⇒ **界面上有控件、拧不动、还不报错**；`main.js` 的 `paramStr` 同理。
+    这一组守四件事：① 两类都真的传得进来；② 传得对（类型不能漂）；③ 用完全还原；
+    ④ **整层开关真的有人读**（否则那个勾是死的 —— 勾了画面一个像素都不动）。
+    """
+    from . import service as _svc
+
+    print('[三种控件：开关 / 下拉的能量真的进得来]')
+    check('bool 开关传得进来（以前被 "not isinstance(cur, bool)" 静默丢掉）',
+          _svc._parse_params('DENOISE_ENABLE:0') == {'DENOISE_ENABLE': False},
+          str(_svc._parse_params('DENOISE_ENABLE:0')))
+    check('bool 的几种写法都认（1/0 与 true/false、on/off）',
+          _svc._parse_params('DENOISE_ENABLE:true') == {'DENOISE_ENABLE': True}
+          and _svc._parse_params('GRAIN_ENABLE:off') == {'GRAIN_ENABLE': False},
+          '%s / %s' % (_svc._parse_params('DENOISE_ENABLE:true'),
+                       _svc._parse_params('GRAIN_ENABLE:off')))
+    check('★ 开关解出来的类型是 **bool**（不是 1/0 整数 —— 整数会被下游当成强度值）',
+          isinstance(_svc._parse_params('DENOISE_ENABLE:1').get('DENOISE_ENABLE'), bool))
+    check('认不出来的写法**丢掉**（不许当成 False：那会把"写错了"变成"悄悄关一层"）',
+          _svc._parse_params('DENOISE_ENABLE:maybe') == {})
+    check('下拉（柔光型号）传得进来',
+          _svc._parse_params('SPEK_DIFFUSION_FAMILY:cinebloom')
+          == {'SPEK_DIFFUSION_FAMILY': 'cinebloom'})
+    check('★ 下拉给了表里没有的名字 ⇒ 丢掉（不能让 vendor 拿到编不出来的型号，那是崩）',
+          _svc._parse_params('SPEK_DIFFUSION_FAMILY:不存在的牌子') == {})
+    _fam = dict((p['k'], p) for p in _svc.PARAMS)['SPEK_DIFFUSION_FAMILY']['opts']
+    check('下拉的选项就是 vendor 那四支（黑柔 / 白柔 / 微光 / 电影柔光）',
+          tuple(o[0] for o in _fam) == ('black_pro_mist', 'pro_mist', 'glimmerglass', 'cinebloom'),
+          str(_fam))
+
+    print('[三种控件：用完必须还原成原来的类型]')
+    _den0, _fam0, _pe0 = C.DENOISE_ENABLE, C.SPEK_DIFFUSION_FAMILY, float(C.SPEK_PE_SHIFT)
+    with _svc._Overrides({'DENOISE_ENABLE': False, 'SPEK_DIFFUSION_FAMILY': 'cinebloom',
+                          'SPEK_PE_SHIFT': 0.9}):
+        check('覆盖期间：开关是 bool、下拉是 str、数字是 float',
+              isinstance(C.DENOISE_ENABLE, bool) and C.DENOISE_ENABLE is False
+              and C.SPEK_DIFFUSION_FAMILY == 'cinebloom'
+              and isinstance(C.SPEK_PE_SHIFT, float),
+              '%s / %s / %s' % (C.DENOISE_ENABLE, C.SPEK_DIFFUSION_FAMILY, C.SPEK_PE_SHIFT))
+    check('★ 退出后原样还原（值和类型都要回去）',
+          C.DENOISE_ENABLE is _den0 and C.SPEK_DIFFUSION_FAMILY == _fam0
+          and abs(C.SPEK_PE_SHIFT - _pe0) < 1e-12,
+          '%s / %s / %s' % (C.DENOISE_ENABLE, C.SPEK_DIFFUSION_FAMILY, C.SPEK_PE_SHIFT))
+
+    print('[三种控件：前端拿到的字段够不够画那个控件]')
+    defs = dict((q['k'], q) for q in _svc._param_defs())
+    b = defs['DENOISE_ENABLE']
+    check('开关那一行：kind=bool 且 dv 是 bool ⇒ 前端知道该画勾选框',
+          b.get('kind') == 'bool' and isinstance(b.get('dv'), bool), str(b.get('dv')))
+    e = defs['SPEK_DIFFUSION_FAMILY']
+    check('下拉那一行：kind=enum / dv 是选项名 / opts 四支 ⇒ 前端知道该画下拉',
+          e.get('kind') == 'enum' and e.get('dv') == 'black_pro_mist'
+          and len(e.get('opts', ())) == 4,
+          '%s / %s' % (e.get('dv'), len(e.get('opts', ()))))
+    g = defs['GRAIN_AMOUNT']
+    check('★ 带整层开关的那几根：`gate` 是 config 里真有的键、`gate_dv` 也给了',
+          g.get('gate') == 'GRAIN_ENABLE' and isinstance(g.get('gate_dv'), bool),
+          str(g.get('gate')))
+    bad_gate = [q['k'] for q in _svc._param_defs()
+                if q.get('gate') and not hasattr(C, q['gate'])]
+    check('每根挂的整层开关在 config 里真的存在（防打错字）', not bad_gate,
+          '查无此键: %s' % bad_gate)
+
+    print('[三种控件：每个整层开关都必须**真的有人读**（否则那个勾是死的）]')
+    cached_reads = set()
+    for _lbl, fn in _CACHED_FUNCS:
+        cached_reads |= _cfg_reads(fn)
+    stage_reads = set()
+    for fn in _STAGE_FUNCS:
+        stage_reads |= _cfg_reads(fn)
+    # ⚠ 这里**不复用** t_stage_cache 的结论：它盯的是滑杆，这一条盯的是开关。
+    #   一个"只写在 PARAMS 里、没人读"的开关，界面上勾掉会**什么都不发生**。
+    gates = sorted(set([q['gate'] for q in _svc._param_defs() if q.get('gate')]
+                       + [p['k'] for p in _svc.PARAMS if p.get('kind') == 'bool']))
+    check('至少挂了几个整层开关（这批放出来才有意义）', len(gates) >= 5, '%d 个' % len(gates))
+    dead = [k for k in gates if k not in stage_reads and k not in cached_reads]
+    check('★ 每个整层开关都至少有一层真的读它（否则勾了画面不变 = 死开关）',
+          not dead, '死的: %s' % dead)
+
 def _exp_gray(h=180, w=240, gamma=1.6, seed=0):
     r"""给"卷 / 路由 / 整链"三组用的样本：**中低亮度**的灰阶。
 
@@ -2436,7 +2540,7 @@ def main():
                t_io_roundtrip, t_stocks, t_spatial_off, t_spatial_grain,
                t_spatial_bloom_halation, t_local_skin_floor, t_entry_bias, t_pipeline_smoke,
                t_review_fixes, t_entry_settle, t_entry_toe, t_anchor,
-               t_film_color, t_stage_cache, t_sliders,
+               t_film_color, t_stage_cache, t_sliders, t_param_kinds,
                # 09-15 补的四组（各对着一次真踩过的事故）
                t_entry_raw_only, t_stock_matrix, t_routing_contract, t_pipeline_e2e,
                # 09-15 晚：卷表拼错名（选中即崩）⇒ 纯查表就能防住
