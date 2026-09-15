@@ -1653,6 +1653,252 @@ def t_sliders():
           < _dk(io.entry_tone(ramp, 1.0, _Cfg(ENTRY_TOE=1.0))))
 
 
+# ============================================================================
+# 09-15 SV「完善一下测试单元」补的四组
+# 每组都对着一次**真踩过的事故**，不是"为了覆盖率凑数"：
+#   t_entry_raw_only    ← 拧「整张亮暗(总)」没反应（喂的是 JPG）
+#   t_stock_matrix      ← 真卷真正的出图在 spektrafilm 里，原来全库只碰到一卷
+#   t_routing_contract  ← 改路由时真卷被误走 Lab 路，画面味道全变但没人发现
+#   t_pipeline_e2e      ← 单层各自都对、装配起来的整链崩
+# ============================================================================
+def _exp_gray(h=180, w=240, gamma=1.6, seed=0):
+    r"""给"卷 / 路由 / 整链"三组用的样本：**中低亮度**的灰阶。
+
+    ⚠ 为什么要暗一点的样本（踩过）：真卷**自己定曝光**，样本一泛白，
+      五个卷的中位会一起顶到 L*89.8、量出来一模一样
+      ⇒ "换卷到底换没换画面"根本测不出来（第一版就是这么白量的）。
+    """
+    rng = np.random.default_rng(seed)
+    y = np.linspace(0.0, 1.0, h)[:, None] * np.ones((1, w))
+    img = np.repeat(np.clip(y ** gamma, 1e-4, 1.0)[..., None], 3, axis=-1)
+    img += rng.normal(0, 0.002, img.shape)
+    return np.clip(img, 0.0, 1.0)
+
+
+def t_entry_raw_only():
+    r"""入口那两根（「整张亮暗(总)」「暗部亮度」）**只认 RAW** —— 09-15 真踩的坑。
+
+    症状：在工作台拧这两根、点渲染，**没反应**。两半原因，这一半是：
+    工作台当时喂给引擎的是 **JPG**，而入口那一段（零点/成形/趾部/护栏）
+    **只写在 `io.load_raw` 里**，`io.load_std`（JPG 那条）根本不跑
+    ⇒ 这两根在 JPG 上**一点作用都没有**（实测 RAW 上 −5.2~+31 L*，JPG 上 0.00）。
+
+    守三层，一层比一层硬（也一层比一层慢）：
+      ① 源码级：`load_std` 里不许出现入口段的任何符号；`load_raw` 里**必须**有。
+      ② 行为级（零素材）：同一张临时 JPG，在 `ENTRY_*` 两端取值下必须**逐位相同**。
+      ③ 素材级（可选）：设了环境变量 `SVFILM_RAW_SAMPLE=<一张 RAW>` 才跑 ——
+         同一张 RAW 上「整张亮暗(总)」必须**真的动画面**（否则"只认 RAW"是句空话）。
+         ⚠ **不写死任何个人路径**（这仓库要开源），没设就 `skip` 并打印出来。
+    """
+    import inspect
+
+    print('[入口：只认 RAW（喂 JPG 时那两根天生是死的）]')
+    src_std = inspect.getsource(io.load_std)
+    src_raw = inspect.getsource(io.load_raw)
+    leaked = [t for t in ('ENTRY_', 'entry_tone', 'clip_guard', 'anchor_ev') if t in src_std]
+    check('★ JPG 那条入口里不许出现「入口段」的任何符号', not leaked, '漏进: %s' % leaked)
+    missing = [t for t in ('entry_tone', 'ENTRY_BIAS_ENABLE', 'ENTRY_TOE',
+                           'ENTRY_SETTLE_SHIFT_EV', 'clip_guard') if t not in src_raw]
+    check('★ RAW 那条入口必须真接上入口段（零点/成形/趾部/落点/护栏）', not missing,
+          '缺: %s' % missing)
+
+    tmpd = tempfile.mkdtemp(prefix='svfilm-entry-')
+    tmp = os.path.join(tmpd, 'grad.jpg')
+    try:
+        io.save(_gray_img(160, 240, gamma=0.5), tmp)
+        with _TmpCfg(ENTRY_BIAS_ENABLE=True, ENTRY_TONE=True, ENTRY_SETTLE_ENABLE=True,
+                     ENTRY_SETTLE_SHIFT_EV=1.5, ENTRY_TOE=0.20, ENTRY_GAMMA=1.9):
+            a = io.load_std(tmp, max_side=400)
+        with _TmpCfg(ENTRY_BIAS_ENABLE=True, ENTRY_TONE=True, ENTRY_SETTLE_ENABLE=True,
+                     ENTRY_SETTLE_SHIFT_EV=-1.0, ENTRY_TOE=1.00, ENTRY_GAMMA=1.0):
+            b = io.load_std(tmp, max_side=400)
+        d_disp = float(np.max(np.abs(a.disp - b.disp)))
+        d_lin = float(np.max(np.abs(a.lin - b.lin)))
+        check('★ 喂 JPG 时把这套入口参数推到两端 ⇒ 画面**逐位不变**（天生管不着 JPG）',
+              d_disp == 0.0 and d_lin == 0.0, 'disp %.3e / lin %.3e' % (d_disp, d_lin))
+    finally:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        try:
+            os.rmdir(tmpd)
+        except OSError:
+            pass
+
+    raw = os.environ.get('SVFILM_RAW_SAMPLE')
+    if not raw or not os.path.exists(raw):
+        skip('真 RAW 上「这两根真的动画面」（没设 SVFILM_RAW_SAMPLE，跳过）')
+        return
+    try:
+        with _TmpCfg(ENTRY_SETTLE_SHIFT_EV=0.0):
+            ra = io.load_raw(raw, 400)
+        with _TmpCfg(ENTRY_SETTLE_SHIFT_EV=0.5):
+            rb = io.load_raw(raw, 400)
+        d = float(np.median(np.abs(ra.disp - rb.disp)))
+        check('★ 同一张 RAW 上「整张亮暗(总)」必须真的动画面（0 = 入口成了装饰品）', d > 1e-4,
+              '中位差 %.5f' % d)
+    except Exception as e:
+        skip('真 RAW 上的入口敏感性（这张解不开：%s）' % str(e)[:60])
+
+
+def _counted_run(stock, sample=None):
+    """跑一发整链，顺便数**每个模块函数被调了几次**（monkey-patch，用完立刻还原）。"""
+    import collections
+
+    _mods = [('tone.correct', tone, 'correct'), ('style.apply', style, 'apply'),
+             ('spatial.apply', spatial, 'apply'), ('spektra.render', spektra, 'render'),
+             ('denoise.apply', denoise, 'apply'), ('local.apply', local, 'apply'),
+             ('guard.enforce', guard, 'enforce'), ('analyze.analyze', analyze, 'analyze')]
+    cnt = collections.Counter()
+    orig = {}
+    for name, m, fn in _mods:
+        orig[name] = getattr(m, fn)
+
+        def _mk(n, f):
+            def w(*a, **k):
+                cnt[n] += 1
+                return f(*a, **k)
+            return w
+        setattr(m, fn, _mk(name, orig[name]))
+    try:
+        s = sample if sample is not None else _mk_sample(_exp_gray(), 'D:/x/route.jpg')
+        return cnt, pipeline.run_from(s, cfg=C, stock=stock, keep_stages=True)
+    finally:
+        for name, m, fn in _mods:
+            setattr(m, fn, orig[name])
+
+
+def t_stock_matrix():
+    r"""每个卷都**端到端出一张** —— 真卷走的是 spektrafilm 那条路。
+
+    ★ 为什么必须有这一组：原来的 `t_stocks` 只测 `style.apply`，而那是 **Lab 那条路**；
+      真卷真正的出图在 `spektra.render`（spektrafilm）里，全库只有段缓存那组碰到过一卷
+      ⇒ 某卷的 `spek=` 映射写错（片名/相纸名指到别的卷、`pe` 丢了），
+      要等**用户点开那一卷**才炸 —— 这就是"点开某卷没反应"最可能的样子。
+    ★ 顺带守一条：**换卷必须真的换画面**（两两差异），不然"卷"这个功能就是装饰。
+    """
+    print('[卷矩阵：每个卷端到端出一张]')
+    outs, bad = {}, []
+    for n in stocks.names():
+        s = _mk_sample(_exp_gray(), 'D:/x/%s.jpg' % n)
+        try:
+            r = pipeline.run_from(s, cfg=C, stock=n, keep_stages=True)
+        except Exception as e:
+            bad.append('%s(%s: %s)' % (n, type(e).__name__, str(e)[:70]))
+            continue
+        d = np.asarray(r.disp)
+        if not (np.all(np.isfinite(d)) and d.min() >= -1e-9 and d.max() <= 1 + 1e-9):
+            bad.append('%s(产物非有限/越界)' % n)
+            continue
+        outs[n] = d
+        rep, sp = r.report, (stocks.get(n) or {}).get('spek')
+        if sp:
+            # 真卷：必须真的走了 spektrafilm，而且用的是**这一卷自己的片和相纸**
+            if rep['style'].get('how') != 'spektrafilm':
+                bad.append('%s(没走 spektrafilm：%s)' % (n, rep['style'].get('how')))
+            elif rep['style'].get('film') != sp.get('film'):
+                bad.append('%s(跑了别人的片 %s ≠ %s)'
+                           % (n, rep['style'].get('film'), sp.get('film')))
+            elif abs(float(rep['style'].get('pe_base') or 0) - float(sp.get('pe') or 0)) > 1e-9:
+                bad.append('%s(每卷的印相曝光 pe 没传进去)' % n)
+        elif rep['style'].get('how') == 'spektrafilm':
+            bad.append('%s(中性卷竟走了 spektrafilm)' % n)
+    check('★ 每个卷都端到端出图成功，真卷真的走了自己的片/相纸/pe', not bad, '坏: %s' % bad)
+    if len(outs) < 2:
+        return
+    weak, same = [], []
+    ks = sorted(outs)
+    for i in range(len(ks)):
+        for j in range(i + 1, len(ks)):
+            mx = float(np.max(np.abs(outs[ks[i]] - outs[ks[j]])))
+            weak.append(mx)
+            if mx <= 0.02:
+                same.append('%s≈%s(%.4f)' % (ks[i], ks[j], mx))
+    check('★ 换卷必须真的换画面（两两差异都 > 0.02）', not same,
+          '%d 对，最弱 %.4f%s' % (len(weak), min(weak), ('，太像: ' + ','.join(same)) if same else ''))
+
+
+def t_routing_contract():
+    r"""真卷 / 中性卷**各走哪条路** —— 用「谁被调用了」钉，不看引擎自报的字段。
+
+    ★ 为什么必须数调用：`rep` 里那几个 `applied / how` 是**引擎自己写的**，
+      断言"自报字段"等于自证。数"谁真的被调了"才是机制。
+      （两组都留着：计数管机制，字段管"给人看的报告别写错"。）
+
+    实测（合成样本）：
+      真卷   tone 0 / style 0 / spatial 0 / **spektra 1** / denoise 1 / local 1 / guard 1
+      中性卷 **tone 1 / style 1 / spatial 1** / spektra 0 / denoise 1 / local 1 / guard 1
+    改路由（比如让真卷也走 Lab）会立刻红。
+    """
+    print('[路由：真卷 vs 中性卷各走哪条路（数调用，不看自报）]')
+    plan = {
+        # 卷:              tone style spatial spektra   （denoise/local/guard 两条路都必须跑）
+        'portra400': dict(tone=0, style=0, spatial=0, spektra=1),
+        'neutral': dict(tone=1, style=1, spatial=1, spektra=0),
+    }
+    for stock, exp in plan.items():
+        try:
+            cnt, r = _counted_run(stock)
+        except Exception as e:
+            skip('%s 的路由（跑不起来：%s）' % (stock, str(e)[:60]))
+            continue
+        got = {k: cnt[v] for k, v in (('tone', 'tone.correct'), ('style', 'style.apply'),
+                                      ('spatial', 'spatial.apply'),
+                                      ('spektra', 'spektra.render'))}
+        check('★ %s 各走哪条路（真卷只走胶片段 / 中性卷只走我们那三层）' % stock,
+              got == exp, '实测 %s 期望 %s' % (got, exp))
+        common = {k: cnt[k] for k in ('denoise.apply', 'local.apply', 'guard.enforce',
+                                      'analyze.analyze')}
+        check('★ %s 入口(L0)/降噪/L3 局部/L4 护栏 **两条路都必须跑**' % stock,
+              all(v == 1 for v in common.values()), str(common))
+        # 自报字段也要跟机制一致（报告是给人看的，别写成另一回事）
+        if stock == 'portra400':
+            check('真卷的报告说的是实话（how=spektrafilm / L1 与空间层让位）',
+                  r.report['style'].get('how') == 'spektrafilm'
+                  and r.report['tone'].get('applied') is False
+                  and r.report['spatial'].get('applied') is False,
+                  'tone=%s spatial=%s' % (r.report['tone'].get('reason'),
+                                          r.report['spatial'].get('reason')))
+
+
+def t_pipeline_e2e():
+    r"""整链：`run_from(keep_stages=True)` —— 各层产物齐全、形状一致、有界、逐层可查。
+
+    ★ 为什么和 `t_pipeline_smoke` 不重复：那个是**手写串联**（逐层自己调），
+      能证明"每层单独不炸"，证明不了"**装配起来的整链**不炸" ——
+      层与层之间的接口改了、单层各自都对，整链照样崩。
+    ⚠ 本组的样本**不会触发 L4 那道护栏**（实测它一个像素没动）⇒「只许往下」这条
+      在这里是**方向性护栏**（防有人把它改成提亮），不是护栏力道的验收。
+    """
+    print('[整链：run_from(keep_stages=True)]')
+    need = ('base', 'after_tone', 'after_style', 'after_spatial', 'after_local',
+            'style_raw', 'spatial_raw')
+    for stock, tag in (('portra400', '真卷'), ('neutral', '中性卷')):
+        try:
+            r = pipeline.run_from(_mk_sample(_exp_gray(), 'D:/x/e2e.jpg'),
+                                  cfg=C, stock=stock, keep_stages=True)
+        except Exception as e:
+            check('★ %s 整链跑得通' % tag, False, '%s: %s' % (type(e).__name__, str(e)[:90]))
+            continue
+        check('★ %s 整链跑得通' % tag, True)
+        st = r.report.get('stages') or {}
+        miss = [k for k in need if k not in st]
+        check('%s 逐层产物齐全（可逐层追踪）' % tag, not miss, '缺: %s' % miss)
+        if miss:
+            continue
+        shp = {st[k].shape for k in need}
+        check('%s 各层形状一致（换层不该改尺寸）' % tag, len(shp) == 1, str(shp))
+        check('%s 各层都有限、都在 [0,1]' % tag,
+              all(np.all(np.isfinite(st[k])) and st[k].min() >= -1e-9
+                  and st[k].max() <= 1 + 1e-9 for k in need))
+        d3, d4 = np.asarray(st['after_local']), np.asarray(r.disp)
+        check('%s L4 那道护栏**只许往下**（逐像素不许上行）' % tag,
+              bool((d4 <= d3 + 1e-9).all()), '最大上行 %.3e' % float((d4 - d3).max()))
+        check('%s 出图 = 过完 L4 的那张（不是某层中间产物）' % tag,
+              d4.shape == np.asarray(r.disp).shape and float(d4.max()) <= 1 + 1e-9)
+
+
 def main():
     for fn in (t_color, t_analyze, t_tone_mid_target, t_tone_monotone, _legacy(t_style_lock),
                _legacy(t_style_contrast_direction), _legacy(t_style_tone_curve), _legacy(t_style_chroma_ends), t_denoise,
@@ -1660,7 +1906,9 @@ def main():
                t_io_roundtrip, t_stocks, t_spatial_off, t_spatial_grain,
                t_spatial_bloom_halation, t_local_skin_floor, t_entry_bias, t_pipeline_smoke,
                t_review_fixes, t_entry_settle, t_entry_toe, t_anchor,
-               t_film_color, t_stage_cache, t_sliders):
+               t_film_color, t_stage_cache, t_sliders,
+               # 09-15 补的四组（各对着一次真踩过的事故）
+               t_entry_raw_only, t_stock_matrix, t_routing_contract, t_pipeline_e2e):
         fn()
     print('-' * 52)
     if FAIL:

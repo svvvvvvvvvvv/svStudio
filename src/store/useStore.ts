@@ -141,10 +141,15 @@ export const useStore = create<AppState>((set, get) => ({
     const lastSession = cfg?.lastSession;
     if (lastSession && list.some((s) => s.name === lastSession)) {
       await get().enterSession(lastSession, { silent: true });
-      set({
-        mode: cfg?.lastMode === 'grade' ? 'grade' : 'pick',
-        cur: Number(cfg?.lastCur) || 0,
-      });
+      /* ⚠★ 恢复的下标必须**夹到照片张数之内**。
+         踩过的场景（真能走到）：在长主题里翻到第 30 张 → 切到一个只有 12 张的主题 →
+         `enterSession` 会把 cur 归 0，但落盘的 lastCur 还是 30 → 关掉再打开
+         ⇒ 恢复成"主题 × 第 30 张" = 不存在 ⇒ 中间显示「没有照片」，
+         在用户眼里就是"打开工作台白屏了"，而且看不出为什么。 */
+      const n = get().photos.length;
+      const want = Number(cfg?.lastCur) || 0;
+      set({ cur: n > 0 ? Math.min(Math.max(0, want), n - 1) : 0 });
+      set({ mode: cfg?.lastMode === 'grade' ? 'grade' : 'pick' });
     }
   },
 

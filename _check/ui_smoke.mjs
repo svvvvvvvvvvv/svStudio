@@ -167,15 +167,21 @@ check(
 );
 check('★ Viewer 从 items[0] 拿 id', /items\?\.\[0\]/.test(viewerSrc));
 /* ⚠ 下面这条只是**漂移探测器**（弱检查）：mock 的形状最终由布局自检里的真浏览器
-   端到端检查兜底（"两栏都出图了"）。正则把空白折叠掉再匹配、并容忍
-   一行式 `=> ({ ok:true, image: ... })` 和带计数器的多行式
-   `=> { ...; return { ok:true, image: ... }; }` 两种写法
-   —— 09-15 给 mock 加"渲染次数计数器"时，旧正则就把它误报成红了。 */
-const mockSrcFlat = read('_check/layout_check.mjs').replace(/\s+/g, ' ');
+   端到端检查兜底（"两栏都出图了"）。
+   ⚠★ 09-15 踩了两次，都是**这条检查自己太脆**：
+    ① 正则写死 `async () =>`。给 `engineRender` 加"记下收到的参数"（新 [7] 组要断言
+       "拖过的滑杆真进了渲染请求"）后签名变成 `async (id, opts) =>` ⇒ 误报成红。
+    ② `.{0,240}?image:` 的跨度是**字数预算**，而 mock 里那段解释性长注释是中文长句
+       ⇒ 稍微多写两句注释就撑破 ⇒ 又误报。
+   现在的写法：先把**块注释剥掉**（注释是给人看的，不该占字数），参数表用 `[^)]*` 放过，
+   跨度放宽到 400。再要改宽就改 400，别改回写死的签名。 */
+const mockSrcFlat = read('_check/layout_check.mjs')
+  .replace(/\/\*[\s\S]*?\*\//g, ' ')      // ⚠ 只剥 `/* */`；`//` 不能剥（源码里有 file:/// 这类）
+  .replace(/\s+/g, ' ');
 check(
   '★ 布局自检的 mock 也返回 items/image（不再比前端还错）',
   /items: \[/.test(mockSrcFlat) &&
-    /engineRender: async \(\) =>.{0,240}?image:/.test(mockSrcFlat),
+    /engineRender: async \([^)]*\) =>.{0,400}?image:/.test(mockSrcFlat),
   '',
   'mock 形状跟 main.js 不一致，会骗过自检'
 );
