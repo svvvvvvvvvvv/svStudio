@@ -49,7 +49,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 
 from . import config as C
-from . import io, pipeline, stocks
+from . import io, pipeline, spektra, stocks
 
 VERSION = 'svstudio-1'
 DEFAULT_PORT = 8765
@@ -169,14 +169,20 @@ def _load_one(path, side):
     return s, ms
 
 
-def _render_bytes(i, stock, base, side, fmt, quality, params=None):
-    """出图。side 与缓存不一致时用缓存的（不重新解码）—— 前端要别的尺寸得重新 /load。"""
+def _render_bytes(i, stock, base, side, fmt, quality, params=None, paper=None):
+    """出图。side 与缓存不一致时用缓存的（不重新解码）—— 前端要别的尺寸得重新 /load。
+
+    `paper` = 相纸（09-15 SV 选「C」）。空 = 这一卷**配套**的那张（默认值由引擎给）。
+      认不得的名字**不会**直接崩：`pipeline.run_from` 会回落成配套纸，
+      并在报告里标 `print_fallback`（不静默 —— 这是本项目最阴的那一类坑）。
+    """
     row = _cache_get(i)
     if not row:
         return None, {'error': 'id 不在缓存里，先 /load'}
     with _Overrides(_parse_params(params)):
         s = _ensure_decoded(i, row)           # ★ 解码阶段参数改了要重新解码（见 _decode_sig）
-        r = pipeline.run_from(s, stock=stock or None, base=base or None, cache=_STAGES[0])
+        r = pipeline.run_from(s, stock=stock or None, base=base or None,
+                              cache=_STAGES[0], paper=paper or None)
     disp = np.clip(r.disp, 0.0, 1.0)
     arr = (disp * 255.0 + 0.5).astype(np.uint8)
     if fmt in ('jpg', 'jpeg'):
@@ -216,20 +222,27 @@ def _base_bytes(i, fmt='jpg', quality=92):
     return buf.getvalue(), {'mime': mime, 'w': int(disp.shape[1]), 'h': int(disp.shape[0])}
 
 
-def _stats_of(i, stock, base, params=None):
+def _stats_of(i, stock, base, params=None, paper=None):
     row = _cache_get(i)
     if not row:
         return {'error': 'id 不在缓存里'}
     with _Overrides(_parse_params(params)):
         s = _ensure_decoded(i, row)           # ★ 同上：解码阶段参数改了要重新解码
         r = pipeline.run_from(s, stock=stock or None, base=base or None,
-                              cache=_STAGES[0])
+                              cache=_STAGES[0], paper=paper or None)
     from . import color
     lab = color.to_lab(np.clip(r.disp, 0, 1))
     L = lab[..., 0]
     Cc = np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2)
+    st = r.report.get('style') or {}
     return dict(ms=round(r.report.get('ms', 0)),
                 stock=r.report.get('stock'), base=r.report.get('base'),
+                # ★ 报出**实际用的那张相纸**（不是请求里那个）—— 认不得的名字会被回落成
+                #   配套纸，这里带 `paper_fallback` 说明"回落过了"，
+                #   免得画面跟预期不一样却查不出原因。
+                paper=st.get('print'), paper_default=st.get('print_default'),
+                paper_fallback=st.get('print_fallback'),
+                paper_fallback_reason=st.get('print_fallback_reason'),
                 L50=round(float(np.median(L)), 1),
                 L90=round(float(np.percentile(L, 90)), 1),
                 b=round(float(np.median(lab[..., 2])), 2),
@@ -301,6 +314,12 @@ class _H(BaseHTTPRequestHandler):
                                     #   界面上还一支都选不中（看不出哪里不对）。
                                     isDefault=bool(n == getattr(C, 'BASE', None))))
                 return self._json(out)
+            if u.path == '/papers':
+                # ★ 相纸清单（09-15 SV 选「C」：印相纸要能选，别写死）。
+                #   **必须带 `stock`** —— 默认相纸是**跟着卷走的**：引擎在"这一卷配套的那张"
+                #   上标 `isDefault`，前端只认它（同基准那条规矩：默认值一律由引擎给）。
+                #   ⚠ 一个都不标（stock 不是真卷）= 这条路没有"相纸"概念（neutral 走 Lab 引擎）。
+                return self._json(spektra.papers(q.get('stock') or None))
             if u.path in ('/', '/index.html') and _WEB[0]:
                 # ★ 可选：把工作台的静态页 serve 出来（路径由 `--web` 给，**不写死** ⇒ 边界不破）
                 fp = os.path.join(_WEB[0], 'index.html')
@@ -361,13 +380,15 @@ class _H(BaseHTTPRequestHandler):
                 b, info = _render_bytes(int(q.get('id') or 0), q.get('stock'),
                                         q.get('base'), q.get('side'),
                                         (q.get('fmt') or 'jpg').lower(),
-                                        q.get('q') or 92, q.get('params'))
+                                        q.get('q') or 92, q.get('params'),
+                                        q.get('paper'))
                 if b is None:
                     return self._json(info, 404)
                 return self._img(b, info['mime'])
             if u.path == '/stats':
                 return self._json(_stats_of(int(q.get('id') or 0), q.get('stock'),
-                                            q.get('base'), q.get('params')))
+                                            q.get('base'), q.get('params'),
+                                            q.get('paper')))
             return self._json({'error': 'no such path', 'path': u.path}, 404)
         except Exception as e:                                    # noqa: BLE001
             return self._json({'error': '%s: %s' % (type(e).__name__, str(e)[:200])}, 500)

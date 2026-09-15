@@ -146,6 +146,10 @@ function SplitView() {
   const opts: RenderOpts = {
     stock: grade.stock,
     base: grade.base,
+    /* ★★ 相纸（09-15 SV 选「C」）：**必须带上** —— 少了这一行，界面选了纸、出图还是旧纸，
+       而且画面不变 ⇒ 用户以为"这张纸没效果"（真因是根本没发出去）。
+       空串/undefined 时引擎按"这一卷的配套纸"处理（`spektra.resolve_paper` 兜底）。 */
+    paper: grade.paper,
     params: grade.params || {},
   };
   const wantOptsRef = useRef<RenderOpts>({});

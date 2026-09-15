@@ -5,6 +5,7 @@ import {
   Session,
   Stock,
   Base,
+  Paper,
   ParamDef,
   GradeState,
   ImportCard,
@@ -67,6 +68,9 @@ interface AppState {
   /* ---- 调色台 ---- */
   stocks: Stock[];
   bases: Base[];
+  /** ★★ 相纸表（09-15）：**只对当前这一卷有效** —— 换卷要重拉（默认相纸跟着卷走）。
+   *  不知道当前哪一卷时它是空的（真卷之外没有相纸可选）。 */
+  papers: Paper[];
   paramDefs: ParamDef[];
   engineOk: boolean;
   engineMsg: string;
@@ -113,10 +117,12 @@ interface AppState {
   showToast: (msg: string) => void;
   loadEngine: () => Promise<void>;
   ensureEngine: () => Promise<boolean>;
+  /** ★ 拉某一卷的**相纸表**并写进 state，返回这张表（默认相纸跟着卷走） */
+  loadPapers: (stock: string) => Promise<Paper[]>;
   setGrade: (patch: Partial<GradeState>) => void;
-  /** 右栏「恢复默认」：滑杆清空（回引擎出厂）+ 基准回引擎默认；**不动卷**；不自动出图 */
+  /** 右栏「恢复默认」：滑杆清空（回引擎出厂）+ 基准回引擎默认 + 相纸回配套纸；**不动卷**；不自动出图 */
   resetGrade: () => void;
-  /** 右栏「存到主题」：把当前卷/基准/滑杆值写进 `config.grades[主题名]`（进主题时自动套回） */
+  /** 右栏「存到主题」：把当前卷/相纸/基准/滑杆值写进 `config.grades[主题名]`（进主题时自动套回） */
   saveGradeToTheme: () => Promise<void>;
   setRenderBusy: (v: boolean) => void;
   /** 请分屏出一次图（右栏「渲染」按钮 / 切进调色台 都调它） */
@@ -153,6 +159,12 @@ function saveLast(patch: { session?: string; cur?: number; mode?: string }) {
   API.setConfig(flat).catch(() => {});
 }
 
+/** 从一张相纸表里挑「这一卷的配套纸」（引擎给了 `isDefault`；没标就退第一张）。
+ *  ⚠ 前端**不许写死任何纸名** —— 跟基准那条同一个规矩：名字写死 ⇒ 引擎改配置后静默错位。 */
+function pickPaper(list: Paper[]): string {
+  return (list.find((x) => x.isDefault) || list[0])?.name ?? '';
+}
+
 export const useStore = create<AppState>((set, get) => ({
   libRoot: '',
   ready: false,
@@ -174,6 +186,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   stocks: [],
   bases: [],
+  papers: [],
   paramDefs: [],
   engineOk: false,
   engineMsg: '',
@@ -181,7 +194,9 @@ export const useStore = create<AppState>((set, get) => ({
      见下面 loadEngine）。过去这里写死 'all'，而引擎的基准表（config.BASE_TABLE）里
      根本没有 'all' ⇒ `stocks.resolve_base` **静默**回落成 `BASE_NONE`（"不套基准"）
      ⇒ 默认出图等于"什么都没套"，界面上四支**一支都选不中**（还看不出哪里不对）。
-     ⚠ 规矩同滑杆那条：**前端不许自己发明初值**。 */
+     ⚠ 规矩同滑杆那条：**前端不许自己发明初值**。
+     ★ `paper` 同理**故意不写**（undefined）：进调色台时由 `loadEngine` 按当前卷问引擎要，
+       引擎标 `isDefault` 的那张就是初值。 */
   grade: { stock: 'portra400', base: '', params: {} },
   renderBusy: false,
   renderTick: 0,
@@ -283,22 +298,43 @@ export const useStore = create<AppState>((set, get) => ({
            `key = str(name or 'BASE_NONE').strip().upper()`，既不在表里就取 `'BASE_NONE'`。
            ⇒ 不校验的话，一进这个主题就是：界面上四支基准**一支都不亮**，
              出图悄悄变成"什么都没套"，而且**看不出哪里不对**。
-           —— 跟修「默认值」那条是同一个坑，只是入口从"初值"换成了"存过的旧值"。 */
+           —— 跟修「默认值」那条是同一个坑，只是入口从"初值"换成了"存过的旧值"。
+           ★ 相纸（09-15）是**同一个坑的第四个入口**，一样处理：名字不认得就回这一卷的配套纸，
+             并且**说出来**（toast），绝不静默。 */
         const b = String((g as { base?: unknown }).base ?? '');
         const known = !!b && list.some((x) => x.name === b);
-        set({ grade: { ...get().grade, ...g, base: known ? b : dfltName } });
+        const st = String((g as { stock?: unknown }).stock ?? get().grade.stock ?? '');
+        const plist = await get().loadPapers(st);
+        const p = String((g as { paper?: unknown }).paper ?? '');
+        const pKnown = !!p && plist.some((x) => x.name === p);
+        const pDflt = pickPaper(plist);
+        set({
+          grade: {
+            ...get().grade,
+            ...g,
+            base: known ? b : dfltName,
+            paper: pKnown ? p : pDflt,
+          },
+        });
         if (!known && list.length) {
           get().showToast(
             `「${name}」存的基准引擎不认${b ? '（' + b + '）' : ''}，已回默认`
           );
+        } else if (p && !pKnown) {
+          get().showToast(`「${name}」存的相纸引擎不认（${p}），已回配套纸`);
         }
       } else {
-        /* 没存过 ⇒ **回出厂**（滑杆清空 + 基准回引擎默认）。
+        /* 没存过 ⇒ **回出厂**（滑杆清空 + 基准回引擎默认 + 相纸回配套纸）。
            为什么不"保持上一个主题的值"：那样主题之间会**互相串味**
            （在 A 里拧过的滑杆跟着你进 B），正是本项目最忌的那类"看着对、其实对不上"。
            代价照实说：在 A 里**没存**的临时改动，切走一趟回来就没了
-           —— 这恰恰是「存到主题」这个按钮存在的意义。 */
-        set({ grade: { stock: get().grade.stock, base: dfltName, params: {} } });
+           —— 这恰恰是「存到主题」这个按钮存在的意义。
+           ⚠ 卷**不动**（卷是"这张要弄成什么"，不是调出来的；同 resetGrade 的规矩）。 */
+        const st = String(get().grade.stock || '');
+        const plist = await get().loadPapers(st);
+        set({
+          grade: { stock: get().grade.stock, base: dfltName, paper: pickPaper(plist), params: {} },
+        });
       }
     } catch {
       /* 读不到就当没存过，不吵 */
@@ -345,7 +381,7 @@ export const useStore = create<AppState>((set, get) => ({
     }, 2000);
   },
 
-  /** 拉引擎元数据（卷 / 基准 / 参数定义）+ 探活。服务没起时 ok=false，不白屏。 */
+  /** 拉引擎元数据（卷 / 基准 / 相纸 / 参数定义）+ 探活。服务没起时 ok=false，不白屏。 */
   loadEngine: async () => {
     try {
       const h = await API.engineHealth();
@@ -353,10 +389,13 @@ export const useStore = create<AppState>((set, get) => ({
         set({ engineOk: false, engineMsg: '引擎未启动' });
         return;
       }
-      const [s, b, p] = await Promise.all([
+      const curStock = String(get().grade.stock || '');
+      const [s, b, p, pp] = await Promise.all([
         API.engineStocks(),
         API.engineBases(),
         API.engineParams(),
+        /* ★ 相纸表**要带当前卷**（默认相纸跟着卷走）。没卷就别问（真卷之外没有相纸）。 */
+        curStock ? API.enginePapers(curStock) : Promise.resolve({ items: [] as Paper[] }),
       ]);
       // ★ main.js 给的键是 `items`（不是 `stocks`/`bases`/`params`）—— 09-15 名字对不上，
       //   三个列表永远是空的，卷/基准/滑杆全不显示。
@@ -366,6 +405,7 @@ export const useStore = create<AppState>((set, get) => ({
         engineMsg: '',
         stocks: s?.items || [],
         bases: baseList,
+        papers: pp?.items || [],
         paramDefs: p?.items || [],
       });
       /* ★ 基准成色的初值**由引擎给**（同滑杆的 `dv` 规矩）：
@@ -376,6 +416,13 @@ export const useStore = create<AppState>((set, get) => ({
       if (baseList.length && !baseList.some((x) => x.name === curBase)) {
         const dflt = baseList.find((x) => x.isDefault) || baseList[0];
         set({ grade: { ...get().grade, base: dflt.name } });
+      }
+      /* ★ 相纸同规矩（09-15）：引擎说这一卷配哪张就是哪张。
+         ⚠ 同样**不许写死纸名** —— 名字认不得的后果是"静默走默认"，本项目最阴的一类坑。 */
+      const paperList: Paper[] = pp?.items || [];
+      const curPaper = get().grade.paper;
+      if (paperList.length && !paperList.some((x) => x.name === curPaper)) {
+        set({ grade: { ...get().grade, paper: pickPaper(paperList) } });
       }
     } catch {
       set({ engineOk: false, engineMsg: '引擎未启动' });
@@ -407,19 +454,72 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  setGrade: (patch) => set({ grade: { ...get().grade, ...patch } }),
+  /**
+   * ★ 拉某一卷的相纸表（唯一出处 = 引擎 `spektra.PAPERS`；默认跟着卷走）。
+   *   ⚠ 引擎对**不认得的名字**是回落 + 报告里标出来（`resolve_paper`），不会崩。
+   *     所以前端这边只管"我手里的列表是哪一卷的"，不用自己兜名字。
+   */
+  loadPapers: async (stock) => {
+    const st = String(stock || '');
+    if (!st) {
+      set({ papers: [] });
+      return [];
+    }
+    try {
+      const r = await API.enginePapers(st);
+      const items: Paper[] = r?.items || [];
+      set({ papers: items });
+      return items;
+    } catch {
+      set({ papers: [] });
+      return [];
+    }
+  },
+
+  setGrade: (patch) => {
+    const before = get().grade;
+    set({ grade: { ...before, ...patch } });
+    /* ★★ 换卷要**连坐换纸**（09-15）：卷变了，配套的那张纸也变了
+       （Portra 卷配 Portra Endura、Ektar 卷配 Endura Premier…）。
+       不换的话会留下"Ektar 卷 + Portra 纸"这种不存在的组合，
+       而且下拉里高亮的那条和实际生效的那条对不上 —— 又是"看着对、其实对不上"。 */
+    if (patch.stock === undefined || patch.stock === before.stock) return;
+    const st = String(patch.stock || '');
+    get()
+      .loadPapers(st)
+      .then((items) => {
+        /* ⚠ 连着换两次卷时，**先发的请求可能后到** —— 回来先确认"还是这一卷"，
+           否则会把下拉覆盖成上一卷的纸（高亮和实际用的又对不上）。 */
+        if (String(get().grade.stock || '') !== st) return;
+        /* ★ 中性卷 / 引擎没给表 ⇒ 把相纸**清空**（别把上一卷那张名字留在状态里：
+           它虽然不生效，但会跟着下一次渲染请求飞出去，日志里看着像"用了这张纸"）。 */
+        if (!items.length) {
+          set({ grade: { ...get().grade, paper: '' } });
+          return;
+        }
+        set({ grade: { ...get().grade, paper: pickPaper(items) } });
+      })
+      .catch(() => {});
+  },
 
   /* ★ 右栏「恢复默认」（09-15 接上 —— 之前这个按钮**没有 onClick**，点了什么都不发生）：
      只清「调出来的东西」= 23 根滑杆全清（引擎自动回到它自己 `config` 里的出厂值）+
-     基准回引擎默认那支。
+     基准回引擎默认那支 + **相纸回这一卷的配套纸**。
      ⚠ **不动卷**：卷（portra400 / cinestill800t…）是"这张要弄成什么"，不是调出来的，
      被「恢复默认」顺手抹掉会很意外。
      ⚠ 也不自动出图 —— 沿用 SV 定的"只有两个触发点"（右栏「渲染」/ 切进调色台）。 */
   resetGrade: () => {
     const list = get().bases;
     const dflt = list.find((x) => x.isDefault) || list[0];
-    set({ grade: { ...get().grade, base: dflt?.name ?? '', params: {} } });
-    get().showToast('滑杆已回出厂（卷没动）—— 点「渲染」看效果');
+    set({
+      grade: {
+        ...get().grade,
+        base: dflt?.name ?? '',
+        paper: pickPaper(get().papers),
+        params: {},
+      },
+    });
+    get().showToast('滑杆已回出厂、相纸回配套纸（卷没动）—— 点「渲染」看效果');
   },
 
   /* ★ 右栏「存到主题」（09-15 接上）：一个主题一份配方，写进 `config.grades[主题名]`。

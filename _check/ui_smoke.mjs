@@ -580,7 +580,12 @@ check('★ 「存到主题」还**读回来**（进主题时把配方套回）',
   /API\.getGrade\(name\)/.test(storeCode), '',
   '只写不读 = 存了个寂寞（本项目最忌的"看着对、其实对不上"）');
 check('★ 没存过的主题回出厂（不把上一个主题的调整带过去）',
-  /base: dfltName, params: \{\}/.test(storeCode), '',
+  /* ⚠ 锚点跟着声明走：09-15 加了相纸之后那一行变成
+     `grade: { stock: …, base: dfltName, paper: pickPaper(plist), params: {} }`
+     —— 原来写死的 `base: dfltName, params: {}` 就匹配不到了（检查比代码先过时，
+     表现是"检查红了但代码是对的"，很容易顺手把对的代码改坏）。
+     这里放过中间的 `paper: …`，但**仍然要求** base 回默认 + 参数清空两件事都在。 */
+  /base: dfltName,[\s\S]{0,120}?params: \{\}/.test(storeCode), '',
   '沿用上一个主题的值 ⇒ 主题之间串味（在 A 拧过的滑杆跟着进 B）');
 const resetM = storeCode.match(/resetGrade: \(\) => \{[\s\S]*?\n  \},/);
 check('★ 「恢复默认」**不动卷**（只清滑杆 + 基准回默认）',
@@ -647,6 +652,104 @@ check('★ 换图回「适应」（不然翻到下一张还停在上次的放大
 check('★ 「1:1」的倍率是**算出来的**（按 contain 实际画出的宽，不是盒子宽）',
   /const drawnW = \(\(\) => \{/.test(zoomSrc) && /bw \/ bh > ar \? bh \* ar : bw/.test(zoomSrc), '',
   '拿盒子宽当基准 ⇒ contain 留的黑边被算进去，徽标上的 100% 是假的');
+
+/* ---------- 12. 相纸（09-15 SV 选「C」） ----------
+   ★ 为什么单开一组：一张真卷出图 = **(负片, 相纸)** 二元组。原来只开放了负片那一半
+     （`init_params(film_profile=…)` 里的相纸是写死的）—— 而**相纸是最终成色的另一半**：
+     同一卷负片印在不同纸上，是两套不同的颜色（人像最经典的就是
+     「柯达卷 + Portra Endura」和「富士卷 + Crystal Archive」两套脸色）。
+   ★ 这一组盯的是三件容易"接了半截"的事（本项目最常见的一类 bug）：
+     ① 引擎侧：名字认不得要**回落 + 说出来**（别静默换纸，也别当场崩）
+     ② 渲染链：`paper` 必须**一路传到物理链**（少一环 ⇒ 画面不变，用户以为"这张纸没效果"）
+     ③ 段缓存：键里**必须带纸**（否则换纸后出图还是上一张的缓存 —— 同样是画面不变）
+   ⚠ 而"哪张是这一卷的配套纸"**由引擎给**（`papers(stock)` 里的 `isDefault`）——
+     跟基准那条同一个规矩：**前端不许写死纸名**。 */
+console.log('\n[12] 相纸（印相纸要能选）');
+const spekSrc = exists('svFilm/svFilm/spektra.py') ? read('svFilm/svFilm/spektra.py') : '';
+const pipeSrc = exists('svFilm/svFilm/pipeline.py') ? read('svFilm/svFilm/pipeline.py') : '';
+
+/* 引擎的相纸名（只扫 `PAPERS = {` 到 `PAPER_ORDER` 之间，并剥掉 `#` 注释 ——
+   注释里也出现过纸名，不剥会被自己的注释骗，09-15 在 api/index.ts 上栽过一次）。 */
+const pA = spekSrc.indexOf('PAPERS = {');
+const pB = spekSrc.indexOf('PAPER_ORDER');
+const paperBlock = pA >= 0 && pB > pA ? spekSrc.slice(pA, pB).replace(/#[^\n]*/g, '') : '';
+const paperNames = [...paperBlock.matchAll(/\n\s+'([a-z0-9_]+)':/g)].map((m) => m[1]);
+check('★ 从引擎 spektra.py 读到了相纸表', paperNames.length >= 6, `${paperNames.length} 张`);
+
+check('★ 引擎有"认不得就回落、并且说出来"的相纸解析器',
+  /def resolve_paper\(stock_name, paper=None\):/.test(spekSrc) && /unknown_paper/.test(spekSrc), '',
+  '没有它 ⇒ 旧配方/手改配置里的脏名字要么直接塞给 init_params（FileNotFoundError 当场崩），' +
+    '要么被静默换一张（本项目最阴的那类坑）');
+check('★ 回落时**报告里标出来**（`print_fallback` 一路传到 /stats）',
+  /* ⚠ 锚点取**声明本身**：pipeline 写的是 `print_fallback=bool(_paper_fb)`，
+     service 是 `paper_fallback=st.get('print_fallback')` —— 别去 grep 那个光秃秃的字段名。 */
+  /print_fallback=bool\(_paper_fb\)/.test(pipeSrc) &&
+    /paper_fallback=st\.get\('print_fallback'\)/.test(svcSrc), '',
+  '静默回落 ⇒ 用户以为在用 A 纸，其实出的是 B 纸，还看不出哪里不对');
+check('★ 真卷之外没有"相纸"这回事（中性卷返回**空表**）',
+  /if pair is None:\s*\n\s*return \[\]/.test(spekSrc), '',
+  '中性卷也列 8 张纸、一张都不亮 ⇒ 把一个拧不动的开关摆给用户（看着能用、其实不生效）');
+check('★ 相纸真进了物理链（`render(print_profile=…)`）',
+  /def render\(lin, stock_name, cfg=C, print_exposure=None, print_profile=None\):/.test(spekSrc) &&
+    /print_profile=_paper/.test(pipeSrc), '',
+  '换纸没进渲染 ⇒ 下拉是个纯装饰');
+check('★★ 段缓存键**带相纸**（不带 ⇒ 换了纸还是上一张的画面，而且看不出来）',
+  /_ckey = \('film', _sample_uid\(s\), \(st or \{\}\)\.get\('name'\), _paper or '',/.test(pipeSrc), '',
+  '缓存键不带纸 ⇒ 换纸后出图命中上一张的缓存，「这张纸没效果」的假象');
+check('★ 引擎 /papers 路由按卷给默认纸',
+  /u\.path == '\/papers'/.test(svcSrc) && /spektra\.papers\(q\.get\('stock'\) or None\)/.test(svcSrc), '');
+
+/* 四边同步 */
+check('★ main.js 有 engine-papers 通道，且渲染请求真带上了 paper',
+  /ipcMain\.handle\('engine-papers'/.test(mainJsSrc) &&
+    /'&paper=' \+ encodeURIComponent\(o\.paper \|\| ''\)/.test(mainJsSrc), '',
+  '主进程没转发 ⇒ 前端问"这一卷配哪张纸"永远拿到空表');
+check('★ preload 暴露了 enginePapers（只传卷名 —— 默认纸跟着卷走）',
+  /enginePapers: \(stock\) => ipcRenderer\.invoke\('engine-papers', stock\)/.test(preload), '',
+  'preload 少一边 ⇒ 调用同步抛 TypeError，`.catch` 接不到（漏 setConfig 那次的翻版）');
+check('★ api/index.ts 三件都齐：Paper 类型 + Window.api 声明 + API 封装',
+  /* ⚠ `Window.api` 里那条声明是**换行写的**（`enginePapers: (\n stock: string\n) => …`）
+     ⇒ 锚点必须放过空白，别写死成一整行。 */
+  /export interface Paper \{/.test(apiTs) &&
+    /enginePapers:\s*\(\s*stock: string\s*\)\s*=>\s*Promise</.test(apiTs) &&
+    /enginePapers: \(stock: string\) => api\(\)\.enginePapers\(stock\)/.test(apiTs), '');
+check('★★ 渲染 opts 里必须带 `paper`（少这一行 ⇒ 界面选了纸、出图仍是旧纸）',
+  /paper: grade\.paper/.test(viewerCode), '',
+  '下拉是装饰：画面不变，用户会以为"这张纸没效果"（其实是根本没发出去）');
+check('★ 换卷要**连坐换纸**（配套纸跟着卷走，不留"Ektar 卷 + Portra 纸"这种组合）',
+  /loadPapers: async \(stock\) =>/.test(storeCode) && /get\(\)\s*\.loadPapers\(st\)/.test(storeCode), '');
+check('★ 相纸初值由引擎给（前端不许写死纸名；store 与右栏里一个 kodak_/fujifilm_ 都不许有）',
+  !/kodak_|fujifilm_/.test(storeCode) && !/kodak_|fujifilm_/.test(gpCode), '',
+  '写死纸名 ⇒ 引擎改表就静默错位（和基准那条是同一个坑）');
+check('★ 相纸下拉有可断言的"现在用的是哪张"（不去认 option 的 selected）',
+  /data-paper-on=/.test(gradeSrc) && /data-paper-n=/.test(gradeSrc), '',
+  '没有标记 ⇒ 布局自检只能数"option 有几个"，测不出默认纸对不对');
+/* ★★ 这一条和上一条（mock 对中性卷返回空表）是**一对**，必须两条都在：
+   防"中性卷不该有相纸"这件事被**两条路径互相兜住** ——
+     ① 引擎/mock 对中性卷返回空表（数据侧）
+     ② 右栏按"是不是真卷"决定这一栏画不画（表现侧）
+   只写一条的话，另一条被破坏时**检查照样绿**（本项目的老坑：破法要一起破）。
+   两条各自单边可破 ⇒ 任何一边歪掉都会当场红。 */
+check('★ 真卷之外那一栏**整个不显示**（不是列一队拧不动的纸）',
+  /\{isSpek && papers\.length > 0 && \(/.test(gradeSrc), '',
+  '中性卷下也画一个相纸下拉 ⇒ 用户在那儿点半天没反应（相纸只对真卷有意义）');
+
+/* ★★ 跨语言钉子：布局自检的 mock 跑的是**它自己那份假数据**，
+   必须和引擎的相纸名单一模一样。名字漂了 ⇒ 布局自检在测一份不存在的纸（绿着但没意义）。 */
+const mq = mockSrcFlat.indexOf('enginePapers: async');
+const mz = mockSrcFlat.indexOf('getGrade: async');
+const mockPaperBlock = mq >= 0 && mz > mq ? mockSrcFlat.slice(mq, mz) : '';
+const mockPaperNames = [...mockPaperBlock.matchAll(/\['([a-z0-9_]+)',\s*'/g)].map((m) => m[1]);
+check('★★ 布局自检 mock 的相纸名单照引擎 `spektra.PAPERS` 抄（张数与名字一个不差）',
+  paperNames.length >= 6 && mockPaperNames.length === paperNames.length &&
+    mockPaperNames.every((n) => paperNames.includes(n)),
+  `引擎 ${paperNames.length} 张 / mock ${mockPaperNames.length} 张`,
+  'mock 和引擎漂了 ⇒ 真浏览器那组检查在测一份不存在的纸');
+check('★ 布局自检 mock 对**中性卷**返回空表（照引擎抄）',
+  /const own = OWN\[stock\];\s*if \(!own\) return \{ ok: true, items: \[\] \};/.test(mockPaperBlock), '',
+  'mock 对中性卷也给 8 张 ⇒ 黑不了"中性卷不该有相纸"这条');
+check('★ 布局自检 mock 记下了渲染请求里的 paper（否则"换纸真发出去了吗"测不到）',
+  /paper: opts && opts\.paper/.test(mockSrcFlat), '');
 
 /* ---------- 汇总 ---------- */
 console.log('\n' + '-'.repeat(50));

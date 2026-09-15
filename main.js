@@ -982,6 +982,14 @@ ipcMain.handle('engine-params', async () => {
   const r = await engineGet('/params', 4000);
   return r.ok ? { ok: true, items: r.data } : r;
 });
+/** ★ 相纸清单（09-15 SV 选「C」：印相纸要能选，别写死）。
+ *  ⚠ **必须带 `stock`** —— 默认相纸是**跟着卷走的**，引擎会在"这一卷配套的那张"上
+ *    标 `isDefault`；前端**只认这个**来定初值，不许自己挑一个
+ *    （同「基准成色」那条规矩：默认值一律由引擎给）。 */
+ipcMain.handle('engine-papers', async (e, stock) => {
+  const r = await engineGet('/papers?stock=' + encodeURIComponent(stock || ''), 4000);
+  return r.ok ? { ok: true, items: r.data } : r;
+});
 ipcMain.handle('engine-scan', async (e, dir, exts, limit) => {
   const qs = '?dir=' + encodeURIComponent(dir || '') +
     '&ext=' + encodeURIComponent(exts || 'raf,jpg') +
@@ -1036,6 +1044,9 @@ ipcMain.handle('engine-render', async (e, id, opts) => {
   const qs = '?id=' + encodeURIComponent(String(id)) +
     '&stock=' + encodeURIComponent(o.stock || '') +
     '&base=' + encodeURIComponent(o.base || '') +
+    /* ★ 相纸（09-15 SV 选「C」）：空串 = 这一卷的配套纸（引擎给默认）。
+       ⚠ 名字不认得时引擎会回落并在 /stats 里标出来，不会崩 —— 别在前端自己兜。 */
+    '&paper=' + encodeURIComponent(o.paper || '') +
     '&side=' + encodeURIComponent(String(o.side || 700)) +
     '&fmt=jpg&q=' + encodeURIComponent(String(o.q || 92)) +
     '&params=' + encodeURIComponent(paramStr(o.params));

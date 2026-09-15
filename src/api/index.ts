@@ -46,6 +46,11 @@ declare global {
       engineStart: () => Promise<any>;
       engineStocks: () => Promise<{ ok?: boolean; items: Stock[]; error?: string }>;
       engineBases: () => Promise<{ ok?: boolean; items: Base[]; error?: string }>;
+      /** ★★ 相纸表（09-15）：`stock` 必传 —— **默认相纸跟着卷走**。
+       *  返回里恰好一条 `isDefault`，前端**只认它**定初值（别自己挑一张）。 */
+      enginePapers: (
+        stock: string
+      ) => Promise<{ ok?: boolean; items: Paper[]; error?: string }>;
       engineParams: () => Promise<{ ok?: boolean; items: ParamDef[]; error?: string }>;
       engineScan: (
         dir: string,
@@ -159,6 +164,26 @@ export interface Base {
   isDefault?: boolean;
 }
 
+/**
+ * ★★ 相纸（09-15 新增）：真卷的那半张"纸"。
+ *
+ *   一张真卷出图 = **(负片, 相纸)** 的二元组，两者可以独立换：
+ *   负片决定"什么胶卷"，相纸决定"冲印在什么纸上"（肤色/冷暖/饱和/暗部厚薄）。
+ *   引擎侧 `spektra.PAPERS` + `spektra.papers(stock)` 是唯一出处。
+ *
+ *   ★ 默认值**由引擎给**（`papers(stock)` 里恰好一条 `isDefault = true` = 这一卷的配套纸）。
+ *     前端不许自己写死纸名 —— 这是本项目最阴的一类坑（名字不认得 ⇒ 静默走默认）。
+ *   ★ 名字认不得时引擎的 `resolve_paper()` 会**回落到配套纸并说出来**
+ *     （`/stats` 里带 `print_fallback` / `print_fallback_reason`），不会崩。
+ */
+export interface Paper {
+  name: string;
+  label?: string;
+  desc?: string;
+  /** ★★ 这一卷**配套**的那张纸（默认值由引擎给，前端只认它） */
+  isDefault?: boolean;
+}
+
 export interface ParamDef {
   k: string;
   name: string;
@@ -190,10 +215,10 @@ export interface ParamDef {
  *    而 main.js 实际给的是 `{items:[{id,…}]}` / `{image}` / `{items:[…]}`
  *    ⇒ 卷/基准列表全空、一张图都渲染不出来，而且 mock 也跟着错、自检全绿）。
  *
- *    engine-load                      → { ok, items: [{id,path,ms} | {path,error}] }
- *    engine-base / -render / -raw-url → { ok, image }   （image = data:URL 字符串）
- *    engine-stocks / -bases / -params → { ok, items: [...] }
- *    engine-scan                      → { ok, files, n }
+ *    engine-load                                  → { ok, items: [{id,path,ms} | {path,error}] }
+ *    engine-base / -render / -raw-url             → { ok, image }   （image = data:URL 字符串）
+ *    engine-stocks / -bases / -params / -papers   → { ok, items: [...] }
+ *    engine-scan                                  → { ok, files, n }
  */
 export interface LoadItem {
   id?: number;
@@ -218,6 +243,9 @@ export interface ImageResult {
 export interface RenderOpts {
   stock?: string;
   base?: string;
+  /** ★★ 相纸（真卷专用）。空串 = 用这一卷的配套纸（引擎侧 `resolve_paper()` 兜底）。
+   *  名字不认得时引擎回落并标出来，不会崩 —— 别在前端自己兜。 */
+  paper?: string;
   params?: Record<string, number>;
   [k: string]: any;
 }
@@ -231,6 +259,8 @@ export interface RenderResult {
 export interface GradeState {
   stock?: string;
   base?: string;
+  /** ★★ 相纸（真卷专用，按主题存）。老配方里没有这个字段 ⇒ undefined = 用配套纸。 */
+  paper?: string;
   params?: Record<string, number>;
   [k: string]: any;
 }
@@ -361,6 +391,8 @@ export const API = {
   engineStart: () => api().engineStart(),
   engineStocks: () => api().engineStocks(),
   engineBases: () => api().engineBases(),
+  /** ★ 相纸表：`stock` 必传（默认相纸跟着卷走） */
+  enginePapers: (stock: string) => api().enginePapers(stock),
   engineParams: () => api().engineParams(),
   engineScan: (dir: string, exts: string[], limit: number) =>
     api().engineScan(dir, exts, limit),

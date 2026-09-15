@@ -187,16 +187,16 @@ def _entry_bias(sample):
 
 
 def run(path, src=None, max_side=None, cfg=C, out=None, lut=None, keep_stages=False,
-        stock=None, base=None):
+        stock=None, base=None, paper=None):
     """一次性：**解码 + 跑完整链**。常驻服务请用 `run_from`（跳过解码）。"""
     t0 = time.perf_counter()
     s = io.load(path, max_side or cfg.MAX_SIDE, src=src)
     return run_from(s, cfg=cfg, stock=stock, base=base, out=out, lut=lut,
-                    keep_stages=keep_stages, t0=t0, path=path)
+                    keep_stages=keep_stages, t0=t0, path=path, paper=paper)
 
 
 def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
-             keep_stages=False, t0=None, path=None, cache=None):
+             keep_stages=False, t0=None, path=None, cache=None, paper=None):
     r"""★ 从**已经 load 好的** sample 起跑 —— 常驻服务的入口。
 
     ★★ 为什么必须有它：实测 `io.load_raw` **一个人占全链 57%**
@@ -222,13 +222,23 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
     _pre_spek = (st or {}).get('spek')
     _spek = _pre_spek                     # 真卷标记（L2 与空间层都要看它；原来在下面才算一次）
 
+    # ---- ★ 相纸（09-15 SV 选「C」）---------------------------------------------
+    # 印相纸是**成色的另一半**（同一卷负片印在不同纸上 = 两套不同的颜色，尤其肤色）。
+    # 默认 = 这一卷**配套**的那张（卷表里就有，**由引擎给**，前端不许自己挑）。
+    # ⚠⚠ 名字不认得（旧配方 / 手改过的配置）**必须当场回落 + 说清楚**：
+    #   不许原样塞进 `init_params`（那是 `FileNotFoundError` 直接崩），
+    #   也不许静默换一张 —— "名字不认得 ⇒ 静默走默认"是本项目最阴的一类坑（已出现三次）。
+    _paper, _paper_fb, _paper_why = spektra.resolve_paper((st or {}).get('name'), paper)
+
     # ---- ★ 段缓存：命中就整段跳过，只留 L3 肤色 + L4 护栏（09-15 SV 选「A」）----
     # ⚠ 要 `keep_stages` 的调试脚本**自动让位** —— 调试要的是"从头完整跑一遍"。
     if keep_stages:
         cache = None
     _ckey, _entry = None, None
     if cache is not None and _pre_spek:
-        _ckey = ('film', _sample_uid(s), (st or {}).get('name'), _sig(cfg, SIG_CACHE))
+        # ⚠ 键里**必须带相纸**：换了纸而出图还是上一张 = 白换（而且看不出来）。
+        _ckey = ('film', _sample_uid(s), (st or {}).get('name'), _paper or '',
+                 _sig(cfg, SIG_CACHE))
         _entry = cache.get(_ckey)
 
     if _entry is not None:
@@ -287,9 +297,15 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
             _base_pe = float(_spek.get('pe') or getattr(cfg, 'SPEK_PRINT_EXPOSURE', 0.55))
             _shift = float(getattr(cfg, 'SPEK_PE_SHIFT', 1.0) or 1.0)
             _pe = _base_pe * _shift
-            disp2 = spektra.render(lin_in, st['name'], cfg, print_exposure=_pe)
+            # ★ 相纸从这里进物理链。`_paper` 在上面就解析好了：不传 = 这卷的配套纸；
+            #   传了但认不得 = 已回落成配套纸 + 在下面 `print_fallback` 里说明。
+            disp2 = spektra.render(lin_in, st['name'], cfg, print_exposure=_pe,
+                                   print_profile=_paper)
             s_info = dict(applied=True, how='spektrafilm', stock=st['name'],
-                          film=_spek.get('film'), print=_spek.get('print'),
+                          film=_spek.get('film'), print=_paper,
+                          print_default=bool(_paper and _paper == _spek.get('print')),
+                          print_fallback=bool(_paper_fb),
+                          print_fallback_reason=_paper_why,
                           print_exposure=_pe, pe_base=_base_pe, pe_shift=_shift,
                           tone_curve=False, film_color_w=0.0)
         else:

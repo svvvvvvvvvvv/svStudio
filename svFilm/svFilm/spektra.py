@@ -127,6 +127,90 @@ STOCK_MAP = {
 DEFAULT_STOCKS = ('portra400', 'fuji_c200', 'pro400h', 'ektar100', 'cinestill800t')
 
 
+# ═══════════ 相纸（09-15 SV 选「C」：印相纸要能选，别写死）═══════════
+# 为什么值得单开一个下拉：印相纸是**最终成色的另一半**。
+# 同一卷负片印在不同的纸上，是两套不同的颜色（尤其**肤色**）——
+# 人像最经典的其实就是「柯达卷 + Portra Endura」和「富士卷 + Crystal Archive」两套脸色。
+# 名字与顺序照 vendored spektrafilm 的 `model.stocks.PrintPapers` 抄（共 8 张）。
+# 值 = (中文名, 一句话人话说明) —— 界面与汇报都用这个，**别甩英文代号**。
+PAPERS = {
+    'kodak_portra_endura':             ('柯达 Portra Endura',
+                                        '人像纸：肤色最讨喜、暖而柔（Portra 卷的官配）'),
+    'kodak_endura_premier':            ('柯达 Endura Premier',
+                                        '全能纸：中性偏暖，最"标准"的一张（Ektar 卷的官配）'),
+    'fujifilm_crystal_archive_typeii': ('富士 Crystal Archive II',
+                                        '清透偏冷，东亚人像常见（富士卷的官配）'),
+    'kodak_supra_endura':              ('柯达 Supra Endura',
+                                        '饱和度更高，口味更浓（风光 / 浓郁调）'),
+    'kodak_ektacolor_edge':            ('柯达 Ektacolor Edge',
+                                        '更硬更艳，商业片口味'),
+    'kodak_2383':                      ('柯达 2383 印片',
+                                        '电影正片印片：暗部厚、对比大（电影卷的官配）'),
+    'kodak_2393':                      ('柯达 2393 印片',
+                                        '2383 的后继，稍柔和'),
+    # ⚠ 上游在枚举里自己给它标了 `# problematic`（数据有问题）——
+    #   留着是"能选到、能对照"，但别当默认。
+    'kodak_ultra_endura':              ('柯达 Ultra Endura（上游标注：数据有问题）',
+                                        '⚠ spektrafilm 自己标了 problematic，仅作对照'),
+}
+
+PAPER_ORDER = tuple(PAPERS.keys())
+
+
+def default_paper(stock_name):
+    """这一卷**配套**的相纸（= `STOCK_MAP` 里写的那张）。
+
+    ★ 「默认值由谁给」这条规矩：默认相纸**由引擎给**（就是卷表里配套的那张），
+      前端不许自己挑一个 —— 同「基准成色」的 `isDefault`、滑杆的 `dv`。
+    """
+    pair = STOCK_MAP.get(str(stock_name or '').lower())
+    return pair[1] if pair else None
+
+
+def papers(stock_name=None):
+    """相纸清单（给前端下拉用）。`stock_name` 给定时，把**这一卷的配套纸**标成 `isDefault`。
+
+    ★★ 真卷之外**没有"相纸"这回事**（中性卷走的是 Lab 引擎，压根没有「负片 + 相纸」这个
+      二元组）⇒ 给了卷名但那张卷不在 `STOCK_MAP` 里（中性卷 / 名字不认得）时返回**空表**。
+      不返回空表的话，前端会列 8 张纸、**一张都不亮**，等于把用户引到一个拧不动的开关上
+      —— 正是本项目最忌的那类"看着能用、其实不生效"。
+    """
+    if stock_name:
+        pair = STOCK_MAP.get(str(stock_name).lower())
+        if pair is None:
+            return []
+        dflt = pair[1]
+    else:
+        dflt = None
+    out = []
+    for n in PAPER_ORDER:
+        label, desc = PAPERS[n]
+        out.append(dict(name=n, label=label, desc=desc, isDefault=bool(n == dflt)))
+    return out
+
+
+def resolve_paper(stock_name, paper=None):
+    """把"用户选的相纸"解析成真要用的那张 —— **认不得就回落，并且说出来**。
+
+    ★★ 为什么要单独有它（本项目最阴的一类坑）：
+      「名字不认得 ⇒ 静默走默认」在这项目里已经出现过三次（前端写死 `'all'`、
+      旧配方里的 base、空串）。相纸同样会从**旧配方 / 手改的配置**里来，
+      所以这里既不许把名字直接塞给 `init_params`（那是 `FileNotFoundError` 当场崩），
+      也不许静默换一张 —— 返回 `(用哪张, 是否回落, 原因)`，由调用方写进报告，
+      界面和汇报都能看见。
+    """
+    pair = STOCK_MAP.get(str(stock_name or '').lower())
+    if pair is None:
+        return None, False, 'unknown_stock'
+    own = pair[1]
+    p = str(paper or '').strip()
+    if not p:
+        return own, False, ''
+    if p not in PAPERS:
+        return own, True, 'unknown_paper:%s' % p
+    return p, False, ''
+
+
 def _get_params(film, printp):
     key = (film, printp)
     with _LOCK:
@@ -142,13 +226,21 @@ def has(stock_name):
     return stock_name in STOCK_MAP
 
 
-def render(lin, stock_name, cfg=C, print_exposure=None):
+def render(lin, stock_name, cfg=C, print_exposure=None, print_profile=None):
     r"""喂**场景线性**（入口交出来的 `lin`），出**显示域**。
 
     `print_exposure` = 落点旋钮（印相曝光倍率）。**越大越暗**。
       不传就用配置里的 `SPEK_PRINT_EXPOSURE`（默认 1.0 = 让它自己定，通常偏暗）。
+    `print_profile` = **相纸**（09-15 SV 选「C」新增）。不传 = 用这一卷配套的那张。
+      ⚠ 只接受 `PAPERS` 里的名字；**认不得会当场 `FileNotFoundError`** ——
+        这是**刻意的**：把"静默换成另一张纸"变成"当场炸"，比事后查画面为什么不对省事得多。
+        要"回落 + 说明"的走 `resolve_paper()`，生产那条路（`pipeline.run_from`）就是这么做的。
+      ⚠ `init_params` 不便宜 ⇒ 按 `(负片, 相纸)` 缓存（`_get_params`）：
+        换纸 = 换一个 params 对象，**不会**污染上一张纸的参数。
     """
     film, printp = STOCK_MAP[stock_name]
+    if print_profile:
+        printp = str(print_profile)
     _init_params, simulate = _sf()
     p = _get_params(film, printp)
 

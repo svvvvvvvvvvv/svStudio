@@ -39,22 +39,30 @@ function FilmIcon({ name, size = 40 }: { name: string; size?: number }) {
  * ★ 这里是 React 化收益最明显的地方：老代码要 7 个 paintXxx 函数手搓 DOM，
  *   现在只是"把状态映射成 JSX"，参数变了界面自动更新，不用管重画时机。
  *
- * ★ 09-15 SV 定的渲染策略：**改任何东西都不自动出图**（换卷/换基准/拉滑杆/换图都不动画面），
+ * ★ 09-15 SV 定的渲染策略：**改任何东西都不自动出图**（换卷/换相纸/换基准/拉滑杆/换图都不动画面），
  *   只有两个触发点 —— ① 这里的「渲染」按钮 ② 切进/进入调色台。
  *   所以按钮放在最显眼的「胶片卷」下面。
+ *
+ * ★ 09-15 SV 选「C」：**相纸做成第二个下拉**。一张真卷出图 = (负片, 相纸) 二元组，
+ *   负片决定"什么胶卷"、相纸决定"冲印在什么纸上"（肤色/冷暖/饱和/暗部厚薄）。
+ *   原来只开放了负片那一半 —— 这是人像成色的另一半。
  */
 export function GradePanel() {
   const stocks = useStore((s) => s.stocks);
   const bases = useStore((s) => s.bases);
+  /* ★ 相纸表**只对当前这一卷有效**（默认相纸跟着卷走，换卷由 store 重拉）。
+     中性卷下引擎返回空表 ⇒ 这一栏整个不显示（中性卷没有"相纸"这回事）。 */
+  const papers = useStore((s) => s.papers);
   const paramDefs = useStore((s) => s.paramDefs);
   const grade = useStore((s) => s.grade);
   const setGrade = useStore((s) => s.setGrade);
   /* ★ 09-15 补：右下角那两个按钮原来是**死的**（没有 onClick），
      而主进程的 `get-grade` / `set-grade` 接口早就写好了、前端从来没调过 ——
      不是"缺功能"，是"接了半截"。
-     「恢复默认」= 23 根滑杆回引擎出厂 + 基准回引擎默认（**不动卷**：卷是"拍什么"，
-     不是"调出来的"）；「存到主题」= 把当前卷/基准/滑杆值写进 `config.grades[主题名]`，
-     下次进这个主题自动套回。⚠ 两个都不自动出图（沿用"只有两个触发点"的规矩）。 */
+     「恢复默认」= 23 根滑杆回引擎出厂 + 基准回引擎默认 + 相纸回这一卷的配套纸
+     （**不动卷**：卷是"拍什么"，不是"调出来的"）；「存到主题」= 把当前
+     卷/相纸/基准/滑杆值写进 `config.grades[主题名]`，下次进这个主题自动套回。
+     ⚠ 两个都不自动出图（沿用"只有两个触发点"的规矩）。 */
   const resetGrade = useStore((s) => s.resetGrade);
   const saveGradeToTheme = useStore((s) => s.saveGradeToTheme);
   const engineOk = useStore((s) => s.engineOk);
@@ -90,6 +98,14 @@ export function GradePanel() {
   }, [defs]);
 
   const params = grade.params || {};
+
+  /* ★ 下拉里"现在这张" = 状态里那张；状态里那张不在这张表里（还没拉到 / 旧配方带过来的
+     不认得的名字）就落到配套纸。**只用于显示**，不回写状态 —— 回写会造成 set 循环。
+     ⚠ 这条同样不许写死纸名。 */
+  const curPaper =
+    papers.length && papers.some((p) => p.name === grade.paper)
+      ? String(grade.paper)
+      : (papers.find((p) => p.isDefault) || papers[0])?.name ?? '';
 
   if (!engineOk) {
     return (
@@ -136,6 +152,8 @@ export function GradePanel() {
             return (
               <Tooltip key={s.name} content={s.label || s.name}>
                 <button
+                  data-stock={s.name}
+                  data-stock-on={on ? '1' : '0'}
                   onClick={() => setGrade({ stock: s.name })}
                   style={{
                     border: on
@@ -172,7 +190,7 @@ export function GradePanel() {
         </Text>
 
         {/* ★★ 「渲染」按钮（SV 09-15：放到胶片卷下面）。
-            改卷/改基准/拉滑杆/换图**都不会自动出图** —— 按下它才出，切进调色台时也会出一次。 */}
+            改卷/改相纸/改基准/拉滑杆/换图**都不会自动出图** —— 按下它才出，切进调色台时也会出一次。 */}
         <Button
           mt="3"
           size="2"
@@ -187,9 +205,70 @@ export function GradePanel() {
           size="1"
           style={{ color: 'var(--text-faint)', marginTop: 5, display: 'block' }}
         >
-          改完卷 / 基准 / 参数，按这里出图（不会自动出）
+          改完卷 / 相纸 / 基准 / 参数，按这里出图（不会自动出）
         </Text>
       </div>
+
+      {/* ---- 相纸（09-15 SV 选「C」）----
+          ★★ 只在真卷下出现：中性卷走的是 Lab 引擎，根本没有「负片 + 相纸」这个二元组，
+             引擎对中性卷返回的是**空表**（见 `spektra.papers()`），这里自然就不显示。
+          ⚠ 这一栏是"人像成色的另一半"：同一卷负片印在不同纸上，是两套不同的脸色。 */}
+      {isSpek && papers.length > 0 && (
+        <div>
+          <Flex justify="between" align="baseline">
+            <Text
+              size="1"
+              weight="bold"
+              style={{ color: 'var(--text-dim)', letterSpacing: 1 }}
+            >
+              相纸
+            </Text>
+            {/* 「现在用的就是这一卷的配套纸」—— 纯展示的小标记，一眼看出有没有换过纸 */}
+            {papers.some((p) => p.isDefault && p.name === curPaper) && (
+              <Text size="1" style={{ color: 'var(--text-faint)' }}>
+                本卷配套
+              </Text>
+            )}
+          </Flex>
+          {/* ★ 用原生 <select>：8 张纸的中文名很长，竖排列表会把右栏撑得没法用。
+              `data-paper` / `data-paper-on` / `data-paper-n` 是给布局自检断言用的 ——
+              自检读的是**实际在用的那张纸的名字**，不是"下拉在不在"。 */}
+          <select
+            data-paper="1"
+            data-paper-on={curPaper}
+            data-paper-n={papers.length}
+            value={curPaper}
+            onChange={(e) => setGrade({ paper: e.target.value })}
+            style={{
+              width: '100%',
+              marginTop: 6,
+              padding: '6px 7px',
+              borderRadius: 'var(--r-sm)',
+              border: '1px solid var(--line)',
+              background: 'var(--bg-hover)',
+              color: 'var(--text)',
+              fontSize: 11.5,
+              cursor: 'pointer',
+            }}
+          >
+            {papers.map((p) => (
+              <option
+                key={p.name}
+                value={p.name}
+                style={{ color: '#111', background: '#fff' }}
+              >
+                {(p.label || p.name) + (p.isDefault ? '（本卷配套）' : '')}
+              </option>
+            ))}
+          </select>
+          <Text
+            size="1"
+            style={{ color: 'var(--text-dim)', marginTop: 4, display: 'block' }}
+          >
+            {papers.find((p) => p.name === curPaper)?.desc || ''}
+          </Text>
+        </div>
+      )}
 
       {/* ---- 成色基准（竖排单选） ---- */}
       <div>
@@ -298,7 +377,12 @@ export function GradePanel() {
 
       <Flex gap="2" mt="1">
         {/* ★ 这两个按钮 09-15 之前是**死的**（没有 onClick，点了什么都不发生） */}
-        <Button size="1" variant="ghost" onClick={resetGrade} title="滑杆回出厂、基准回默认（卷不动）">
+        <Button
+          size="1"
+          variant="ghost"
+          onClick={resetGrade}
+          title="滑杆回出厂、基准回默认、相纸回本卷配套纸（卷不动）"
+        >
           恢复默认
         </Button>
         <Button size="1" variant="ghost" onClick={saveGradeToTheme} title="把这个主题的配方记住，下次进来自动套回">

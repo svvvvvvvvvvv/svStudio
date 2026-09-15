@@ -28,6 +28,8 @@ contextBridge.exposeInMainWorld('api', {
   engineStocks: () => ipcRenderer.invoke('engine-stocks'),
   engineBases: () => ipcRenderer.invoke('engine-bases'),
   engineParams: () => ipcRenderer.invoke('engine-params'),
+  /** 相纸清单（09-15 SV 选「C」）。⚠ 要带**当前这一卷**：默认相纸跟着卷走。 */
+  enginePapers: (stock) => ipcRenderer.invoke('engine-papers', stock),
   engineScan: (dir, exts, limit) => ipcRenderer.invoke('engine-scan', dir, exts, limit),
   engineLoad: (paths) => ipcRenderer.invoke('engine-load', paths),
   engineBase: (id) => ipcRenderer.invoke('engine-base', id),

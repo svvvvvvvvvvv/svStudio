@@ -16,10 +16,20 @@ from . import (analyze, cameras, color, config as C, denoise, face, film, guard,
 FAIL = []
 
 
-def check(name, cond, extra=''):
-    print(('  ok   ' if cond else '  FAIL ') + name + (('   ' + extra) if extra else ''))
+def check(name, cond, extra='', why=''):
+    """`extra` = 现场（成败都打）；`why` = **红了意味着什么**（只在红时打）。
+
+    ★ 为什么加第 4 个参数：工作台那份自检（`_check/ui_smoke.mjs`）一直是这么写的，
+      而"失败信息必须写清**这条红了代表什么坏了**"是本项目反复吃过的亏 ——
+      只写 `FAIL ★ 换纸没换画面`，下一个人根本不知道该去改哪儿
+      （实测就因为只写了"复位坏了"，差点去改错地方：真因是 `setPointerCapture` 把按钮 click 吃了）。
+      引擎这边一直只能把它塞进 `extra`，结果是"绿的时候也在喊狼来了"。
+    """
+    print(('  ok   ' if cond else '  FAIL ') + name
+          + (('   ' + extra) if extra else '')
+          + (('   ⇒ ' + why) if (why and not cond) else ''))
     if not cond:
-        FAIL.append(name)
+        FAIL.append(name + ((' — ' + why) if why else ''))
 
 
 class _Cfg:
@@ -1961,6 +1971,128 @@ def t_stock_map_valid():
           not drift, str(drift))
 
 
+def t_paper_choice():
+    r"""相纸（09-15 SV 选「C」）：印相纸要能选，而且**换了必须真的换画面**。
+
+    ★ 为什么要有这一组：一张真卷出图 = **(负片, 相纸)** 二元组。相纸是**最终成色的另一半**
+      —— 同一卷负片印在不同的纸上 = 两套不同的颜色（人像最经典的就是
+      「柯达卷 + Portra Endura」和「富士卷 + Crystal Archive」两套脸色）。
+      原来只开放了负片那一半，相纸写死在卷表里出不来。
+    ★ 这一组守三件事，每件都对应一类"看着对、其实对不上"：
+      ① 换纸**真的换画面**（不是把参数收下就忘了）—— 而且必须能和"扫描那步重抽噪声"分开；
+      ② 脏纸名**既不许崩、也不许静默换一张**（要在报告里说出来）；
+      ③ 段缓存的键里**必须带纸**（不带 ⇒ 换了纸还是吐上一张的图 = 白换，且看不出来）。
+
+    实测（160×240 合成样本、带皮肤块；`_gray_img` 的种子固定）：
+      「同一张纸跑两次」的差（= 扫描那步重抽的噪声）  mean 0.000084 / max 0.0141
+      「换一张纸」的差                                mean 0.061191 / max 0.3101
+      ⇒ 均值差 **730 倍** —— 所以下面可以用"远大于噪声"来判。
+    """
+    # ---- ① 表与默认（纯查表，不需要 spektrafilm）----
+    print('[相纸：表 / 配套纸 / 认不得就回落]')
+    plist = spektra.papers('portra400')
+    own = spektra.STOCK_MAP['portra400'][1]
+    dflt = [p['name'] for p in plist if p.get('isDefault')]
+    check('相纸表能列出来，而且**恰好一张**标着"本卷配套"',
+          len(plist) >= 6 and len(dflt) == 1, '%d 张，配套 %s' % (len(plist), dflt))
+    check('★ 配套纸 = 卷表里写的那张（前端拿到的默认不能是另一张）',
+          bool(dflt) and dflt[0] == own, '配套 %s / STOCK_MAP %s' % (dflt, own))
+    check('★ 真卷之外没有"相纸"这回事（中性卷 / 不认得的卷 ⇒ 空表）',
+          spektra.papers('neutral') == [] and spektra.papers('__no_such__') == [],
+          '中性卷 %d 张' % len(spektra.papers('neutral')),
+          '中性卷也列一堆纸 ⇒ 把一个拧不动的开关摆给用户')
+
+    check('★ 不传纸 ⇒ 用本卷配套纸，且**不**标"回落"',
+          spektra.resolve_paper('portra400') == (own, False, ''))
+    check('★ 传的就是配套纸 ⇒ 原样用，也不标"回落"',
+          spektra.resolve_paper('portra400', own) == (own, False, ''))
+    check('★★ 传一个**认不得**的名字 ⇒ 回落到配套纸 + 说出来（不崩、不静默）',
+          spektra.resolve_paper('portra400', 'kodak_endura_premium')
+          == (own, True, 'unknown_paper:kodak_endura_premium'),
+          '（用的就是当初 STOCK_MAP 里写错的那个名字）',
+          '把脏名字原样塞给 init_params ⇒ FileNotFoundError；静默换一张 ⇒ 用户以为在用 A 纸')
+    check('★ 中性卷 / 不认得的卷 ⇒ 没有相纸可解析，也**不**该标成"回落"',
+          spektra.resolve_paper('neutral', 'kodak_portra_endura')
+          == (None, False, 'unknown_stock'))
+
+    try:
+        spektra._sf()
+        from spektrafilm.model.stocks import PrintPapers
+        sf_papers = {e.value for e in PrintPapers}
+    except Exception as e:                                    # noqa: BLE001
+        skip('相纸：换纸真的换画面 / 报告 / 缓存键（本机没装 spektrafilm：%s）'
+             % str(e)[:70])
+        return
+    miss = [n for n in spektra.PAPER_ORDER if n not in sf_papers]
+    check('★ 我们那张相纸表里**每个名字**都在 vendored spektrafilm 里真实存在',
+          not miss, '查无此纸: %s' % miss,
+          '上游改了枚举值 / 我们拼错了 ⇒ 选中那一张就崩（卷表拼错那次的翻版）')
+
+    # ---- ② 换纸真的换画面（要和"扫描噪声"分开）----
+    print('[相纸：换了必须真的换画面]')
+    # ⚠ 合成图里必须**贴一块皮肤色**：真卷这一路有肤色局部层，纯灰渐变没有皮肤像素
+    #   ⇒ 会出现"改了参数画面却不变"的假红（同 t_stage_cache 的注释）。
+    ds = _gray_img(160, 240, gamma=0.4)
+    ds[48:112, 88:152] = _skin_patch(12.0, 14.0, L=62.0, size=64)
+    s = _mk_sample(ds, 'D:/x/paper.jpg')
+    P1, P2 = 'kodak_portra_endura', 'fujifilm_crystal_archive_typeii'
+
+    a = pipeline.run_from(s, stock='portra400', paper=P1)
+    b = pipeline.run_from(s, stock='portra400', paper=P2)
+    c = pipeline.run_from(s, stock='portra400', paper=P1)      # 同纸再来一发 = 噪声基线
+    nz = float(np.abs(np.asarray(a.disp) - np.asarray(c.disp)).mean())
+    df = float(np.abs(np.asarray(a.disp) - np.asarray(b.disp)).mean())
+    check('同一张纸跑两次基本一致（差异只来自扫描那步重抽噪声）',
+          nz < 0.005, 'mean=%.6f' % nz,
+          '噪声比预期大 ⇒ 下面的"换纸判据"要重新标定（别硬调阈值糊过去）')
+    check('★★ 换一张相纸必须**真的换画面**（差异远大于噪声）',
+          df > 0.02 and df > 10 * max(nz, 1e-6),
+          '换纸 mean=%.5f / 噪声 mean=%.6f ⇒ %.0f 倍'
+          % (df, nz, df / nz if nz > 0 else float('inf')),
+          '换纸只把参数收下、没进物理链 ⇒「相纸」是个纯装饰')
+
+    # ---- ③ 报告要说实话 ----
+    sa, sb = a.report['style'], b.report['style']
+    check('★ 报告里写的就是**实际用的那张纸**',
+          sa.get('print') == P1 and sb.get('print') == P2,
+          '%s / %s' % (sa.get('print'), sb.get('print')))
+    check('★ `print_default` = "用的到底是不是本卷配套纸"',
+          sa.get('print_default') is True and sb.get('print_default') is False,
+          '%s / %s' % (sa.get('print_default'), sb.get('print_default')))
+    check('★ 正常选纸不该被标成"回落"',
+          sa.get('print_fallback') is False and sb.get('print_fallback') is False)
+
+    # ---- ④ 脏名字：不崩 + 报告里说出来 ----
+    try:
+        z, z_err = pipeline.run_from(s, stock='portra400',
+                                     paper='kodak_endura_premium'), None
+    except Exception as e:                                    # noqa: BLE001
+        z, z_err = None, '%s: %s' % (type(e).__name__, str(e)[:80])
+    check('★★ 脏纸名**不许崩**（当初 STOCK_MAP 里的相纸名写错就是这么炸的）',
+          z_err is None, z_err or 'ok',
+          '原样塞给 init_params ⇒ FileNotFoundError，用户点一下就崩')
+    if z is not None:
+        sz = z.report['style']
+        check('★★ 脏纸名**也不许静默**：报告里要标出来 + 带上那个名字',
+              sz.get('print') == own and sz.get('print_fallback') is True
+              and 'kodak_endura_premium' in str(sz.get('print_fallback_reason')),
+              'print=%s fallback=%s why=%s'
+              % (sz.get('print'), sz.get('print_fallback'),
+                 sz.get('print_fallback_reason')),
+              '静默换一张 ⇒ 用户以为在用 A 纸、其实出的是 B 纸，还看不出哪里不对')
+
+    # ---- ⑤ 段缓存的键必须带纸（不带 = 白换）----
+    sc = pipeline.StageCache(4)
+    c1 = pipeline.run_from(s, stock='portra400', paper=P1, cache=sc)
+    c2 = pipeline.run_from(s, stock='portra400', paper=P2, cache=sc)
+    d12 = float(np.abs(np.asarray(c1.disp) - np.asarray(c2.disp)).mean())
+    check('★★ 换了纸 ⇒ 段缓存必须**不命中**（否则这一发直接把上一张的图吐回来）',
+          c2.report['stage_cache']['hit'] is False,
+          'hit=%s stats=%s' % (c2.report['stage_cache']['hit'], sc.stats()),
+          '缓存键不带纸 ⇒ 换了纸画面不变，用户以为"这张纸没效果"')
+    check('★ 换纸之后产物确实不同（没被上一张兜住）', d12 > 0.02, 'mean=%.5f' % d12)
+
+
 def main():
     for fn in (t_color, t_analyze, t_tone_mid_target, t_tone_monotone, _legacy(t_style_lock),
                _legacy(t_style_contrast_direction), _legacy(t_style_tone_curve), _legacy(t_style_chroma_ends), t_denoise,
@@ -1972,7 +2104,9 @@ def main():
                # 09-15 补的四组（各对着一次真踩过的事故）
                t_entry_raw_only, t_stock_matrix, t_routing_contract, t_pipeline_e2e,
                # 09-15 晚：卷表拼错名（选中即崩）⇒ 纯查表就能防住
-               t_stock_map_valid):
+               t_stock_map_valid,
+               # 09-15 晚：相纸可选（SV 选「C」）⇒ 换纸必须真的换画面
+               t_paper_choice):
         fn()
     print('-' * 52)
     if FAIL:
