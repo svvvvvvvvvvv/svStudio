@@ -1349,6 +1349,18 @@ _STAGE_FUNCS = [local.apply, local._protect, local.skin_floor, local.white_micro
                 tone.correct, style.apply, style._builtin, style._tone_on, style.tone_ref,
                 spatial.apply, spatial.resolve, stocks.color_params]
 
+# ★★ 「解码阶段」的段（09-15 新增）—— 这两层**不归段缓存管、也不归 L0~L4 管**，
+#   它们在 `io.load()` 里就跑完了（`load_raw` = RAW 那条，`load_std` = JPG 那条），
+#   算完才存进 Sample。`io.entry_tone` 是被 `load_raw` 调用的那个入口曲线函数，算同一阶段。
+#   ⚠ 为什么要单列：`service.py` 对 Sample 有**解码缓存** ⇒ 这一阶段读到的参数
+#     **必须**进"解码签名"，否则改了它不会重新解码 ⇒ 滑杆是死的
+#     （「暗部亮度」「整张亮暗(总)」两根就是这个坑，09-15 修掉）。
+_LOAD_FUNCS = [('io.entry_tone', io.entry_tone),
+               ('io.load_raw', io.load_raw), ('io.load_std', io.load_std)]
+# ⚠ `MAX_SIDE` 是**默认参数**（`def load_raw(path, max_side=C.MAX_SIDE)`）—— `inspect.getsource`
+#   看得见它，但真正的尺寸由调用方传进来、而且已经算在解码缓存的键里 ⇒ 不算"漏签名"。
+_LOAD_SIG_EXEMPT = ('MAX_SIDE',)
+
 
 def _cfg_reads(fn):
     """把一个函数源码里**读到的 config 名字**抠出来（`cfg.X` / `C.X` / `getattr(cfg,'X')`）。"""
@@ -1384,12 +1396,16 @@ def t_stage_cache():
     check('缓存段读到的 config 全被 SIG_CACHE 覆盖（漏一个 = 拧了没反应）',
           not bad, ('漏了 %s' % sorted(bad)[:8]) if bad else '共 %d 个参数' % len(cached_reads))
 
-    # ---- ② 反方向：13 根滑杆，每一根都必须**至少有一层真的读它** ----
+    # ---- ② 反方向：每一根滑杆都必须**至少有一层真的读它** ----
     stage_reads = set()
     for fn in _STAGE_FUNCS:
         stage_reads |= _cfg_reads(fn)
+    load_reads = set()                       # ★ 解码阶段那一层也算"真的有人在读"
+    for _lbl, fn in _LOAD_FUNCS:
+        load_reads |= _cfg_reads(fn)
     dead = [p['k'] for p in _svc.PARAMS
-            if p['k'] not in cached_reads and p['k'] not in stage_reads]
+            if p['k'] not in cached_reads and p['k'] not in stage_reads
+            and p['k'] not in load_reads]
     check('每根滑杆都至少有一层真的读它（否则就是根死滑杆）', not dead, '死的: %s' % dead)
     # 反过来：只被"缓存段"读、又不被 L3/L4 读的那些滑杆，必须出现在 SIG_CACHE 里
     only_cached = [p['k'] for p in _svc.PARAMS
@@ -1401,7 +1417,7 @@ def t_stage_cache():
     print('[段缓存：键怎么变]')
     k0 = pipeline._sig(_Cfg(), pipeline.SIG_CACHE)
     check('同样的 config ⇒ 同样的键', k0 == pipeline._sig(_Cfg(), pipeline.SIG_CACHE))
-    check('改「本张落点」⇒ 键变（胶片必须重算）',
+    check('改「整张亮暗」（原「本张落点」）⇒ 键变（胶片必须重算）',
           k0 != pipeline._sig(_Cfg(SPEK_PE_SHIFT=1.3), pipeline.SIG_CACHE))
     check('改「整张浓淡」⇒ 键变（它作用在显影那一步）',
           k0 != pipeline._sig(_Cfg(SPEK_COUPLERS=0.3), pipeline.SIG_CACHE))
@@ -1505,8 +1521,136 @@ def t_stage_cache():
         n_before = sc.stats()['misses']
         with _TmpCfg(SPEK_PE_SHIFT=1.15):
             pipeline.run_from(ss, stock='portra400', cache=sc)
-        check('真卷：改「本张落点」⇒ 不命中（胶片必须重算）',
+        check('真卷：改「整张亮暗」⇒ 不命中（胶片必须重算）',
               sc.stats()['misses'] == n_before + 1, str(sc.stats()))
+
+
+def t_sliders():
+    r"""滑杆清单（09-15 SV 选「C」：13 根 → 23 根）。
+
+    这一组守四件事，每一件都是**真踩过的坑**：
+      ① **每根滑杆都真的能传进引擎** —— 白名单只认前缀，`CONTRAST`/`CHROMA_S` 这种
+         "配不上任何前缀"的名字会被**静默丢弃**（拧了没反应、还不报错）。
+      ② **初值 `dv` 是引擎现读的**，不是抄在表里的、更不许退回"区间中点"
+         （退回中点就是老 bug：13 根里 12 根显示的数和实际生效的对不上）。
+      ③ **方向**：只有一根是天生反的（真卷印相曝光），它靠 `inv` 翻过来；
+         其余一律"往右 = 更强/更亮"。顺带把 `ENTRY_TOE` 的**名字**也按看得见的方向取了。
+      ④ **成对联动**：黑柔的"加"和"化开"必须相等才量守恒，滑杆只动主项、
+         从项由引擎自动同步。
+    """
+    from . import service as _svc
+
+    print('[滑杆：清单本身]')
+    ps = _svc.PARAMS
+    ks = [p['k'] for p in ps]
+    check('滑杆不重名', len(ks) == len(set(ks)), '%d 根' % len(ks))
+    bad_exist = [k for k in ks if not hasattr(C, k)]
+    check('每根滑杆的参数在 config 里真的存在（防打错字）', not bad_exist, '查无此键: %s' % bad_exist)
+    bad_rng = [p['k'] for p in ps
+               if not (float(p['lo']) < float(p['hi'])) or float(p['step']) <= 0]
+    check('每根滑杆的区间/步长合法（lo < hi、step > 0）', not bad_rng, '坏: %s' % bad_rng)
+    bad_grp = [p['k'] for p in ps if not p.get('grp') or not p.get('name') or not p.get('d')]
+    check('每根滑杆都有 名字 / 分组 / 说明（前端全靠这三个画）', not bad_grp, '缺: %s' % bad_grp)
+
+    print('[滑杆：初值 dv = 引擎此刻实际在用的值]')
+    defs = _svc._param_defs()
+    no_dv = [q['k'] for q in defs if not isinstance(q.get('dv'), float)]
+    check('每根滑杆都算得出 dv', not no_dv, '算不出: %s' % no_dv)
+    out_rng = [q['k'] for q in defs
+               if isinstance(q.get('dv'), float)
+               and not (q['lo'] - 1e-9 <= q['dv'] <= q['hi'] + 1e-9)]
+    check('★ dv 必须落在区间内（否则滑杆一打开就顶在边上、一碰就跳）', not out_rng,
+          '越界: %s' % out_rng)
+    check('★ dv 里至少有一根**不等于区间中点**（等于中点就说明又退回"取中点"那个老 bug）',
+          any(abs(q['dv'] - (q['lo'] + q['hi']) / 2.0) > 1e-9
+              for q in defs if isinstance(q.get('dv'), float)))
+    with _TmpCfg(SPEK_COUPLERS=0.31):
+        d2 = {q['k']: q['dv'] for q in _svc._param_defs()}
+    check('★ 改 config ⇒ dv 跟着变（说明是**现读**的，不是抄死在表里的）',
+          abs(d2['SPEK_COUPLERS'] - 0.31) < 1e-9, str(d2['SPEK_COUPLERS']))
+
+    print('[滑杆：方向（往右 = 更强/更亮）]')
+    check('方向翻转只标在真的反的那一根上（人工核对过：真卷印相曝光是负片逻辑）',
+          _svc._PARAM_INV == frozenset(['SPEK_PE_SHIFT']), str(sorted(_svc._PARAM_INV)))
+    e_lo = _svc._parse_params('SPEK_PE_SHIFT:0.62')['SPEK_PE_SHIFT']
+    e_hi = _svc._parse_params('SPEK_PE_SHIFT:1.43')['SPEK_PE_SHIFT']
+    check('★「整张亮暗」往右 ⇒ 引擎值反而变小（那才是画面更亮）', e_hi < e_lo,
+          '左 %.4f → 右 %.4f' % (e_lo, e_hi))
+    check('「整张亮暗」的正中间 1.00 恰好 = 引擎不动',
+          abs(_svc._parse_params('SPEK_PE_SHIFT:1.00')['SPEK_PE_SHIFT'] - 1.0) < 1e-12)
+    dv_inv = {q['k']: q['dv'] for q in defs}['SPEK_PE_SHIFT']
+    check('翻转过的滑杆，dv 给的是**显示值**（= 1 / 引擎值），不是引擎值',
+          abs(dv_inv - 1.0 / float(getattr(C, 'SPEK_PE_SHIFT'))) < 1e-9, 'dv=%s' % dv_inv)
+
+    print('[滑杆：成对联动（黑柔的守恒就靠它）]')
+    check('只有「黑柔」挂了成对联动', _svc._PARAM_PAIR == {'BLOOM_AMOUNT': 'BLOOM_SPREAD'},
+          str(_svc._PARAM_PAIR))
+    got = _svc._parse_params('BLOOM_AMOUNT:0.10')
+    check('★ 拧「黑柔」⇒「化开」自动跟着走（加进去的光 = 扣掉的，才守恒）',
+          abs(got.get('BLOOM_SPREAD', -1.0) - 0.10) < 1e-12, str(got))
+    check('成对的从项也在白名单里（否则同步过去会被丢掉）',
+          all(any(m.startswith(x) for x in _svc.PARAM_PREFIX) for m in _svc._PARAM_PAIR.values()))
+    check('只给从项仍然放行（留着给 A/B 研究用，别一刀切封死）',
+          _svc._parse_params('BLOOM_SPREAD:0.05') == {'BLOOM_SPREAD': 0.05})
+
+    print('[滑杆：白名单（"静默丢弃"只许发生在我们允许的地方）]')
+    never = [q['k'] for q in defs if q['k'] not in _svc._parse_params('%s:1' % q['k'])]
+    check('★ 每一根滑杆都真的能传进引擎（传不进去 = 拧了没反应）', not never,
+          '被丢掉: %s' % never)
+    blocked = [k for k in ('CONTRAST_S_SCALE', 'CONTRAST_S_CLAMP', 'CHROMA_REF',   # 内部系数
+                           'ENTRY_SHOULDER_KIND', 'ENTRY_CURVE', 'LUT_PATH', 'BASE', 'STOCK')
+               if _svc._parse_params('%s:1' % k)]
+    check('内部系数 / 结构性参数被 PARAM_BLOCK 挡住（放开前缀会连坐它们）', not blocked,
+          '漏网: %s' % blocked)
+    dead_pre = [p for p in _svc.PARAM_PREFIX
+                if not any(k.startswith(p) for k in dir(C) if k.isupper())]
+    check('白名单里没有**死前缀**（配不上任何 config 键 = 只是看着有）', not dead_pre,
+          '死前缀: %s' % dead_pre)
+    check('清掉的历史死前缀没被加回来（整体色偏其实叫 COL_A，`COLOR_` 配不上）',
+          'COLOR_' not in _svc.PARAM_PREFIX and 'SHARP_' not in _svc.PARAM_PREFIX)
+
+    print('[滑杆：解码阶段那两根（入口参数）真的会重新解码]')
+    load_reads = set()
+    for _lbl, fn in _LOAD_FUNCS:
+        load_reads |= _cfg_reads(fn)
+    miss_load = sorted(n for n in load_reads
+                       if n not in _svc._DECODE_SIG_KEYS and n not in _LOAD_SIG_EXEMPT)
+    check('★ 解码阶段读到的参数全在解码签名里（漏了 = 改了不生效、滑杆是死的）',
+          not miss_load, '漏: %s' % miss_load)
+    k0 = _svc._load_key('x.jpg', 700)
+    with _TmpCfg(ENTRY_TOE=0.5):
+        k1 = _svc._load_key('x.jpg', 700)
+    check('★ 改「暗部亮度」⇒ 解码缓存的键变（会重新解码，否则滑杆拉半天没反应）', k0 != k1)
+    with _TmpCfg(ENTRY_SETTLE_SHIFT_EV=0.5):
+        k2 = _svc._load_key('x.jpg', 700)
+    check('★ 改「整张亮暗(总)」⇒ 解码缓存的键变', k0 != k2)
+    with _TmpCfg(RAW_DECODE=dict(C.RAW_DECODE, half_size=True)):
+        k2b = _svc._load_key('x.jpg', 700)
+    check('改解码参数 RAW_DECODE ⇒ 解码缓存的键也变', k0 != k2b)
+    with _TmpCfg(SKIN_FLOOR_A=18.0):
+        k3 = _svc._load_key('x.jpg', 700)
+    check('改「脸的红绿」⇒ 解码缓存的键**不变**（它跟解码无关，别白重解码一次）', k0 == k3)
+    sentinel = object()
+    check('签名一致 ⇒ 直接用缓存里的 Sample（不白解码）',
+          _svc._ensure_decoded(0, dict(sample=sentinel, decoded=_svc._decode_sig()))
+          is sentinel)
+    # 光有"键会变"还不够 —— 得证明入口那个函数**真的改画面**
+    ramp = np.linspace(1e-5, 0.35, 200 * 200).reshape(200, 200)
+    ramp = np.stack([ramp, ramp * 0.97, ramp * 0.93], -1)
+    a = io.entry_tone(ramp, 1.0, _Cfg(ENTRY_TOE=1.0))
+    b = io.entry_tone(ramp, 1.0, _Cfg(ENTRY_TOE=0.32))
+    da = float(np.mean(np.sort(a.ravel())[: a.size // 20]))
+    db = float(np.mean(np.sort(b.ravel())[: b.size // 20]))
+    check('★ 入口趾部真的改暗部（1.00 = 不压 ⇒ 暗部更亮）', db < da * 0.8,
+          '不压 %.5f vs 出厂 %.5f' % (da, db))
+    check('入口趾部**不动中灰**（只咬最底下那一段）',
+          abs(float(np.median(a)) - float(np.median(b))) < 1e-6)
+    # ★ 名字与**看得见的方向**一致：引擎的措辞是 ENTRY_TOE = "最深处的增益下限"（1.0 = 关掉），
+    #   直接叫「入口黑位」会让人以为往右更黑（反的）⇒ 现在叫「暗部亮度」，往右必须真的更亮。
+    _dk = lambda arr: float(np.mean(np.sort(arr.ravel())[: arr.size // 20]))   # noqa: E731
+    check('★「暗部亮度」往右 ⇒ 暗部真的更亮（名字照看得见的方向取，不照引擎措辞）',
+          _dk(io.entry_tone(ramp, 1.0, _Cfg(ENTRY_TOE=0.0)))
+          < _dk(io.entry_tone(ramp, 1.0, _Cfg(ENTRY_TOE=1.0))))
 
 
 def main():
@@ -1516,7 +1660,7 @@ def main():
                t_io_roundtrip, t_stocks, t_spatial_off, t_spatial_grain,
                t_spatial_bloom_halation, t_local_skin_floor, t_entry_bias, t_pipeline_smoke,
                t_review_fixes, t_entry_settle, t_entry_toe, t_anchor,
-               t_film_color, t_stage_cache):
+               t_film_color, t_stage_cache, t_sliders):
         fn()
     print('-' * 52)
     if FAIL:

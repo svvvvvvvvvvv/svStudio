@@ -126,10 +126,16 @@ await page.addInitScript(() => {
     }),
     engineParams: async () => ({
       ok: true,
+      /* ★★ 这份假数据**必须照生产端抄**（`svFilm/service.py` 的 `PARAMS`）——
+         09-15 踩过：这里原来还写着旧名字（「本张落点」/「提亮」）和旧区间，
+         而检查只断言"名字在不在"，所以**它绿着、真界面早就不一样了**。
+         现在这三条按真实值抄，并且多带一个 `dv` —— 检查要盯住"滑杆显示的是 dv"。
+         ⚠ 改引擎的 PARAMS 就要回来改这里；`ui_smoke.mjs` 有一条静态检查盯着这两边别漂。 */
       items: [
-        { k: 'SPEK_PE_SHIFT', name: '本张落点', lo: 0.5, hi: 2, step: 0.02, grp: '真卷', spek: true, d: '整张明暗' },
-        { k: 'FACE_SPAN_KMAX', name: '脸的层次', lo: 1, hi: 4, step: 0.1, grp: '脸' },
-        { k: 'TONE_LIFT', name: '提亮', lo: 0, hi: 1, step: 0.05, grp: '影调', spek: false },
+        { k: 'SPEK_PE_SHIFT', name: '整张亮暗', lo: 0.62, hi: 1.43, step: 0.01, grp: '真卷', spek: true, dv: 1.0, inv: true, d: '整张更亮还是更暗' },
+        { k: 'FACE_SPAN_KMAX', name: '脸的层次', lo: 1.0, hi: 3.0, step: 0.05, grp: '脸', dv: 2.0, d: '脸内部明暗最多拉开几倍' },
+        { k: 'SKIN_FLOOR_A', name: '脸的红绿', lo: 11.0, hi: 20.0, step: 0.1, grp: '脸', dv: 14.5, d: '脸偏红还是偏绿' },
+        { k: 'TONE_LIFT', name: '中高调抬起', lo: 0, hi: 14, step: 0.5, grp: '影调', spek: false, dv: 9.0, d: '整张变亮' },
       ],
     }),
     engineLoad: async () => ({ ok: true, items: [{ id: 1, path: 'x', ms: 12 }] }),
@@ -209,9 +215,19 @@ if (await gradeTab.count()) {
     '', '卷列表是空的 ⇒ 前端读的字段名跟 main.js 对不上');
   check('★ 成色基准列表真有内容', txt.includes('不套基准') || txt.includes('全对齐'),
     '', '基准列表是空的');
-  check('★ 真卷下不列「提亮」（不生效的）', !txt.includes('提亮'), '', '列了不该列的滑杆');
-  check('列出了「本张落点」', txt.includes('本张落点'));
+  check('★ 真卷下不列「中高调抬起」（那根在真卷下拧了没反应）', !txt.includes('中高调抬起'),
+    '', '列了不该列的滑杆（spek=false 的必须隐藏）');
+  check('列出了「整张亮暗」', txt.includes('整张亮暗'), '', '真卷下的滑杆一个都没画出来');
   check('列出了「脸的层次」', txt.includes('脸的层次'));
+  /* ★★ 09-15 修的那个 bug 就靠这两条盯着：
+     滑杆初值过去取「区间中点」，而引擎用的是 config 出厂值
+     ⇒ 13 根里 12 根**显示的数字和实际生效的对不上**（画面没错，错的是那行字）。
+     现在必须显示 `dv`。mock 里「脸的红绿」dv=14.5、区间 11~20（中点 15.5）
+     ⇒ 拿它当探针：显示 14.5 才对，显示 15.5 就是又退回取中点了。 */
+  check('★ 滑杆显示的是 dv（引擎此刻实际在用的值）', txt.includes('14.5'),
+    '', '没看到 14.5 ⇒ 前端没在用 dv');
+  check('★ 显示的不是区间中点', !txt.includes('15.5'),
+    '', '显示了 15.5 = 又退回"取区间中点"那个老 bug');
   /* ★ SV 09-15：「渲染按钮放到胶片卷下」+ 任何操作都不自动出图，只靠这个按钮。 */
   const rBtn = page.locator('button', { hasText: /^渲染$/ }).first();
   const rBox = (await rBtn.count()) ? await rBtn.boundingBox() : null;

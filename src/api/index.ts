@@ -140,11 +140,22 @@ export interface ParamDef {
   lo: number;
   hi: number;
   step: number;
+  /**
+   * ★★ 引擎**此刻实际在用**的值 —— 滑杆初值必须用它。
+   * 由引擎现读 config（`service._param_defs()`），所以永远跟出厂值同步。
+   * ⚠ 历史坑：这里原本没有 dv，前端退而取「区间中点」`(lo+hi)/2`，
+   *   而引擎用的是 config 出厂值 ⇒ 13 根滑杆里 12 根**显示的数字和实际生效的对不上**
+   *   （「整张浓淡」显示 0.50 / 实际 0.00）。别再退回中点。
+   * ⚠ `inv` 的项，dv 已经翻成"人话方向"了（显示值），别自己再换算。
+   */
+  dv?: number;
   /** 分组：真卷 / 脸 / 影调 / 质感 */
   grp?: string;
   /** true=只真卷下生效；false=只非真卷下生效；undefined=都生效 */
   spek?: boolean;
   d?: string;
+  /** 显示方向与引擎值相反（引擎侧已做换算）—— 前端只用它画个提示，不用自己换算 */
+  inv?: boolean;
   [k: string]: any;
 }
 

@@ -244,7 +244,16 @@ export function GradePanel() {
           </Text>
           <Flex direction="column" gap="3" mt="2">
             {list.map((d) => {
-              const v = params[d.k] ?? (d.lo + d.hi) / 2;
+              /* ★★ 初值必须用引擎给的 `dv`（= 引擎此刻实际在用的值），**不许退回区间中点**。
+                 过去这里写的是 `(d.lo + d.hi) / 2`，而引擎用的是 config 出厂值
+                 ⇒ 13 根滑杆里有 12 根显示的数字和实际生效的对不上
+                 （「整张浓淡」显示 0.50 / 实际 0.00，彩度差一档半；「颗粒」显示 0.050 / 实际 0.024）。
+                 画面本身没错（没拧过的键不参与覆盖），**错的是那行字**。
+                 最后那个中点只作为"引擎漏给 dv"的兜底，正常永远走不到。 */
+              const v = params[d.k] ?? d.dv ?? (d.lo + d.hi) / 2;
+              /* 小数位跟着 step 走 —— 原来一律 toFixed(2)，「颗粒」的实际值 0.024 会显示成
+                 "0.02"（step 是 0.002，白丢了精度）。 */
+              const dp = d.step >= 1 ? 0 : d.step >= 0.1 ? 1 : d.step >= 0.01 ? 2 : 3;
               return (
                 <div key={d.k}>
                   <Flex justify="between" align="baseline">
@@ -252,7 +261,7 @@ export function GradePanel() {
                       <Text size="1">{d.name}</Text>
                     </Tooltip>
                     <Text size="1" style={{ color: 'var(--text-dim)' }}>
-                      {v.toFixed(2)}
+                      {v.toFixed(dp)}
                     </Text>
                   </Flex>
                   <Slider

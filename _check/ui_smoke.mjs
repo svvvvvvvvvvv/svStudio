@@ -173,6 +173,52 @@ check(
   'mock 形状跟 main.js 不一致，会骗过自检'
 );
 
+/* ---------- [8] 滑杆：引擎的 PARAMS ↔ 布局自检的 mock ↔ 前端初值 ---------- */
+/* ★★ 09-15 加这组的原因：布局自检**跑的是它自己那份假数据**。原来那份里还写着旧名字
+   （「本张落点」「提亮」）和旧区间，而检查只断言"名字在不在" ⇒ **它绿着，真界面早就不一样了**。
+   所以这里把"引擎的 PARAMS"和"mock"钉在一起，谁改歪都会被抓住。 */
+console.log('\n[8] 滑杆（引擎 PARAMS ↔ 布局自检 mock ↔ 前端初值）');
+const gradeSrc = read('src/components/GradePanel.tsx');
+const svcSrc = exists('svFilm/svFilm/service.py') ? read('svFilm/svFilm/service.py') : '';
+const pyRe = /k='([A-Z0-9_]+)',\s+name='([^']+)',\s+lo=(-?[\d.]+),\s*hi=(-?[\d.]+)/g;
+const realParams = new Map();
+for (const m of svcSrc.matchAll(pyRe)) {
+  realParams.set(m[1], { name: m[2], lo: parseFloat(m[3]), hi: parseFloat(m[4]) });
+}
+check('★ 从引擎 service.py 读到了滑杆清单', realParams.size >= 20, `${realParams.size} 根`);
+const mockSrc = read('_check/layout_check.mjs');
+const mockRe = /k: '([A-Z0-9_]+)',\s*name: '([^']+)',\s*lo: (-?[\d.]+),\s*hi: (-?[\d.]+)/g;
+const mockParams = [...mockSrc.matchAll(mockRe)].map((m) => ({
+  k: m[1], name: m[2], lo: parseFloat(m[3]), hi: parseFloat(m[4]),
+}));
+check('布局自检的 mock 里有滑杆条目', mockParams.length >= 3, `${mockParams.length} 条`);
+const drift = mockParams.filter((m) => {
+  const r = realParams.get(m.k);
+  return !r || r.name !== m.name || r.lo !== m.lo || r.hi !== m.hi;
+});
+check(
+  '★ 布局自检的 mock 与引擎 PARAMS 一致（名字 / 区间都不许漂）',
+  drift.length === 0,
+  `${mockParams.length} 条全部对齐`,
+  '漂了: ' + drift.map((m) => `${m.k}(${m.name} ${m.lo}~${m.hi})`).join(', ')
+);
+check(
+  '★ mock 里带了 dv（否则测不出"显示的数对不对"）',
+  mockParams.length > 0 && (mockSrc.match(/k: '[A-Z0-9_]+',[^}]*dv: /g) || []).length >= 3
+);
+check(
+  '★ 前端滑杆初值用的是 dv（不是区间中点）',
+  /params\[d\.k\] \?\? d\.dv/.test(gradeSrc),
+  '',
+  '又退回 (lo+hi)/2 ⇒ 显示的数跟引擎实际用的对不上'
+);
+check(
+  '前端没有把「取区间中点」当成初值',
+  !/const v = params\[d\.k\] \?\? \(d\.lo \+ d\.hi\) \/ 2/.test(gradeSrc),
+  '',
+  '老写法还在'
+);
+
 /* ---------- 汇总 ---------- */
 console.log('\n' + '-'.repeat(50));
 if (fail === 0) {
