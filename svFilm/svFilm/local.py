@@ -153,7 +153,7 @@ def white_micro(disp, cfg=C, amount=0.0):
                      gain=gain, sigma=_sig2, top=top)
 
 
-def face_depth(disp, cfg=C):
+def face_depth(disp, cfg=C, masks=None):
     r"""★ 09-14 重做「脸的层次」—— **只作用皮肤 + 暗部有底 + 死区**。
 
     旧的那版（`face_tone`，同日删除）翻车在三条（`_debug/lab_face_dark.py` 实测）：
@@ -169,16 +169,31 @@ def face_depth(disp, cfg=C):
       ⑤ 只**放大已有**的明暗（A1），**不编光** —— SV 拍的是逆光/明暗交界，脸本身有明暗。
     靶 `FACE_TGT_SPAN` = 作者线A 26 张的「脸内部跨度」p25 = 35。
     ⇒ ★ 理由：**"跨度"是形状量、不是位置量** —— 位置跨场景不可比，**形状可以抄**（跟影调同一条线）。
+
+    ★★ 09-15 SV 选「A」：`masks` = **解码后算一次、整条链共用**的那份脸掩膜（`pipeline.run_from` 传进来）。
+      不传 ⇒ 退回"自己在这张画面上现算"的老路（**逐位等于老行为**）。
+      为什么必须在外面算：这一步看到的是**胶片出图之后**的画面，真卷已经把脸顶到 L\*88~90
+      ⇒ 分割模型（固定 256×256 输入、对发白的脸本来就不稳）认不出 ⇒ `no_skin` **静默失效**
+      （实测 700 下就是这个症状）。详见 `pipeline.run_from` 那段注释。
     """
     if not bool(getattr(cfg, 'FACE_DEPTH_ENABLE', False)):
         return disp, dict(applied=False, reason='off')
     import cv2
     from . import face as _face
     d = np.clip(disp, 0.0, 1.0)
-    try:
-        sk = np.asarray(_face.parse(d)['masks']['face_skin'], np.float32)
-    except Exception as e:                                   # noqa: BLE001
-        return disp, dict(applied=False, reason='parse_fail', err=str(e)[:60])
+    # ★★ 掩膜来源：优先用**外面传进来的那一份**（解码后算的，见函数头）。
+    if masks is not None:
+        sk = np.asarray(masks.get('face_skin', 0.0), np.float32)
+        if sk.ndim != 2 or sk.shape != d.shape[:2]:
+            # 尺寸对不上 = **接线错了**（不是"没脸"）⇒ 大声报，不许静默当成 no_skin
+            return disp, dict(applied=False, reason='mask_shape',
+                              mask=None if sk.ndim != 2 else list(sk.shape),
+                              img=list(d.shape[:2]))
+    else:
+        try:
+            sk = np.asarray(_face.parse(d)['masks']['face_skin'], np.float32)
+        except Exception as e:                               # noqa: BLE001
+            return disp, dict(applied=False, reason='parse_fail', err=str(e)[:60])
     sel = sk > 0.5
     if int(sel.sum()) < int(getattr(cfg, 'FACE_DEPTH_MIN_PX', 300)):
         return disp, dict(applied=False, reason='no_skin', n=int(sel.sum()))
@@ -206,8 +221,11 @@ def face_depth(disp, cfg=C):
                      top=top, bot=bot)
 
 
-def apply(ref_disp, disp, cfg=C):
-    """ref_disp = L1 修正后的成片；disp = 当前（过完风格 + 空间域）的成片。"""
+def apply(ref_disp, disp, cfg=C, masks=None):
+    """ref_disp = L1 修正后的成片；disp = 当前（过完风格 + 空间域）的成片。
+
+    `masks` = **解码后算一次**的那份脸掩膜（`pipeline.run_from` 传进来）⇒ 原样交给 `face_depth`。
+    """
     out = np.clip(disp, 0.0, 1.0)
     info = {}
     if cfg.SKIN_PROTECT and cfg.SKIN_PROTECT_STRENGTH > 0.0:
@@ -223,6 +241,6 @@ def apply(ref_disp, disp, cfg=C):
     out, winfo = white_micro(out, cfg, _wm)
     info['white_micro'] = winfo
     # ★★ 09-14 重做「脸的层次」：排在**空间层之后**（黑柔+颗粒才是压平脸的主力）
-    out, dinfo = face_depth(out, cfg)
+    out, dinfo = face_depth(out, cfg, masks=masks)
     info['face_depth'] = dinfo
     return out, info

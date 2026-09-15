@@ -241,6 +241,28 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
                  _sig(cfg, SIG_CACHE))
         _entry = cache.get(_ckey)
 
+    # ---- ★★ 脸掩膜：**解码后算一次、整条链共用**（09-15 SV 选「A」修的那个洞）--------
+    # 为什么必须挪到这一步：`face.parse` 的分割模型输入固定 256×256、且**对发白的脸本来就不稳**。
+    #   链尾（胶片出图后）真卷已经把脸放到 L\*88~90 ⇒ 模型认不出 ⇒ 掩膜是空的 ⇒ **两层一起静默失效**
+    #   （收脸 `no_face`、脸的层次 `no_skin`），而且**图越小越认不出**（断崖，不是渐变）。
+    #   而**解码后**那张脸还是正常曝光 ⇒ 稳定、随尺寸平滑缩放（900/700/400 = 12675/7678/2503 px）。
+    #   ★ 也正是本项目原有的那条原则：「只在 base 上解析一次脸掩膜、各层共用」。
+    # ⚠ 尺寸：掩膜恒等于画面尺寸（700/900 实测都相等）⇒ 原对象直接传下去，不重采样。
+    # ⚠ 命中段缓存时**复用缓存里那份** —— 它只依赖 `FACE_DET_*`/`FACE_GATE_*`/`FACE_BOX_*`/
+    #   `FACE_FEATHER_REL`/`PERSON_*`，这些**全在 `SIG_CACHE` 里**（换一个键就变）⇒ 不会张冠李戴。
+    # ⚠ 拿不到（模型缺失等）⇒ 退回空掩膜，下游照旧报 `no_face`/`no_skin`，**不崩、不静默改行为**。
+    _mbox = [_entry.get('msk') if _entry is not None else None]
+
+    def _masks():
+        if _mbox[0] is None:
+            try:
+                from . import face as _face
+                _mbox[0] = _face.parse(np.clip(s.disp, 0.0, 1.0))
+            except Exception as e:                          # noqa: BLE001
+                _mbox[0] = dict(masks={}, face=None, person_weight=None,
+                                err='%s: %s' % (type(e).__name__, e))
+        return _mbox[0]
+
     if _entry is not None:
         # 命中：上游全部复用。几个小 dict 要**复制** —— 下游会往 `anc` 里写 finish，
         #   调用方也可能改 report，不复制就会污染缓存里的那一份。
@@ -261,7 +283,8 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
         if _pre_spek and not bool(getattr(cfg, 'SPEK_ANCHOR', False)):
             d_ev, anc = 0.0, dict(applied=False, reason='real_stock_真卷自己定曝光')
         else:
-            d_ev, anc = io.anchor_ev(s.disp, cfg)
+            # ★ 掩膜走同一份（`s.disp` 就是解码后那张 ⇒ 与"它自己现算"逐位相同，只是省一次解析）
+            d_ev, anc = io.anchor_ev(s.disp, cfg, masks=_masks()['masks'])
         _on = bool(anc.get('applied'))
         lin_in = io.refocus(s.lin, d_ev, cfg) if _on else s.lin
         if _on:
@@ -318,7 +341,8 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
         if _ckey is not None:
             # ⚠ 存的是**引用**：调用方只许读（服务里都是 np.clip 出新的，安全）
             cache.put(_ckey, rep0=rep0, anc=anc, on=_on, t_info=t_info,
-                      d_info=d_info, s_info=s_info, disp1=disp1, disp2=disp2)
+                      d_info=d_info, s_info=s_info, disp1=disp1, disp2=disp2,
+                      msk=_masks())     # 掩膜也是这一段算出来的 ⇒ 一起留下（省 ~90ms/发）
     # ★ 锚点**收尾**（09-14 SV 选「①」）：L1 那一步把脸放到靶上了，但 **L2 影调曲线又把它抬上去**
     #   （实测 +8.4 L*）⇒ 这里量一次脸、用**全局增益**把它挪回靶 ⇒ **最终脸真的落在靶上**。
     #   只在锚点真的动过（脸偏暗）时才做；仍是一条曲线，不分区。
@@ -334,6 +358,7 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
     if bool(getattr(cfg, 'ANCHOR_FINISH', True)) and (_on or _gain > 0.0):
         disp2, _fin = io.finish_anchor(
             disp2, cfg,
+            masks=_masks()['masks'],          # ★ 解码后算的那一份（不再在发白的画面上现算）
             strength=(1.0 if _on else min(_gain, 1.0)),
             down_only=bool(not _on))
         anc['finish'] = _fin
@@ -347,7 +372,8 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
     else:
         disp2b, sp_info = spatial.apply(disp2, cfg, stock=st)        # 空间域（颗粒/黑柔/Halation）
     disp2br = disp2b
-    disp3, l_info = local.apply(disp1, disp2b, cfg)                  # L3
+    # ★★ 同一份掩膜一路传到底（收脸 / 脸的层次 用的是**同一个人脸**，不该各算各的）
+    disp3, l_info = local.apply(disp1, disp2b, cfg, masks=_masks()['masks'])   # L3
     disp4, g_info = guard.enforce(disp3, cfg)                        # L4
 
     rep = dict(

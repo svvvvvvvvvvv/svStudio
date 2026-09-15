@@ -1122,12 +1122,100 @@ def t_anchor():
     # ⚠ 09-14 起 `run` = `io.load` + `run_from`（常驻服务要跳过解码）
     #   ⇒ 这些**源码级**断言必须看 `run_from`（链逻辑搬过去了），不是 `run`。
     prun2 = inspect.getsource(pipeline.run_from)
-    check('锚点：pipeline.run 里在 L0 分析**之前**就重打了（analyze 用的是 lin_in）',
-          'io.anchor_ev(s.disp, cfg)' in prun2 and 'lin_in' in prun2)
+    # ⚠ 这一条**钉的是行为**（谁先谁后、analyze 吃的是哪个量），不是某一行怎么写 ——
+    #   09-15 加"解码后算掩膜"那步时把 `io.anchor_ev(s.disp, cfg)` 改成多传一个 `masks=`
+    #   ⇒ 字面串带右括号就假红了。锚点要用**声明本身**，别用一个恰好长得像它的串。
+    check('锚点：pipeline.run_from 里在 L0 分析**之前**就重打了（analyze 用的是 lin_in）',
+          'io.anchor_ev(s.disp, cfg' in prun2
+          and 'analyze.analyze(lin_in, disp_in' in prun2
+          and prun2.index('io.anchor_ev(s.disp, cfg')
+          < prun2.index('analyze.analyze(lin_in, disp_in'))
     check('锚点：收尾接在 L2（style.apply）之后',
           'io.finish_anchor(' in prun2)
     check('接线：两个开关都从 config 读（没写死）',
           'ANCHOR_ONLY_UP' in inspect.getsource(io.anchor_ev))
+
+    # ---- ★★ 脸掩膜：解码后算一次、整条链共用（09-15 SV 选「A」修的那个洞）------------
+    # 「算一次」在这里**不是性能优化，是正确性**：链尾那张脸已经被真卷顶到 L\*88~90，
+    #   分割模型（固定 256×256 输入、对发白的脸本来就不稳）认不出 ⇒ 每层自己现算
+    #   = 每层各自静默失效（实测 700 下收脸 `no_face, n=5`、脸的层次 `no_skin`）。
+    #   所以下面钉的是"机制"，不是"某个数字"——数字会随片子变，机制不该随人变。
+    print('[脸掩膜：解码后算一次，收脸 / 脸的层次 共用同一份]')
+    check('★ 掩膜算在**解码后那张**（`s.disp`）上，不是链尾那张已经发白的',
+          '_face.parse(np.clip(s.disp' in prun2)
+    _nshare = prun2.count('masks=_masks()')
+    check('★★ 入口锚点 / 收脸 / 脸的层次 三层拿的是**同一份**（计数型：恰好 3 处）',
+          _nshare == 3, '实际 %d 处' % _nshare)
+    check('★ 掩膜也算「胶片出图」那一段的产物 ⇒ 一起进段缓存（省一次 ~90ms 解析）',
+          'msk=_masks()' in prun2)
+    _fdsrc = inspect.getsource(local.face_depth)
+    check('★ `face_depth` 真的**收下并用**外面那份掩膜（不是收了不用）',
+          'masks is not None' in _fdsrc and "masks.get('face_skin'" in _fdsrc)
+    check('★★ 掩膜尺寸对不上 ⇒ **大声报 mask_shape**（不许静默退化成 no_skin）',
+          "reason='mask_shape'" in _fdsrc)
+    # 行为：外面给什么掩膜就按什么走（给空掩膜 ⇒ 必须 n=0；给错尺寸 ⇒ 必须报出来）
+    _fimg = _gray_img(120, 180, gamma=0.4)
+    _fimg[40:96, 70:126] = _skin_patch(12.0, 14.0, L=62.0, size=56)
+    _z = np.zeros((120, 180), np.float32)
+    _dA, _iA = local.face_depth(_fimg, C, masks=dict(face_skin=_z))
+    check('★ 外部掩膜被真的采用：给空掩膜 ⇒ n=0 / no_skin',
+          _iA.get('reason') == 'no_skin' and _iA.get('n') == 0, str(_iA))
+    _dB, _iB = local.face_depth(_fimg, C, masks=dict(face_skin=np.zeros((3, 3), np.float32)))
+    check('★ 外部掩膜尺寸错了 ⇒ reason=mask_shape（不是 no_skin，更不是崩）',
+          _iB.get('reason') == 'mask_shape', str(_iB))
+    # 行为：传了掩膜就**不再自己解析**；没传才退回老路（把 face.parse 换成计数器看）
+    _fs = _mk_sample(_fimg, 'D:/x/fac.jpg')
+    _cnt = [0]
+    _real_parse = face.parse
+
+    def _spy(disp):
+        _cnt[0] += 1
+        return _real_parse(disp)
+
+    _cnt[0] = 0
+    face.parse = _spy
+    try:
+        local.face_depth(_fimg, C, masks=dict(face_skin=_z))
+    finally:
+        face.parse = _real_parse
+    check('★ 传了掩膜 ⇒ `face_depth` 一次都不解析（新路与老路分得清）',
+          _cnt[0] == 0, '解析 %d 次' % _cnt[0])
+    _cnt[0] = 0
+    face.parse = _spy
+    try:
+        local.face_depth(_fimg, C)
+    finally:
+        face.parse = _real_parse
+    check('★ 不传掩膜 ⇒ 退回老路（自己解析一次）—— 所有老调用方的行为一个字没变',
+          _cnt[0] == 1, '解析 %d 次' % _cnt[0])
+
+    _cnt[0] = 0
+    with _TmpCfg(ANCHOR_DOWN_GAIN=1.0):
+        face.parse = _spy
+        try:
+            pipeline.run_from(_fs, stock='neutral', cfg=C)
+        finally:
+            face.parse = _real_parse
+    check('★★ 整条链只解析**一次**脸掩膜（收脸 + 脸的层次 共用同一份，不是各算各的）',
+          _cnt[0] == 1, '解析 %d 次' % _cnt[0])
+    try:
+        spektra._sf()
+        _has_sf = True
+    except Exception as _e:                                  # noqa: BLE001
+        _has_sf = False
+        skip('真卷「掩膜进段缓存」那条（本机没装 spektrafilm：%s）' % str(_e)[:60])
+    if _has_sf:
+        _msc = pipeline.StageCache(4)
+        pipeline.run_from(_fs, stock='portra400', cache=_msc)          # 未命中：解析一次并存下
+        _cnt[0] = 0
+        face.parse = _spy
+        try:
+            _mres = pipeline.run_from(_fs, stock='portra400', cache=_msc)   # 命中
+        finally:
+            face.parse = _real_parse
+        check('★★ 命中段缓存 ⇒ 掩膜从缓存来（这一发解析 0 次，不然拖动白慢 90ms）',
+              _mres.report['stage_cache']['hit'] is True and _cnt[0] == 0,
+              'hit=%s 解析 %d 次' % (_mres.report['stage_cache']['hit'], _cnt[0]))
 
     ao = float(C.ANCHOR_EV_MAX)
     try:
