@@ -279,6 +279,10 @@ def anchor_ev(disp, cfg=C, masks=None):
     g = max(float(getattr(cfg, 'ENTRY_GAMMA', 1.0)), 1e-6)
     raw = (3.0 / g) * float(np.log2(max(tgt + 16.0, 1e-6) / max(Lf + 16.0, 1e-6)))
     # ★ 只提不压（09-14 SV 选「甲」）：脸已经够亮 ⇒ 一个像素都不动。
+    # ★★ 09-15 SV 选「D」的**最终落点**：这根"脸太亮收回"**不走这里**。
+    #   实测（DSCF2328）：在**入口**把曲线重打 −0.96 档，脸只从 89.4 掉到 84.2
+    #   （真卷的 H&D 会把它拉回来）；而**胶片之后**那个闭环（`finish_anchor`）
+    #   能一步把脸送到靶 68。⇒ 一个机制就够，别在这里再开第二个口子（见 `finish_anchor`）。
     if bool(getattr(cfg, 'ANCHOR_ONLY_UP', True)) and raw <= 0.0:
         info.update(reason='already_bright', face_L_before=Lf, face_L_target=tgt, n_face=n)
         return 0.0, info
@@ -289,13 +293,23 @@ def anchor_ev(disp, cfg=C, masks=None):
     return d_ev, info
 
 
-def finish_anchor(disp, cfg=C, masks=None):
+def finish_anchor(disp, cfg=C, masks=None, strength=1.0, down_only=False):
     r"""锚点**收尾**：把**当前**画面里的脸挪到 `ANCHOR_FACE_L`（线性域乘一个**全局**增益）。
 
     为什么需要：`anchor_ev` 那一步是在 **L1** 把脸放到靶上，但后面的 **L2 影调曲线会再把它抬上去**
     （实测 +8.4 L\*）。这一步在 L2 之后量一次脸、把它挪回靶 ⇒ **最终脸真的落在靶上**。
 
     仍然是"一条曲线"：**整张乘同一个增益**，不分区、不用掩膜决定力道（掩膜只用来**量**脸）。
+
+    ★★ 09-15 SV 选「D」新增两个参数（**默认值一律 ⇒ 逐位等于老行为**）：
+      · `strength` 0~1 ＝「**收多少**」。1.0 = 完全挪到靶（老行为）；0.5 = 只走一半。
+        ⚠ **1.0 时绝不做乘方** —— `k ** 1.0` 在浮点上不保证逐位相等，会让"老行为不变"失守。
+      · `down_only` ＝「**只许往下压**」。真卷走这条路：真卷自己把脸放到 L\*78~86
+        （比我们靶 68 还亮），若连"提亮"也放开 = 把脸再推亮一次（实测中位 61 → 83）。
+
+    ⚠ 为什么"压脸"这件事落在**这里**而不是入口（实测 DSCF2328）：
+      在**入口**把曲线重打 −0.96 档，脸只从 89.4 掉到 **84.2**（真卷的 H&D 又把它拉回来）；
+      而**这里**（胶片之后、直接乘增益）一步就送到 **68**。⇒ 只留这一个口子。
     """
     info = dict(applied=False)
     if masks is None:
@@ -320,8 +334,15 @@ def finish_anchor(disp, cfg=C, masks=None):
         info.update(reason='on_target', face_L=Lf)
         return disp, info
     k = float(color.lin_of_L(tgt)) / max(float(np.median(Y[sel])), 1e-9)
+    # ★ only-down：脸已经比靶暗 ⇒ 这一步不许动（真卷靠它保证"只收不回"）
+    if down_only and k > 1.0:
+        info.update(reason='face_below_target', face_L=Lf, face_L_target=tgt)
+        return disp, info
+    if float(strength) < 1.0:
+        k = k ** max(float(strength), 0.0)
     out = np.clip(color.l2s(np.clip(lin * k, 0.0, None)), 0.0, 1.0)
     info.update(applied=True, face_L_before=Lf, face_L_target=tgt, gain=k,
+                strength=float(strength), down_only=bool(down_only),
                 n_face=n, clip_frac=float(np.mean(color.luma(np.clip(lin * k, 0, None)) > 1.0)))
     return out, info
 

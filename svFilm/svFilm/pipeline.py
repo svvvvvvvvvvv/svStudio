@@ -254,6 +254,10 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
         disp2 = _entry['disp2']          # 胶片出图后的画面（L3 的另一半输入）
         lin_in = disp_in = None          # 命中时用不到（keep_stages 那条路缓存已让位）
     else:
+        # ⚠ 真卷（带 `spek=`）**不跑入口锚点**：实测真卷自己就把脸放到 L* 78~86
+        #   （比我们靶 68 还亮），再提一遍就是过曝（中位 61 → 83）。
+        #   ★ 09-15 SV 选「D」的「脸太亮收回」**不走这里** —— 它在**胶片之后**
+        #   （`finish_anchor`）做，因为入口那一半压不动脸（实测只 −5 L\*，见 io.finish_anchor 注释）。
         if _pre_spek and not bool(getattr(cfg, 'SPEK_ANCHOR', False)):
             d_ev, anc = 0.0, dict(applied=False, reason='real_stock_真卷自己定曝光')
         else:
@@ -318,8 +322,20 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
     # ★ 锚点**收尾**（09-14 SV 选「①」）：L1 那一步把脸放到靶上了，但 **L2 影调曲线又把它抬上去**
     #   （实测 +8.4 L*）⇒ 这里量一次脸、用**全局增益**把它挪回靶 ⇒ **最终脸真的落在靶上**。
     #   只在锚点真的动过（脸偏暗）时才做；仍是一条曲线，不分区。
-    if _on and bool(getattr(cfg, 'ANCHOR_FINISH', True)):
-        disp2, _fin = io.finish_anchor(disp2, cfg)
+    # ★★ 09-15 SV 选「D」：「脸太亮收回」（`ANCHOR_DOWN_GAIN`）—— **默认 0 = 一个像素都不动**。
+    #   ★ 为什么这个滑杆落在**这里**（胶片之后）而不是入口：
+    #     入口那半实测压不动脸（重打 −0.96 档 ⇒ 脸只从 89.4 掉到 84.2，真卷的 H&D 又把它拉回来），
+    #     而这里（量一次脸、整张乘同一个增益）一步就送到靶 68。**只留这一个口子。**
+    #   ★ 它开了之后**不必**入口锚点也动过（`_on`）：两条路各走各的 ——
+    #     `_on` 那条是老路径（提亮收尾，力度 1.0，**逐位不变**）；`_gain` 这条是新的"收回"。
+    #   ⚠ 由它触发的收尾一律 `down_only=True`（只许往下压）：真卷自己把脸放到 L*78~86，
+    #     "提亮"那一半必须关着，否则一转滑杆就把偏暗的片也推亮。
+    _gain = float(getattr(cfg, 'ANCHOR_DOWN_GAIN', 0.0) or 0.0)
+    if bool(getattr(cfg, 'ANCHOR_FINISH', True)) and (_on or _gain > 0.0):
+        disp2, _fin = io.finish_anchor(
+            disp2, cfg,
+            strength=(1.0 if _on else min(_gain, 1.0)),
+            down_only=bool(not _on))
         anc['finish'] = _fin
     # ⚠ 09-14 SV：「把脸部立体感的部分删掉」⇒ 原来在 L2 之后 / 空间层之后各插一道
     #   `local.face_tone`（第 4 条「每层护脸」），**已整段删除**。

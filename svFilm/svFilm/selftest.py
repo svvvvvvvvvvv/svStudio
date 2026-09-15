@@ -1151,6 +1151,47 @@ def t_anchor():
         d2, i2 = io.anchor_ev(bright, C, masks=dict(face_skin=fk))
         check('锚点·只提不压：脸已经够亮（%.0f > 68）⇒ d_ev = 0' % Lb2,
               d2 == 0.0 and i2.get('applied') is False, 'reason=%s' % i2.get('reason'))
+        # ★★ 09-15 SV 选「D」：把"往下压"也做成一档 —— 但**默认 0 = 一个像素都不动**。
+        check('★ 出厂 ANCHOR_DOWN_GAIN = 0（拖了才生效 ⇒ 现有片子的结果逐位不变）',
+              float(getattr(C, 'ANCHOR_DOWN_GAIN', -1.0)) == 0.0)
+        # ⚠ 必须用一张**脸真的很高**（L*≈89，就是 2328 那张实测的脸位）的图：
+        #   低脸图（如 L*75）压一点点就"到靶"了，测不出"收多少"这件事（会变成恒真句）。
+        _y = ((89.0 + 16.0) / 116.0) ** 3
+        _d = 1.055 * (_y ** (1.0 / 2.4)) - 0.055
+        hot = np.full((8, 256, 3), _d, np.float32)
+        Lh = float(np.median(color.L_of_lin(color.Y_of(color.s2l(hot)))))
+        _fm = dict(face_skin=fk)
+        _Lh_hot = lambda o: float(np.median(color.L_of_lin(color.Y_of(color.s2l(o)))[0, :64]))  # noqa: E731
+        check('★ 收脸：1.0 = 完全到靶（脸 L*%.0f ⇒ 68±0.6）' % Lh,
+              abs(_Lh_hot(io.finish_anchor(hot, C, masks=_fm, strength=1.0,
+                                           down_only=True)[0]) - 68.0) < 0.6)
+        check('★★ 收脸：0.0 = **完全不动**（不许借"乘个增益"顺手改画面）',
+              abs(_Lh_hot(io.finish_anchor(hot, C, masks=_fm, strength=0.0,
+                                           down_only=True)[0]) - Lh) < 1e-3)
+        _Lh5 = _Lh_hot(io.finish_anchor(hot, C, masks=_fm, strength=0.5, down_only=True)[0])
+        check('★★ 收脸是**连续**的：0.5 落在"原处"与"靶"之间（不是开关）',
+              68.0 + 1.0 < _Lh5 < Lh - 1.0, '脸 %.1f → %.1f（靶 68）' % (Lh, _Lh5))
+        # ★★ 「只收不回」：脸偏暗时**一个像素都不动**（真卷靠这条保住"不替胶片提亮"）
+        check('★★ 收脸·只收不回：脸比靶暗 ⇒ 逐位不变（原样返回，不是乘 1.0 走一圈）',
+              bool(np.array_equal(io.finish_anchor(img3, C, masks=_fm,
+                                                   strength=1.0, down_only=True)[0], img3)))
+        check('★ 只收不回不影响老路：down_only=False 时脸偏暗照样挪到靶（提亮收尾没被改坏）',
+              abs(float(np.median(color.L_of_lin(color.Y_of(
+                  color.s2l(io.finish_anchor(img3, C, masks=_fm)[0])))[0, :64])) - 68.0) < 0.6)
+        check('★ 接线：收脸靠 finish_anchor 的 strength / down_only 两个参数（没写死）',
+              'down_only' in inspect.getsource(io.finish_anchor)
+              and 'strength' in inspect.getsource(io.finish_anchor))
+        # ⚠⚠ 下面这条**必须钉住"门怎么写"，不能只钉"名字在不在"** ——
+        #   这个滑杆的全部价值是「默认 0 ⇒ 出厂结果逐位不变」。门写错有两种：
+        #     ① 有人把 `(_on or _gain > 0.0)` 改成 `_on` ⇒ **滑杆整个失效**（拖了没反应）；
+        #     ② 有人把条件删成无条件 ⇒ **每张片子的出厂结果都被动了**（最坏的一种）。
+        #   光查 `'ANCHOR_DOWN_GAIN' in prun2` 两种都抓不住（那是"标题在不在"）。
+        check('★★ pipeline 里那根滑杆真的接到了收尾上，且**默认 0 时这一步压根不进**',
+              'ANCHOR_DOWN_GAIN' in prun2 and '_gain > 0.0' in prun2
+              and 'down_only=bool(not _on)' in prun2
+              and 'strength=(1.0 if _on else min(_gain, 1.0))' in prun2)
+        check('★ 真卷照旧不跑入口锚点（脸的位置由胶片定）',
+              'real_stock_真卷自己定曝光' in prun2)
         d0, i0 = io.anchor_ev(img3, C, masks=dict(face_skin=np.zeros((8, 256), np.float32)))
         check('锚点：拿不到脸 ⇒ 0（逐位不变）', d0 == 0.0 and i0.get('applied') is False)
         check('锚点：refocus(lin, 0) 逐位等于 lin',
