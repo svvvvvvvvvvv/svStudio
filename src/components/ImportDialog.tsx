@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Button, Callout, Dialog, Flex, Text } from '@radix-ui/themes';
 import { API } from '../api';
 import { useStore } from '../store/useStore';
@@ -64,6 +64,19 @@ export function ImportDialog() {
     const p = await API.pickDirectory();
     if (p) await changeLibRoot(p);
   };
+
+  /* ★ 进度条：**从日志里派生**，不新加状态。
+     `import_photos.py` 每 50 张打一行 `  100/524  已复制 2.30 GB  (85 MB/s)`，
+     取最后一条匹配的就是当前进度。
+     ⚠ 为什么不把「百分比」塞进 store：那是**重复状态** —— 日志和百分比会不同步
+       （这类"看着对、其实对不上"是这个项目最烦的 bug 类型）。界面是状态的函数。 */
+  const prog = useMemo(() => {
+    for (let i = log.length - 1; i >= 0; i--) {
+      const m = log[i].match(/^\s*(\d+)\/(\d+)\s+已复制/);
+      if (m) return { done: Number(m[1]), total: Number(m[2]) };
+    }
+    return null;
+  }, [log]);
 
   const canPreview = !!form.src && !!form.topic && !!form.place && !!script && !running;
   const canRun = canPreview && !!plan && !plan.error;
@@ -236,9 +249,37 @@ export function ImportDialog() {
         {/* ---- 5. 进度 ---- */}
         {(running || log.length > 0) && (
           <Flex direction="column" gap="1" mt="4">
-            <Text size="2" weight="bold">
-              {running ? '正在复制…' : '输出'}
-            </Text>
+            <Flex align="center" gap="2">
+              <Text size="2" weight="bold">
+                {running ? '正在复制…' : '输出'}
+              </Text>
+              {prog && (
+                <Text size="1" style={{ color: 'var(--text-dim)' }} data-import-count>
+                  已复制 {prog.done} / {prog.total}
+                </Text>
+              )}
+            </Flex>
+            {/* 进度条：宽度直接由上面派生的 prog 算，没有第二份状态 */}
+            <div
+              data-import-bar
+              style={{
+                height: 6,
+                background: 'var(--bg)',
+                borderRadius: 3,
+                overflow: 'hidden',
+                flex: '0 0 auto',
+              }}
+            >
+              <div
+                data-import-fill
+                style={{
+                  width: prog ? `${Math.round((100 * prog.done) / prog.total)}%` : '0%',
+                  height: '100%',
+                  background: 'var(--accent)',
+                  transition: 'width .25s',
+                }}
+              />
+            </div>
             <div
               ref={logRef}
               data-import-log

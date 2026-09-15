@@ -516,6 +516,15 @@ check('★ 对话框收尾**取消订阅**（否则切主题几次就多路重�
 check('★ 「同名已存在 ⇒ 改用 _2」这句提示会显示给用户',
   /plan\.renamed/.test(read('src/components/ImportDialog.tsx')) && /renamed/.test(apiTs),
   '', '不显示的话，用户会莫名多出一个 _2 主题、而且看不出为什么');
+/* ★ 进度条：**必须从日志派生**、不许在 store 里再存一份"百分比"。
+   存两份的下场是它们不同步 —— 而这个项目里"看着对、其实对不上"这类 bug 最难发现
+   （滑杆的 dv、出图源的 rel、星级的三处同步，都是同一类）。 */
+const diaSrc = read('src/components/ImportDialog.tsx');
+check('★ 进度条从日志派生（没有第二份"百分比"状态）',
+  /data-import-fill/.test(diaSrc) && /已复制/.test(diaSrc) && /const prog = useMemo/.test(diaSrc),
+  '', '条没接上日志 ⇒ 永远停在 0%');
+check('★ store 里没偷偷存一份 importPercent 之类的重复状态',
+  !/importPercent|importPct/.test(storeSrc), '', '又存了两份会不同步的状态');
 check('★ 布局自检的 mock 也实现了导入通道（否则那条真浏览器检查是空转）',
   /importDetect: async/.test(mockSrcFlat) &&
     /importPreview: async/.test(mockSrcFlat) &&

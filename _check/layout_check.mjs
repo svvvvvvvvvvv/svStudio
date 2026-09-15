@@ -861,6 +861,14 @@ console.log('\n[12] 导入照片');
   check('★ 复制过程中进度**真的到了界面**（不是等跑完才给）',
     /已复制 2\.30 GB/.test(logTxt), logTxt.slice(0, 120),
     '进度推不过来 ⇒ 用户看着像死机，会去强杀 —— 而这正是最不该中断的一步');
+  /* ★ 进度条：从日志**派生**（`100/524` ⇒ 19%）。断言的是**算出来的宽度**，
+     不是"那个 div 在不在" —— 后者挡不住"条永远停在 0%"这一类。 */
+  const pct = await page.evaluate(() => {
+    const f = document.querySelector('[data-import-fill]');
+    return f ? Math.round(parseFloat(f.style.width) || 0) : -1;
+  });
+  check('★ 进度条跟着走（100/524 ⇒ 19%）', pct === 19, `${pct}%`,
+    `期望 19%，实际 ${pct}% —— 条不动就等于没进度，用户还是不知道跑到哪了`);
   await page.waitForTimeout(1600);
   check('★ 导入跑完对话框自己关了', (await page.locator('[data-import-dialog]').count()) === 0);
   const nm = await curName();
