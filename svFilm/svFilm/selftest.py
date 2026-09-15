@@ -2326,6 +2326,109 @@ def t_band_render():
           not re.search(r"if u\.path == '/export':[\s\S]{0,1600}?or C\.MAX_SIDE", svc))
 
 
+def t_preview_side():
+    r"""★★ 调色台预览的 `side`（09-15 修）。
+
+    这一组守的是**一件事**：**说出口的尺寸 = 真正用的尺寸**。
+    修之前 `/render` 把 `side` 收下就扔 —— 实测（真 HTTP，同一张片）请求 700 / 1400 / 2048，
+    三发回来**字节完全相同**（都是 467x700）⇒ 调色台想看清细节根本没法要一张更大的预览；
+    《1:1》那个按钮也就永远看不到像素，而"脸在预览里只有 41x51 像素"这件事
+    本来靠加尺寸就能解决。
+    """
+    from . import service as _svc
+
+    print('[调色台预览：side 到底认不认]')
+    # ---- ① 解析 ----
+    check('不给 / 空 / 0 ⇒ "没要求"（沿用已经解码好的那份，老行为）',
+          _svc._want_side(None)[0] is None and _svc._want_side('')[0] is None
+          and _svc._want_side('0')[0] is None)
+    _w, _e, _r = _svc._want_side('1400')
+    check('给了数字 ⇒ 就按那个数（不再"收下就扔"）', (_w, _e, _r) == (1400, None, 1400),
+          repr((_w, _e, _r)))
+    _w, _e, _r = _svc._want_side(str(10 ** 6))
+    check('超过上限 ⇒ 夹住并留下原值（好让调用方知道被夹了）',
+          _w == int(C.MAX_SIDE) and _r == 10 ** 6 and not _e, repr((_w, _r, _e)))
+    _w, _e, _r = _svc._want_side('abc')
+    check('不是数字 ⇒ 说清楚，**不许静默当没给**', _w is None and bool(_e) and 'side' in str(_e),
+          repr(_e))
+    check('太小的数有下限（1px 的图没意义）', _svc._want_side('5')[0] == 16, repr(_svc._want_side('5')))
+
+    # ---- ② 真的走没走到那条路（不启服务，拿假 Sample 顶） ----
+    import types
+    calls = []
+    real_load, real_ens, real_run = _svc._load_one, _svc._ensure_decoded, pipeline.run_from
+
+    def fake_load(path, side):
+        calls.append(('load', side))
+        box = np.full((max(2, side // 15), max(2, side // 10), 3), 0.5)
+        return _mk_sample(box, path), 1.0
+
+    def fake_ens(i, row):
+        calls.append(('ensure', row.get('side')))
+        return row['sample']
+
+    def fake_run(s, **kw):
+        calls.append(('run', tuple(s.disp.shape[:2])))
+        return types.SimpleNamespace(disp=s.disp, report={'ms': 1})
+
+    i = None
+    try:
+        _svc._load_one, _svc._ensure_decoded, pipeline.run_from = fake_load, fake_ens, fake_run
+        i = _svc._cache_put('D:/x/自检.jpg', 700, _mk_sample(np.full((10, 14, 3), 0.5)))
+
+        _b, info = _svc._render_bytes(i, None, None, '1400', 'jpg', 90)
+        check('★ 请求 1400（缓存是 700）⇒ **重新解码**到 1400', ('load', 1400) in calls, repr(calls))
+        check('★ 而且没有偷偷用缓存那份（`_ensure_decoded` 不该被调）',
+              not any(c[0] == 'ensure' for c in calls), repr(calls))
+        check('★ 真跑的就是 1400 那份（尺寸看得出来）',
+              info.get('side') == 1400 and info.get('w') == 140 and info.get('h') == 93, repr(info))
+
+        calls.clear()
+        _b, info = _svc._render_bytes(i, None, None, None, 'jpg', 90)
+        check('不给 side ⇒ 走老路（用缓存那份，不重新解码）',
+              ('ensure', 700) in calls and not any(c[0] == 'load' for c in calls), repr(calls))
+        check('不给 side 时报的尺寸 = 缓存那份', info.get('side') == 700, repr(info))
+
+        calls.clear()
+        _b, info = _svc._render_bytes(i, None, None, '700', 'jpg', 90)
+        check('side 和缓存一致 ⇒ 也走老路（不许白解码一次）',
+              ('ensure', 700) in calls and not any(c[0] == 'load' for c in calls), repr(calls))
+
+        calls.clear()
+        _b, info = _svc._render_bytes(i, None, None, 'abc', 'jpg', 90)
+        check('side 不合法 ⇒ 回错误，**不静默出一张图**', info.get('error') and 'side' in info['error'],
+              repr(info))
+
+        # ★ `/base` 必须**行为上**认 side —— 只查"源码里有 `_load_one` 这几个字"是假绿：
+        #   破法当场抓到过一次（把那个 if 改成 `if False:`，字串还在、检查照绿）。
+        calls.clear()
+        _b, info = _svc._base_bytes(i, 'jpg', 90, '1400')
+        check('★ `/base` 也认 side（不然两栏尺寸不一样，并排看就是误导）',
+              ('load', 1400) in calls and info.get('side') == 1400, repr((calls, info)))
+    finally:
+        _svc._load_one, _svc._ensure_decoded, pipeline.run_from = real_load, real_ens, real_run
+        if i is not None:
+            with _svc._cache_lock:
+                _svc._cache.pop(i, None)
+
+    # ---- ③ 接线：尺寸必须**从真正要发出去的数组量**，不许照抄请求 ----------
+    with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'service.py'),
+              encoding='utf-8') as fh:
+        src = fh.read()
+    # ⚠ 这两条**必须只看 `_render_bytes` 自己的源码** —— 满文件搜 `int(disp.shape[1])`
+    #   会被 `_base_bytes` 里那句同样的话兜住（"字串在不在"式的检查就是这么假绿的）。
+    import inspect          # ⚠ 本文件只在 `_cfg_reads` 里局部 import 过，这里要自己 import
+    rsrc = inspect.getsource(_svc._render_bytes)
+    check('★★ 响应头里的 w/h 是从**实际数组**量的（照抄请求 = 说的和给的不是一回事）',
+          'int(disp.shape[1])' in rsrc and 'int(disp.shape[0])' in rsrc)
+    check('★★ 尺寸真的写回给调用方（`_img` 收 `info` 并发头）',
+          'def _img(self, b, mime, info=None)' in src
+          and src.count("self._img(b, info['mime'], info)") >= 2)
+    check('★ `/base` 那条路真的把 side 传下去了（路由层）', "q.get('side'))" in src)
+    check('★ 换尺寸**不复用**别的尺寸那份 Sample（尺寸不同，观感不同 = 拿 700 冒充 2048）',
+          's, _ms = _load_one(row.get(\'path\'), want)' in src)
+
+
 def main():
     for fn in (t_color, t_analyze, t_tone_mid_target, t_tone_monotone, _legacy(t_style_lock),
                _legacy(t_style_contrast_direction), _legacy(t_style_tone_curve), _legacy(t_style_chroma_ends), t_denoise,
@@ -2342,7 +2445,11 @@ def main():
                t_paper_choice,
                # 09-15 深夜：SV 选「A」⇒ 导出默认**原图尺寸**，靠"大图切条带"才跑得动
                #   ⇒ 必须钉住"切了逐位不变" + "vendor 一个字节都没动"
-               t_band_render):
+               t_band_render,
+               # 09-15 晚（第二轮）：调色台预览的 `side` 以前**收下就扔**
+               #   ⇒ 700 / 1400 / 2048 三发回来字节完全相同 ⇒ 「1:1」永远看不到像素、
+               #     "脸在预览里只有 41x51 像素"也没法靠加尺寸解决
+               t_preview_side):
         fn()
     print('-' * 52)
     if FAIL:

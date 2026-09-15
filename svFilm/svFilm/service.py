@@ -173,8 +173,44 @@ def _load_one(path, side):
     return s, ms
 
 
+def _want_side(side):
+    """把请求里的 `side` 解析成「要多大长边」。
+
+    返回 `(want, err, req)`：
+      * `want=None`   = **没要求**（不给 / 空 / `0`）⇒ 调用方沿用已经解码好的那份（老行为）。
+      * `want=<int>`  = 要这个长边（夹在 `[16, C.MAX_SIDE]`；被夹了 `req` 记下原值）。
+      * `err` 非空    = 这个 side 不合法 —— **说清楚**，不许静默当没给。
+
+    ⚠ 上限取 `C.MAX_SIDE`（这台引擎自己的工作分辨率，2048）：
+      比它更大对"在屏幕上看细节"没有意义，而**原图全尺寸会打爆内存**
+      （实测 40MP 时 spektrafilm 内部一个 (81, 40M) 的 float64 中间量要 24.2 GiB，
+       进程当场死 —— 见 `_export_one` 的注释）。被夹住要回 `side_clamped`，不静默降级。
+    """
+    if side is None or str(side).strip() in ('', '0'):
+        return None, None, None
+    try:
+        req = int(float(str(side).strip()))
+    except (TypeError, ValueError):
+        return None, 'side 不合法：%r' % (side,), None
+    cap = int(getattr(C, 'MAX_SIDE', 2048) or 2048)
+    return max(16, min(req, cap)), None, req
+
+
 def _render_bytes(i, stock, base, side, fmt, quality, params=None, paper=None):
-    """出图。side 与缓存不一致时用缓存的（不重新解码）—— 前端要别的尺寸得重新 /load。
+    """出图。
+
+    ★★ 09-15 修一个真 bug：`side` 以前是**收下就扔**（文档写的是"前端要别的尺寸得
+      重新 /load"，可前端从来不 /load 第二个尺寸）⇒ 结果**任何 side 都返回 /load 那个尺寸**。
+      实测（真 HTTP，同一张片）：请求 side=700 / 1400 / 2048，三发回来**字节完全相同**
+      （都是 467x700）⇒ 调色台想看清细节**根本没法**要一张更大的预览。
+      这就是「屏幕上那张图只有长边 700 像素、还被放大着画 ⇒ 脸/皮肤看不到像素」的根因。
+      ⇒ 现在真的按 `side` 走：
+        * 不给 / 与缓存那份一致 ⇒ **用缓存那份**（老行为，逐位不变）；
+        * 给了别的尺寸 ⇒ 按那个尺寸**重新解码**再跑链（`_load_one` 按「路径 + 尺寸 +
+          入口签名」缓存 ⇒ 重复要同一尺寸不会重复解码；RAW 约 2.3 s @700，更大按像素数涨）。
+      ⚠ 换尺寸**不复用**别的尺寸那份 Sample —— 尺寸不同，颗粒/锐化/降噪的**相对**效果
+        都不一样（实测同一块平坦区的颗粒：2048/3000/原图 = 0.63/0.77/1.87），
+        复用就是拿小尺寸的像素冒充大尺寸。
 
     `paper` = 相纸（09-15 SV 选「C」）。空 = 这一卷**配套**的那张（默认值由引擎给）。
       认不得的名字**不会**直接崩：`pipeline.run_from` 会回落成配套纸，
@@ -183,24 +219,40 @@ def _render_bytes(i, stock, base, side, fmt, quality, params=None, paper=None):
     row = _cache_get(i)
     if not row:
         return None, {'error': 'id 不在缓存里，先 /load'}
+    want, err, req = _want_side(side)
+    if err:
+        return None, {'error': err}
+    cur_side = int(row.get('side') or DEFAULT_SIDE)
     with _Overrides(_parse_params(params)):
-        s = _ensure_decoded(i, row)           # ★ 解码阶段参数改了要重新解码（见 _decode_sig）
+        if want is None or want == cur_side:
+            s = _ensure_decoded(i, row)       # ★ 解码阶段参数改了要重新解码（见 _decode_sig）
+        else:
+            s, _ms = _load_one(row.get('path'), want)      # ★ 换尺寸 = 重新解码
         r = pipeline.run_from(s, stock=stock or None, base=base or None,
                               cache=_STAGES[0], paper=paper or None)
     disp = np.clip(r.disp, 0.0, 1.0)
     arr = (disp * 255.0 + 0.5).astype(np.uint8)
+    info = {'ms': round(r.report.get('ms', 0)),
+            # ★ 把**真正用出去的尺寸**回给调用方（走响应头）—— 不然"它有没有照我说的
+            #   尺寸出"只能靠读图猜，而 `side` 被无视这件事正是这么藏了这么久的。
+            'w': int(disp.shape[1]), 'h': int(disp.shape[0]),
+            'side': want if want is not None else cur_side}
+    if want is not None and req is not None and want != req:
+        info['side_clamped'] = True
+        info['side_requested'] = req
     if fmt in ('jpg', 'jpeg'):
         from PIL import Image
         import io as _io
         buf = _io.BytesIO()
         Image.fromarray(arr).save(buf, format='JPEG', quality=int(quality))
-        return buf.getvalue(), {'ms': round(r.report.get('ms', 0)),
-                                'mime': 'image/jpeg'}
+        info['mime'] = 'image/jpeg'
+        return buf.getvalue(), info
     from PIL import Image
     import io as _io
     buf = _io.BytesIO()
     Image.fromarray(arr).save(buf, format='PNG')
-    return buf.getvalue(), {'ms': round(r.report.get('ms', 0)), 'mime': 'image/png'}
+    info['mime'] = 'image/png'
+    return buf.getvalue(), info
 
 
 def _export_one(i, out_path, stock, base, paper, params, side, quality, src_path=None):
@@ -271,16 +323,27 @@ def _export_one(i, out_path, stock, base, paper, params, side, quality, src_path
                 bytes=os.path.getsize(out_path)), None
 
 
-def _base_bytes(i, fmt='jpg', quality=92):
+def _base_bytes(i, fmt='jpg', quality=92, side=None):
     """「原图」栏用：把缓存的 Sample 直接出图 —— **不跑任何调色**（恒等）。
 
     为什么不让前端去读原始 JPG：① 原始 JPG 的尺寸/方向跟渲染结果不是一把尺子，并排看会误导；
     ② 走这里出来的影像与 `/render` **同分辨率、同口径**，A/B 才公平。
+
+    ★★ 09-15：`side` **也得认**（原来根本没有这个参数）—— 不然 `/render` 提到更大的
+      尺寸之后，左栏还是 700 ⇒ **两栏就不是一把尺子了**，而那正是本函数上面警告过的事。
+      口径与 `/render` 完全一致：不给 / 与缓存一致 = 用缓存那份；给了别的 = 按那个尺寸重新解码。
     """
     row = _cache_get(i)
     if not row:
         return None, {'error': 'id 不在缓存里，先 /load'}
-    disp = np.clip(row['sample'].disp, 0.0, 1.0)
+    want, err, req = _want_side(side)
+    if err:
+        return None, {'error': err}
+    cur_side = int(row.get('side') or DEFAULT_SIDE)
+    sample = row['sample']
+    if want is not None and want != cur_side:
+        sample, _ms = _load_one(row.get('path'), want)
+    disp = np.clip(sample.disp, 0.0, 1.0)
     arr = (disp * 255.0 + 0.5).astype(np.uint8)
     from PIL import Image
     import io as _io
@@ -291,7 +354,12 @@ def _base_bytes(i, fmt='jpg', quality=92):
     else:
         Image.fromarray(arr).save(buf, format='JPEG', quality=int(quality))
         mime = 'image/jpeg'
-    return buf.getvalue(), {'mime': mime, 'w': int(disp.shape[1]), 'h': int(disp.shape[0])}
+    info = {'mime': mime, 'w': int(disp.shape[1]), 'h': int(disp.shape[0]),
+            'side': want if want is not None else cur_side}
+    if want is not None and req is not None and want != req:
+        info['side_clamped'] = True
+        info['side_requested'] = req
+    return buf.getvalue(), info
 
 
 def _stats_of(i, stock, base, params=None, paper=None):
@@ -336,12 +404,22 @@ class _H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(b)
 
-    def _img(self, b, mime):
+    def _img(self, b, mime, info=None):
         self.send_response(200)
         self.send_header('Content-Type', mime)
         self.send_header('Content-Length', str(len(b)))
         self.send_header('Cache-Control', 'no-store')
         self.send_header('Access-Control-Allow-Origin', '*')
+        # ★★ 把**实际出的尺寸**写进响应头（09-15）：不写的话"它到底有没有照我说的尺寸出"
+        #   只能读图去猜 —— 而 `side` 被无视这件事正是这么藏了这么久的。
+        #   自检/探针拿这几个头就能断言，不必解 JPEG。
+        for k, h in (('w', 'X-Sv-W'), ('h', 'X-Sv-H'), ('side', 'X-Sv-Side'),
+                     ('side_requested', 'X-Sv-Side-Requested'),
+                     ('side_clamped', 'X-Sv-Side-Clamped')):
+            if info and info.get(k) is not None:
+                self.send_header(h, str(info[k]))
+        self.send_header('Access-Control-Expose-Headers',
+                         'X-Sv-W, X-Sv-H, X-Sv-Side, X-Sv-Side-Requested, X-Sv-Side-Clamped')
         self.end_headers()
         self.wfile.write(b)
 
@@ -443,11 +521,13 @@ class _H(BaseHTTPRequestHandler):
                 return self._json(out)
             if u.path == '/base':
                 # 「原图」栏：缓存里的 Sample 直接出图（恒等、不跑调色）
+                # ★ `side` 也传进去 —— 两栏必须同尺寸，不然并排看会误导（见 `_base_bytes`）
                 b, info = _base_bytes(int(q.get('id') or 0),
-                                      q.get('fmt') or 'jpg', q.get('q') or 92)
+                                      q.get('fmt') or 'jpg', q.get('q') or 92,
+                                      q.get('side'))
                 if b is None:
                     return self._json(info, 404)
-                return self._img(b, info['mime'])
+                return self._img(b, info['mime'], info)
             if u.path == '/render':
                 b, info = _render_bytes(int(q.get('id') or 0), q.get('stock'),
                                         q.get('base'), q.get('side'),
@@ -456,7 +536,7 @@ class _H(BaseHTTPRequestHandler):
                                         q.get('paper'))
                 if b is None:
                     return self._json(info, 404)
-                return self._img(b, info['mime'])
+                return self._img(b, info['mime'], info)
             if u.path == '/export':
                 # ★★ 导出成片（09-15 SV 选「A」）：把渲染结果写成**真照片文件**。
                 #   ⚠ `side` 不传 = **原图全尺寸**（SV 选「A」定的默认）——
