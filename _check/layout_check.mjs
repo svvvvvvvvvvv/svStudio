@@ -93,12 +93,21 @@ await page.addInitScript(() => {
       { name: '主题A', count: 12 },
       { name: '主题B', count: 34 },
     ],
+    /* ★★ 出图源也要照生产端抄：`main.js` 的 `attachLoadPath()` 会给每张算出 `loadPath`
+       （**同名 RAW 优先**，没有 RAW 的主题才回落 JPG）。这里故意混着给：
+       i=1,5,9… 是"只有 JPG"的，用来测回落那一档。 */
     listPhotos: async () =>
-      Array.from({ length: 40 }, (_, i) => ({
-        name: `DSCF${1000 + i}.RAF`,
-        rel: `root/DSCF${1000 + i}.JPG`,
-        hasRaw: true,
-      })),
+      Array.from({ length: 40 }, (_, i) => {
+        const jpg = `DSCF${1000 + i}.JPG`;
+        const isRaw = i % 4 !== 1;
+        return {
+          name: jpg,
+          rel: jpg,
+          hasRaw: isRaw,
+          loadPath: `D:\\lib\\主题A\\DSCF${1000 + i}.` + (isRaw ? 'RAF' : 'JPG'),
+          loadIsRaw: isRaw,
+        };
+      }),
     // ★ mock 必须跟真实返回一致：{url,ow,oh}（09-15 裂图就是把返回当字符串用）
     getThumb: async (a, b, c) => ({ url: mk(c), ow: 400, oh: 300 }),
     getThumbMeta: async () => ({ ow: 4000, oh: 3000 }),
@@ -138,9 +147,25 @@ await page.addInitScript(() => {
         { k: 'TONE_LIFT', name: '中高调抬起', lo: 0, hi: 14, step: 0.5, grp: '影调', spek: false, dv: 9.0, d: '整张变亮' },
       ],
     }),
-    engineLoad: async () => ({ ok: true, items: [{ id: 1, path: 'x', ms: 12 }] }),
+    /* ★ 记下每一次 /load 的路径 —— 下面要断言「喂给引擎的是 RAW」 */
+    /* ⚠⚠ `id` 必须**每张都不一样**（照生产端抄：引擎每 load 一张给一个新 id）。
+       09-15 踩过：这里原来写死 `id: 1` ⇒ "换图"在 React 眼里是 imgId 1→null→1、
+       **最终值没变** ⇒ 渲染那条 effect 被 React 直接跳过（bail-out）⇒
+       所有"翻图之后……"的检查全在空转，破法怎么改都红不了（检查是假的）。 */
+    engineLoad: async (paths) => {
+      (window.__engineLoads = window.__engineLoads || []).push(...(paths || []));
+      window.__nextId = (window.__nextId || 0) + 1;
+      (window.__engineIds = window.__engineIds || []).push(window.__nextId);
+      return { ok: true, items: [{ id: window.__nextId, path: 'x', ms: 12 }] };
+    },
     engineBase: async () => ({ ok: true, image: mk(9) }),
-    engineRender: async () => ({ ok: true, image: mk(5) }),
+    /* ★ 数一发渲染次数 —— 「换图到底会不会自动出图」这条契约要么数它，
+       要么去数界面上的占位文案。数文案是**间接证据**（装载链断了也会留白），
+       数次数是机制本身：换图后这个数不许涨。 */
+    engineRender: async () => {
+      window.__renders = (window.__renders || 0) + 1;
+      return { ok: true, image: mk(5) };
+    },
   };
 });
 
@@ -245,6 +270,73 @@ if (await gradeTab.count()) {
   );
   check('★ 分屏两栏都出图了（占位文案应为 0 个）', ph === 0, `占位 ${ph} 个`,
     `还有 ${ph} 个占位 ⇒ 装载/渲染链断了（engineLoad / engineBase / engineRender 的返回形状）`);
+
+  /* ★★ 出图源必须是 RAW（SV 09-15：「工作台本来就要优先用 raw」）。
+     为什么这条是硬要求：入口那一段（零点/成形/趾部/护栏）**只在 `io.load_raw` 里跑**，
+     喂 JPG 的话「整张亮暗(总)」「暗部亮度」这两根滑杆**永远是死的**
+     （实测同一张：走 RAW 能带动 −18.9 ~ +31 L*，走 JPG 是 0.00）。 */
+  const loads = await page.evaluate(() => window.__engineLoads || []);
+  check('★ 调色台喂给引擎的是 RAW（不是 JPG）',
+    loads.length > 0 && loads.every((x) => /\.raf$/i.test(x)),
+    loads.map((x) => x.split(/[\\/]/).pop()).join(', ') || '(一次都没 load)',
+    '喂的是 JPG ⇒ 入口那两根滑杆不生效（整张亮暗(总) / 暗部亮度）');
+  check('★ 标题栏标出了这张的出图源', /RAW 出图/.test(txt),
+    '', '看不出这张是用 RAW 还是 JPG 出的图');
+
+  /* 翻到下一张："只有 JPG"的那张（mock 里 i=1），回落那一档也要对：
+     ① 喂的是 JPG ② 标题栏改口成 JPG ③ 点一次「渲染」能真出图
+     ⚠ 不能用底栏缩略图点 —— 调色台的底栏只列 ★≥1，这时候还是空的。
+       用方向键翻图（`App.tsx` 的 keydown），顺便把"翻图也要重新算出图源"一起测了。 */
+  const phCount = () =>
+    page.evaluate(() => document.body.innerText.split('按「渲染」出图').length - 1);
+  const renderCount = () => page.evaluate(() => window.__renders || 0);
+  const renders0 = await renderCount();          // 进调色台那一发
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(900);
+  const loads2 = await page.evaluate(() => window.__engineLoads || []);
+  const last = loads2[loads2.length - 1] || '';
+  const txt2 = await page.evaluate(() => document.body.innerText);
+  /* ★ 自检环境自身的护栏：mock 每 load 一张必须给**新** id。
+     写死 id 的话 imgId 是 1→null→1、最终值不变 ⇒ React 跳过重渲染（bail-out）⇒
+     下面所有「翻图之后……」的断言全部空转，破法怎么改都红不了。 */
+  const ids = await page.evaluate(() => window.__engineIds || []);
+  check('★ 自检环境：mock 每次 load 给的是新 id（否则翻图断言会空转）',
+    new Set(ids).size === ids.length, `id: ${ids.join(',')}`,
+    'mock 里 load 返回的 id 重复 ⇒ 换图在 React 眼里没变，下面的断言等于没跑');
+  check('★ 翻图后加载的是新那张（不是死守一张）', loads2.length >= 2, `${loads2.length} 次 load`);
+  check('★ 没有 RAW 的照片回落到 JPG（不会空栏）',
+    /\.jpe?g$/i.test(last), last.split(/[\\/]/).pop() || '(没记到)');
+  check('★ 没有 RAW 时标题栏改口成 JPG', /JPG 出图/.test(txt2), '',
+    '没有 RAW 却说 RAW，等于骗人');
+  /* ★★ 契约（SV 09-15 定）：自动出图只有两个触发点 —— ① 进/切进调色台 ② 点「渲染」。
+     「换图」不在里面 ⇒ 翻过来之后**渲染次数不许涨**，右栏留白等那一发。
+     这条盯的是**机制**（引擎被叫了几次），不是界面文案 —— 文案是间接证据：
+     装载链断了也会留白，那时候这条会"绿得莫名其妙"（下面那条才管装载链）。 */
+  const renders1 = await renderCount();
+  check('★ 换图不自动出图（引擎渲染次数不涨）', renders1 === renders0,
+    `${renders0} → ${renders1} 发`,
+    `翻图自动出图了（多发 ${renders1 - renders0} 发）—— 违反"只有两个触发点"的契约`);
+  check('★ 换图后右栏确实留白等「渲染」', (await phCount()) === 1,
+    `占位 ${await phCount()} 个`, '换图后右栏没留白 —— 装载链可能断了');
+  /* 再点一次「渲染」：验的是**"没有 RAW 的主题，回落 JPG 那一档能不能真出图"**。 */
+  await rBtn.click();
+  await page.waitForTimeout(900);
+  check('★ 回落 JPG 后点「渲染」也能出图（占位应为 0 个）',
+    (await phCount()) === 0, `占位 ${await phCount()} 个`,
+    '没有 RAW 就出不了图 ⇒ 回落那一档卡住了');
+  check('★ 「渲染」按钮点下去真的多出一发（不是空按钮）', (await renderCount()) > renders1,
+    `${renders1} → ${await renderCount()} 发`);
+  await page.keyboard.press('ArrowLeft');          // 翻回第一张
+  await page.waitForTimeout(900);
+  /* 翻回来同样不自动出图 ⇒ 补一发「渲染」，
+     让后面 [5] 的检查仍然按"两栏都有图"来量（不然量的是留白）。 */
+  const renders2 = await renderCount();
+  await rBtn.click();
+  await page.waitForTimeout(900);
+  check('★ 翻回原图后点「渲染」照样出图（换图不自出 ≠ 换图后出不了）',
+    (await phCount()) === 0, `占位 ${await phCount()} 个`);
+  check('★ 翻回原图后也没白自出图（次数只多了点的那一发）',
+    (await renderCount()) === renders2 + 1, `${renders2} → ${await renderCount()} 发`);
 }
 
 /* ---------- 4. 打星联动 ---------- */

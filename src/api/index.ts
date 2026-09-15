@@ -81,6 +81,13 @@ export interface Photo {
   lo?: string;
   hi?: string;
   hasRaw?: boolean;
+  /** ★★ 出图源（**喂引擎用的那个文件的绝对路径**）：同名 RAW 优先，没有才回落到 JPG。
+   *  main.js 的 `attachLoadPath()` 给的。⚠ 别拿 `rel` 当出图源 —— 它是身份键（星级/归档按它索引）。
+   *  为什么必须 RAW：入口那一段（零点/成形/趾部/护栏）只在 `io.load_raw` 里跑，
+   *  喂 JPG 的话「整张亮暗(总)」「暗部亮度」永远是死的。 */
+  loadPath?: string;
+  /** `loadPath` 是不是一张 RAW（false = 这个主题只有 JPG，入口那两根滑杆不生效） */
+  loadIsRaw?: boolean;
   archived?: boolean;
   [k: string]: any;
 }

@@ -110,7 +110,12 @@ function SplitView() {
     (async () => {
       try {
         if (!(await ensureEngine())) return;
-        const full = sessionPath + '\\' + p.rel;
+        /* ★★ 出图源 = **同名 RAW 优先**（SV 09-15：「工作台本来就要优先用 raw」）。
+           main.js 的 `attachLoadPath()` 已经把该用哪个文件算好了（没有 RAW 才回落到 JPG）。
+           ⚠ 这里**不要**自己拼 `rel` —— 那是身份键，不是出图源。
+           ⚠ 必须走 RAW：入口那一段（零点/成形/趾部/护栏）只在 `io.load_raw` 里跑，
+             喂 JPG 的话「整张亮暗(总)」「暗部亮度」永远是死的。 */
+        const full = p.loadPath || sessionPath + '\\' + p.rel;
         const r = await API.engineLoad([full]);
         // ★ main.js 给的是 { ok, items:[{id,path,ms}|{path,error}] } —— 不是 { id }。
         const item = r?.items?.[0];
@@ -201,7 +206,17 @@ function SplitView() {
       }}
     >
       <Pane title="原图" src={before} loading={loading} busy={false} />
-      <Pane title="调色后" src={after} loading={loading} busy={busy} />
+      {/* ★ 标题栏标出「这张是用什么出的图」—— 只有 JPG 的主题（没有 RAF）入口那两根
+          滑杆（整张亮暗(总)／暗部亮度）是不生效的，以前界面上完全看不出来。
+          ⚠ 这个标记放在 `note` 里，**不能塞进 title** —— title 同时是 img 的 alt，
+            布局自检靠 alt === '调色后' 认这两栏。 */}
+      <Pane
+        title="调色后"
+        note={p ? (p.loadIsRaw ? 'RAW 出图' : 'JPG 出图（无 RAW）') : undefined}
+        src={after}
+        loading={loading}
+        busy={busy}
+      />
       {!engineOk && (
         <div style={{ color: 'var(--text-dim)', alignSelf: 'center' }}>
           引擎未启动
@@ -215,11 +230,14 @@ const PANE_PAD = 8;
 
 function Pane({
   title,
+  note,
   src,
   loading,
   busy,
 }: {
   title: string;
+  /** 标题右边的小字（例：出图源是 RAW 还是 JPG）。⚠ 别塞进 `title`：那是 img 的 alt */
+  note?: string;
   src: string | null;
   loading: boolean;
   busy: boolean;
@@ -245,9 +263,13 @@ function Pane({
           padding: '4px 10px',
           color: 'var(--text-dim)',
           borderBottom: '1px solid var(--line)',
+          display: 'flex',
+          gap: 8,
+          alignItems: 'baseline',
         }}
       >
-        {title}
+        <span>{title}</span>
+        {note && <span style={{ color: 'var(--text-faint)' }}>{note}</span>}
       </div>
       {/* ★ 图区：绝对定位 + calc 尺寸 + object-fit:contain
           —— 不依赖"父高是否确定"，所以不会出现"图比面板大、被 overflow 裁掉"。

@@ -230,7 +230,7 @@ function scanSessions(libRoot) {
 }
 
 /**
- * 列出主题内所有图片（JPG 用于预览），配对 root 原图的同名 RAW。
+ * 列出主题内所有照片（`img` 列图按 JPG 列名，**出图源另算——同名 RAW 优先**，见 `attachLoadPath`）。
  * ★ 同名多形态合并：root 原图 / 初筛1星复制件 / 调色待验收输出 / 2星成片 / 待发布成片
  *   共用同一评分 key（主题名||文件名），dock 只显示「最新工作形态」一条：
  *   优先级 调色待验收 > 待发布 > 调色后满意的2星 > 初筛1星 > root。
@@ -253,8 +253,46 @@ function listPhotos(sessionPath) {
     for (const p of photosInDir(sd)) put(p, PRIO[sub]);
   }
   const photos = [...byRel.values()].map((x) => x.p);
+  attachLoadPath(sessionPath, photos);          // ★ 出图源：同名 RAW 优先
   photos.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   return photos;
+}
+
+/** 给每张照片补一个 `loadPath` = **出图时真正喂给引擎的那个文件**：同名 RAW 优先，没有才用 JPG。
+ *
+ *  ★★ 为什么必须优先 RAW（SV 09-15 原话：「工作台本来就要优先用 raw 啊」）：
+ *    入口那一段（零点 `entry_zero_ev` + 成形 `ENTRY_GAMMA/KNEE/CEIL` + 趾部 `ENTRY_TOE` +
+ *    高光护栏 `clip_guard`）**只写在 `io.load_raw` 里**，`io.load_std`（JPG 那条）根本不跑。
+ *    而 `photosInDir` 只按 JPG 列图、RAW 只当"有 RAF"的角标 ⇒ 工作台一直喂 JPG ⇒
+ *    「整张亮暗(总)」「暗部亮度」这两根滑杆**永远是死的**（实测同一张 DSCF0546：
+ *     走 RAW 能带动 −18.9 ~ +31.0 个 L*，走 JPG 是 0.00），而且看到的画面也不是引擎真正出图那条路。
+ *
+ *  ⚠ `name` / `rel` **不许改** —— 它们是身份键（星级、成片归档、缩略图、EXIF、TopBar 同步
+ *    全按 `主题名||文件名` 索引），改成 RAF 名字会把这些整条链打歪。所以**另开一个字段**，
+ *    只在"喂引擎"这一处用它（Viewer 的 `/load`）。
+ *  ⚠ 原图放主题根目录 ⇒ 先按**根目录**的同名 RAW 找；纯 JPG 的主题（"效果测试"那几个）
+ *    没有 RAW，自然回落到 JPG（此时入口那两根滑杆仍然是死的，面板上会标 `JPG 出图`）。
+ */
+function attachLoadPath(sessionPath, photos) {
+  const rawByName = new Map();          // UPPER(stem) -> 真实文件名
+  try {
+    for (const f of fs.readdirSync(sessionPath)) {
+      if (RAW_EXT.test(f)) rawByName.set(f.replace(/\.[^.]+$/, '').toUpperCase(), f);
+    }
+  } catch (err) { /* 目录读不到就当没有 RAW */ }
+  for (const p of photos) {
+    const base = String(p.rel || p.name || '').split(/[\\/]/).pop();
+    const stem = base.replace(/\.[^.]+$/, '').toUpperCase();
+    const raw = rawByName.get(stem);
+    if (raw) {
+      p.loadPath = path.join(sessionPath, raw);
+      p.loadIsRaw = true;
+    } else {
+      const inRoot = path.join(sessionPath, base);
+      p.loadPath = fs.existsSync(inRoot) ? inRoot : path.join(p.dir || sessionPath, base);
+      p.loadIsRaw = false;
+    }
+  }
 }
 
 /** 扫单个目录内所有 JPG（配对同名 RAW），返回未排序数组。

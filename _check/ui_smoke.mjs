@@ -10,6 +10,7 @@
  *   这里把"能静态验证的"全部自动化，包括**曾经踩过的坑的回归检测**。
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -165,10 +166,16 @@ check(
   '又读回了 main.js 不存在的字段'
 );
 check('★ Viewer 从 items[0] 拿 id', /items\?\.\[0\]/.test(viewerSrc));
+/* ⚠ 下面这条只是**漂移探测器**（弱检查）：mock 的形状最终由布局自检里的真浏览器
+   端到端检查兜底（"两栏都出图了"）。正则把空白折叠掉再匹配、并容忍
+   一行式 `=> ({ ok:true, image: ... })` 和带计数器的多行式
+   `=> { ...; return { ok:true, image: ... }; }` 两种写法
+   —— 09-15 给 mock 加"渲染次数计数器"时，旧正则就把它误报成红了。 */
+const mockSrcFlat = read('_check/layout_check.mjs').replace(/\s+/g, ' ');
 check(
   '★ 布局自检的 mock 也返回 items/image（不再比前端还错）',
-  /items: \[/.test(read('_check/layout_check.mjs')) &&
-    /engineRender: async \(\) => \(\{ ok: true, image:/.test(read('_check/layout_check.mjs')),
+  /items: \[/.test(mockSrcFlat) &&
+    /engineRender: async \(\) =>.{0,240}?image:/.test(mockSrcFlat),
   '',
   'mock 形状跟 main.js 不一致，会骗过自检'
 );
@@ -260,6 +267,67 @@ check('★ engine-render 真的走了 paramStr（没被绕过）',
   '', '还在直接 encodeURIComponent(o.params)');
 check('engine-render 里没留下"直接编码对象"的老写法',
   !/encodeURIComponent\(o\.params(?!Str)/.test(mainJsCode), '', '老写法还在');
+
+/* ---------- ★★ 09-15 出图源：必须 RAW 优先（SV 原话：「工作台本来就要优先用 raw」） ----------
+   `main.js` 的 `attachLoadPath()` 给每张照片算「喂引擎时用哪个文件」：同名 RAW 优先，
+   没有才回落到 JPG；`Viewer` 只认这一个字段，不再自己拼 `rel`。
+   **为什么这是硬要求**：入口那一段（零点/成形/趾部/高光护栏）**只在 `io.load_raw` 里跑**，
+   喂 JPG 的话「整张亮暗(总)」「暗部亮度」这两根滑杆永远是死的（实测同一张 DSCF0546：
+   走 RAW 能带动 −18.9 ~ +31.0 个 L*，走 JPG 是 0.00）。
+   ⚠ 这一段同样**不是正则看"有没有写"**，而是把 main.js 里那段源码取出来在 Node 里真跑。 */
+const afM = mainJsCode.match(/function attachLoadPath\(sessionPath, photos\)\s*\{[\s\S]*?\n\}/);
+check('main.js 里有 attachLoadPath（出图源的唯一出处）', !!afM, '', '函数没了？');
+const rexM = mainJsCode.match(/const RAW_EXT = (\/[^\n]*?\/i);/);
+check('从 main.js 读到了 RAW_EXT 的定义（自检里不许另写一份）', !!rexM,
+  rexM ? rexM[1] : '', '找不着 RAW_EXT');
+let af = null;
+let tmpDir = null;
+if (afM && rexM) {
+  try {
+    const RAWE = new Function('return ' + rexM[1])();
+    af = new Function('fs', 'path', 'RAW_EXT', afM[0] + '; return attachLoadPath;')(fs, path, RAWE);
+  } catch (e) {
+    af = null;
+  }
+}
+check('attachLoadPath 能在 Node 里独立跑起来（可单测）', typeof af === 'function',
+  '', '取出来那段源码跑不了');
+if (typeof af === 'function') {
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'svstudio-load-'));
+  const bucket = path.join(tmpDir, '初筛1星');
+  fs.mkdirSync(bucket);
+  for (const f of ['A.JPG', 'A.RAF', 'B.JPG', 'C.JPG', 'C.RAF']) {
+    fs.writeFileSync(path.join(tmpDir, f), '');
+  }
+  fs.writeFileSync(path.join(bucket, 'D.JPG'), '');   // 桶里独有：根目录没有 D.JPG
+  const ps = [
+    { name: 'A.JPG', rel: 'A.JPG' },
+    { name: 'B.JPG', rel: 'B.JPG' },
+    { name: 'B.JPG', rel: 'B.JPG', dir: bucket },      // 桶里的 B：根目录有原图 ⇒ 该用根目录那份
+    { name: 'D.JPG', rel: 'D.JPG', dir: bucket },      // 根目录没有 ⇒ 用桶里这份
+    { name: 'C.JPG', rel: 'sub\\C.JPG' },              // rel 带分隔符也要只取文件名
+  ];
+  af(tmpDir, ps);
+  check('★ 有同名 RAW ⇒ 出图源用 RAW',
+    ps[0].loadPath === path.join(tmpDir, 'A.RAF') && ps[0].loadIsRaw === true,
+    ps[0].loadPath, String(ps[0].loadPath));
+  check('★ 没有同名 RAW ⇒ 回落 JPG（不许空栏）',
+    ps[1].loadPath === path.join(tmpDir, 'B.JPG') && ps[1].loadIsRaw === false,
+    ps[1].loadPath, String(ps[1].loadPath));
+  check('桶里的照片（根目录有同名原图）⇒ 出图源指向根目录原图',
+    ps[2].loadPath === path.join(tmpDir, 'B.JPG'), ps[2].loadPath, String(ps[2].loadPath));
+  check('桶里独有的照片（根目录没有）⇒ 出图源指向它自己',
+    ps[3].loadPath === path.join(bucket, 'D.JPG'), ps[3].loadPath, String(ps[3].loadPath));
+  check('rel 带目录分隔符也认（只取文件名配 RAW）',
+    ps[4].loadPath === path.join(tmpDir, 'C.RAF'), ps[4].loadPath, String(ps[4].loadPath));
+  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) { /* 留着也无害 */ }
+}
+check('★ 调色台加载用的是 loadPath（RAW 优先），不是自己拼 rel',
+  /const full = p\.loadPath \|\| sessionPath/.test(viewerSrc), '',
+  '还在自己拼 rel ⇒ 又会喂 JPG');
+check('★ 出图源的标记进的是 note（没污染 img 的 alt）',
+  /note=\{p \? \(p\.loadIsRaw/.test(viewerSrc) && /title="调色后"/.test(viewerSrc), '',
+  'alt 被改掉的话，布局自检靠 alt 认栏位会一起失效');
 
 /* ---------- 汇总 ---------- */
 console.log('\n' + '-'.repeat(50));
