@@ -9,6 +9,7 @@
  *   之前每次改动都要 SV 双击 .bat 目测 —— 慢且容易漏。
  *   这里把"能静态验证的"全部自动化，包括**曾经踩过的坑的回归检测**。
  */
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -321,6 +322,12 @@ check('engine-render 里没留下"直接编码对象"的老写法',
    ⚠ 这一段同样**不是正则看"有没有写"**，而是把 main.js 里那段源码取出来在 Node 里真跑。 */
 const afM = mainJsCode.match(/function attachLoadPath\(sessionPath, photos\)\s*\{[\s\S]*?\n\}/);
 check('main.js 里有 attachLoadPath（出图源的唯一出处）', !!afM, '', '函数没了？');
+/* ⚠ `attachLoadPath` 现在会调 `sessionSrcDir(sessionPath)`（预览索引目录 ⇒ 出图源在源目录里）。
+   不把它一起抽出来的话，下面那段抽出来在 Node 里一跑就 ReferenceError
+   —— 检查直接抛出去、整个自检断在那儿（这是**好事**：说明这条钩子真的在跑）。 */
+const ssdM = mainJsCode.match(/function sessionSrcDir\(sessionPath\)\s*\{[\s\S]*?\n\}/);
+check('main.js 里有 sessionSrcDir（“缓存目录 → 它的源目录”的唯一出处）', !!ssdM, '',
+  '函数没了 ⇒ attachLoadPath 取不到源目录，渲染会拿 1600 的预览小图当原图用');
 const rexM = mainJsCode.match(/const RAW_EXT = (\/[^\n]*?\/i);/);
 check('从 main.js 读到了 RAW_EXT 的定义（自检里不许另写一份）', !!rexM,
   rexM ? rexM[1] : '', '找不着 RAW_EXT');
@@ -329,7 +336,8 @@ let tmpDir = null;
 if (afM && rexM) {
   try {
     const RAWE = new Function('return ' + rexM[1])();
-    af = new Function('fs', 'path', 'RAW_EXT', afM[0] + '; return attachLoadPath;')(fs, path, RAWE);
+    af = new Function('fs', 'path', 'RAW_EXT', (ssdM ? ssdM[0] : '') + '\n' + afM[0] +
+      '; return attachLoadPath;')(fs, path, RAWE);
   } catch (e) {
     af = null;
   }
@@ -364,6 +372,23 @@ if (typeof af === 'function') {
     ps[3].loadPath === path.join(bucket, 'D.JPG'), ps[3].loadPath, String(ps[3].loadPath));
   check('rel 带目录分隔符也认（只取文件名配 RAW）',
     ps[4].loadPath === path.join(tmpDir, 'C.RAF'), ps[4].loadPath, String(ps[4].loadPath));
+
+  /* ★★ 预览索引目录（库外·纯 RAW）：出图源必须指回**源目录**的 RAW。
+     缓存里只有长边 1600 的预览小图；不指回去 ⇒ 引擎拿它当原图渲染
+     —— 能出图、界面不报错，画质悰悰掉了（这条是这个功能最容易漏的破洞）。 */
+  const idxDir = path.join(tmpDir, '_idx');
+  const realSrc = path.join(tmpDir, '_realsrc');
+  fs.mkdirSync(idxDir);
+  fs.mkdirSync(realSrc);
+  fs.writeFileSync(path.join(realSrc, 'E.RAF'), '');
+  fs.writeFileSync(path.join(idxDir, 'E.JPG'), '');              // 缓存里只有小图，没 RAW
+  fs.writeFileSync(path.join(idxDir, '_src.txt'), realSrc + '\n');
+  const ps2 = [{ name: 'E.JPG', rel: 'E.JPG' }];
+  af(idxDir, ps2);
+  check('★★ 预览索引目录 ⇒ 出图源指回**源目录**的 RAW（不是拿缩略图渲染）',
+    ps2[0].loadPath === path.join(realSrc, 'E.RAF') && ps2[0].loadIsRaw === true,
+    ps2[0].loadPath,
+    `${ps2[0].loadPath} ⇒ 渲染会把预览小图当原图，画质悰悰掉了、界面一点看不出来`);
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) { /* 留着也无害 */ }
 }
 check('★ 调色台加载用的是 loadPath（RAW 优先），不是自己拼 rel',
@@ -880,6 +905,200 @@ check('★★ 布局自检 mock 的 `scanSessions` 把库外目录并排列出�
 check('⚠ 布局自检 mock 必须实现 `pickDirectory`（左栏「换图库 / 加入目录」都会调它）',
   /pickDirectory: async \(\) =>/.test(mockSrcFlat), '',
   '漏了它 ⇒ 点那一刻同步抛 TypeError（漏 setConfig 那次的翻版）');
+
+/* ---------- [14] 库外·纯 RAW 目录 ⇒ 预览小图（"只按 JPG 列图"的补救） ----------
+   ★★ 背景：工作台列图**只按 JPG 列**（`IMG_EXT`），RAW 只当"这张有 RAF"的角标
+      ⇒ 把"只拷了 RAF"的文件夹「加入目录」进来，界面上是**空的**
+      —— 看着像"这个目录里没东西"，其实是"它一张 JPG 都没有"。
+      修法：给它自动生成一份预览索引（抠相机自带的机内 JPG，缩到长边 1600，写进应用缓存）。
+   ⚠ 这一组**不是**拿正则看"有没有写某个函数名"（那挡不住"函数体写错"，等于没查）：
+      ① `parseExtIndexOutput` 真跑（拿脚本真实格式的样例行）
+      ② `extIndexDirFor` 真跑（自带 fs/path/crypto + 假的 app）
+      ③ 剩下的是接线钉子：源目录只读 / 缓存不写死本机路径 / 传的是源目录不是缓存目录 */
+console.log('\n[14] 库外·纯 RAW 目录 ⇒ 预览小图');
+const pyPath = 'tools/make_jpg_index.py';
+const pySrc = exists(pyPath) ? read(pyPath) : '';
+check('★ 索引脚本在仓库里（`tools/make_jpg_index.py`）—— 不用 SV 去配路径', !!pySrc, pyPath,
+  '脚本不在 ⇒ 这个功能整条链是死的，而且只会在"点了没反应"的时候才被发现');
+
+/* ---- ① 源目录必须**一个字节都不动**（这是它和「导入照片」共用的一条底线） ---- */
+if (pySrc) {
+  const forbidden = ['os.remove', 'os.rmdir', 'os.unlink', 'os.rename', 'shutil', 'rmtree'];
+  const hits = forbidden.filter((b) => pySrc.includes(b));
+  check('★★ 索引脚本里没有任何"删 / 移文件"的调用（源目录只读）', hits.length === 0,
+    hits.join(', '),
+    `出现了 ${hits.join(', ')} ⇒ 哪天 bug 一动手，他的照片就没了（这个脚本只该读源目录）`);
+  check('★ 写盘只往 `--out` 里写（先写临时名再原子换名，中途被杀不留半张坏图）',
+    /os\.path\.join\(out, /.test(pySrc) && /os\.replace\(tmp, out_path\)/.test(pySrc), '',
+    '直接往目标名写 ⇒ 中途杀掉会留下半张坏图，而工作台照样把它当一张照片列出来');
+  check('★ 每个索引目录写一份 `_src.txt`（出图源的凭据，缺了就会拿缩略图当原图渲染）',
+    /'_src\.txt'/.test(pySrc), '',
+    '不写 ⇒ 引擎从 1600 的预览小图渲染：能出图、不报错，画质悄悄掉了');
+  check('★ 抠的是**相机自带的机内 JPG**（3~4 ms/张），不是自己解码整张 RAW',
+    /extract_thumb\(\)/.test(pySrc), '',
+    '自己解码一张 4400 万像素要好几秒 ⇒ 一个目录要跑到天亮');
+}
+
+/* ---- ② 结果行两边对得上（脚本打的那行 ↔ main.js 解析的那行） ---- */
+const ksM = pySrc.match(/^KS = '([A-Z_]+)'/m);
+check('★ 脚本的结果行常量跟 main.js 解析的那个名字是**同一个**',
+  !!ksM && mainJsCode.includes(ksM[1]), ksM ? ksM[1] : '(取不到)',
+  '两边名字不一致 ⇒ 结果永远解析不出来，看着像"转完了但没结果"');
+const peM = mainJsCode.match(/function parseExtIndexOutput\(text\)\s*\{[\s\S]*?\n\}/);
+let pe = null;
+if (peM) {
+  try { pe = new Function(peM[0] + '; return parseExtIndexOutput;')(); } catch (e) { pe = null; }
+}
+check('parseExtIndexOutput 能在 Node 里独立跑起来', typeof pe === 'function', '', '取出来那段跑不了');
+if (typeof pe === 'function') {
+  const sample = (ksM ? ksM[1] : 'KS_EXT_INDEX_OK') + ' ' +
+    JSON.stringify({ src: 'D:\\a', out: 'C:\\b', n: 3, skip: 1, fail: 0, bytes: 900 });
+  const r = pe(sample);
+  check('★ 结果行真解析得出来（n / skip 都在）',
+    r.ok === true && r.n === 3 && r.skip === 1, JSON.stringify(r),
+    `解析不出来：${JSON.stringify(r)}`);
+  const bad2 = pe('  [错误] 建不了索引目录\n');
+  check('★★ 没有结果行 ⇒ `ok:false` **并且给了原因**（不静默）',
+    bad2.ok === false && /结果行/.test(bad2.error || ''), String(bad2.error),
+    '失败也说 ok ⇒ 界面以为转完了，那个目录永远空着');
+}
+
+/* ---- ③ extIndexDirFor 真跑（幂等 / 不撞名 / 落在缓存里） ---- */
+const eirM = mainJsCode.match(/function extIndexRoot\(\)\s*\{[\s\S]*?\n\}/);
+const eidM = mainJsCode.match(/function extIndexDirFor\(srcDir\)\s*\{[\s\S]*?\n\}/);
+/* ⚠ `extIndexRoot()` 用的是一个**模块级**的缓存变量（`let _extIndexRoot = null;`，
+   惰性建目录用）。漏了它 ⇒ 抽出来一跑就 `ReferenceError: _extIndexRoot is not defined`。 */
+const eivM = mainJsCode.match(/let _extIndexRoot = null;/);
+check('main.js 里有 extIndexRoot / extIndexDirFor（缓存根 + 目录映射）',
+  !!eirM && !!eidM && !!eivM, '', '函数没了？');
+check('★★ 缓存根走 `app.getPath(\'userData\')`，仓库里**不写死本机路径**（要开源）',
+  !!eirM && /path\.join\(app\.getPath\('userData'\), 'extpreview'\)/.test(eirM[0]) &&
+    !/[A-Za-z]:\\/.test(eirM[0]),
+  '', '写死路径 ⇒ 换机器 / 开源之后这套缓存全落在别人没有的盘上');
+if (eirM && eidM) {
+  const fakeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'svstudio-eidx-'));
+  let ed = null;
+  try {
+    ed = new Function(
+      'fs', 'path', 'crypto', 'app',
+      eivM[0] + '\n' + eirM[0] + '\n' + eidM[0] +
+        '\n; return { extIndexRoot: extIndexRoot, extIndexDirFor: extIndexDirFor };'
+    )(fs, path, crypto, { getPath: () => fakeRoot });
+  } catch (e) { ed = null; }
+  check('extIndexDirFor 能在 Node 里独立跑起来', !!ed, '', '取出来那段跑不了');
+  if (ed) {
+    const a = ed.extIndexDirFor('D:\\照片\\某次拍摄');
+    const b = ed.extIndexDirFor('D:\\照片\\某次拍摄\\');
+    const c = ed.extIndexDirFor('D:\\照片\\另一个目录');
+    check('★ 索引目录落在**应用缓存**里（既不在源目录、也不在他的照片盘）',
+      path.resolve(a).startsWith(path.resolve(fakeRoot)), a,
+      `${a} 不在缓存根下 ⇒ 会往他的照片目录里塞缓存小图`);
+    check('★ 目录名里带源目录名（出问题时一眼看得出对的是谁）',
+      path.basename(a).startsWith('某次拍摄@'), path.basename(a), path.basename(a));
+    check('★ 同一个目录永远算到同一个索引目录（幂等；尾斜杠不影响）', a === b, `${a} vs ${b}`,
+      '不稳定 ⇒ 每次算出来都是新目录，缓存永远命中不了，每次都得重转一遍');
+    check('★ 两个不同目录不会撞到同一个索引目录', a !== c, `${a} vs ${c}`,
+      '撞名 ⇒ 两个目录互相覆盖对方的小图，还各以为自己是对的');
+  }
+  try { fs.rmSync(fakeRoot, { recursive: true, force: true }); } catch (e) { /* 留着也无害 */ }
+}
+
+/* ---- ③b extraSessions 真跑：搭一棵**真目录树**喂它（不是拿假数据假装） ----
+   ★ 这条是这一组里最值钱的一条，因为踩过一次：`D:\照片库\爆光修复` 根上是 4 张 RAF、
+     底下 `x100vi` 还有 6 张 JPG。改成"纯 RAW 的根也算照片目录"之后，
+     根**一条封顶**就把 `x100vi` 那 6 张从列表里挤掉了 —— 而界面上没有任何迹象
+     （列表里少一条而已）。这里把这棵树真搭出来跑一遍，一条都不能少。 */
+{
+  const a2 = mainJsCode.indexOf('function describeSessionDir(');
+  const b2 = mainJsCode.indexOf('function listPhotos(');
+  const cRe = [
+    /^const IMG_EXT = .*$/m, /^const RAW_EXT = .*$/m,
+    /^const STAR1_DIR = .*$/m, /^const STAR2_DIR = .*$/m,
+    /^const PUBLISH_DIR = .*$/m, /^const REVIEW_DIR = .*$/m,
+    /^const ARCHIVED_SUBDIRS = .*$/m, /^const THEME_SUBDIRS = .*$/m,
+  ];
+  const cSrc = cRe.map((r) => (mainJsCode.match(r) || [''])[0]).join('\n');
+  check('抽到了 extraSessions 那一段需要的常量（自检里不许另写一份）',
+    cRe.every((r) => r.test(mainJsCode)) && a2 > 0 && b2 > a2, '', 'main.js 结构变了？');
+  if (a2 > 0 && b2 > a2 && cRe.every((r) => r.test(mainJsCode))) {
+    const region = mainJsCode.slice(a2, b2);
+    const treeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'svstudio-exts-'));
+    const idxRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'svstudio-extidx-'));
+    const theRoot = path.join(treeRoot, '某次拍摄');
+    fs.mkdirSync(path.join(theRoot, 'x100vi'), { recursive: true });
+    fs.writeFileSync(path.join(theRoot, 'A.RAF'), '');            // 根上只有 RAW
+    fs.writeFileSync(path.join(theRoot, 'x100vi', 'B.JPG'), ''); // 子目录里是正常 JPG
+    let fx = null;
+    try {
+      fx = new Function('fs', 'path', 'loadConfig', 'crypto', 'app',
+        cSrc + '\n' + region + '\n; return { extraSessions: extraSessions };'
+      )(fs, path, () => ({ extraRoots: [theRoot] }), crypto, { getPath: () => idxRoot });
+    } catch (e) { fx = null; }
+    check('extraSessions 能在 Node 里对**真目录树**跑起来', !!fx, '', '取出来那段跑不了');
+    if (fx) {
+      const list = fx.extraSessions(new Set());
+      const names = list.map((x) => x.name);
+      check('★★ 根上"只有 RAW"、子目录里有 JPG ⇒ **两条都要列出来**（根不能一条封顶）',
+        list.length === 2 && names.some((n) => /x100vi/.test(n)) && names.some((n) => /某次拍摄/.test(n)),
+        JSON.stringify(names),
+        `只列出 ${JSON.stringify(names)} ⇒ 根上那几张 RAF 把下面正常主题挤掉了，` +
+          '而且界面上没有任何迹象');
+      const ex = list.find((x) => x.name.indexOf('x100vi') >= 0);
+      check('★ 子目录那条读的是**它自己的真路径**（不是库根拼出来的）',
+        ex && ex.path === path.join(theRoot, 'x100vi'), ex && ex.path, String(ex && ex.path));
+      const ro = list.find((x) => x.rawOnly);
+      check('★★ 纯 RAW 那条：`path` 指向**预览缓存**、`srcDir` 是真身、并标记"待建索引"',
+        ro && ro.path.startsWith(path.resolve(idxRoot)) && ro.srcDir === theRoot &&
+          ro.needsIndex === true && ro.count === 1,
+        ro ? JSON.stringify({ path: ro.path, srcDir: ro.srcDir, needsIndex: ro.needsIndex, count: ro.count }) : '(没有这条)',
+        '这三样少一个 ⇒ 要么列不出图（path 指源目录），要么拿缩略图渲染（srcDir 丢了）');
+      /* ★ 幂等：同一个源目录算两次 ⇒ 同一条缓存目录（不重复占地方） */
+      const list2 = fx.extraSessions(new Set());
+      const idx2 = list2.find((x) => x.rawOnly);
+      check('★ 同一个目录两次扫出来的索引目录是**同一个**（缓存不会越攒越多）',
+        idx2 && ro && idx2.indexDir === ro.indexDir, idx2 && idx2.indexDir, '');
+    }
+    try { fs.rmSync(treeRoot, { recursive: true, force: true }); } catch (e) { /* ok */ }
+    try { fs.rmSync(idxRoot, { recursive: true, force: true }); } catch (e) { /* ok */ }
+  }
+}
+
+/* ---- ④ 接线钉子（这一段的坑都在"两边传的不是同一个东西"上） ---- */
+check('★★★ 建索引传的是**源目录**（`s.srcDir`），不是预览缓存目录（`s.path`）',
+  /indexExternalDir\(s\.srcDir\)/.test(storeSrc) && !/indexExternalDir\(s\.path\)/.test(storeSrc),
+  '', '传缓存目录 ⇒ 那儿一张 RAW 都没有，扫出来永远是空的，而界面一点错都不报');
+check('★ 进主题时「索引还没建」就先补上（否则列表显示 4 张、点进去 0 张）',
+  /if \(s && s\.needsIndex && s\.srcDir\)/.test(storeSrc) &&
+    /await get\(\)\.indexExternalDir\(s\.srcDir\);/.test(storeSrc), '',
+  '不先补 ⇒ 列表和里面张数对不上，用户以为片子丢了');
+check('★★ 建不了的时候要**说出原因**（否则那目录永远是空的，而"空"和"坏了"长得一样）',
+  /* ⚠ 两条失败路径**都要出声**：① 脚本跑了但说"没成功" ② 起进程/调用本身抛了。
+     只钉一条的话，另一条被删掉照样绿（"只查标题在不在"的翻版）。 */
+  /'预览小图没生成：' \+ \(r\?\.error/.test(storeSrc) &&
+    /'预览小图没生成：' \+ String\(e\)/.test(storeSrc), '',
+  '只 catch 不报 ⇒ 用户看到的就是一个空主题');
+check('★ main.js 暴露了 `ext-index` 通道 + `ext-index-progress` 事件',
+  /ipcMain\.handle\('ext-index'/.test(mainJsCode) && /ext-index-progress/.test(mainJsCode), '',
+  '没有通道 ⇒ 前端调下去同步抛 TypeError（"漏 setConfig"那次的翻版）');
+check('★ 建索引的进度接上了（推事件给界面，不是等返回值）',
+  /onExtIndexProgress/.test(preloadSrc) && /onExtIndexProgress/.test(apiTs) &&
+    /API\.onExtIndexProgress/.test(appTsx), '',
+  '进度接不上 ⇒ 几百张要几十秒，界面全程像死机');
+check('★ 没生成索引时，条目上写明「预览待生成」', /预览待生成/.test(paneSrc), '',
+  '不写 ⇒ 用户点进去看到空的，只能猜是目录空了还是台子坏了');
+check('★ 缓存目录里放一份「这是什么、可以删」的说明', /_说明\.txt/.test(mainJsCode), '',
+  '缓存是往用户机器上写东西，得让他知道那是什么、能不能删');
+const ssM = mainJsCode.match(/function scanSessions\(libRoot\)\s*\{[\s\S]*?\n\}/);
+check('★ 库内主题**不开**这个开关（突然冒出一批"只有 RAF"的主题会打乱他现有的列表）',
+  !!ssM && /describeSessionDir\(full\)/.test(ssM[0]) && !/allowRawOnly/.test(ssM[0]),
+  '', '给库内也开 ⇒ 列表里会凭空多出几批只有 RAW 的条目，那是我替他做的决定');
+check('⚠ 布局自检 mock 必须实现 `extIndex` + `onExtIndexProgress`（「加入目录」会调）',
+  /extIndex: async \(srcDir\) =>/.test(mockSrcFlat) &&
+    /onExtIndexProgress: \(cb\) =>/.test(mockSrcFlat), '',
+  '漏了它 ⇒ 点那一刻同步抛 TypeError，而"到底拿哪个目录去建索引"永远测不到');
+check('★★ mock 的 `scanSessions` 要能给出「纯 RAW 库外目录」（path→缓存、srcDir→真身）',
+  /e\.rawOnly = true;/.test(mockSrcFlat) && /e\.srcDir = d;/.test(mockSrcFlat), '',
+  'mock 不给这种条目 ⇒ 真浏览器那组整段是空转');
 
 /* ---------- 汇总 ---------- */
 console.log('\n' + '-'.repeat(50));

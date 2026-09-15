@@ -108,6 +108,9 @@ function defaultConfig() {
     importScript: '',
     // ★ 跑导入脚本用哪份 Python（要能 import PIL 读 EXIF）。留空 = 跟引擎共用那份
     importPy: '',
+    // ★ 跑「纯 RAW 目录的预览索引」用哪份 Python（要能 import rawpy + PIL）。
+    //   留空 = 跟引擎共用那份（引擎本来就依赖 rawpy，正常不用配）。
+    extIndexPy: '',
     // ★★ 「加入目录…」加进来的**库外目录**（硬盘上已有的照片文件夹，原地读、不复制一份）。
     //   扫描主题列表时和库内主题并排列出（见 `scanSessions`）；存的是绝对路径。
     //   ⚠ 这些目录里的照片**不会**被拷进照片库 —— 原目录被删/改名，它们就从列表里消失
@@ -207,8 +210,9 @@ function starDirOf(star) {
  *   然后"同一个目录在库里显示 12 张、在库外那栏显示 9 张"这种对不上就会冒出来。
  * @param {string} full 目录绝对路径
  * @param {string[]} [names] 已经 readdir 过的名字（省一次系统调用）
+ * @param {{allowRawOnly?: boolean}} [opts] 见下面那个分支的注释
  */
-function describeSessionDir(full, names) {
+function describeSessionDir(full, names, opts) {
   let list = names;
   if (!list) {
     try {
@@ -219,7 +223,23 @@ function describeSessionDir(full, names) {
   }
   const jpgs = list.filter((f) => IMG_EXT.test(f));
   const subNames = list.filter((f) => THEME_SUBDIRS.includes(f));
-  if (!jpgs.length && !subNames.length) return null;   // 不是主题
+  if (!jpgs.length && !subNames.length) {
+    /* ★ 库外目录特有的一条岔路（`opts.allowRawOnly`）：一个 JPG 都没有、但有一堆 RAW
+       ⇒ 我们**主动**去给它建一份预览索引（抠每张 RAW 里相机自带的机内 JPG，
+          见 `tools/make_jpg_index.py`），所以它算"能用的照片目录"，张数按 RAW 数。
+       不做这一步的话，把"只拷了 RAF"的文件夹「加入目录」进来，界面上是**空的**
+       —— 看着像"这个目录里没东西"，其实是"工作台只按 JPG 列图"。
+       ⚠ 库内主题**不走**这条（`scanSessions` 不传这个开关）：库里的片导入时就带 JPG，
+         而且突然冒出一批"只有 RAF"的主题会打乱他现有的列表 —— 那是我替他做的决定，不是他要的。 */
+    if (opts && opts.allowRawOnly) {
+      const stems = new Set();
+      for (const f of list) {
+        if (RAW_EXT.test(f)) stems.add(f.replace(/\.[^.]+$/, '').toUpperCase());
+      }
+      if (stems.size) return { count: stems.size, archivedCount: 0, hasRaw: true, rawOnly: true };
+    }
+    return null;   // 不是主题
+  }
   // count 按文件名去重：桶里多是 root 同名复制件/成片，重复计数会虚高
   const rootSet = new Set(jpgs.map((f) => f.toLowerCase()));
   let count = jpgs.length;
@@ -236,6 +256,137 @@ function describeSessionDir(full, names) {
     if (ARCHIVED_SUBDIRS.includes(sub)) archivedCount += sj.length;
   }
   return { count, archivedCount, hasRaw };
+}
+
+/* =========================================================
+   库外目录的**预览索引**（只有"纯 RAW 目录"才用得上）
+   ---------------------------------------------------------
+   ⚠ 起因：工作台列图**只按 JPG 列**（`IMG_EXT`），RAW 只当"这张有 RAF"的角标。
+     所以把卡上"只拷了 RAF"的文件夹加进来，界面上是**空的** ——
+     看着像"目录里没东西"，其实是"它一张 JPG 都没有"。这正是最烦的那类
+     "看着对、其实对不上"：不止没报错，连个可疑的地方都没有。
+   ★ 解法：给这种目录**自动生成一份预览索引** —— 把每张 RAW 里相机自带的机内 JPG
+     抠出来、缩到长边 1600，存进应用缓存目录（`%APPDATA%\svstudio\extpreview\`），
+     工作台读缓存列图。实测 3~4 ms/张、约 300 KB/张（700 张的目录 ≈ 200 MB）。
+     （抠内嵌 JPG 只是从文件里取现成的一段；真解码一张 4400 万像素要好几秒。）
+   ★★ 源目录**一个字节都不动**（脚本只读，只往缓存写）；缓存可以整个删，下次自动重做。
+   ★★ 出图（渲染）**仍然用源目录的 RAW** —— 缓存里那份 `_src.txt` 就是干这个的，
+     见 `attachLoadPath`。没有它，渲染会从 1600 的缩略图上做：
+     能出图、界面也不报错，画质悄悄掉了。
+   ★ 移除目录时**缓存留着**：下次加回来不用重转（反正缓存在应用目录里，不会脏他的盘）。
+   ========================================================= */
+
+/** 预览索引的根：应用缓存目录（**不写死任何本机路径、不进他的照片目录**，要开源） */
+let _extIndexRoot = null;
+function extIndexRoot() {
+  if (!_extIndexRoot) {
+    _extIndexRoot = path.join(app.getPath('userData'), 'extpreview');
+    try {
+      fs.mkdirSync(_extIndexRoot, { recursive: true });
+    } catch (e) { /* ignore */ }
+    /* 放一份人话说明：这个文件夹是**缓存**，删了不影响任何照片 */
+    try {
+      const note = path.join(_extIndexRoot, '_说明.txt');
+      const txt = [
+        '这个文件夹是什么：',
+        '',
+        '  它是 svStudio 的**缓存**，专门装「加入目录…」挂进来的那些',
+        '  "只有 RAW、没有 JPG"的目录的预览小图（把每张 RAW 里相机自带的机内',
+        '  JPG 抠出来、缩到长边 1600）。工作台靠它才能把这类目录列出来。',
+        '',
+        '可以删吗：',
+        '',
+        '  可以。整个文件夹删掉都行 —— 你的照片一个字节都没动过，',
+        '  （照片还在原来的目录里），下次把目录加进来会自动重做一遍。',
+        '',
+        '为什么占地方：',
+        '',
+        '  约 300 KB/张。700 张的目录大概 200 MB。',
+        '',
+      ].join('\r\n');
+      let old = '';
+      try { old = fs.readFileSync(note, 'utf8'); } catch (e2) { old = ''; }
+      if (old !== txt) fs.writeFileSync(note, txt, 'utf8');
+    } catch (e) { /* 说明写不进去不影响功能 */ }
+  }
+  return _extIndexRoot;
+}
+
+/** 源目录 → 它的索引目录（名字里带目录名 + 8 位哈希，一眼能看出对的是谁、也绝不撞名） */
+function extIndexDirFor(srcDir) {
+  const norm = String(srcDir).replace(/[\\/]+$/, '');
+  const h = crypto.createHash('sha1')
+    .update(norm.replace(/\\/g, '/').toLowerCase())
+    .digest('hex')
+    .slice(0, 8);
+  const base = (path.basename(norm) || 'dir').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').slice(0, 24);
+  return path.join(extIndexRoot(), base + '@' + h);
+}
+
+/** 源目录里"只有 RAW"的那些片的 stem（**有同名 JPG 的不算** —— 那些工作台本来就能列，
+ *  再索引一份纯属浪费，而且会让同一张片在列表里出现两条）。
+ *  返回 `null` = 目录读不到（和"空数组"不是一回事）。 */
+function rawOnlyStems(srcDir) {
+  let files = [];
+  try {
+    files = fs.readdirSync(srcDir);
+  } catch (e) {
+    return null;
+  }
+  const jpgStems = new Set();
+  for (const f of files) {
+    if (IMG_EXT.test(f)) jpgStems.add(f.replace(/\.[^.]+$/, '').toUpperCase());
+  }
+  const out = [];
+  for (const f of files) {
+    if (!RAW_EXT.test(f)) continue;
+    const s = f.replace(/\.[^.]+$/, '').toUpperCase();
+    if (jpgStems.has(s) || out.indexOf(s) >= 0) continue;
+    out.push(s);
+  }
+  return out;
+}
+
+/** 这份索引够不够用：源目录的纯 RAW **逐张**都在缓存里，而且 `_src.txt` 指着源目录。
+ *  ★ 逐张比 stem —— 不是比张数："张数一样但换了一批片"真的会发生。 */
+function extIndexNeeds(srcDir) {
+  const stems = rawOnlyStems(srcDir);
+  const dir = extIndexDirFor(srcDir);
+  if (!stems || !stems.length) {
+    return { need: false, dir: dir, have: 0, want: 0, miss: 0, markerOk: false, stems: stems || [] };
+  }
+  const have = new Set();
+  try {
+    for (const f of fs.readdirSync(dir)) {
+      if (IMG_EXT.test(f)) have.add(f.replace(/\.[^.]+$/, '').toUpperCase());
+    }
+  } catch (e) { /* 索引还没建 ⇒ have 空 */ }
+  const miss = stems.filter((s) => !have.has(s));
+  /* ⚠ `_src.txt` 必须指着**这个**源目录：它是出图源的凭据。
+     缺了 / 指错了 ⇒ 当"要重建"处理（脚本会跳过已有的图、只把这份标记补上）。 */
+  let marker = '';
+  try {
+    marker = fs.readFileSync(path.join(dir, '_src.txt'), 'utf8')
+      .replace(/^\uFEFF/, '').trim().split(/\r?\n/)[0].trim();
+  } catch (e) { marker = ''; }
+  const markerOk = !!marker && path.resolve(marker).toLowerCase() === path.resolve(srcDir).toLowerCase();
+  return {
+    need: miss.length > 0 || !markerOk,
+    dir: dir, have: have.size, want: stems.length, miss: miss.length, markerOk: markerOk, stems: stems,
+  };
+}
+
+/** 索引目录（缓存）→ 它对应的**源目录**（= 出图源）。不是索引目录就返回空串。
+ *  ⚠ 源目录已经不在了 ⇒ 也返回空串（此时只能拿缓存里的小图顶着看）。 */
+function sessionSrcDir(sessionPath) {
+  try {
+    const f = path.join(sessionPath, '_src.txt');
+    if (!fs.existsSync(f)) return '';
+    const s = fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, '').trim().split(/\r?\n/)[0].trim();
+    return s && fs.existsSync(s) ? s : '';
+  } catch (e) {
+    return '';
+  }
 }
 
 /** 在 `used`（小写名字集合）里取一个**唯一**的名字，重了就加 ` ·2` ` ·3` */
@@ -281,26 +432,57 @@ function extraSessions(used) {
       });
       continue;
     }
-    const self = describeSessionDir(dir, entries.map((e) => e.name));
-    if (self) {
-      out.push(Object.assign({
-        name: uniqueName(used, path.basename(dir) || dir),
-        path: dir, external: true, rootDir: dir,
-      }, self));
+    const self = describeSessionDir(dir, entries.map((e) => e.name), { allowRawOnly: true });
+    /* ★★ `self.rawOnly` 的根 **不能**像普通照片目录那样"它自己一条、不再往下拆"：
+       "纯 RAW" 的判定只看**根这一层**（根上没有 JPG）—— 根上那几张 RAF 不该把底下
+       那些正常主题盖掉。实测（`_probe_extroots_real.mjs` ②）：
+         `D:\照片库\爆光修复` 根上是 4 张 RAF、底下 `x100vi` 还有 6 张 JPG，
+         要是根"一条封顶"，`x100vi` 那 6 张就从列表里凭空消失了。
+       ⇒ 有 JPG 的照片目录照旧"一条封顶"；纯 RAW 的根**自己列一条、子目录也照列**。 */
+    if (self && !self.rawOnly) {
+      out.push(externalSessionEntry(dir, path.basename(dir) || dir, used, dir, self));
       continue;
+    }
+    if (self) {
+      out.push(externalSessionEntry(dir, path.basename(dir) || dir, used, dir, self));
     }
     for (const e of entries) {
       if (!e.isDirectory() || e.name.startsWith('.')) continue;
       const full = path.join(dir, e.name);
-      const info = describeSessionDir(full);
+      const info = describeSessionDir(full, null, { allowRawOnly: true });
       if (!info) continue;
-      out.push(Object.assign({
-        name: uniqueName(used, e.name),
-        path: full, external: true, rootDir: dir,
-      }, info));
+      out.push(externalSessionEntry(full, e.name, used, dir, info));
     }
   }
   return out;
+}
+
+/**
+ * 库外目录 → 一条主题条目（`extraSessions` 的零件，抽出来是为了两条分支共用一份）。
+ *
+ * ★★ `rawOnly`（一个 JPG 都没有、只有 RAW）的时候，**`path` 指向的是预览索引目录
+ *    （缓存）**，不是源目录 —— 这样列图 / 缩略图 / EXIF / 打星全部照旧走现成的那套
+ *    （它们都只认 `sessionPath + rel`），只有"喂引擎出图"那一处需要知道真身是谁：
+ *    靠缓存里的 `_src.txt`（见 `attachLoadPath` / `sessionSrcDir`）。
+ * ⚠ `srcDir` 一定留着 —— 它才是**出图源**。丢了它 = 拿 1600 的缩略图去渲染。
+ * ⚠ `needsIndex` 只是"界面该去建一次索引"的旗子（还没建 / 源目录又多了新片），
+ *    不是错误。
+ */
+function externalSessionEntry(full, name, used, rootDir, info) {
+  const e = Object.assign({
+    name: uniqueName(used, name),
+    path: full, external: true, rootDir: rootDir,
+  }, info);
+  if (info.rawOnly) {
+    const st = extIndexNeeds(full);
+    e.srcDir = full;
+    e.indexDir = st.dir;
+    e.path = st.dir;
+    e.needsIndex = st.need;
+    e.rawCount = st.want;
+    e.indexMiss = st.miss;
+  }
+  return e;
 }
 
 /**
@@ -382,9 +564,13 @@ function listPhotos(sessionPath) {
  *    没有 RAW，自然回落到 JPG（此时入口那两根滑杆仍然是死的，面板上会标 `JPG 出图`）。
  */
 function attachLoadPath(sessionPath, photos) {
+  /* ★★ 预览索引目录（库外·纯 RAW）里**没有 RAW** —— 出图源在它的源目录里，
+     凭据是缓存里那份 `_src.txt`（见 `sessionSrcDir`）。
+     读不到它，渲染就会从 1600 的缩略图上做：能出图、不报错，画质悄悄掉了。 */
+  const srcDir = sessionSrcDir(sessionPath) || sessionPath;
   const rawByName = new Map();          // UPPER(stem) -> 真实文件名
   try {
-    for (const f of fs.readdirSync(sessionPath)) {
+    for (const f of fs.readdirSync(srcDir)) {
       if (RAW_EXT.test(f)) rawByName.set(f.replace(/\.[^.]+$/, '').toUpperCase(), f);
     }
   } catch (err) { /* 目录读不到就当没有 RAW */ }
@@ -393,7 +579,7 @@ function attachLoadPath(sessionPath, photos) {
     const stem = base.replace(/\.[^.]+$/, '').toUpperCase();
     const raw = rawByName.get(stem);
     if (raw) {
-      p.loadPath = path.join(sessionPath, raw);
+      p.loadPath = path.join(srcDir, raw);
       p.loadIsRaw = true;
     } else {
       const inRoot = path.join(sessionPath, base);
@@ -1429,13 +1615,23 @@ function runImport(args, onLine) {
       error: '没配置导入脚本路径（配置项 importScript 或环境变量 SVIMPORT_SCRIPT）',
     });
   }
-  const py = importPy();
+  return spawnPy(importPy(), script, args, onLine);
+}
+
+/**
+ * 起一个 python 脚本子进程，把 stdout+stderr **逐行**喂给 `onLine`。
+ *
+ * ★**导入和预览索引共用这一份** —— 两处各写一遍的话，"一个汉字被切在两个 chunk 之间"
+ *   这类边界迟早只在一处修，另一处就开始间歇性地出乱码。
+ * @returns {Promise<{ok:boolean, code?:number, text:string, error?:string}>}
+ */
+function spawnPy(py, script, args, onLine) {
   return new Promise((resolve) => {
     let child;
     try {
       child = spawn(py, [script].concat(args || []), { windowsHide: true });
     } catch (err) {
-      return resolve({ ok: false, text: '', error: '起不了导入进程：' + err.message });
+      return resolve({ ok: false, text: '', error: '起不了子进程：' + err.message });
     }
     const dec = new StringDecoder('utf8');
     let text = '';
@@ -1548,5 +1744,92 @@ ipcMain.handle('import-run', async (e, opts) => {
     plan,
     error: r.error || plan.error || '',
   };
+});
+
+/* =========================================================
+   库外·纯 RAW 目录 → 预览索引（见前面 `extIndexRoot` 那段注释）
+   ---------------------------------------------------------
+   ★ 复用导入那一套：主进程起子进程、把脚本的 stdout 逐行**推成事件**
+     （`ext-index-progress`），不是等 invoke 返回 —— 几百张要转几十秒，
+     等返回才显示的话界面全程像死机（这正是「看不出哪里不对」的另一副面孔）。
+   ★ 脚本在仓库里（`tools/make_jpg_index.py`），不用 SV 配路径；
+     解释器走 环境变量 SVEXTINDEX_PY → 配置 extIndexPy → 引擎那份（要 rawpy + PIL）。
+   ========================================================= */
+
+function extIndexScriptPath() {
+  return path.join(__dirname, 'tools', 'make_jpg_index.py');
+}
+
+/** 跑索引脚本用哪份 Python（要能 `import rawpy` + `PIL`） */
+function extIndexPy() {
+  let cfg = '';
+  try {
+    cfg = String(loadConfig().extIndexPy || '').trim();
+  } catch (e) {
+    /* app 还没 ready 之类 */
+  }
+  const env = String(process.env.SVEXTINDEX_PY || '').trim();
+  for (const c of [env, cfg]) {
+    if (c && fs.existsSync(c)) return c;
+  }
+  return enginePy();
+}
+
+function sendExtIndexProgress(line) {
+  try {
+    if (win && !win.isDestroyed()) win.webContents.send('ext-index-progress', line);
+  } catch (e) {
+    /* 窗口没了就算了 —— 转图本身还在跑，不该因此中断 */
+  }
+}
+
+/** 从脚本输出里取结果行（`KS_EXT_INDEX_OK {...}`）。**格式在脚本里，别改那行。** */
+function parseExtIndexOutput(text) {
+  const m = String(text || '').match(/KS_EXT_INDEX_OK\s+(\{[^\n]*\})/);
+  if (!m) {
+    return { ok: false, n: 0, skip: 0, fail: 0, error: '索引脚本没给出结果行（看下面的输出）' };
+  }
+  try {
+    return Object.assign({ ok: true }, JSON.parse(m[1]));
+  } catch (e) {
+    return { ok: false, n: 0, skip: 0, fail: 0, error: '结果行解析失败：' + e.message };
+  }
+}
+
+/**
+ * 给一个**纯 RAW 的库外目录**建/补它的预览索引。幂等：已经有的不会重转。
+ *
+ * 返回 `{ok, n, skip, fail, dir, text, error}`；`n` = 这次真转出来的张数。
+ * ⚠ 目录读不到 / 脚本不在 / 解释器起不来 ⇒ `ok:false` **并把原因说出来**：
+ *   此时那个目录在左栏里会是空的，而"空"和"坏了"在界面上长得一样，
+ *   不报原因就等于没做（这是本轮反复踩的同一个坑）。
+ */
+ipcMain.handle('ext-index', async (e, srcDir) => {
+  const dir = String(srcDir || '').trim();
+  if (!dir || !fs.existsSync(dir)) {
+    return { ok: false, n: 0, skip: 0, fail: 0, error: '目录不存在：' + (dir || '(空)') };
+  }
+  const st = extIndexNeeds(dir);
+  if (!st.stems.length) {
+    return { ok: true, n: 0, skip: 0, fail: 0, dir: st.dir, text: '', note: '这个目录没有"纯 RAW"的片' };
+  }
+  if (!st.need) {
+    return { ok: true, n: 0, skip: st.want, fail: 0, dir: st.dir, text: '', note: '预览索引已经是最新的' };
+  }
+  const script = extIndexScriptPath();
+  if (!fs.existsSync(script)) {
+    return { ok: false, n: 0, skip: 0, fail: 0, error: '预览索引脚本不在：' + script };
+  }
+  sendExtIndexProgress(
+    '要给 ' + st.want + ' 张纯 RAW 生成预览小图（缺 ' + st.miss + ' 张，源目录只读）…'
+  );
+  const r = await spawnPy(
+    extIndexPy(),
+    script,
+    ['--src=' + dir, '--out=' + st.dir],
+    (line) => sendExtIndexProgress(line)
+  );
+  const out = parseExtIndexOutput(r.text);
+  return Object.assign({ text: r.text }, out, { error: out.error || r.error || '' });
 });
 

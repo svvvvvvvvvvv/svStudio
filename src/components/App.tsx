@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Box, Flex, Text } from '@radix-ui/themes';
 import type { VirtuosoHandle } from 'react-virtuoso';
 import { useStore } from '../store/useStore';
+import { API } from '../api';
 import { TopBar } from './TopBar';
 import { HomeView } from './HomeView';
 import { Dock } from './Dock';
@@ -41,6 +42,10 @@ export function App() {
     loadSessions();
     loadEngine();
   }, [loadSessions, loadEngine]);
+
+  /* 库外·纯 RAW 目录生成预览小图：进度是**主进程推的事件**，不是 invoke 的返回值 ——
+     一次几百张要转几十秒，等返回值才刷新的话遮罩上一直是刚开头那行字（看着像卡死）。 */
+  useEffect(() => API.onExtIndexProgress((line) => useStore.getState().setBusyText(line)), []);
 
   /* ★ 进调色台：① 先把引擎拉起来（开机那刻通常还没起，不拉的话卷/基准/滑杆全是空的）
      ② 再自动出一次图 —— 这是 SV 09-15 定的两个渲染触发点之一，另一个是右栏的「渲染」按钮。

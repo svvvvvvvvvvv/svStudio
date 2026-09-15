@@ -131,13 +131,30 @@ await page.addInitScript(() => {
         { name: '主题B', count: 34, path: 'D:\\lib\\主题B' },
       ]);
       const ex = window.__extraRoots || [];
-      return base.concat(ex.map((d) => ({
-        name: String(d).split(/[\\/]/).filter(Boolean).pop(),
-        path: d,
-        count: 40,
-        external: true,
-        rootDir: d,
-      })));
+      /* ★ 「只有 RAW、没 JPG」的那种库外目录：`path` 指向的是**预览索引**（缓存），
+         真身在 `srcDir`（照 `main.js` 的 `externalSessionEntry` 抄）。
+         ⚠ 不照抄这一条，「点纯 RAW 条目时是拿哪个目录去建索引」和
+           「建完重扫，待建标记要消失」都测不到。开关放 window 上、方法里现读。 */
+      const rawOnly = String(window.__rawOnlyDir || '').toLowerCase();
+      return base.concat(ex.map((d) => {
+        const e = {
+          name: String(d).split(/[\\/]/).filter(Boolean).pop(),
+          path: d,
+          count: 40,
+          external: true,
+          rootDir: d,
+        };
+        if (rawOnly && String(d).toLowerCase() === rawOnly) {
+          e.rawOnly = true;
+          e.srcDir = d;
+          e.indexDir = 'C:\\cache\\extpreview\\idx@1';
+          e.path = 'C:\\cache\\extpreview\\idx@1';
+          e.needsIndex = !window.__indexBuilt;
+          e.rawCount = 3;
+          e.count = 3;
+        }
+        return e;
+      }));
     },
     /* ★★ 出图源也要照生产端抄：`main.js` 的 `attachLoadPath()` 会给每张算出 `loadPath`
        （**同名 RAW 优先**，没有 RAW 的主题才回落 JPG）。这里故意混着给：
@@ -383,6 +400,30 @@ await page.addInitScript(() => {
       window.__importCb = cb;
       return () => {
         window.__importCb = null;
+      };
+    },
+
+    /* ---- 库外·纯 RAW 目录的**预览索引** ----
+       ⚠ 又一处「mock 必须实现前端会调的每一个 IPC」：漏了 `extIndex`，
+       「加入目录」点下去会连续抛未捕获 TypeError（`addExtraRootDir` 里那次），
+       而且「到底拿哪个目录去建索引」永远测不到。
+       形状照 `main.js` 的 `ext-index` 抄：`{ ok, n, skip, fail, dir, text, error, note? }`。
+       ★ 故意**先推一行进度再等 400 ms 才返回** —— 进度是**主进程推的事件**，
+         不是 invoke 的返回值；不等一下的话「进度到了界面」这条没法断言。 */
+    extIndex: async (srcDir) => {
+      (window.__extIndexed = window.__extIndexed || []).push(srcDir);
+      if (window.__extIdxCb) window.__extIdxCb('  3/3  已生成 DSCF0003.JPG  (300 KB)');
+      await new Promise((r) => setTimeout(r, 400));
+      if (window.__extIndexFail) {
+        return { ok: false, n: 0, skip: 0, fail: 0, error: '自检假装建不了（缺 rawpy）' };
+      }
+      window.__indexBuilt = true;      // 照生产端：建完之后重扫就该不再标「待生成」
+      return { ok: true, n: 3, skip: 0, fail: 0, dir: 'C:\\cache\\extpreview\\idx@1' };
+    },
+    onExtIndexProgress: (cb) => {
+      window.__extIdxCb = cb;
+      return () => {
+        window.__extIdxCb = null;
       };
     },
   };
@@ -1488,6 +1529,79 @@ console.log('\n[16] 加入目录（库外目录：原地读）');
       Array.isArray(saved2.extraRoots) && saved2.extraRoots.length === 1,
       JSON.stringify(saved2.extraRoots || null), '不移除 ⇒ 加错了就永远赖在那儿');
   }
+}
+
+/* ---------- [17] 库外·纯 RAW 目录 ⇒ 预览小图（源目录只读） ---------- */
+/* ★ 这一组盯的是「工作台只按 JPG 列图」这个真限制的**补救**：
+   只拷了 RAF 的目录加进来后，在列表上必须看得见张数、点进去要能看到片子。
+   两个最容易坏的地方（都很像"没反应"）：
+     ① 拿**缓存目录**去建索引（应该拿源目录） ⇒ 建出来永远是空的；
+     ② 建不了却不报原因 ⇒ 那个目录在左栏里就是**空的**，「空」和「坏了」长得一样。 */
+console.log('\n[17] 加入目录：纯 RAW 目录 ⇒ 预览小图');
+{
+  await page.addInitScript(() => {
+    window.__extraRoots = ['D:\\拍摄素材\\纯RAW'];
+    window.__rawOnlyDir = 'D:\\拍摄素材\\纯RAW';
+    window.__indexBuilt = false;
+  });
+  await page.reload();
+  await page.waitForTimeout(1800);
+
+  const item = page.locator('[data-session-ext]').first();
+  const before = await item.innerText();
+  check('★ 纯 RAW 目录在列表里显示的是 **RAW 张数**（不是 0 张）',
+    /3 张/.test(before), before.replace(/\n/g, ' '),
+    `显示的是 ${before.replace(/\n/g, ' ')} ⇒ 一个 JPG 都没有的目录会被数成 0 张，` +
+      '用户一看 0 张就以为白加了');
+  check('★ 索引还没生成时，条目上写明「预览待生成」',
+    /预览待生成/.test(before), before.replace(/\n/g, ' '),
+    '不写 ⇒ 用户点进去看到空的，只能猜是目录空了还是台子坏了');
+
+  /* ---- ① 点它 ⇒ 先拿**源目录**去建索引 ---- */
+  await page.evaluate(() => { window.__extIndexed = []; });
+  await item.click();
+  /* ★ 不等 click 跑完就采样：进度是**边跑边推**的，等完了才看就看不见了 */
+  await page.waitForTimeout(250);
+  const mid = await page.locator('body').innerText();
+  check('★ 建索引的进度**在跑的过程中**就到了界面（不是等返回值）',
+    /已生成 DSCF0003\.JPG/.test(mid), '',
+    '等 invoke 返回才显示 ⇒ 一次几百张要几十秒，界面全程像死机');
+
+  await page.waitForTimeout(1500);
+  const asked = await page.evaluate(() => window.__extIndexed || []);
+  check('★★★ 点纯 RAW 的条目 ⇒ 拿的是**源目录**去建索引（不是缓存目录）',
+    asked.length === 1 && asked[0] === 'D:\\拍摄素材\\纯RAW', JSON.stringify(asked),
+    `传的是 ${JSON.stringify(asked)} ⇒ 拿缓存目录去扫，永远扫不出 RAW，` +
+      '建出来是空的，而界面上一点错都看不到');
+
+  const after = await page.locator('[data-session-ext]').first().innerText();
+  check('★ 索引建完重扫 ⇒ 「预览待生成」没了（列表真的重扫了）',
+    !/预览待生成/.test(after), after.replace(/\n/g, ' '),
+    `还是 ${after.replace(/\n/g, ' ')} ⇒ 重扫没发生，用户以为没建成功，又点一遍`);
+
+  const listed = await page.evaluate(() => window.__listPaths || []);
+  check('★ 进这个主题去列图时读的是**缓存目录**（那儿才有那批预览小图）',
+    listed[listed.length - 1] === 'C:\\cache\\extpreview\\idx@1',
+    JSON.stringify(listed[listed.length - 1]),
+    `读的是 ${JSON.stringify(listed[listed.length - 1])} ⇒ 源目录里一个 JPG 都没有，进去就是空的`);
+}
+
+/* ---- ② 建不了的时候必须说出原因（不静默） ---- */
+{
+  await page.addInitScript(() => {
+    window.__extraRoots = ['D:\\拍摄素材\\纯RAW'];
+    window.__rawOnlyDir = 'D:\\拍摄素材\\纯RAW';
+    window.__indexBuilt = false;
+    window.__extIndexFail = true;
+  });
+  await page.reload();
+  await page.waitForTimeout(1800);
+  await page.locator('[data-session-ext]').first().click();
+  await page.waitForTimeout(1200);
+  const t = await page.locator('body').innerText();
+  check('★★ 索引建不了 ⇒ 界面上要**说出原因**（否则那目录永远是空的，而"空"和"坏了"一样）',
+    /预览小图没生成/.test(t), '',
+    '不出声的话，用户看到的就是一个空主题，无法区分"目录里本来就没片"和"建索引坏了"');
 }
 
 /* ---------- 收尾：整轮跑下来有没有未捕获报错 ---------- */

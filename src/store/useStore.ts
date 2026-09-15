@@ -40,6 +40,14 @@ export interface ImportForm {
 /** 导入对话框最多留多少行日志（一次几百张也就几十行，留够看现场就行） */
 const IMPORT_LOG_MAX = 400;
 
+/**
+ * 「这个库外目录已经试过建预览索引、但**失败了**」—— 每个进程只试一次。
+ * ★ 为什么要记：失败的原因通常是**环境和依赖**（没装 rawpy / 脚本不在 / 盘掉线），
+ *   重试一百次也是同一个结果。反复弹"没生成"只会训练用户忽略提示。
+ * ⚠ 只记**失败**：成功的不记 —— 源目录后来多了新片还要能重跑（`needsIndex` 会再亮）。
+ */
+const _indexFailed = new Set<string>();
+
 interface AppState {
   /* ---- 配置与库 ---- */
   libRoot: string;
@@ -97,6 +105,8 @@ interface AppState {
   importRunning: boolean;
   /** 预演本身的忙碌（和 importRunning 分开：预演也转圈，但不算"在拷"） */
   importBusy: boolean;
+  /** 有一发"建预览索引"在跑（库外·纯 RAW 目录 ⇒ 抠内嵌机内 JPG 写缓存） */
+  extIndexBusy: boolean;
 
   /* ---- actions ---- */
   setReady: (v: boolean) => void;
@@ -111,6 +121,14 @@ interface AppState {
   addExtraRootDir: (dir: string) => Promise<void>;
   /** 移除一个库外目录（只从列表去掉，**不删任何文件**）。正在看它 ⇒ 回首页。 */
   removeExtraRootDir: (dir: string) => Promise<void>;
+  /** ★★ 给一个**纯 RAW 的库外目录**建/补预览索引（幂等）。
+   *  返回 true = 这次真转出了东西。失败会**把原因说出来**（不报的话那个目录就是空的）。 */
+  indexExternalDir: (srcDir: string) => Promise<boolean>;
+  /** 把列表里所有"还没建索引"的库外目录补上，返回这次总共转出的张数。
+   *  ⚠ 必须**在 `refreshSessions` 之后**调：得先有列表，才知道谁需要建。 */
+  indexMissingExternal: () => Promise<number>;
+  /** 进度行（主进程推的 `ext-index-progress`）：只刷新 busy 遮罩上的那行字 */
+  setBusyText: (t: string) => void;
   enterSession: (name: string, opts?: { silent?: boolean }) => Promise<void>;
   goHome: () => void;
   setCur: (i: number) => void;
@@ -222,6 +240,7 @@ export const useStore = create<AppState>((set, get) => ({
   importLog: [],
   importRunning: false,
   importBusy: false,
+  extIndexBusy: false,
 
   setReady: (v) => set({ ready: v }),
   setLibRoot: (v) => set({ libRoot: v }),
@@ -313,7 +332,14 @@ export const useStore = create<AppState>((set, get) => ({
     }
     await API.setConfig({ extraRoots: [...list, d] });
     await get().refreshSessions();
-    get().showToast('已加入图库目录（原地读，没有复制文件）');
+    /* ★★ 刚加进来的目录如果是"只有 RAW、没 JPG"的，光挂上去在界面上还是**空的**
+       （工作台只按 JPG 列图）⇒ 顺手把预览小图建出来。失败会自己 toast 报原因。 */
+    const built = await get().indexMissingExternal();
+    get().showToast(
+      built
+        ? `已加入图库目录（${built} 张纯 RAW 已生成预览小图，原目录没动）`
+        : '已加入图库目录（原地读，没有复制文件）'
+    );
   },
 
   /** 移除一个库外目录 —— **只从列表去掉，不删任何文件** */
@@ -337,6 +363,58 @@ export const useStore = create<AppState>((set, get) => ({
     get().showToast('已从列表移除（文件没有动）');
   },
 
+  /* =========================================================
+     库外·纯 RAW 目录的**预览小图**（索引）
+     ---------------------------------------------------------
+     ★ 工作台列图只按 JPG 列（RAW 只当"这张有 RAF"的角标）⇒ "只拷了 RAF"的文件夹
+       加进来后在界面上是**空的**，看着像"这个目录里没东西"。
+       真正的解法在 main.js + `tools/make_jpg_index.py`：把每张 RAW 里相机自带的
+       机内 JPG 抠出来、缩到长边 1600，写进应用缓存（源目录**只读**）。
+     ★ 出图（渲染）仍然用源目录的 RAW —— 那条线在 main.js 的 `attachLoadPath`。
+     ========================================================= */
+
+  indexExternalDir: async (srcDir) => {
+    const d = String(srcDir || '').trim();
+    if (!d) return false;
+    /* 已经试过、且失败过 ⇒ 本轮不再重试（原因多半是环境/依赖，重试结果一样） */
+    if (_indexFailed.has(normPath(d))) return false;
+    set({ extIndexBusy: true, busy: true, busyText: '正在生成预览小图…' });
+    try {
+      const r = await API.extIndex(d);
+      if (!r?.ok) {
+        _indexFailed.add(normPath(d));
+        /* ★★ 必须说出来：不报的话那个目录在左栏里就是**空的**，
+           而"空"和"坏了"在界面上长得一模一样（本轮反复踩的就是这个）。 */
+        get().showToast('预览小图没生成：' + (r?.error || '原因没返回'));
+        return false;
+      }
+      return !!r.n;
+    } catch (e) {
+      _indexFailed.add(normPath(d));
+      get().showToast('预览小图没生成：' + String(e));
+      return false;
+    } finally {
+      set({ extIndexBusy: false, busy: false, busyText: '' });
+    }
+  },
+
+  indexMissingExternal: async () => {
+    /* ⚠ 先把列表**拷一份**再遍历：下面 `refreshSessions()` 会把 sessions 整个换掉，
+       直接 for...of 原数组在 React 里是能跑，但依赖"数组变量本身没被改"这个隐含前提
+       —— 前提一变（比如以后改成原地 splice）就静默漏掉几条。 */
+    const list = get().sessions.slice();
+    let built = 0;
+    for (const s of list) {
+      if (!(s.external && s.needsIndex && s.srcDir)) continue;
+      if (await get().indexExternalDir(s.srcDir)) built += Number(s.rawCount) || 0;
+      await get().refreshSessions();      // 建完重扫：张数 / 待建标记要跟着变
+    }
+    return built;
+  },
+
+  setBusyText: (t) =>
+    set((s) => (s.busy ? { busyText: String(t || '') } : {})),
+
   enterSession: async (name, opts) => {
     const root = get().libRoot;
     /* ★★ 路径**必须从列表里拿**（`s.path`），不能自己拼 `root + '\\' + name`：
@@ -346,6 +424,14 @@ export const useStore = create<AppState>((set, get) => ({
     const s = get().sessions.find((x) => x.name === name);
     const sessionPath = (s && s.path) || (root ? root + '\\' + name : '');
     if (!sessionPath) return;
+    /* ★★ 纯 RAW 的库外目录：列图读的是**预览索引**（缓存），索引还没建 / 源目录又多了新片
+       ⇒ 先补上再去列图。不补的话列表里张数看得见、点进去却是**空主题**
+       —— "显示 4 张 / 里面 0 张"这种对不上，比直接报错还难查。 */
+    if (s && s.needsIndex && s.srcDir) {
+      set({ busy: true, busyText: '正在生成预览小图…' });
+      await get().indexExternalDir(s.srcDir);
+      await get().refreshSessions();
+    }
     set({ sessionPath, sessionName: name, busy: true, busyText: '读取照片…' });
     try {
       const photos = await API.listPhotos(sessionPath);

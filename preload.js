@@ -61,5 +61,19 @@ contextBridge.exposeInMainWorld('api', {
     const h = (_e, line) => cb(line);
     ipcRenderer.on('import-progress', h);
     return () => ipcRenderer.removeListener('import-progress', h);
+  },
+
+  /* ---- 库外·纯 RAW 目录的**预览索引** ----
+     ★ 工作台列图只按 JPG 列（RAW 只当"这张有 RAF"的角标）⇒ 把"只拷了 RAF"的文件夹
+       「加入目录」进来，界面上是**空的**。这里让主进程给这种目录生成一份预览小图
+       （抠每张 RAW 里相机自带的机内 JPG，缩到长边 1600，写进应用缓存目录）。
+     ★ 源目录**只读**；缓存可以整个删、下次自动重做；出图仍用源目录的 RAW。
+     ★ 幂等：已经有的不会重转（返回里 `n` = 这次真转出来的张数）。 */
+  extIndex: (srcDir) => ipcRenderer.invoke('ext-index', srcDir),
+  /** 同上，进度走事件（一次几百张要几十秒，等 invoke 返回界面就像死机了） */
+  onExtIndexProgress: (cb) => {
+    const h = (_e, line) => cb(line);
+    ipcRenderer.on('ext-index-progress', h);
+    return () => ipcRenderer.removeListener('ext-index-progress', h);
   }
 });

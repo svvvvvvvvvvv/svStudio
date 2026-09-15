@@ -79,6 +79,13 @@ declare global {
       importRun: (opts: ImportOpts) => Promise<ImportResult>;
       /** 返回取消订阅函数 */
       onImportProgress: (cb: (line: string) => void) => () => void;
+      /* ---- 库外·纯 RAW 目录的预览索引 ---- */
+      /** 给一个**纯 RAW 的库外目录**建/补预览索引（幂等）。
+       *  ★ 源目录只读；缓存写在应用目录下、可以整个删。
+       *  返回 `{ ok, n, skip, fail, dir, text, error, note? }`（`n` = 这次真转出来的张数）。 */
+      extIndex: (srcDir: string) => Promise<ExtIndexResult>;
+      /** 返回取消订阅函数 */
+      onExtIndexProgress: (cb: (line: string) => void) => () => void;
     };
   }
 }
@@ -99,6 +106,20 @@ export interface Session {
   rootDir?: string;
   /** 目录不在了（被删 / 改名）。条目照样列出来但点不进去 —— 静默消失最难查 */
   missing?: boolean;
+  /** ★★ 这一条是"纯 RAW 目录"（一个 JPG 都没有、只有 RAW，比如卡上只拷了 RAF 的那批）。
+   *  此时 `path` 指向的是**预览索引目录**（缓存），`srcDir` 才是真身。 */
+  rawOnly?: boolean;
+  /** ★★ **出图源目录**（`path` 是预览索引时必须看它）：喂引擎的 RAW 在这里。
+   *  靠缓存里的 `_src.txt` 把两边对上（main.js 的 `attachLoadPath`）。 */
+  srcDir?: string;
+  /** 预览索引目录（缓存）。`rawOnly` 时 = `path`；**移除目录不会删它** */
+  indexDir?: string;
+  /** 索引还没建 / 源目录又多了新片 ⇒ 界面去跑一次 `extIndex(srcDir)`。不是错误 */
+  needsIndex?: boolean;
+  /** 这次缺多少张（给进度提示用） */
+  indexMiss?: number;
+  /** 源目录里"纯 RAW"的张数 */
+  rawCount?: number;
   /** 老代码里 session 可能带这些：done/errors 等 */
   [k: string]: any;
 }
@@ -358,6 +379,33 @@ export interface ImportResult {
   error?: string;
 }
 
+/* ------------- 库外·纯 RAW 目录的预览索引（`ext-index`） ------------- */
+
+/**
+ * ★ 唯一出处 = `main.js` 的 `ipcMain.handle('ext-index')`；结果行由
+ *   `tools/make_jpg_index.py` 末行的 `KS_EXT_INDEX_OK {…}` 给（**别改那行的格式**）。
+ *
+ * `ok:true` + `n:0` + `note` = **没活干**（已经是最新的 / 这目录没有纯 RAW）；
+ * `ok:false` = 真出事了（脚本不在 / 解释器缺 rawpy / 目录读不到）——
+ * 这种情况下那个目录在左栏里**会是空的**，而"空"和"坏了"在界面上长得一样，
+ * 所以调用方必须把 `error` 说出来。
+ */
+export interface ExtIndexResult {
+  ok: boolean;
+  /** 这次真转出来的张数 */
+  n?: number;
+  /** 已有、跳过的张数 */
+  skip?: number;
+  fail?: number;
+  /** 索引目录（缓存） */
+  dir?: string;
+  /** 脚本原始输出（出错时给人看现场） */
+  text?: string;
+  error?: string;
+  /** 没活干时的说明（人话） */
+  note?: string;
+}
+
 /* ---------------- 封装 ---------------- */
 
 const noApi = () => {
@@ -431,4 +479,9 @@ export const API = {
   importRun: (opts: ImportOpts) => api().importRun(opts),
   /** ★ 返回**取消订阅函数**（`useEffect` 里直接 return 它） */
   onImportProgress: (cb: (line: string) => void) => api().onImportProgress(cb),
+
+  /* 库外·纯 RAW 目录的预览索引 */
+  extIndex: (srcDir: string) => api().extIndex(srcDir),
+  onExtIndexProgress: (cb: (line: string) => void) =>
+    api().onExtIndexProgress(cb),
 };

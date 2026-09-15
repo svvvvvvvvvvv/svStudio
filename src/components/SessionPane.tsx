@@ -122,7 +122,13 @@ export function SessionPane() {
                 data-session-gone={gone ? '1' : undefined}
                 disabled={gone}
                 onClick={() => enter(s.name)}
-                title={gone ? `目录不在了：${s.path || ''}` : s.path || s.name}
+                title={
+                  gone
+                    ? `目录不在了：${s.srcDir || s.path || ''}`
+                    : s.rawOnly
+                      ? `源目录：${s.srcDir || ''}\n（这个目录只有 RAW，工作台靠它的预览小图列图）`
+                      : s.path || s.name
+                }
                 style={{
                   flex: 1,
                   minWidth: 0,
@@ -161,7 +167,12 @@ export function SessionPane() {
                   )}
                 </div>
                 {typeof s.count === 'number' && !gone && (
-                  <div style={{ fontSize: 10.5, opacity: 0.6 }}>{s.count} 张</div>
+                  <div style={{ fontSize: 10.5, opacity: 0.6 }}>
+                    {s.count} 张
+                    {/* ★ "只有 RAW"的目录要靠预览小图才能列出来；还没生成的时候
+                        点进去会是空的 —— 先把原因写在张数旁边，别让人疑心戏撞。 */}
+                    {s.needsIndex ? ' · 预览待生成' : ''}
+                  </div>
                 )}
               </button>
               {s.external && (
