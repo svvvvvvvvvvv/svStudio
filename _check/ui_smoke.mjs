@@ -11,6 +11,7 @@
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
+import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -731,6 +732,112 @@ console.log('\n[11.5] 起引擎：唯一的 spawn 点 + 单飞守卫');
   check('★ 子进程的 stdout/stderr 落**日志文件**（静默正是这次查半天的原因）',
     /stdio: \['ignore', fs\.openSync\(engineLogFile\(\), 'a'\)/.test(gCode), '',
     'stdio 全 ignore ⇒ 引擎起不来时一点线索都没有');
+}
+
+/* ---------- [11.6] 出图 / 导出的**请求痕迹**（09-15 深夜 SV 选「A」） ----------
+   ★ 起因：SV 报「点出图中没反应，我看后台也没动静」，而事后**一点痕迹都查不到** ——
+     `engineGet` 一行日志都不写：请求发出去没有、超时没有、引擎回了什么，全看不见。
+   ★ 这一节盯的是「**能不能分辨下面这两种**」——它们表现一模一样、成因完全不同：
+       · 只有「发出」没有「回来」 ⇒ 卡在**引擎**里（这次的双引擎就是这种）
+       · 「发出」都没有           ⇒ 卡在**台子**这侧（导出那个「另存为」对话框还挂着 / 被取消）
+     ⇒ 所以必须记**两行**，而且**要真的跑一遍** ——
+       只查"源码里有 engineTrace 这几个字"是假绿（守卫被绕过、字串还在）。
+   ★ 只记 /load /base /render /export 这几条要等的路；/health、/stocks、/params 不记，否则刷屏。
+   ⚠ 只许从 `engineGet` 走：谁直接调 `engineGetRaw` 就**悄悄丢了日志**
+     （本项目的病根族：**绕过去 = 静默**，和"名字认不得就吞掉"是一回事）。 */
+
+console.log('\n[11.6] 出图请求的痕迹（发出去 / 回来，各一行）');
+{
+  const one = (re) => (mainJsCode.match(re) || [''])[0];
+  const traceBody = one(/function engineTrace\(line\) \{[\s\S]*?\n\}/);
+  const trSrc = (mainJsCode.match(/const ENGINE_TRACE_RE = (\/[^\n]+?\/);/) || [])[1];
+  const body = [
+    one(/const ENGINE = \{[^}]*\};/),
+    (mainJsCode.match(/const ENGINE_TRACE_RE = \/[^\n]+?\/;/) || [''])[0],
+    one(/const ENGINE_TRACE_PATH_KEYS = \{[^}]*\};/),
+    traceBody,
+    one(/function engineTraceQ\(search\) \{[\s\S]*?\n\}/),
+    one(/function engineGet\(pathname, timeoutMs\) \{[\s\S]*?\n\}/),
+    one(/function engineGetRaw\(pathname, timeoutMs\) \{[\s\S]*?\n\}/)
+  ].join('\n');
+
+  check('★★ 能把「痕迹」那一整段原样抠出来（抠不出来 ⇒ 下面全是空转）',
+    !!trSrc && !!traceBody && /function engineGetRaw\(/.test(body) && /function engineTraceQ\(/.test(body),
+    '', '改名/挪位置了，这一节必须跟着改，别让它悄悄变绿');
+
+  const logDir = fs.mkdtempSync(path.join(os.tmpdir(), 'svst-trace-'));
+  let M = null;
+  try {
+    M = new Function('fs', 'path', 'debugDir', 'http',
+      body + '; return { engineGet, engineTraceQ, ENGINE_TRACE_RE, ENGINE };'
+    )(fs, path, () => logDir, http);
+  } catch (e) {
+    M = null;
+  }
+  check('★ 这段代码能在 Node 里独立跑起来（不是只做字面检查）', !!M, '',
+    '抠出来跑不了，说明它依赖了外面没给的东西');
+
+  if (M) {
+    const logFile = path.join(logDir, 'svstudio_render.log');
+    const readLog = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : '');
+    // 挑一个几乎不可能有人在听的端口：发出去必然失败，但**失败也得留痕**
+    M.ENGINE.port = 41000 + Math.floor(Math.random() * 2000);
+    M.ENGINE.base = 'http://127.0.0.1:' + M.ENGINE.port;
+
+    await M.engineGet('/render?id=1&stock=portra400&params=A:1', 3000);
+    const lines = readLog().trim().split('\n').filter((l) => l);
+    check('★★★ 发一次 /render ⇒ 日志里正好**两行**：先「发出」后「回来」',
+      lines.length === 2 && /\[→\] render /.test(lines[0]) && /\[←\] render /.test(lines[1]),
+      '', '实际 ' + lines.length + ' 行——' + JSON.stringify(lines));
+    check('★ 「发出」那行说清在要什么（哪张 / 哪个卷 / 什么参数）',
+      /id=1/.test(lines[0] || '') && /stock=portra400/.test(lines[0] || ''), '', String(lines[0]));
+    check('★ 「回来」那行带**耗时和结果**（有耗时才能把"慢"和"没反应"分开）',
+      /\d+\.\ds/.test(lines[1] || '') && /(ok|失败：)/.test(lines[1] || ''), '', String(lines[1]));
+
+    const before = readLog();
+    await M.engineGet('/health', 1500);
+    check('★★ /health 那种探询**一行都不记**（不然拉一下滑杆日志就刷屏）',
+      readLog() === before, '', '多写了：' + JSON.stringify(readLog().slice(before.length)));
+
+    /* ---- engineTraceQ：纯函数，直接喂 ----
+       ⚠ 这里**必须用假路径**（`X:\示例库\主题A`）——真实拍摄信息不许进仓库。 */
+    const q = M.engineTraceQ;
+    const red = q('?paths=' + encodeURIComponent('X:\\示例库\\主题A\\示例0001.RAF'));
+    check('★★ 路径只剩**文件名**（日志不该出现真实目录名）',
+      red.indexOf('示例0001.RAF') >= 0 && red.indexOf('示例库') < 0 && red.indexOf('主题A') < 0, '', red);
+    const red2 = q('?src=' + encodeURIComponent('X:\\示例库\\主题A\\示例0002.RAF') +
+      '&path=' + encodeURIComponent('X:\\示例库\\主题A\\示例0002_svfilm.jpg'));
+    check('★★ src / path 一样只留文件名（导出那条路也带真实目录）',
+      red2.indexOf('示例0002.RAF') >= 0 && red2.indexOf('示例库') < 0, '', red2);
+    check('★ 不是路径的键**原样保留**（别把真正要看的信息也脱敏掉）',
+      q('?id=7&stock=portra400&side=700') === 'id=7&stock=portra400&side=700', '', q('?id=7'));
+    const long = q('?params=' + 'K'.repeat(900));
+    check('★ 超长要**截断并说明截了多少**（一行几 KB 反而看不清）',
+      long.length < 500 && /共 \d+ 字符/.test(long), '', '长度 ' + long.length);
+    check('★ 空 query 也说句话（留一段空白会让人以为日志坏了）',
+      q('') === '(无参数)' && q('?') === '(无参数)', '');
+
+    const tr = trSrc ? new Function('return ' + trSrc)() : null;
+    check('★★★ 要记的四条路都在（load / base / render / export）',
+      !!tr && ['/load', '/base', '/render', '/export'].every((p) => tr.test(p)), '');
+    check('★★ 探询那几条**不在**（/health /stocks /params）',
+      !!tr && !['/health', '/stocks', '/params'].some((p) => tr.test(p)), '');
+  }
+
+  /* ---- 接线钉子：谁都不许绕过 `engineGet` 直接调 `engineGetRaw` ---- */
+  const rawCalls = (mainJsCode.match(/\bengineGetRaw\(/g) || []).length;
+  check('★★★ `engineGetRaw(` 全仓库只出现**两处**（定义 + 包装里那一次）—— 没人绕过日志',
+    rawCalls === 2, '实际 ' + rawCalls + ' 处',
+    '有调用点绕过 ⇒ 那条路出图不留痕迹，症状还是"点了没反应、查不到"');
+  check('★ 「发出」「回来」各只有一处（`[→]` / `[←]`）',
+    (mainJsCode.match(/engineTrace\('\[→\] /g) || []).length === 1 &&
+    (mainJsCode.match(/engineTrace\('\[←\] /g) || []).length === 1, '',
+    '两处以上 ⇒ 同一次请求会写重复的行，读数的时候会以为自己看错了');
+  check('★ 和界面日志**同一个文件**（出事时只看一个地方）',
+    /svstudio_render\.log/.test(traceBody), '', '写到别处去了 ⇒ 查问题时得知道去哪个文件翻');
+  check('★★ 写日志失败**不许影响出图**（appendFileSync 外面必须有 try）',
+    /function engineTrace\(line\) \{\s*try \{/.test(traceBody), '',
+    '日志写不出去就把出图也带崩 ⇒ 为了留痕迹反而把功能搞坏');
 }
 
 /* ---------- 12. 相纸（09-15 SV 选「C」） ----------

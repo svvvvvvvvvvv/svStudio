@@ -1404,7 +1404,79 @@ ipcMain.handle('get-exif', (e, sessionPath, rel) => {
    ========================================================= */
 const ENGINE = { host: '127.0.0.1', port: 8765, base: 'http://127.0.0.1:8765' };
 
+/* ★★★ 09-15 深夜（SV 选「A」）：把「出图 / 导出」这类**要等**的请求，进出各记一行。
+ *
+ *   起因：SV 报「点出图中没反应，我看后台也没动静」，事后却**一点痕迹都查不到** ——
+ *   因为 `engineGet` 一行日志都不写：请求到底发出去没有、超时没有、引擎回了什么，全看不见。
+ *   ⇒ 查那个故障时只能靠"猜 + 复现"，成本极高，所以补上这条链的痕迹。
+ *
+ *   ★ 故意记**两行**（发出 / 回来）：只记一行的话，「发出去了但永远没回来」（卡住/超时）
+ *     跟「压根就没发出去」在日志上长得**一模一样** —— 而那正是最需要分辨的那件事：
+ *       · 只有 [→] 没有 [←] ⇒ 卡在引擎里（就是这次的双引擎情形）
+ *       · [→] 都没有        ⇒ 卡在台子这侧（例如导出那个「另存为」对话框还挂着 / 被取消）
+ *   ★ 只记 /load /base /render /export 这几条**要等几秒到几分钟**的路；
+ *     /health、/stocks、/params 那种几十毫秒的探询不记，否则拉一下滑杆日志就刷屏。
+ *   ★ 和界面日志**同一个文件**（`svstudio_render.log`）：出事时只看一个地方。
+ *   ⚠ 隐私：`/load?paths=…`、`/export?src=…&path=…` 里带**真实目录名**。
+ *     日志落在 `debugDir`（不在仓库里），但仍然只记**文件名** ——
+ *     查问题时要知道的是"哪张片"，不需要知道它放在哪个目录。
+ */
+const ENGINE_TRACE_RE = /^\/(load|base|render|export)$/;
+const ENGINE_TRACE_PATH_KEYS = { paths: 1, src: 1, path: 1 };
+
+function engineTrace(line) {
+  try {
+    const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    fs.appendFileSync(path.join(debugDir(), 'svstudio_render.log'), '[' + ts + '] ' + line + '\n');
+  } catch (e) {
+    /* 日志失败不影响主流程 */
+  }
+}
+
+/** 把 query 收成"关键信息一眼看得见"的一行：路径只剩文件名、太长就截断并说明截了多少。 */
+function engineTraceQ(search) {
+  try {
+    const q = String(search || '').replace(/^\?/, '');
+    if (!q) return '(无参数)';
+    const parts = q.split('&').map((kv) => {
+      const i = kv.indexOf('=');
+      if (i < 0) return kv;
+      const k = kv.slice(0, i);
+      if (!ENGINE_TRACE_PATH_KEYS[k]) return kv;
+      const v = decodeURIComponent(kv.slice(i + 1));
+      return k + '=' + v.split(',').map((x) => x.split(/[\\/]/).pop()).join(',');
+    });
+    const s = parts.join('&');
+    return s.length > 400 ? (s.slice(0, 400) + '…(共 ' + s.length + ' 字符)') : s;
+  } catch (e) {
+    return '(参数串解析失败)';
+  }
+}
+
 function engineGet(pathname, timeoutMs) {
+  /* ★ 包装：只加日志，**一行原逻辑都不动**（真正的实现在下面的 `engineGetRaw`）。
+     这样写的理由：原函数里有 6 处 resolve，逐个改成"先记日志再 resolve"既有漏改的风险，
+     超时那条路还会 resolve 两次（destroy 会再触发一次 error）⇒ 日志会重复。
+     包一层 `.then` 则天然只触发一次。 */
+  const t0 = Date.now();
+  let tag = null;
+  try {
+    const u0 = new URL(pathname, ENGINE.base);
+    if (ENGINE_TRACE_RE.test(u0.pathname)) tag = u0.pathname.slice(1) + ' ' + engineTraceQ(u0.search);
+  } catch (e) {
+    /* URL 非法：让下面的 engineGetRaw 去报那条错 */
+  }
+  if (tag) engineTrace('[→] ' + tag);
+  return engineGetRaw(pathname, timeoutMs).then((r) => {
+    if (tag) {
+      engineTrace('[←] ' + tag + ' ' + ((Date.now() - t0) / 1000).toFixed(1) + 's ' +
+        (r && r.ok ? 'ok' : '失败：' + ((r && r.error) || '未知')));
+    }
+    return r;
+  });
+}
+
+function engineGetRaw(pathname, timeoutMs) {
   return new Promise((resolve) => {
     let u;
     try { u = new URL(pathname, ENGINE.base); } catch (e) { return resolve({ ok: false, error: 'URL 非法' }); }
