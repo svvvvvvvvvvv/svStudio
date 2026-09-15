@@ -358,8 +358,10 @@ export const useStore = create<AppState>((set, get) => ({
     const list = get().sessions.slice();
     let built = 0;
     for (const s of list) {
-      if (!(s.external && s.needsIndex && s.srcDir)) continue;
-      if (await get().indexExternalDir(s.srcDir)) built += Number(s.rawCount) || 0;
+      /* ★ 09-15 起 `path` **就是源目录**（`s.srcDir` 那个字段没了）：
+         每张 RAW 都要一张预览小图 ⇒ 每个"加过的目录"都可能是待建状态。 */
+      if (!s.external || !s.needsIndex || !s.path) continue;
+      if (await get().indexExternalDir(s.path)) built += Number(s.rawCount) || 0;
       await get().refreshSessions();      // 建完重扫：张数 / 待建标记要跟着变
     }
     return built;
@@ -378,11 +380,11 @@ export const useStore = create<AppState>((set, get) => ({
     /* ★★ 纯 RAW 的库外目录：列图读的是**预览索引**（缓存），索引还没建 / 源目录又多了新片
        ⇒ 先补上再去列图。不补的话列表里张数看得见、点进去却是**空主题**
        —— "显示 4 张 / 里面 0 张"这种对不上，比直接报错还难查。 */
-    if (s && s.needsIndex && s.srcDir) {
+    if (s && s.needsIndex) {
       set({ busy: true, busyText: '正在生成预览小图…' });
       /* ⚠★ `true` = 这一发是**用户自己点进来的**（`silent` 那条只在开台子恢复上次的
          主题时走，那时失败记录本来就是空的）⇒ 一定重试，不许被静默拦住。 */
-      await get().indexExternalDir(s.srcDir, true);
+      await get().indexExternalDir(sessionPath, true);
       await get().refreshSessions();
     }
     set({ sessionPath, sessionName: name, busy: true, busyText: '读取照片…' });

@@ -115,11 +115,12 @@ await page.addInitScript(() => {
         { name: '主题B', count: 34, path: 'D:\\lib\\主题B' },
       ]);
       const ex = window.__extraRoots || [];
-      /* ★ 「只有 RAW、没 JPG」的那种文件夹：`path` 指向的是**预览索引**（缓存），
-         真身在 `srcDir`（照 `main.js` 的 `externalSessionEntry` 抄）。
-         ⚠ 不照抄这一条，「点纯 RAW 条目时是拿哪个目录去建索引」和
-           「建完重扫，待建标记要消失」都测不到。开关放 window 上、方法里现读。 */
-      const rawOnly = String(window.__rawOnlyDir || '').toLowerCase();
+      /* ★ 「一张 JPG 都没有、只有 RAW」的那种文件夹（照 `main.js` 的 `externalSessionEntry` 抄）：
+         **`path` 就是源目录**（09-15 起不再指向预览缓存）—— 预览小图是另一条链
+         （`viewFileOf` 去缓存取图），不影响列表/桶/星级。
+         ⚠ 不照抄这一条，「拿哪个目录去建索引」和「建完重扫，待建标记要消失」都测不到。
+         开关放 window 上、方法里现读。 */
+      const rawDir = String(window.__rawDir || '').toLowerCase();
       return base.concat(ex.map((d) => {
         const e = {
           name: String(d).split(/[\\/]/).filter(Boolean).pop(),
@@ -128,11 +129,8 @@ await page.addInitScript(() => {
           external: true,
           rootDir: d,
         };
-        if (rawOnly && String(d).toLowerCase() === rawOnly) {
-          e.rawOnly = true;
-          e.srcDir = d;
+        if (rawDir && String(d).toLowerCase() === rawDir) {
           e.indexDir = 'C:\\cache\\extpreview\\idx@1';
-          e.path = 'C:\\cache\\extpreview\\idx@1';
           e.needsIndex = !window.__indexBuilt;
           e.rawCount = 3;
           e.count = 3;
@@ -1407,14 +1405,15 @@ console.log('\n[16] 加入目录（库外目录：原地读）');
 /* ---------- [17] 库外·纯 RAW 目录 ⇒ 预览小图（源目录只读） ---------- */
 /* ★ 这一组盯的是「工作台只按 JPG 列图」这个真限制的**补救**：
    只拷了 RAF 的目录加进来后，在列表上必须看得见张数、点进去要能看到片子。
-   两个最容易坏的地方（都很像"没反应"）：
+   三个最容易坏的地方（都很像"没反应"）：
      ① 拿**缓存目录**去建索引（应该拿源目录） ⇒ 建出来永远是空的；
-     ② 建不了却不报原因 ⇒ 那个目录在左栏里就是**空的**，「空」和「坏了」长得一样。 */
-console.log('\n[17] 加入目录：纯 RAW 目录 ⇒ 预览小图');
+     ② 建不了却不报原因 ⇒ 那个目录在左栏里就是**空的**，「空」和「坏了」长得一样；
+     ③ 进去列图时读的是源目录（那儿一个 JPG 都没有）⇒ 界面空的，但不是"读缓存"。 */
+console.log('\n[17] 加入目录：只有 RAW 的目录 ⇒ 预览小图（看图走缓存、出图走原件）');
 {
   await page.addInitScript(() => {
-    window.__extraRoots = ['D:\\拍摄素材\\纯RAW'];
-    window.__rawOnlyDir = 'D:\\拍摄素材\\纯RAW';
+    window.__extraRoots = ['D:\\示例库\\纯RAW'];
+    window.__rawDir = 'D:\\示例库\\纯RAW';
     window.__indexBuilt = false;
   });
   await page.reload();
@@ -1443,7 +1442,7 @@ console.log('\n[17] 加入目录：纯 RAW 目录 ⇒ 预览小图');
   await page.waitForTimeout(1500);
   const asked = await page.evaluate(() => window.__extIndexed || []);
   check('★★★ 点纯 RAW 的条目 ⇒ 拿的是**源目录**去建索引（不是缓存目录）',
-    asked.length === 1 && asked[0] === 'D:\\拍摄素材\\纯RAW', JSON.stringify(asked),
+    asked.length === 1 && asked[0] === 'D:\\示例库\\纯RAW', JSON.stringify(asked),
     `传的是 ${JSON.stringify(asked)} ⇒ 拿缓存目录去扫，永远扫不出 RAW，` +
       '建出来是空的，而界面上一点错都看不到');
 
@@ -1453,17 +1452,18 @@ console.log('\n[17] 加入目录：纯 RAW 目录 ⇒ 预览小图');
     `还是 ${after.replace(/\n/g, ' ')} ⇒ 重扫没发生，用户以为没建成功，又点一遍`);
 
   const listed = await page.evaluate(() => window.__listPaths || []);
-  check('★ 进这个主题去列图时读的是**缓存目录**（那儿才有那批预览小图）',
-    listed[listed.length - 1] === 'C:\\cache\\extpreview\\idx@1',
+  check('★ 进这个主题去列图时读的是**源目录**（09-15 起 path 永远是源目录）',
+    listed[listed.length - 1] === 'D:\\示例库\\纯RAW',
     JSON.stringify(listed[listed.length - 1]),
-    `读的是 ${JSON.stringify(listed[listed.length - 1])} ⇒ 源目录里一个 JPG 都没有，进去就是空的`);
+    `读的是 ${JSON.stringify(listed[listed.length - 1])} ⇒ 还指着预览缓存的话，` +
+      '桶/星级也都跟着落在缓存上，缓存一删他的星级就"消失"了');
 }
 
 /* ---- ② 建不了的时候必须说出原因（不静默） ---- */
 {
   await page.addInitScript(() => {
-    window.__extraRoots = ['D:\\拍摄素材\\纯RAW'];
-    window.__rawOnlyDir = 'D:\\拍摄素材\\纯RAW';
+    window.__extraRoots = ['D:\\示例库\\纯RAW'];
+    window.__rawDir = 'D:\\示例库\\纯RAW';
     window.__indexBuilt = false;
     window.__extIndexFail = true;
   });

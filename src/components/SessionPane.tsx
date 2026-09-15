@@ -143,13 +143,7 @@ export function SessionPane() {
                 data-session-gone={gone ? '1' : undefined}
                 disabled={gone}
                 onClick={() => enter(s.name)}
-                title={
-                  gone
-                    ? `文件夹不在了：${s.srcDir || s.path || ''}`
-                    : s.rawOnly
-                      ? `源文件夹：${s.srcDir || ''}\n（这里只有 RAW，靠它的预览小图列图）`
-                      : s.path || s.name
-                }
+                title={gone ? `文件夹不在了：${s.path || s.name}` : s.path || s.name}
                 style={{
                   flex: 1,
                   minWidth: 0,
@@ -189,8 +183,8 @@ export function SessionPane() {
                 {typeof s.count === 'number' && !gone && (
                   <div style={{ fontSize: 10.5, opacity: 0.6 }}>
                     {s.count} 张
-                    {/* ★ "只有 RAW"的文件夹要靠预览小图才能列出来；还没生成的时候
-                        点进去会是空的 —— 先把原因写在张数旁边，别让人疑心戏撞。 */}
+                    {/* ★ 每张 RAW 都要先有一张预览小图（从 RAW 抠机内 JPG）；
+                        还没生完的时候点进去会是空的 —— 先把原因写在张数旁边。 */}
                     {s.needsIndex ? ' · 预览待生成' : ''}
                   </div>
                 )}

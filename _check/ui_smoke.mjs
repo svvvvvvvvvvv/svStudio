@@ -313,21 +313,18 @@ check('★ engine-render 真的走了 paramStr（没被绕过）',
 check('engine-render 里没留下"直接编码对象"的老写法',
   !/encodeURIComponent\(o\.params(?!Str)/.test(mainJsCode), '', '老写法还在');
 
-/* ---------- ★★ 09-15 出图源：必须 RAW 优先（SV 原话：「工作台本来就要优先用 raw」） ----------
-   `main.js` 的 `attachLoadPath()` 给每张照片算「喂引擎时用哪个文件」：同名 RAW 优先，
-   没有才回落到 JPG；`Viewer` 只认这一个字段，不再自己拼 `rel`。
-   **为什么这是硬要求**：入口那一段（零点/成形/趾部/高光护栏）**只在 `io.load_raw` 里跑**，
-   喂 JPG 的话「整张亮暗(总)」「暗部亮度」这两根滑杆永远是死的（实测同一张 DSCF0546：
-   走 RAW 能带动 −18.9 ~ +31.0 个 L*，走 JPG 是 0.00）。
-   ⚠ 这一段同样**不是正则看"有没有写"**，而是把 main.js 里那段源码取出来在 Node 里真跑。 */
+/* ---------- ★★ 09-15 两条链**必须分开**：看图读缓存、出图读原件 ----------
+   ① `attachLoadPath()` 算「**喂引擎**时用哪个文件」：同名 RAW 优先，没有才回落到 JPG。
+      **为什么这是硬要求**：入口那一段（零点/成形/趾部/高光护栏）**只在 `io.load_raw` 里跑**，
+      喂 JPG 的话「整张亮暗(总)」「暗部亮度」这两根滑杆永远是死的（实测同一张 DSCF0546：
+      走 RAW 能带动 −18.9 ~ +31.0 个 L*，走 JPG 是 0.00）。
+   ② `viewFileOf()` 算「**看**这张图读哪个文件」：桶里的成片读它自己，原图只有 RAW 就读
+      预览索引缓存里那份机内 JPG（1600）。
+   ★★ 两条分开是硬要求：拿 1600 去渲染＝能出图、不报错、**画质悄悄掉了**；
+      拿 RAW 当缩略图＝解不动 / 慢得离谱。
+   ⚠ 这一段**不是正则看"有没有写"**，而是把 main.js 里那段源码抽出来在 Node 里真跑。 */
 const afM = mainJsCode.match(/function attachLoadPath\(sessionPath, photos\)\s*\{[\s\S]*?\n\}/);
 check('main.js 里有 attachLoadPath（出图源的唯一出处）', !!afM, '', '函数没了？');
-/* ⚠ `attachLoadPath` 现在会调 `sessionSrcDir(sessionPath)`（预览索引目录 ⇒ 出图源在源目录里）。
-   不把它一起抽出来的话，下面那段抽出来在 Node 里一跑就 ReferenceError
-   —— 检查直接抛出去、整个自检断在那儿（这是**好事**：说明这条钩子真的在跑）。 */
-const ssdM = mainJsCode.match(/function sessionSrcDir\(sessionPath\)\s*\{[\s\S]*?\n\}/);
-check('main.js 里有 sessionSrcDir（“缓存目录 → 它的源目录”的唯一出处）', !!ssdM, '',
-  '函数没了 ⇒ attachLoadPath 取不到源目录，渲染会拿 1600 的预览小图当原图用');
 const rexM = mainJsCode.match(/const RAW_EXT = (\/[^\n]*?\/i);/);
 check('从 main.js 读到了 RAW_EXT 的定义（自检里不许另写一份）', !!rexM,
   rexM ? rexM[1] : '', '找不着 RAW_EXT');
@@ -336,8 +333,7 @@ let tmpDir = null;
 if (afM && rexM) {
   try {
     const RAWE = new Function('return ' + rexM[1])();
-    af = new Function('fs', 'path', 'RAW_EXT', (ssdM ? ssdM[0] : '') + '\n' + afM[0] +
-      '; return attachLoadPath;')(fs, path, RAWE);
+    af = new Function('fs', 'path', 'RAW_EXT', afM[0] + '; return attachLoadPath;')(fs, path, RAWE);
   } catch (e) {
     af = null;
   }
@@ -373,22 +369,47 @@ if (typeof af === 'function') {
   check('rel 带目录分隔符也认（只取文件名配 RAW）',
     ps[4].loadPath === path.join(tmpDir, 'C.RAF'), ps[4].loadPath, String(ps[4].loadPath));
 
-  /* ★★ 预览索引目录（库外·纯 RAW）：出图源必须指回**源目录**的 RAW。
-     缓存里只有长边 1600 的预览小图；不指回去 ⇒ 引擎拿它当原图渲染
-     —— 能出图、界面不报错，画质悰悰掉了（这条是这个功能最容易漏的破洞）。 */
-  const idxDir = path.join(tmpDir, '_idx');
-  const realSrc = path.join(tmpDir, '_realsrc');
-  fs.mkdirSync(idxDir);
-  fs.mkdirSync(realSrc);
-  fs.writeFileSync(path.join(realSrc, 'E.RAF'), '');
-  fs.writeFileSync(path.join(idxDir, 'E.JPG'), '');              // 缓存里只有小图，没 RAW
-  fs.writeFileSync(path.join(idxDir, '_src.txt'), realSrc + '\n');
-  const ps2 = [{ name: 'E.JPG', rel: 'E.JPG' }];
-  af(idxDir, ps2);
-  check('★★ 预览索引目录 ⇒ 出图源指回**源目录**的 RAW（不是拿缩略图渲染）',
-    ps2[0].loadPath === path.join(realSrc, 'E.RAF') && ps2[0].loadIsRaw === true,
-    ps2[0].loadPath,
-    `${ps2[0].loadPath} ⇒ 渲染会把预览小图当原图，画质悰悰掉了、界面一点看不出来`);
+  /* ★★★ `viewFileOf`：**看**这张图读哪个文件。09-15 起 `rel` 是**身份键**（`<stem>.JPG`），
+     磁盘上**不一定有**这个文件 ⇒ 直接 `path.join(dir, rel)` 会读到一个不存在的东西。
+     五条断言：桶里的成片 / 原图只有 RAW / 孤 JPG / 小写扩展名的 RAW / 什么都没有。 */
+  const vfM = mainJsCode.match(/function viewFileOf\(dir, rel\)\s*\{[\s\S]*?\n\}/);
+  check('main.js 里有 viewFileOf（“看这张图读哪个文件”的唯一出处）', !!vfM, '',
+    '函数没了 ⇒ 缩略图/大图/EXIF 又会去拼一个不存在的 <stem>.JPG（全都悄悄变空）');
+  const idxOf = (d) => path.join(tmpDir, '_idx', path.basename(d));
+  let vf = null;
+  if (vfM && rexM) {
+    try {
+      const RAWE2 = new Function('return ' + rexM[1])();
+      vf = new Function('fs', 'path', 'RAW_EXT', 'extIndexDirFor',
+        vfM[0] + '; return viewFileOf;')(fs, path, RAWE2, idxOf);
+    } catch (e) { vf = null; }
+  }
+  check('viewFileOf 能在 Node 里独立跑起来（可单测）', typeof vf === 'function', '', '取出来那段跑不了');
+  if (typeof vf === 'function') {
+    /* tmpDir 里已经有 A.RAF / A.JPG / B.JPG / C.RAF / C.JPG，桶里有 D.JPG。再补两张。 */
+    fs.writeFileSync(path.join(tmpDir, 'Lone.JPG'), '');   // 孤 JPG：没有同名 RAW
+    fs.writeFileSync(path.join(tmpDir, 'low.raf'), '');    // 小写扩展名的 RAW
+    const vBucket = vf(bucket, 'D.JPG');
+    check('★ 桶里的成片 ⇒ 读它**自己**（不能拿原图顶替产物）',
+      vBucket && vBucket.file === path.join(bucket, 'D.JPG') && vBucket.cache === false,
+      JSON.stringify(vBucket), '');
+    const vRaw = vf(tmpDir, 'A.JPG');
+    check('★★★ 原图只有 RAW ⇒ 读**缓存里那份机内 JPG**（不是拼一个不存在的 <stem>.JPG）',
+      vRaw && vRaw.file === path.join(idxOf(tmpDir), 'A.JPG') && vRaw.cache === true &&
+        vRaw.raw === path.join(tmpDir, 'A.RAF'),
+      JSON.stringify(vRaw),
+      '读到源目录里那个不存在的 <stem>.JPG ⇒ 缩略图全空、EXIF 全空，而界面一点不报错');
+    const vLone = vf(tmpDir, 'Lone.JPG');
+    check('★ 孤 JPG（没有同名 RAW）⇒ 读它自己',
+      vLone && vLone.file === path.join(tmpDir, 'Lone.JPG') && vLone.cache === false,
+      JSON.stringify(vLone), '');
+    const vLow = vf(tmpDir, 'low.JPG');
+    check('★ 缓存文件名用 RAW 的 stem **原样大小写**（小写源的缓存别去找大写的）',
+      vLow && vLow.file === path.join(idxOf(tmpDir), 'low.JPG'), JSON.stringify(vLow),
+      '大写化之后再拼 ⇒ 永远找不到缓存 ⇒ 每一张都要重抠一遍');
+    check('★ 既没有那个文件、也没有同名 RAW ⇒ 老实返回 null（不瞎指一个路径）',
+      vf(tmpDir, 'Nope.JPG') === null, String(vf(tmpDir, 'Nope.JPG')), '');
+  }
   try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) { /* 留着也无害 */ }
 }
 check('★ 调色台加载用的是 loadPath（RAW 优先），不是自己拼 rel',
@@ -793,11 +814,12 @@ check('⚠ 布局自检 mock 必须实现 `pickDirectory`（左栏「加入目�
   /pickDirectory: async \(\) =>/.test(mockSrcFlat), '',
   '漏了它 ⇒ 点那一刻同步抛 TypeError（漏 setConfig 那次的翻版）');
 
-/* ---------- [14] 库外·纯 RAW 目录 ⇒ 预览小图（"只按 JPG 列图"的补救） ----------
-   ★★ 背景：工作台列图**只按 JPG 列**（`IMG_EXT`），RAW 只当"这张有 RAF"的角标
-      ⇒ 把"只拷了 RAF"的文件夹「加入目录」进来，界面上是**空的**
-      —— 看着像"这个目录里没东西"，其实是"它一张 JPG 都没有"。
-      修法：给它自动生成一份预览索引（抠相机自带的机内 JPG，缩到长边 1600，写进应用缓存）。
+/* ---------- [14] 每个目录 ⇒ 预览小图（片 = RAW；缩略图一律取机内 JPG） ----------
+   ★★ 背景：工作台以前列图**只按 JPG 列**（`IMG_EXT`），RAW 只当"这张有 RAF"的角标
+      ⇒ 一张 JPG 都没有的目录在界面上是**空的**；更阴的是**混着 JPG 的目录**里，
+      那些"没有同名 JPG"的 RAW 连角标都没有、直接不出现。
+      09-15 SV 定：**一张片 = 一个 RAW**，缩略图一律从 RAW 抠机内 JPG
+      （缩到长边 1600，写进应用缓存）。
    ⚠ 这一组**不是**拿正则看"有没有写某个函数名"（那挡不住"函数体写错"，等于没查）：
       ① `parseExtIndexOutput` 真跑（拿脚本真实格式的样例行）
       ② `extIndexDirFor` 真跑（自带 fs/path/crypto + 假的 app）
@@ -818,9 +840,15 @@ if (pySrc) {
   check('★ 写盘只往 `--out` 里写（先写临时名再原子换名，中途被杀不留半张坏图）',
     /os\.path\.join\(out, /.test(pySrc) && /os\.replace\(tmp, out_path\)/.test(pySrc), '',
     '直接往目标名写 ⇒ 中途杀掉会留下半张坏图，而工作台照样把它当一张照片列出来');
-  check('★ 每个索引目录写一份 `_src.txt`（出图源的凭据，缺了就会拿缩略图当原图渲染）',
-    /'_src\.txt'/.test(pySrc), '',
-    '不写 ⇒ 引擎从 1600 的预览小图渲染：能出图、不报错，画质悄悄掉了');
+  check('★★ 脚本给**每一张 RAW**都配小图（不再跳过"有同名 JPG"的那些）',
+    /def pick_raws\(src\)/.test(pySrc) && !/have_jpg/.test(pySrc), '',
+    '跳过有同名 JPG 的 RAW ⇒ 混着 JPG 的目录里，那些"没有同名 JPG"的 RAW 整片消失（09-15 修的那个 bug）');
+  check('★ 脚本有单文件模式（`--one` / `--out-file`）—— 归档要一份全尺寸相机直出时用',
+    /'--one'/.test(pySrc) && /'--out-file'/.test(pySrc) && /def run_one\(/.test(pySrc), '',
+    '没有单文件模式 ⇒ 归档时只能拿 1600 的缩略图当"直出件"，或者直接报"root 原图不存在"');
+  check('★ 不再写 `_src.txt`（那是"path 指向缓存"时代的凭据，现在 path 就是源目录）',
+    !/'_src\.txt'/.test(pySrc), '',
+    '还在写 ⇒ 两条出图源凭据并存，下一个人不知道该信哪条');
   check('★ 抠的是**相机自带的机内 JPG**（3~4 ms/张），不是自己解码整张 RAW',
     /extract_thumb\(\)/.test(pySrc), '',
     '自己解码一张 4400 万像素要好几秒 ⇒ 一个目录要跑到天亮');
@@ -911,39 +939,115 @@ if (eirM && eidM) {
     const region = mainJsCode.slice(a2, b2);
     const treeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'svstudio-exts-'));
     const idxRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'svstudio-extidx-'));
-    const theRoot = path.join(treeRoot, '某次拍摄');
-    fs.mkdirSync(path.join(theRoot, 'x100vi'), { recursive: true });
-    fs.writeFileSync(path.join(theRoot, 'A.RAF'), '');            // 根上只有 RAW
-    fs.writeFileSync(path.join(theRoot, 'x100vi', 'B.JPG'), ''); // 子目录里是正常 JPG
+    const theRoot = path.join(treeRoot, '某次拍摄');          // 纯壳：自己一张片都没有
+    const put = (d, names) => {
+      fs.mkdirSync(d, { recursive: true });
+      for (const n of names) fs.writeFileSync(path.join(d, n), '');
+    };
+    put(path.join(theRoot, '纯RAW组'), ['A.RAF', 'B.RAF']);          // 一张 JPG 都没有
+    put(path.join(theRoot, '混着的'), ['A.JPG', 'A.RAF', 'B.RAF']);  // ★ 关键：B 只有 RAW
+    put(path.join(theRoot, '混着的', '初筛1星'), ['A.JPG']);          // 星级桶：**不是**另一个主题
+    put(path.join(theRoot, '只有JPG'), ['C.JPG']);                   // 孤 JPG
+    put(path.join(theRoot, '壳', 'x100vi'), ['D.RAF']);              // 壳自己没有片
+    put(path.join(theRoot, '壳2'), ['E.RAF']);                       // 壳2 自己有片
+    put(path.join(theRoot, '壳2', 'sub'), ['F.JPG']);                // ⇒ 也各列一条（不许丢）
+    /* ⚠ `describeSessionDir` 现在会调 `photoFilesIn`（"一层目录里有哪几张片"的唯一口径）。
+       不把它一起抽出来的话，下面那段一跑就 ReferenceError —— 整个自检断在那儿
+       （这是**好事**：说明这条钩子真的在跑；技能 §19.3 记的就是这个坑）。 */
+    const pfiM = mainJsCode.match(/function photoFilesIn\(files\)\s*\{[\s\S]*?\n\}/);
+    check('main.js 里有 photoFilesIn（“一层目录里有哪几张片”的唯一口径）', !!pfiM, '',
+      '函数没了？它是「片 = RAW」这条口径的唯一出处');
+    const pfiSrc = pfiM ? pfiM[0] : '';
+    /* ★★★ `photoFilesIn` 是「一层目录里有哪几张片」的**唯一口径**，必须**真跑**。
+       ⚠★ 为什么不能只断言目录的 `count`：`describeSessionDir` 会把四个星级桶里的键并进 `count`，
+         桶里恰好也有一张同名片时，**root 少算一张也照样等于 2** ——
+         破法脚本当场抓到过这个假绿（把这条口径改坏，自检照旧全绿）。
+         ⇒ 所以直接对函数断言，连**身份键**和 `rawOf` 一起钉死。 */
+    let pfi = null;
+    /* ⚠ `photoFilesIn` 依赖 `RAW_EXT` + `IMG_EXT` 两个常量（技能 §19.3 那个坑：
+       抽一段源码出来跑，它依赖的东西要一起注进去，否则整段断在这儿）。 */
+    const imxM = mainJsCode.match(/const IMG_EXT = (\/[^\n]*?\/i);/);
+    if (pfiSrc && rexM && imxM) {
+      try {
+        const RAWE4 = new Function('return ' + rexM[1])();
+        const IMGE4 = new Function('return ' + imxM[1])();
+        pfi = new Function('RAW_EXT', 'IMG_EXT', pfiSrc + '; return photoFilesIn;')(RAWE4, IMGE4);
+      } catch (e) { pfi = null; }
+    }
+    check('photoFilesIn 能在 Node 里独立跑起来（可单测）', typeof pfi === 'function', '',
+      '取出来那段跑不了 ⇒ 下面那几条全在空转');
+    if (typeof pfi === 'function') {
+      const mix = pfi(['A.JPG', 'A.RAF']);
+      check('★★★ 同一层里 RAW 和**同名 JPG** 都在 ⇒ 只算**一张**（键是 `<stem>.JPG`，RAW 才是真身）',
+        mix.count === 1 && mix.keys.length === 1 && mix.keys[0] === 'A.JPG' &&
+          mix.rawOf.get('A.JPG') === 'A.RAF' && mix.hasRaw === true,
+        JSON.stringify({ keys: mix.keys, rawOf: mix.rawOf.get('A.JPG') }),
+        '把同名 JPG 另算一张 ⇒ 同一张片在界面上出现两条；或者反过来把 RAW 当成多余的 ⇒ 那张片直接不出现');
+      check('★★★ 身份键必须是 `<stem>.JPG`（**不能**改成 `.RAF`）—— 桶里的复制件靠它跟原图合并',
+        pfi(['A.RAF']).keys[0] === 'A.JPG', JSON.stringify(pfi(['A.RAF']).keys),
+        '键变成 .RAF ⇒ 桶里的 JPG 复制件合并不上同一张片（列表出现两条），**已有星级全部落空**');
+      check('★★ 混着的目录：**没有同名 JPG** 的 RAW 也要各算一张（09-15 那个 bug 的正身）',
+        pfi(['A.JPG', 'A.RAF', 'B.RAF']).count === 2, pfi(['A.JPG', 'A.RAF', 'B.RAF']).count,
+        '只数 JPG ⇒ B.RAF 在界面上**根本不出现**，连角标都没有');
+      check('★ 一张 JPG 都没有也照样数出来（纯 RAW 目录不是"空的"）',
+        pfi(['A.RAF', 'B.RAF']).count === 2 && pfi(['A.RAF']).hasRaw === true, '',
+        '纯 RAW 目录算空 ⇒ 选片台空、调色台进不去');
+      check('★ 孤 JPG（没有同名 RAW）沿用**它自己的真实文件名**当键，`rawOf` 里查不到',
+        pfi(['Lone.JPG']).keys[0] === 'Lone.JPG' && pfi(['Lone.JPG']).rawOf.has('Lone.JPG') === false,
+        JSON.stringify(pfi(['Lone.JPG']).keys), '');
+      check('★ 同名多形态 / 大小写不同只留一条（`d.raf` + `D.RAF` + `D.JPG` ⇒ 一张）',
+        pfi(['d.raf', 'D.RAF', 'D.JPG']).count === 1 &&
+          pfi(['d.raf', 'D.RAF', 'D.JPG']).rawOf.get('D.JPG') === 'd.raf',
+        JSON.stringify(pfi(['d.raf', 'D.RAF', 'D.JPG']).keys), '');
+    }
     let fx = null;
     try {
       fx = new Function('fs', 'path', 'loadConfig', 'crypto', 'app',
-        cSrc + '\n' + region + '\n; return { extraSessions: extraSessions };'
+        cSrc + '\n' + pfiSrc + '\n' + region + '\n; return { extraSessions: extraSessions };'
       )(fs, path, () => ({ extraRoots: [theRoot] }), crypto, { getPath: () => idxRoot });
     } catch (e) { fx = null; }
     check('extraSessions 能在 Node 里对**真目录树**跑起来', !!fx, '', '取出来那段跑不了');
     if (fx) {
       const list = fx.extraSessions(new Set());
       const names = list.map((x) => x.name);
-      check('★★ 根上"只有 RAW"、子目录里有 JPG ⇒ **两条都要列出来**（根不能一条封顶）',
-        list.length === 2 && names.some((n) => /x100vi/.test(n)) && names.some((n) => /某次拍摄/.test(n)),
-        JSON.stringify(names),
-        `只列出 ${JSON.stringify(names)} ⇒ 根上那几张 RAF 把下面正常主题挤掉了，` +
-          '而且界面上没有任何迹象');
-      const ex = list.find((x) => x.name.indexOf('x100vi') >= 0);
-      check('★ 子目录那条读的是**它自己的真路径**（不是库根拼出来的）',
-        ex && ex.path === path.join(theRoot, 'x100vi'), ex && ex.path, String(ex && ex.path));
-      const ro = list.find((x) => x.rawOnly);
-      check('★★ 纯 RAW 那条：`path` 指向**预览缓存**、`srcDir` 是真身、并标记"待建索引"',
-        ro && ro.path.startsWith(path.resolve(idxRoot)) && ro.srcDir === theRoot &&
-          ro.needsIndex === true && ro.count === 1,
-        ro ? JSON.stringify({ path: ro.path, srcDir: ro.srcDir, needsIndex: ro.needsIndex, count: ro.count }) : '(没有这条)',
-        '这三样少一个 ⇒ 要么列不出图（path 指源目录），要么拿缩略图渲染（srcDir 丢了）');
-      /* ★ 幂等：同一个源目录算两次 ⇒ 同一条缓存目录（不重复占地方） */
+      const by = (n) => list.find((x) => x.name === n);
+      check('★★ 没片的壳**自己不出现在列表里**，但它底下"有片的目录"要各列一条',
+        !names.some((n) => /^某次拍摄$/.test(n)) && !!by('x100vi'), JSON.stringify(names),
+        '没片的壳也列一条 ⇒ 左栏全是点进去空的条目；底下有片的没列 ⇒ 那批照片直接看不见');
+      check('★★★ 自己有片的目录**也要继续往下看**（不封顶）—— 否则"照片库→某次拍摄→子目录"会丢照片',
+        list.length === 6 && !!by('壳2') && !!by('sub'), JSON.stringify(names),
+        `只列出 ${JSON.stringify(names)} ⇒ "壳2/sub" 那批照片从列表里凭空消失，而界面一点迹象都没有`);
+      check('★★★ 四个星级桶（初筛1星/…）**不是**主题，不许被列成独立条目',
+        !names.some((n) => /初筛1星|调色后满意|待发布|调色待验收/.test(n)), JSON.stringify(names),
+        '桶被当成主题 ⇒ 每条主题都多出三四条，左栏彻底没法看');
+      /* ⚠ 这条只是**目录级**的粗验：`count` 会把星级桶里的键并进来，桶里正好是 `A.JPG`
+         ⇒ 就算 root 少算一张，`count` 还是 2（**掩盖**）。能真正咬住的是上面那组
+         `photoFilesIn` 直接断言 —— 破法脚本验过：那组会红，这条不会。 */
+      check('★★★ 混着 JPG 的目录：**那些没有同名 JPG 的 RAW 也要算一张**（09-15 修的那个 bug）',
+        by('混着的') && by('混着的').count === 2, by('混着的') && by('混着的').count,
+        '只数 JPG ⇒ 只有 A.JPG 那张算数，B.RAF 在界面上**根本不出现**（连角标都没有）');
+      check('★ 一张 JPG 都没有的目录也算照片目录（纯 RAW），张数按 RAW 数',
+        by('纯RAW组') && by('纯RAW组').count === 2 && by('纯RAW组').hasRaw === true,
+        by('纯RAW组') && by('纯RAW组').count, '纯 RAW 目录算"空的"⇒ 选片台空、调色台进不去');
+      check('★ 孤 JPG（没有同名 RAW）也算一张',
+        by('只有JPG') && by('只有JPG').count === 1 && by('只有JPG').hasRaw === false,
+        by('只有JPG') && by('只有JPG').count, '');
+      check('★ 展开只往下 2 层（再深就不是"一次拍摄"而是"目录层级"了）',
+        list.length === 6, list.length,
+        '深度没兜住 ⇒ 万一把整个盘拖进来会把左栏打成几千条');
+      check('★ `path` 是**源目录**（09-15 起不再指向预览缓存）',
+        by('纯RAW组') && by('纯RAW组').path === path.join(theRoot, '纯RAW组') &&
+          !String(by('纯RAW组').path).startsWith(path.resolve(idxRoot)),
+        by('纯RAW组') && by('纯RAW组').path,
+        'path 指缓存 ⇒ 列表/桶/星级全落在缓存上，而缓存一删他的星级也跟着"消失"');
+      check('★ 每条都标了「待建索引」+ 索引目录（每张 RAW 都要一张预览小图）',
+        by('纯RAW组') && by('纯RAW组').needsIndex === true && !!by('纯RAW组').indexDir,
+        by('纯RAW组') ? JSON.stringify({ needsIndex: by('纯RAW组').needsIndex }) : '',
+        '不标 ⇒ 界面不会去建索引，那些片在左栏里就是没图的');
       const list2 = fx.extraSessions(new Set());
-      const idx2 = list2.find((x) => x.rawOnly);
+      const idx2 = (list2.find((x) => x.name === '纯RAW组') || {}).indexDir;
       check('★ 同一个目录两次扫出来的索引目录是**同一个**（缓存不会越攒越多）',
-        idx2 && ro && idx2.indexDir === ro.indexDir, idx2 && idx2.indexDir, '');
+        idx2 && by('纯RAW组') && idx2 === by('纯RAW组').indexDir, String(idx2), '');
     }
     try { fs.rmSync(treeRoot, { recursive: true, force: true }); } catch (e) { /* ok */ }
     try { fs.rmSync(idxRoot, { recursive: true, force: true }); } catch (e) { /* ok */ }
@@ -951,13 +1055,13 @@ if (eirM && eidM) {
 }
 
 /* ---- ④ 接线钉子（这一段的坑都在"两边传的不是同一个东西"上） ---- */
-check('★★★ 建索引传的是**源目录**（`s.srcDir`），不是预览缓存目录（`s.path`）',
+check('★★★ 建索引传的是**源目录**（`s.path`），而且"缓存目录当源目录"那种写法不许回来',
   /* ⚠ 第二参（`force`）是可选的，正则别把括号写死 —— 09-15 加了 `, true` 就假红过一次。 */
-  /indexExternalDir\(s\.srcDir[,)]/.test(storeSrc) && !/indexExternalDir\(s\.path/.test(storeSrc),
+  /indexExternalDir\(s\.path[,)]/.test(storeSrc) && !/indexExternalDir\(s\.srcDir/.test(storeSrc),
   '', '传缓存目录 ⇒ 那儿一张 RAW 都没有，扫出来永远是空的，而界面一点错都不报');
 check('★ 进主题时「索引还没建」就先补上，而且**带 `force` 重试**（否则列表显示 4 张、点进去 0 张）',
-  /if \(s && s\.needsIndex && s\.srcDir\)/.test(storeSrc) &&
-    /await get\(\)\.indexExternalDir\(s\.srcDir, true\);/.test(storeSrc), '',
+  /if \(s && s\.needsIndex\)/.test(storeSrc) &&
+    /await get\(\)\.indexExternalDir\(sessionPath, true\);/.test(storeSrc), '',
   '不先补 ⇒ 列表和里面张数对不上，用户以为片子丢了；少了 `true` ⇒ 失败过一次以后再点那个文件夹一声不吭');
 check('★★ 建不了的时候要**说出原因**（否则那目录永远是空的，而"空"和"坏了"长得一样）',
   /* ⚠ 两条失败路径**都要出声**：① 脚本跑了但说"没成功" ② 起进程/调用本身抛了。
@@ -997,9 +1101,79 @@ check('⚠ 布局自检 mock 必须实现 `extIndex` + `onExtIndexProgress`（�
   /extIndex: async \(srcDir\) =>/.test(mockSrcFlat) &&
     /onExtIndexProgress: \(cb\) =>/.test(mockSrcFlat), '',
   '漏了它 ⇒ 点那一刻同步抛 TypeError，而"到底拿哪个目录去建索引"永远测不到');
-check('★★ mock 的 `scanSessions` 要能给出「纯 RAW 库外目录」（path→缓存、srcDir→真身）',
-  /e\.rawOnly = true;/.test(mockSrcFlat) && /e\.srcDir = d;/.test(mockSrcFlat), '',
-  'mock 不给这种条目 ⇒ 真浏览器那组整段是空转');
+check('★★ mock 的 `scanSessions` 要能给出「只有 RAW 的目录」（path→**源目录**、带待建标记）',
+  /e\.indexDir = /.test(mockSrcFlat) && /e\.needsIndex = !window\.__indexBuilt;/.test(mockSrcFlat) &&
+    !/e\.srcDir = d;/.test(mockSrcFlat), '',
+  'mock 不给这种条目 ⇒ 真浏览器那组整段是空转；`srcDir` 又冒出来 ⇒ 两层模型偷偷回来了');
+
+/* ---------- [14.5] 归档产出的「相机直出件」 ----------
+   ★★ 归档（星 ≥ 1）会把 root 里那张**相机直出 JPG** 拷进星级桶，给 LR 精选用。
+   ⚠ 09-15 前 = 直接 `copyFileSync(path.join(themePath, rel), out)`。
+     纯 RAW 目录的 `themePath` 指向**预览缓存** ⇒ 拷进桶里的是 **1600 缩略图**
+     （拿它当"直出件"是错的，进 LR 一放大就糊）；原图只有 RAW 的更糟，直接报"root 原图不存在"。
+   ⇒ 现在 = ① root 里真有同名 JPG 就拷它（最快）② 否则从同名 RAW 抠**全尺寸**机内 JPG。
+   ⚠ 这一组**真跑函数**（只看函数名在不在挡不住"参数写错"，等于没查）：
+     抠 RAW 那条路**必须**验 `--max-side=0` —— 漏了它就是 1600，而那正是这次要修的 bug。 */
+console.log('\n[14.5] 归档 · 相机直出件');
+{
+  const soM = mainJsCode.match(/async function makeStraightOut\(themePath, rel, outFile\)\s*\{[\s\S]*?\n\}/);
+  check('main.js 里有 makeStraightOut（归档"直出件"的唯一出处）', !!soM, '',
+    '函数没了 ⇒ 归档退回"直接拷 root 里那个同名文件" ⇒ 纯 RAW 目录拷进桶里的是 1600 缩略图');
+  let so = null;
+  const pyCalls = [];
+  if (soM && rexM) {
+    try {
+      const RAWE3 = new Function('return ' + rexM[1])();
+      const fakeSpawn = async (py, script, args) => {
+        pyCalls.push(args.slice());
+        const hit = args.find((a) => a.startsWith('--out-file='));
+        if (hit) {
+          const f = hit.slice('--out-file='.length);
+          fs.mkdirSync(path.dirname(f), { recursive: true });
+          fs.writeFileSync(f, 'FROM-RAW');
+        }
+        return { text: 'ok' };
+      };
+      so = new Function('fs', 'path', 'RAW_EXT', 'spawnPy', 'extIndexPy', 'extIndexScriptPath',
+        soM[0] + '; return makeStraightOut;'
+      )(fs, path, RAWE3, fakeSpawn, () => 'PY', () => 'SCRIPT');
+    } catch (e) { so = null; }
+  }
+  check('makeStraightOut 能在 Node 里独立跑起来（可单测）', typeof so === 'function', '', '取出来那段跑不了');
+  if (typeof so === 'function') {
+    const sroot = fs.mkdtempSync(path.join(os.tmpdir(), 'svso-'));
+    const rd = (p) => { try { return fs.readFileSync(p, 'utf8'); } catch (e) { return '(读不到)'; } };
+    /* ① root 里既有 A.JPG 又有 A.RAF ⇒ 拷 JPG，**不许**去起 python。 */
+    fs.writeFileSync(path.join(sroot, 'A.JPG'), 'CAMERA-JPG');
+    fs.writeFileSync(path.join(sroot, 'A.RAF'), 'RAW');
+    const o1 = path.join(sroot, '_out', 'A.JPG');
+    const r1 = await so(sroot, 'A.JPG', o1);
+    check('★ root 里有同名 JPG ⇒ 直接拷它（不走抠 RAW 那条路）',
+      r1 && r1.ok === true && r1.from === 'jpg' && rd(o1) === 'CAMERA-JPG' && pyCalls.length === 0,
+      JSON.stringify(r1),
+      '有 JPG 还去起 python ⇒ 每张多等几秒；拷错源 ⇒ 桶里放的不是相机直出');
+    /* ② 只有 B.RAF（连 B.JPG 都没有）⇒ 从 RAW 抠，而且必须是**全尺寸**。 */
+    fs.writeFileSync(path.join(sroot, 'B.RAF'), 'RAW');
+    const o2 = path.join(sroot, '_out', 'B.JPG');
+    const r2 = await so(sroot, 'B.JPG', o2);
+    const last = pyCalls.slice(-1)[0] || [];
+    check('★★★ root 只有同名 RAW ⇒ 从 RAW 抠一份出来（不再报"root 原图不存在"）',
+      r2 && r2.ok === true && r2.from === 'raw' && rd(o2) === 'FROM-RAW', JSON.stringify(r2),
+      '只有 RAW 就出不了归档 ⇒ 纯 RAW 目录的星级桶永远是空的');
+    check('★★★ 抠的是**全尺寸**（`--max-side=0`）—— 不许把 1600 缩略图当"直出件"',
+      last.some((a) => a === '--max-side=0'), JSON.stringify(last),
+      '漏了 `--max-side=0` ⇒ 拷进桶里的是 1600 缩略图，进 LR 一放大就糊，而且一句错都不报');
+    check('★ 抠 RAW 时喂的是**同名 RAW 的原件路径**（不是 `themePath/rel` 那个不存在的文件）',
+      last.some((a) => a === '--one=' + path.join(sroot, 'B.RAF')), JSON.stringify(last),
+      '喂错源 ⇒ 抠不出图，或者抠到别的片');
+    /* ③ 既没有 JPG 也没有 RAW ⇒ 老实说失败（不许静默产出一个空件）。 */
+    const r3 = await so(sroot, 'C.JPG', path.join(sroot, '_out', 'C.JPG'));
+    check('★ root 里既没有同名 JPG、也没有同名 RAW ⇒ 报失败（不静默产出空件）',
+      r3 && r3.ok === false && !!r3.error, JSON.stringify(r3),
+      '静默拷个空文件进桶 ⇒ 精选时才发现少了片');
+    try { fs.rmSync(sroot, { recursive: true, force: true }); } catch (e) { /* ok */ }
+  }
+}
 
 /* ---------- [15] 界面构建是否最新（"看不到新功能"的那个坑） ----------
    ★★ 09-15 SV 报：左栏**看不到**新做的「加入目录」，其实代码当天下午就写好了。

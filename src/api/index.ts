@@ -101,19 +101,13 @@ export interface Session {
   rootDir?: string;
   /** 目录不在了（被删 / 改名）。条目照样列出来但点不进去 —— 静默消失最难查 */
   missing?: boolean;
-  /** ★★ 这一条是"纯 RAW 目录"（一个 JPG 都没有、只有 RAW，比如卡上只拷了 RAF 的那批）。
-   *  此时 `path` 指向的是**预览索引目录**（缓存），`srcDir` 才是真身。 */
-  rawOnly?: boolean;
-  /** ★★ **出图源目录**（`path` 是预览索引时必须看它）：喂引擎的 RAW 在这里。
-   *  靠缓存里的 `_src.txt` 把两边对上（main.js 的 `attachLoadPath`）。 */
-  srcDir?: string;
-  /** 预览索引目录（缓存）。`rawOnly` 时 = `path`；**移除目录不会删它** */
+  /** 预览索引目录（缓存，只放 1600 的机内 JPG）。**移除目录不会删它** */
   indexDir?: string;
-  /** 索引还没建 / 源目录又多了新片 ⇒ 界面去跑一次 `extIndex(srcDir)`。不是错误 */
+  /** 索引还没建 / 源目录又多了新片 ⇒ 界面去跑一次 `extIndex(path)`。不是错误 */
   needsIndex?: boolean;
   /** 这次缺多少张（给进度提示用） */
   indexMiss?: number;
-  /** 源目录里"纯 RAW"的张数 */
+  /** 源目录里有几张 RAW（= 这次要抠多少张预览小图） */
   rawCount?: number;
   /** 老代码里 session 可能带这些：done/errors 等 */
   [k: string]: any;

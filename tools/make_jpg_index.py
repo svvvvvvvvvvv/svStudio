@@ -1,22 +1,21 @@
 #!/usr/bin/env python
-"""给「只有 RAW、没有 JPG」的目录生成一份**预览索引**（缩略图缓存）。
+"""给一个照片目录生成**预览索引**（缩略图缓存）—— 每张 RAW 抠一张机内 JPG。
 
 为什么需要它
 ------------
-工作台列图**只按 JPG 列**（`IMG_EXT = /\\.(jpe?g)$/i`），RAW 只当"这张有 RAF"的角标。
-所以一个纯 RAW 目录（比如把卡上只拷了 RAF 的那批）加进图库列表后**列不出照片** ——
-在界面上看着就是"这个主题是空的"，而真相是"它一张 JPG 都没有"。
+工作台**一张片 = 一个 RAW**（09-15 SV 定；身份键一律写成 `<stem>.JPG`）。
+预览 / 缩略图 / 大图 / EXIF **一律从这个 RAW 里抠相机自带的那张机内 JPG** ——
+所以目录里有没有独立的 JPG 文件，跟能不能看图**完全无关**（这就是这个脚本存在的全部理由）。
 
-这个脚本把每张 RAW 里**相机自己带的那张机内 JPG**抠出来，缩到长边 1600 存进缓存目录，
-工作台读缓存目录列图。出图（渲染）仍然用**源目录的 RAW**（工作台靠缓存里的 `_src.txt`
-把出图源指回源目录）。
+这个脚本把每张 RAW 的机内 JPG 抠出来、缩到长边 1600 存进缓存目录。
+出图（渲染）用的**永远是源目录里那个 RAW 原件**（工作台直接在源目录里找，不靠缓存）。
 
     源目录（只读）                     缓存目录（随便删）
-    D:\\拍摄素材\\厦门_外拍\\             %APPDATA%\\svstudio\\extpreview\\厦门_外拍@a1b2c3d4\\
+    D:\\示例库\\主题A\\             %APPDATA%\\svstudio\\extpreview\\主题A@a1b2c3d4\\
       DSCF0001.RAF      ────抠内嵌JPG──▶   DSCF0001.JPG   （长边 1600，带 EXIF）
       DSCF0002.RAF                        DSCF0002.JPG
-      DSCF0009.JPG      ────跳过（有同名 JPG，工作台本来就能列）
-                                          _src.txt       （源目录绝对路径）
+      DSCF0009.JPG      ────不用索引（孤 JPG，直接用原文件）
+                                          _src.txt       （已删：不需要它了）
 
 ★ 为什么用「内嵌机内 JPG」而不是自己解码渲染：
   抠它只是**从 RAW 文件里取现成的一段**，实测 3~4 ms/张；真解码一张 4400 万像素要几秒。
@@ -26,7 +25,7 @@
 
 用法
 ----
-  python make_jpg_index.py --src "D:\\拍摄素材\\厦门_外拍" --out "%APPDATA%\\svstudio\\extpreview\\xxx"
+  python make_jpg_index.py --src "D:\\示例库\\主题A" --out "%APPDATA%\\svstudio\\extpreview\\xxx"
   python make_jpg_index.py --src ... --out ... --max-side 1600 --quality 88 --force
 
 退出码：0 = 跑完（个别文件失败会计数、不影响整体）；2 = 起不来（源目录/输出目录有问题）。
@@ -71,19 +70,19 @@ def fmt(b):
 
 
 def pick_raws(src):
-    """源目录里**没有同名 JPG** 的 RAW（小写 stem 集合）。
+    """源目录里**所有** RAW（按 stem 去重，同名多形态只留一个）。
 
-    ★ 有同名 JPG 的排除掉 —— 工作台本来就按 JPG 列图，再索引一份纯属浪费，
-      而且会让同一张片出现两条（一条来自源目录、一条来自缓存）。
+    ⚠★ 09-15 之前这里是"跳过有同名 JPG 的 RAW"（省事）。现在不行了：
+      预览**一律从 RAW 抠** ⇒ 每张 RAW 都必须有索引，
+      否则那张片在界面上就是**没图**的 —— 而"目录里有没有 JPG"正是要清掉的那个变量。
     """
     names = os.listdir(src)
-    have_jpg = {stem_of(n) for n in names if ext_of(n) in JPG_EXT}
     raws, seen = [], set()
     for n in sorted(names):
         if ext_of(n) not in RAW_EXT:
             continue
         s = stem_of(n)
-        if s in have_jpg or s in seen:
+        if s in seen:
             continue
         seen.add(s)
         raws.append(n)
@@ -128,7 +127,8 @@ def extract_one(src_path, out_path, max_side, quality, force):
                 pass
 
             im = im.convert('RGB')
-            if max(im.size) > max_side:
+            # ★ max_side = 0 ⇒ 不缩、保持机内 JPG 原尺寸（归档要全尺寸的直出件）
+            if max_side and max(im.size) > max_side:
                 im.thumbnail((max_side, max_side), Image.LANCZOS)
 
             kw = {}
@@ -146,14 +146,46 @@ def extract_one(src_path, out_path, max_side, quality, force):
     raise last
 
 
+def run_one(args):
+    """单文件模式：从一张 RAW 抠机内 JPG 写到 `--out-file`。
+
+    ★ 归档「初筛1星」要一份**全尺寸**的相机直出 ⇒ 传 `--max-side 0`。
+    退出码 0 = 写出来了；1 = 没写出来（原因打在最后一行）。"""
+    src = os.path.abspath(args.one)
+    dst = os.path.abspath(args.out_file or '')
+    if not dst:
+        print('[错误] --one 必须配 --out-file')
+        return 2
+    if not os.path.isfile(src):
+        print('[错误] 这个 RAW 不在：%s' % src)
+        return 1
+    try:
+        os.makedirs(os.path.dirname(dst) or '.', exist_ok=True)
+        sz = extract_one(src, dst, args.max_side, args.quality, args.force)
+    except Exception as e:                 # noqa: BLE001
+        print('[失败] 抠不出来：%s（%s）' % (os.path.basename(src), e))
+        return 1
+    print('OK %s  %s' % (dst, fmt(sz)))
+    return 0
+
+
 def main():
-    ap = argparse.ArgumentParser(description='为纯 RAW 目录生成 JPG 预览索引（源目录只读）')
-    ap.add_argument('--src', required=True, help='源目录（只读，不会被动）')
-    ap.add_argument('--out', required=True, help='索引输出目录（缓存，可以整个删）')
-    ap.add_argument('--max-side', type=int, default=1600, help='长边上限，默认 1600')
+    ap = argparse.ArgumentParser(description='为照片目录生成 JPG 预览索引（从 RAW 抠机内 JPG；源目录只读）')
+    ap.add_argument('--src', help='源目录（只读，不会被动）')
+    ap.add_argument('--out', help='索引输出目录（缓存，可以整个删）')
+    ap.add_argument('--one', help='单文件模式：只处理这一张 RAW（要配 --out-file）')
+    ap.add_argument('--out-file', help='单文件模式：写出的 JPEG 路径')
+    ap.add_argument('--max-side', type=int, default=1600,
+                    help='长边上限，默认 1600；**0 = 不缩、保持机内 JPG 原尺寸**')
     ap.add_argument('--quality', type=int, default=88, help='JPEG 质量，默认 88')
     ap.add_argument('--force', action='store_true', help='已存在的也重做')
     args = ap.parse_args()
+
+    if args.one:
+        return run_one(args)
+    if not args.src or not args.out:
+        print('[错误] 要么 --src + --out（整个目录），要么 --one + --out-file（单张）')
+        return 2
 
     src = os.path.abspath(args.src)
     out = os.path.abspath(args.out)
@@ -170,12 +202,12 @@ def main():
     print('源目录  : %s' % src)
     print('索引目录: %s' % out)
     if not raws:
-        print('[跳过] 这个目录没有"只有 RAW"的片（都有同名 JPG，工作台本来就能列）')
+        print('[跳过] 这个目录里没有 RAW（孤 JPG 不需要索引，工作台直接用原文件）')
         print('%s %s' % (KS, json.dumps(
             {'src': src, 'out': out, 'n': 0, 'skip': 0, 'fail': 0, 'bytes': 0, 'ms': 0},
             ensure_ascii=False)))
         return 0
-    print('纯 RAW  : %d 张   （长边 %d，质量 %d）' % (len(raws), args.max_side, args.quality))
+    print('RAW     : %d 张   （长边 %d，质量 %d）' % (len(raws), args.max_side, args.quality))
 
     try:
         os.makedirs(out, exist_ok=True)
@@ -183,14 +215,9 @@ def main():
         print('[错误] 建不了索引目录：%s（%s）' % (out, e))
         return 2
 
-    # ★ `_src.txt` 是**出图源**的凭据：工作台读它把喂引擎的文件指回源目录的同名 RAW。
-    #   没有它，渲染就会从 1600 的缩略图上做（看着能出，其实画质悄悄掉了）。
-    try:
-        with open(os.path.join(out, '_src.txt'), 'w', encoding='utf-8') as f:
-            f.write(src + '\n')
-    except OSError as e:
-        print('[警告] 写不了 _src.txt（出图源会回落成缩略图）：%s' % e)
-
+    # ⚠ 09-15 起**不写 `_src.txt` 了**：那是"工作台 path 指向缓存"时代的出图源凭据。
+    #   现在工作台的 path 就是源目录、出图直接在源目录里找 RAW ⇒ 这个目录是**纯缩略图缓存**，
+    #   整个删掉也不影响出图（下次自动重做）。
     todo = []
     skip = 0
     for n in raws:
