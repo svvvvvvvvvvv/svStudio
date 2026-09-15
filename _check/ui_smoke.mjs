@@ -1100,6 +1100,89 @@ check('★★ mock 的 `scanSessions` 要能给出「纯 RAW 库外目录」（p
   /e\.rawOnly = true;/.test(mockSrcFlat) && /e\.srcDir = d;/.test(mockSrcFlat), '',
   'mock 不给这种条目 ⇒ 真浏览器那组整段是空转');
 
+/* ---------- [15] 界面构建是否最新（"看不到新功能"的那个坑） ----------
+   ★★ 09-15 SV 报：左栏**看不到**新做的「加入目录」，其实代码当天下午就写好了。
+      原因：`renderer/dist` 还是上一次构建的产物，而 `src/` 后来改过 ⇒
+      台子照常开、照常能用、**一点报错都没有**，只是画的是旧界面。
+   ⇒ 修法是开窗前先看一眼，旧的就重建。这一组查两件事：
+      ① 判定逻辑**拿真目录树真跑**（"改了 src 认不认得出"光看正则看不出来）；
+      ② 接线（必须在开窗**之前**、必须吞异常、不能假设 PATH 上有 node）。 */
+console.log('\n[15] 界面构建是否最新（"看不到新功能"的那个坑）');
+{
+  const nurM = mainJsSrc.match(/function needsUiRebuild\(root\)\s*\{[\s\S]*?\n\}/);
+  let nur = null;
+  let nurErr = '';
+  if (nurM) {
+    try {
+      nur = new Function('fs', 'path', nurM[0] + '\nreturn needsUiRebuild;')(fs, path);
+    } catch (e) {
+      nurErr = String(e);
+    }
+  }
+  check('★★ 判定逻辑能独立跑起来（把 `needsUiRebuild` 抽出来真调用）',
+    typeof nur === 'function', '', nurErr || '抽不出来 ⇒ 下面几条全测不到');
+
+  if (typeof nur === 'function') {
+    const troot = fs.mkdtempSync(path.join(os.tmpdir(), 'svstudio-stale-'));
+    const T = Date.parse('2026-09-15T02:00:00Z');
+    const mk = (rel, ms) => {
+      const p = path.join(troot, rel);
+      fs.mkdirSync(path.dirname(p), { recursive: true });
+      fs.writeFileSync(p, 'x');
+      const t = new Date(ms);
+      fs.utimesSync(p, t, t);
+    };
+    /* 初始：代码 10:00、产物 10:01 ⇒ 界面是新的 */
+    mk('src/components/a.tsx', T);
+    mk('vite.config.ts', T - 1000);
+    mk('renderer/index.html', T - 1000);
+    mk('renderer/dist/index.js', T + 1000);
+
+    check('★ 界面比代码新 ⇒ 不重建（正常启动一秒都不多花）',
+      nur(troot) === false, '', '每次都重建 ⇒ 白等 2 秒，还会把刚编译好的产物反复覆盖');
+
+    /* ⚠ 改的是 src **子目录**里的文件 —— 只看 src 根目录的话，绝大多数改动都漏掉 */
+    mk('src/components/a.tsx', T + 5000);
+    check('★★ 改了 src **子目录**里的文件 ⇒ 认得出要重建',
+      nur(troot) === true, '', '只看 src 根 ⇒ 十次改动里有十次漏掉（组件全在子目录）');
+
+    mk('src/components/a.tsx', T);
+    mk('vite.config.ts', T + 6000);
+    check('★ 只改了 `vite.config.ts` ⇒ 也要重建（它决定产物长什么样）',
+      nur(troot) === true, '', '漏掉它 ⇒ 改了打包配置却一直用旧产物，最像"改了没用"');
+
+    fs.rmSync(path.join(troot, 'renderer', 'dist', 'index.js'));
+    check('★ 从来没构建过（没有 dist）⇒ 要重建',
+      nur(troot) === true, '', '返回 false ⇒ 台子开了是**白屏**，且没有任何提示');
+
+    fs.rmSync(path.join(troot, 'src'), { recursive: true, force: true });
+    check('★ 打包版（没有 `src/`）⇒ 什么都不做',
+      nur(troot) === false, '', '成品里也去找源码 ⇒ 行为不可预期');
+
+    fs.rmSync(troot, { recursive: true, force: true });
+  }
+
+  const rbiM = mainJsSrc.match(/function rebuildUiIfStale\(\)\s*\{[\s\S]*?\n\}/);
+  check('★★ 这一步在**开窗之前**跑（重建必须赶在窗口读 index.html 之前做完）',
+    /app\.whenReady\(\)\.then\(\(\) => \{[\s\S]{0,200}?rebuildUiIfStale\(\);[\s\S]{0,80}?createWindow\(\);/.test(mainJsSrc),
+    '', '放在 createWindow 之后 ⇒ 这一次开的还是旧界面，这功能等于没做');
+  check('★★ 重建出任何问题都**不许挡住开台子**（异常要吞掉）',
+    !!rbiM && /catch \(e\) \{[\s\S]{0,240}?(logUiRebuild|console\.log)/.test(rbiM[0]), '',
+    '异常抛出去 ⇒ 台子直接打不开；为了省 2 秒把工具搞崩，不值');
+  check('★★ 重建的日志**不继承控制台**（双击启动那个黑窗口 3 秒后就关了）',
+    !!rbiM && /stdio: \['ignore', 'pipe', 'pipe'\]/.test(rbiM[0]) &&
+      !/stdio: 'inherit'/.test(rbiM[0]), '',
+    '用 inherit ⇒ 控制台先关掉、vite 往已关的句柄写 ⇒ 重建白做，而表现又是「界面没变」');
+  check('★ 重建的结果写进日志（界面里看不到它，出问题得有个地方查）',
+    /function logUiRebuild\(/.test(mainJsSrc) && /svstudio_rebuild\.log/.test(mainJsSrc), '',
+    '不写日志 ⇒ 重建失败谁都不知道，症状还是「界面没变」，等于白做');
+  check('★ 不假设 PATH 上有 node（本机持久 PATH 里**没有**）—— 拿 electron 自己当 node 跑',
+    !!rbiM && /process\.execPath/.test(rbiM[0]) && /ELECTRON_RUN_AS_NODE/.test(rbiM[0]), '',
+    '写成调 `node`/`vite` 命令 ⇒ 双击启动那个环境里根本找不到，静默不重建（白做）');
+  check('★ 这一段的代码里不写死本机路径（要开源）',
+    !!nurM && !/[A-Za-z]:\\/.test(nurM[0]) && !!rbiM && !/[A-Za-z]:\\/.test(rbiM[0]), '');
+}
+
 /* ---------- 汇总 ---------- */
 console.log('\n' + '-'.repeat(50));
 if (fail === 0) {

@@ -614,6 +614,98 @@ function photosInDir(dir) {
   return photos;
 }
 
+/* ★★ 界面代码改过、却没有重建 ⇒ 台子画的是「上一次构建的那一套」
+   09-15 SV 报的正是这个：左栏**看不到**新做的「加入目录」，其实代码当天下午就写好了。
+   症状特别阴 —— 台子照常开、照常能用、**一点报错都没有**，只是画的是旧界面。
+   （比崩溃难查得多：崩溃至少指得出地方。）
+   ⇒ 开窗**之前**先看一眼：`src/` + `vite.config.ts` + `renderer/index.html` 里
+     最新的改动时间，比 `renderer/dist/index.js` 新，就先重建（实测约 2 秒）。
+
+   ⚠ 三条纪律：
+     ① 只管**开发目录**（打包版里没有 `src/` ⇒ 直接跳过，什么都不做）。
+     ② **绝不允许它挡住启动**：任何异常都吞掉打一行字 —— 旧界面总比打不开强。
+     ③ 不假设 PATH 上有 node（本机持久 PATH 里**没有** node，09-15 实测）——
+        用 `process.execPath`（就是 electron 自己）+ `ELECTRON_RUN_AS_NODE=1`
+        让它当 node 跑 vite（实测可行）。
+   ★ 判定逻辑单独拆成一个**纯函数**（`needsUiRebuild`），好让静态自检拿真目录树
+     真跑一遍（"改了 src 到底认不认得出要重建"光看正则看不出对错）。 */
+function needsUiRebuild(root) {
+  const srcDir = path.join(root, 'src');
+  if (!fs.existsSync(srcDir)) return false; // 打包版
+  let newest = 0;
+  const walk = (d) => {
+    let ents;
+    try {
+      ents = fs.readdirSync(d, { withFileTypes: true });
+    } catch (e) {
+      return; // 读不到就当没有（②）
+    }
+    for (const e of ents) {
+      if (e.isDirectory()) {
+        if (e.name === 'node_modules' || e.name.charAt(0) === '.') continue;
+        walk(path.join(d, e.name));
+      } else {
+        try {
+          const m = fs.statSync(path.join(d, e.name)).mtimeMs;
+          if (m > newest) newest = m;
+        } catch (e) {
+          /* 忽略 */
+        }
+      }
+    }
+  };
+  walk(srcDir);
+  for (const f of ['vite.config.ts', path.join('renderer', 'index.html')]) {
+    try {
+      const m = fs.statSync(path.join(root, f)).mtimeMs;
+      if (m > newest) newest = m;
+    } catch (e) {
+      /* 忽略 */
+    }
+  }
+  try {
+    return fs.statSync(path.join(root, 'renderer', 'dist', 'index.js')).mtimeMs < newest;
+  } catch (e) {
+    return true; // 还没构建过
+  }
+}
+
+/* 重建这件事写进日志 —— 界面里看不到它（重建时窗口还没开），出问题得有个地方查。 */
+function logUiRebuild(text) {
+  try {
+    const f = path.join(debugDir(), 'svstudio_rebuild.log');
+    const ts = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    fs.appendFileSync(f, '[' + ts + '] ' + text + '\n');
+  } catch (e) {
+    /* 日志失败不影响启动 */
+  }
+}
+
+function rebuildUiIfStale() {
+  try {
+    if (!needsUiRebuild(__dirname)) return;
+    const vite = path.join(__dirname, 'node_modules', 'vite', 'bin', 'vite.js');
+    if (!fs.existsSync(vite)) return;
+    const { spawnSync } = require('child_process');
+    const r = spawnSync(process.execPath, [vite, 'build'], {
+      cwd: __dirname,
+      /* ★★ 这里**不能**用 'inherit'：双击启动那个黑窗口 3 秒后就关了
+         （`启动svStudio.bat` 末尾是 `timeout /t 3`），而重建要 1.5~2 秒 ——
+         继承控制台的话控制台会先没掉，vite 往一个已经关掉的控制台写日志
+         会报错、重建白做，而**表现又是"界面没变"**（= 这个功能本来的病）。
+         ⇒ 输出自己收下来，写进日志文件。 */
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: Object.assign({}, process.env, { ELECTRON_RUN_AS_NODE: '1' })
+    });
+    const out = String((r && r.stdout) || '') + String((r && r.stderr) || '');
+    const okr = r && r.status === 0;
+    logUiRebuild((okr ? '重建成功' : '重建失败 status=' + (r ? r.status : '?')) + '\n' + out.slice(-2000));
+  } catch (e) {
+    /* ② 这条兜底是刻意的：重建出任何问题都**不许**挡住开台子 */
+    logUiRebuild('重建出错（已跳过）：' + (e && e.message ? e.message : e));
+  }
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1400,
@@ -629,7 +721,12 @@ function createWindow() {
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 }
 
-app.whenReady().then(createWindow);
+/* ★ 开窗前先把"界面是不是旧的"这件事解决掉 —— 见上面 rebuildUiIfStale 的说明。
+   ⚠ 放在 createWindow **之前**：重建必须在窗口把 index.html 读进去之前做完。 */
+app.whenReady().then(() => {
+  rebuildUiIfStale();
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
