@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { API, Photo, RenderOpts } from '../api';
 import { useStore } from '../store/useStore';
-import { ZoomImage } from './ZoomImage';
+import { FitImage } from './FitImage';
 
 /**
  * 中间大图区。
@@ -17,9 +17,10 @@ import { ZoomImage } from './ZoomImage';
  *   现在改成：父容器 `position:relative`，图 `position:absolute` + `calc(100% - 2*pad)`
  *   + `object-fit:contain` —— 尺寸**确定**、比例**一定保持**、永远不裁。
  *
- * ★★ 缩放（09-15 SV 选「B」）：两处大图**共用 `ZoomImage`**（一份实现两条入口，
- *   别再各写一套）—— 滚轮缩放 + 「适应 / 1:1」两档 + 双击切换。
- *   为什么要有：验收皮肤必须看 1:1（颗粒、磨皮、对焦在眼睛上，缩略图里看不出来）。
+ * ★★ 三处大图（选片台一张 + 调色台两栏）**共用 `FitImage`**（一份实现，别再各写一套）。
+ *   ⚠ 09-15 SV 拍板：「两图总用自适应，**删除其他的**」⇒ `FitImage` 里**没有**缩放，
+ *     滚轮 / 1:1 / 双击切换 / 百分比徽标全删了，**别再顺手加回来**。
+ *   ★ 看图的"姿势"改由下面那组 **A / A|B / B** 三档按钮管（照 Lightroom）。
  */
 export function Viewer() {
   const sessionPath = useStore((s) => s.sessionPath);
@@ -60,7 +61,7 @@ export function Viewer() {
     >
       {/* ⚠ 选片台读的是**原始文件**（`rel` 那条路）—— 这是 SV 定的「选片台优先读 jpg 展示」，
           出图源那件事只对**调色台**生效，别顺手改这里。 */}
-      <ZoomImage
+      <FitImage
         src={'file:///' + (sessionPath + '\\' + p.rel).replace(/\\/g, '/')}
         alt={p.name}
         pad={18}
@@ -79,6 +80,14 @@ export function Viewer() {
  *   换图 / 换卷 / 换基准 / 拉滑杆 —— **一律只改参数，不动画面**。
  *   （以前是"任何改动都自动出图"，拖一次滑杆能瞬间打出几十发 6~15 s / 2~3 GB 的渲染
  *    互相抢占，最后那张反而迟迟不出来，看着就像"点了没反应"。）
+ *
+ * ★★ 视图三档（09-15 SV 定，照 Lightroom 的 `A` / `A|B` / `B`）：默认 `A|B`。
+ *   `A` = 只看原图 · `A|B` = 左右对比（原图 | 调色后）· `B` = 只看调色后（单张占满）。
+ *   ❗**只换"怎么看"，不碰渲染**：切档不出图、不改参数、不清已出的那一张
+ *     （两栏共用同一个 `after` dataURL ⇒ 从 `A|B` 切到 `B` 是**立刻**看到的，
+ *      不会因为"少了左栏"而重新渲染一发）。这条别改 —— 改了就变成"切个视图等 6 秒"。
+ *   ⚠ 用 `useState` 局部状态（**不进 store**）：这是临时的看图姿势，
+ *     不该跟着主题/配方落盘；每次进调色台都回到默认的 `A|B`。
  */
 function SplitView() {
   const sessionPath = useStore((s) => s.sessionPath);
@@ -97,6 +106,8 @@ function SplitView() {
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [imgId, setImgId] = useState<string | null>(null);
+  /* ★★ 视图三档（默认 A|B = 左右对比）—— 见文件里 SplitView 的说明 */
+  const [view, setView] = useState<ViewMode>('ab');
 
   /** 装载当前图 → 引擎，拿 id（引擎没起就自己拉起来） */
   useEffect(() => {
@@ -222,29 +233,120 @@ function SplitView() {
         minHeight: 0,
         minWidth: 0,
         display: 'flex',
-        gap: 8,
-        padding: 18,
+        flexDirection: 'column',
         background: 'var(--bg)',
         overflow: 'hidden',
       }}
     >
-      <Pane title="原图" src={before} loading={loading} busy={false} />
-      {/* ★ 标题栏标出「这张是用什么出的图」—— 只有 JPG 的主题（没有 RAF）入口那两根
-          滑杆（整张亮暗(总)／暗部亮度）是不生效的，以前界面上完全看不出来。
-          ⚠ 这个标记放在 `note` 里，**不能塞进 title** —— title 同时是 img 的 alt，
-            布局自检靠 alt === '调色后' 认这两栏。 */}
-      <Pane
-        title="调色后"
-        note={p ? (p.loadIsRaw ? 'RAW 出图' : 'JPG 出图（无 RAW）') : undefined}
-        src={after}
-        loading={loading}
-        busy={busy}
-      />
-      {!engineOk && (
-        <div style={{ color: 'var(--text-dim)', alignSelf: 'center' }}>
-          引擎未启动
-        </div>
-      )}
+      {/* ★★ 视图三档（LR 的 A / A|B / B）：一整条放在两栏**上方**，别塞进某一栏 ——
+          塞进栏里就会变成"每一栏各有一个"，切档时按钮位置跟着栏一起消失。 */}
+      <div
+        style={{
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'flex-end',
+          gap: 8,
+          padding: '8px 18px 0',
+        }}
+      >
+        {!engineOk && (
+          <span style={{ color: 'var(--text-dim)', fontSize: 11 }}>引擎未启动</span>
+        )}
+        <ViewSwitch value={view} onChange={setView} />
+      </div>
+      {/* ⚠ `data-view-mode` 是自检的探针（默认必须是 `ab`）—— 三档值 = a / ab / b */}
+      <div
+        data-view-mode={view}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          minWidth: 0,
+          display: 'flex',
+          gap: 8,
+          padding: '8px 18px 18px',
+          overflow: 'hidden',
+        }}
+      >
+        {view !== 'b' && <Pane title="原图" src={before} loading={loading} busy={false} />}
+        {/* ★ 标题栏标出「这张是用什么出的图」—— 只有 JPG 的主题（没有 RAF）入口那两根
+            滑杆（整张亮暗(总)／暗部亮度）是不生效的，以前界面上完全看不出来。
+            ⚠ 这个标记放在 `note` 里，**不能塞进 title** —— title 同时是 img 的 alt，
+              布局自检靠 alt === '调色后' 认这两栏。 */}
+        {view !== 'a' && (
+          <Pane
+            title="调色后"
+            note={p ? (p.loadIsRaw ? 'RAW 出图' : 'JPG 出图（无 RAW）') : undefined}
+            src={after}
+            loading={loading}
+            busy={busy}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ★★ 视图三档（09-15 SV 定）：照 Lightroom 的 `A` / `A|B` / `B`。
+   `A` = 只看原片；`A|B` = 左右对比（默认）；`B` = 只看调色后的效果、**单张铺满**。
+   ❗只换"怎么看"，不碰渲染（切档不出图）。 */
+type ViewMode = 'a' | 'ab' | 'b';
+
+const VIEWS: { id: ViewMode; label: string; tip: string }[] = [
+  { id: 'a', label: 'A', tip: '只看原片' },
+  { id: 'ab', label: 'A|B', tip: '左右对比（左原片 / 右调色后）' },
+  { id: 'b', label: 'B', tip: '只看调色后的效果（铺满）' },
+];
+
+function ViewSwitch({
+  value,
+  onChange,
+}: {
+  value: ViewMode;
+  onChange: (v: ViewMode) => void;
+}) {
+  return (
+    <div
+      /* ⚠ 自检靠这两个探针认档位（`data-view-switch` = 当前档） */
+      data-view-switch={value}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 2,
+        padding: 2,
+        borderRadius: 'var(--r-sm)',
+        border: '1px solid var(--line)',
+        background: 'var(--bg-panel)',
+      }}
+    >
+      {VIEWS.map((v) => {
+        const on = v.id === value;
+        return (
+          <button
+            key={v.id}
+            type="button"
+            title={v.tip}
+            aria-pressed={on}
+            /* ⚠ 自检靠这两个探针点按钮：`data-view-btn` = 档位，`data-view-active` = 亮着没 */
+            data-view-btn={v.id}
+            data-view-active={on ? '1' : '0'}
+            onClick={() => onChange(v.id)}
+            style={{
+              border: 'none',
+              borderRadius: 'calc(var(--r-sm) - 2px)',
+              padding: '1px 9px',
+              minWidth: 30,
+              fontSize: 11,
+              lineHeight: 1.7,
+              cursor: 'pointer',
+              background: on ? 'var(--accent)' : 'transparent',
+              color: on ? '#fff' : 'var(--text-dim)',
+            }}
+          >
+            {v.label}
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -297,7 +399,7 @@ function Pane({
       {/* ★ 图区：绝对定位 + calc 尺寸 + object-fit:contain
           —— 不依赖"父高是否确定"，所以不会出现"图比面板大、被 overflow 裁掉"。
           仍然保留 minHeight:0（防 flex 子项不肯收缩这类老问题）。
-          ★ 缩放交给 `ZoomImage`（滚轮 + 适应/1:1 + 双击），口径见那个文件头。 */}
+          ★ 尺寸/适应那套在 `FitImage` 里（**没有缩放**，09-15 SV 定），见那个文件头。 */}
       <div
         style={{
           position: 'relative',
@@ -308,7 +410,7 @@ function Pane({
         }}
       >
         {src ? (
-          <ZoomImage src={src} alt={title} pad={PANE_PAD} />
+          <FitImage src={src} alt={title} pad={PANE_PAD} />
         ) : (
           <span
             style={{

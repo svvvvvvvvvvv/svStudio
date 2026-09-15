@@ -1704,7 +1704,9 @@ def t_sliders():
         if kind == 'bool':
             return isinstance(dv, bool)
         if kind == 'enum':
-            return isinstance(dv, str) and dv in tuple(o[0] for o in q.get('opts', ()))
+            # ⚠ 这里读的是 `_param_defs()` 的产物 ⇒ `opts` 已经是**对象**（`{'v','t'}`），
+            #   不是 PARAMS 表里的紧凑元组。两处形状不同是**故意的**（见 `_param_defs` 注释）。
+            return isinstance(dv, str) and dv in tuple(o['v'] for o in q.get('opts', ()))
         return isinstance(dv, float)
     no_dv = [q['k'] for q in defs if not _dv_ok(q)]
     check('每根参数都算得出 dv（数字给 float / 开关给 bool / 下拉给选项名）', not no_dv,
@@ -1750,7 +1752,7 @@ def t_sliders():
     # ⚠ 探针值按 `kind` 给：开关给 '1'、下拉给**第一项的名字** ——
     #   拿 '1' 去试下拉是**必被丢掉**的（名字不认得 ⇒ 丢弃），那是故意守的门，不是 bug。
     def _probe(q):
-        return str(q['opts'][0][0]) if q.get('kind') == 'enum' else '1'
+        return str(q['opts'][0]['v']) if q.get('kind') == 'enum' else '1'
     never = [q['k'] for q in defs
              if q['k'] not in _svc._parse_params('%s:%s' % (q['k'], _probe(q)))]
     check('★ 每一根参数都真的能传进引擎（传不进去 = 拧了没反应）', not never,
@@ -1879,6 +1881,19 @@ def t_param_kinds():
           e.get('kind') == 'enum' and e.get('dv') == 'black_pro_mist'
           and len(e.get('opts', ())) == 4,
           '%s / %s' % (e.get('dv'), len(e.get('opts', ()))))
+    # ★★★ 09-15（SV 报「柔光下拉框为空」）：发出去的 `opts` 必须是**对象**。
+    #   病理：PARAMS 表里是紧凑元组，经 `json.dumps` 变成 **数组对** `[['black_pro_mist','黑柔（BPM）']]`，
+    #   而前端读的是 `o.v` / `o.t` ⇒ 四个 `<option>` 的 value/text 全是 undefined
+    #   ⇒ **下拉框是空的**。而 `<option>` 的**个数**照样是 4 ⇒ 上面那条"四支"的断言绿着。
+    #   ⇒ 契约钉在这里：`{'v': 值, 't': 人话}`，字段名不许改（前端就认这两个字）。
+    _opts_bad = [o for o in e.get('opts', ())
+                 if not (isinstance(o, dict) and set(o) == {'v', 't'}
+                         and isinstance(o['v'], str) and isinstance(o['t'], str))]
+    check('★★ 发出去的 opts 是对象 `{v,t}`（前端读的是 o.v / o.t —— 元组过去会变成数组对，下拉就空了）',
+          not _opts_bad and e.get('opts') and e['opts'][0] == {'v': 'black_pro_mist', 't': '黑柔（BPM）'},
+          str(e.get('opts'))[:90],
+          'PARAMS 表里可以留紧凑元组，但 **过 HTTP 前必须翻成对象**；'
+          '这条红了 = 前端那四个 <option> 的 value/文字会全是空的（下拉看着是空的、个数还对）')
     g = defs['GRAIN_AMOUNT']
     check('★ 带整层开关的那几根：`gate` 是 config 里真有的键、`gate_dv` 也给了',
           g.get('gate') == 'GRAIN_ENABLE' and isinstance(g.get('gate_dv'), bool),

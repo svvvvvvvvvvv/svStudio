@@ -879,6 +879,17 @@ def _param_defs():
         _g = q.get('gate')
         if _g:
             q['gate_dv'] = bool(getattr(C, _g, False))
+        # ★★★ 09-15（SV 报「柔光下拉框为空」）：`opts` **必须在过 HTTP 之前**从
+        #   PARAMS 表里的紧凑元组 `(('black_pro_mist','黑柔（BPM）'), …)`
+        #   翻成对象 `[{'v': …, 't': …}, …]` 再发出去。
+        #   病理：元组经 JSON 序列化变成**数组对** `[['black_pro_mist','黑柔（BPM）'], …]`，
+        #        而前端读的是 `o.v` / `o.t` ⇒ 四个 `<option>` 的 value/text 全是 undefined
+        #        ⇒ **下拉框看着是空的**（选项在，只是没字、值也是空的）。
+        #        更阴的是：`<option>` 的**个数**还是 4 ⇒ 布局自检那条"4 支"的断言照样绿。
+        #   ⇒ 形状只在**这一个边界**上统一：表里保持紧凑元组（人改起来短），
+        #     出 HTTP 一律是对象（前端只认对象）。自检 `t_param_kinds` 钉着这个形状。
+        if q.get('opts'):
+            q['opts'] = [{'v': o[0], 't': o[1]} for o in q['opts']]
         out.append(q)
     return out
 

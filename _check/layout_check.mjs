@@ -961,6 +961,22 @@ await goGrade();
     const nOpt = await sel.locator('option').count();
     check('★ 下拉的选项数照引擎 opts 来（4 支柔光型号）', nOpt === 4, `${nOpt} 项`,
       '选项是前端自己编的 ⇒ 编错了引擎会静默丢（画面一点不变）');
+    /* ★★★ 09-15（SV 报「柔光下拉框为空」）：只数**个数**是不够的 ——
+       病理是引擎把 `opts` 当**元组**发出去（过 JSON 变数组对 `[['black_pro_mist','黑柔（BPM）']]`），
+       而前端读 `o.v` / `o.t` ⇒ 四个 `<option>` 的 **value 和文字全是 undefined**，
+       **个数照样是 4** ⇒ 上面那条断言绿着、下拉框却是空的。
+       ⇒ 这里必须真读**值和字**（"能被掩盖的量就换一把尺子"）。 */
+    const optVals = await sel
+      .locator('option')
+      .evaluateAll((os) => os.map((o) => o.getAttribute('value')));
+    const optTexts = await sel
+      .locator('option')
+      .evaluateAll((os) => os.map((o) => (o.textContent || '').trim()));
+    check('★★★ 下拉的选项**有值也有字**（不是四个空壳 —— 这就是 SV 报的「下拉框为空」）',
+      optVals[0] === 'black_pro_mist' && optTexts[0] === '黑柔（BPM）'
+        && optVals.every((v) => !!v) && optTexts.every((t) => !!t),
+      `值 ${JSON.stringify(optVals)} / 字 ${JSON.stringify(optTexts)}`,
+      '选项是空壳 ⇒ 引擎发的 opts 形状和前端读的字段对不上（元组过 JSON 变成数组对，前端读的却是 o.v/o.t）');
     const b = await renders();
     await sel.selectOption('cinebloom');
     await page.waitForTimeout(500);
@@ -1363,118 +1379,90 @@ console.log('\n[13] 右栏：基准默认 / 恢复默认 / 存到主题');
   }
 }
 
-/* ---------- 14. 大图缩放（09-15 SV 选「B」） ---------- */
-/* ★ 为什么要这一组：以前**全仓库搜缩放零命中** ⇒ 大图永远只能"整张塞进窗口"。
-   而验收皮肤**必须看 1:1** —— 颗粒粗细、磨皮够不够、对焦在不在眼睛上，
-   在缩略图里根本看不出来。参照物是 spektrafilm 的 `100%/200%/400%/重置视图`。
-   ⚠ 这里断言的**不是"有个按钮"**，而是那个徽标上的数：
-     口径 = 「1 个屏幕像素对应几个图像像素」，点「1:1」之后**必须读作 100%**。
-     用盒子宽高去算这个数**一定是错的** —— `object-fit:contain` 会留黑边。 */
-console.log('\n[14] 大图缩放（适应 / 1:1 / 滚轮）');
+/* ---------- 14. 大图：一律「适应」+ 视图三档 A / A|B / B（09-15 SV 定） ---------- */
+/* ★ 原文：「两图总用自适应**删除其他的** 并且加一个…类似于 LR 中的 `A` `A|B` 的小按钮，
+            **默认 A|B** 即对比原片，`B` 则为当前调色效果**铺满**」
+   ⇒ 白天做的缩放（滚轮 / 1:1 / 双击 / 百分比徽标）**全删**，换成三档"看图姿势"。
+   ★ 这一组量的是**画面里剩下几张图**（不是"有没有按钮"）：
+     ① 一进来是 `A|B` ⇒ 两栏：`img[alt=原图]` + `img[alt=调色后]` 各一张；
+     ② 点 `B` ⇒ **只剩「调色后」一张**（铺满）；点 `A` ⇒ 只剩「原图」；点回 `A|B` ⇒ 两栏回来；
+     ③ 切档**不出图**，而且那张图**当场就有内容** ——
+        `B` 用的是手上已经出好的 dataURL，不是清空等一发新渲染（否则就是"切档等 6 秒"）。
+   ⚠ 别再退回"数 `[data-zoom-pct]`"那套：缩放 09-15 晚已被删掉，探针也没了。 */
+console.log('\n[14] 视图三档（A / A|B / B）');
 {
-  const wraps = page.locator('[data-zoom-pct]');
-  const nWraps = await wraps.count();
-  check('★ 分屏两栏各有缩放控件（原图 / 调色后，一份实现两个入口）', nWraps === 2,
-    `${nWraps} 个`,
-    '大图不能放大 ⇒ 验收皮肤只能看缩略图（颗粒/磨皮/对焦都看不出来）');
-
-  const readZoom = () =>
+  /* 两栏靠 `img` 的 alt 认（Pane 的 title 就是 alt，`layout_check` 一直这么认） */
+  const paneImgs = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('img')]
+        .map((i) => i.getAttribute('alt'))
+        .filter((a) => a === '原图' || a === '调色后')
+    );
+  const viewMode = () =>
     page.evaluate(() => {
-      const all = [...document.querySelectorAll('[data-zoom-pct]')];
-      const el = all[all.length - 1];
-      if (!el) return null;
-      return {
-        pct: Number(el.getAttribute('data-zoom-pct')),
-        state: el.getAttribute('data-zoom'),
-      };
+      const el = document.querySelector('[data-view-mode]');
+      return el ? el.getAttribute('data-view-mode') : null;
     });
+  const vBtn = (id) => page.locator(`[data-view-btn="${id}"]`).first();
 
-  const fit = await readZoom();
-  check('切进调色台时是「适应」（先看整张构图）', !!fit && fit.state === 'fit',
-    JSON.stringify(fit), '一进来就是放大的 ⇒ 根本看不到构图');
-
-  const oneBtn = page.locator('[data-zoom-btn="1to1"]').last();
-  check('「调色后」栏有「1:1」按钮', (await oneBtn.count()) > 0);
-  if ((await oneBtn.count()) > 0) {
-    await oneBtn.click();
-    await page.waitForTimeout(250);
-    const z = await readZoom();
-    check('★★ 点「1:1」⇒ 徽标读作 100%（口径：1 屏幕像素 = 1 图像像素）',
-      !!z && z.pct === 100, `读到 ${z && z.pct}%`,
-      '不是 100% ⇒ 要么拿盒子宽高当基准（contain 留黑边 ⇒ 必然偏），要么压根没算基准倍率');
-    check('★ 「1:1」确实改动了显示（和「适应」不是同一个数）',
-      !!z && !!fit && z.pct !== fit.pct, `${fit && fit.pct}% → ${z && z.pct}%`);
-
-    /* ★★ 滚轮：两件事一起验 ——
-       ① 真的放大了 ② **preventDefault 生效**（页面没跟着滚）。
-       ②才是重点：React 的 `onWheel` 是 **passive** 的，在里面 preventDefault 无效，
-       页面会跟着滚一下。所以必须用原生监听 + `{passive:false}`。
-       断言 `ev.defaultPrevented` 直接测到了这一点，而不是"看着像没滚"。 */
-    const prevented = await page.evaluate(() => {
-      const all = [...document.querySelectorAll('[data-zoom-pct]')];
-      const el = all[all.length - 1];
-      if (!el) return null;
-      const r = el.getBoundingClientRect();
-      const ev = new WheelEvent('wheel', {
-        deltaY: -120,
-        clientX: r.left + r.width / 2,
-        clientY: r.top + r.height / 2,
-        bubbles: true,
-        cancelable: true,
-      });
-      el.dispatchEvent(ev);
-      return ev.defaultPrevented;
-    });
-    /* ⚠ 必须**分两步读**：`defaultPrevented` 是同步的（当场能拿到），
-       但徽标是 React state ⇒ 同一个 tick 里读还是旧值 —— 第一版就栽在这，
-       报出「100% → 100%」，看着像"滚轮没生效"，其实只是没等重渲染。 */
-    await page.waitForTimeout(250);
-    const wPct = await page.evaluate(() => {
-      const all = [...document.querySelectorAll('[data-zoom-pct]')];
-      const el = all[all.length - 1];
-      return el ? Number(el.getAttribute('data-zoom-pct')) : -1;
-    });
-    check('★ 滚轮真的放大了（徽标变大）', !!z && wPct > z.pct,
-      z ? `${z.pct}% → ${wPct}%` : '(没测到)');
-    check('★★ 滚轮被拦住了（页面没跟着滚）—— 原生监听 + passive:false',
-      prevented === true, String(prevented),
-      'React 的 onWheel 是 passive 的 ⇒ 在里面 preventDefault 无效，页面会跟着滚');
-
-    /* ★★ 这条表面上是"复位"，实际盯的是**放大之后控件还点得动吗** ——
-       第一版用 `setPointerCapture` 把指针捕获到外层容器，浮在里面的按钮就再也
-       收不到 click（放大 → 按钮全失灵）。失败信息必须写清这一点，不然下一个人
-       会以为"只是复位坏了"，改错地方。 */
-    const fitBtn = page.locator('[data-zoom-btn="fit"]').last();
-    await fitBtn.click();
-    await page.waitForTimeout(250);
-    const back = await readZoom();
-    check('★ 点「适应」能复位（数值和刚进来时一模一样）',
-      !!back && back.state === 'fit' && !!fit && back.pct === fit.pct,
-      JSON.stringify(back),
-      '放大之后就点不动了/不复位 ⇒ 多半是「拖动平移」把指针捕获到了外层容器（`setPointerCapture`），'
-        + '把按钮的 click 吃掉了；或者复位没把倍率和位移一起归零');
-
-    /* ★ 双击切换（缩小状态下双击 ⇒ 1:1）—— 顺手验一下它和按钮走的是同一套状态 */
-    const dbl = page.locator('[data-zoom-pct]').last();
-    await dbl.dblclick();
-    await page.waitForTimeout(250);
-    const z2 = await readZoom();
-    check('★ 双击大图 ⇒ 进 1:1（和按钮走同一套状态）', !!z2 && z2.pct === 100,
-      `读到 ${z2 && z2.pct}%`);
+  /* 先确保停在调色台（上面几段可能翻去选片台过） */
+  const gTab = page.locator('button', { hasText: '调色台' }).first();
+  if (await gTab.count()) {
+    await gTab.click();
+    await page.waitForTimeout(800);
   }
 
-  /* ★ 「原图」栏必须也是同一套（一份实现两条入口）—— 左栏要是没缩放，
-     就没法"原图和成片同倍率对比"，那这个功能的一半价值就没了。 */
-  const oneBtn0 = page.locator('[data-zoom-btn="1to1"]').first();
-  if ((await oneBtn0.count()) > 0) {
-    await oneBtn0.click();
-    await page.waitForTimeout(250);
-    const z0 = await page.evaluate(() => {
-      const el = document.querySelectorAll('[data-zoom-pct]')[0];
-      return el ? Number(el.getAttribute('data-zoom-pct')) : -1;
-    });
-    check('★ 「原图」栏也是同一套缩放（左栏也要能 1:1）', z0 === 100, `读到 ${z0}%`);
-  }
+  const nBtn = await page.locator('[data-view-btn]').count();
+  check('★ 三档按钮都在（A / A|B / B，照 Lightroom）', nBtn === 3, `${nBtn} 个`,
+    '按钮不全 ⇒ 要么没画，要么档位串了');
+  check('★★★ 默认就是 A|B（一进来是左右对比，不是单张）—— `data-view-mode="ab"`',
+    (await viewMode()) === 'ab'
+      && (await page.locator('[data-view-btn="ab"][data-view-active="1"]').count()) === 1,
+    `mode=${await viewMode()}`,
+    '默认档不是 ab ⇒ 一进调色台看到的是单张（他要的是"默认 A|B 即对比原片"）');
+  check('★ 默认两栏都在（原图 + 调色后，顺序也对）',
+    JSON.stringify(await paneImgs()) === '["原图","调色后"]',
+    JSON.stringify(await paneImgs()));
+
+  const r0 = await renders();
+  await vBtn('b').click();
+  await page.waitForTimeout(400);
+  const bImgs = await paneImgs();
+  check('★★ 点 B ⇒ **只剩「调色后」一张**（单张铺满）',
+    bImgs.length === 1 && bImgs[0] === '调色后', JSON.stringify(bImgs),
+    '还是两张 / 剩下的是「原图」⇒ 档位接反了');
+  const bHasPix = await page
+    .locator('img[alt="调色后"]')
+    .first()
+    .evaluate((el) => el.naturalWidth > 0)
+    .catch(() => false);
+  check('★ 单张那张**当场就有内容**（用的是手上已出好的图，不是在等渲染）', bHasPix, '',
+    '切档把图清空了 ⇒ 每次切档都要重出一张（"切个视图等 6 秒"）');
+  check('★★ 切档**不出图**（换看法 ≠ 重新渲染一发）',
+    (await renders()) === r0, `渲染 ${r0} → ${await renders()} 发`,
+    '切档就重出一张 ⇒ 违反"只有两个触发点"（渲染只该由「渲染」按钮 / 切进调色台触发）');
+
+  await vBtn('a').click();
+  await page.waitForTimeout(400);
+  const aImgs = await paneImgs();
+  check('★★ 点 A ⇒ **只剩「原图」一张**', aImgs.length === 1 && aImgs[0] === '原图',
+    JSON.stringify(aImgs), '还是两张 ⇒ 只画了按钮、档位没接上');
+  check('★ 点 A 也不出图', (await renders()) === r0, `渲染 ${r0} → ${await renders()} 发`);
+
+  await vBtn('ab').click();
+  await page.waitForTimeout(400);
+  check('★ 点回 A|B ⇒ 两栏回来（档位可来回切）',
+    JSON.stringify(await paneImgs()) === '["原图","调色后"]', JSON.stringify(await paneImgs()));
+
+  /* ★ 一张图都没有过 ⇒ A/B 两档不能把图**弄丢**（`after` 是 state，切档不该清它）。
+     这条顺便盯住"原图那一栏在 A 档也不是空的"。 */
+  const aHasPix = await page
+    .locator('img[alt="原图"]')
+    .first()
+    .evaluate((el) => el.naturalWidth > 0)
+    .catch(() => false);
+  check('★ 回到 A|B 后，两栏的图都还是有像素的（切档没把已出的图弄丢）', aHasPix, '',
+    '切来切去之后图变空了 ⇒ 档位把 state 清掉了');
 }
 
 /* ---------- 15. 相纸（09-15 SV 选「C」） ---------- */

@@ -271,6 +271,27 @@ check(
   '老写法还在'
 );
 
+/* ---------- ★★★ 09-15（SV 报「柔光下拉框为空」）：`opts` 的形状三边必须一致 ----------
+   病理：引擎 `PARAMS` 里 `opts=(('black_pro_mist','黑柔（BPM）'), …)` 是**紧凑元组**，
+   过一遍 HTTP（JSON）就变成**数组对** `[['black_pro_mist','黑柔（BPM）'], …]`，
+   而前端读的是 `o.v` / `o.t` ⇒ 四个 `<option>` 的 value 和文字**全是 undefined**
+   ⇒ 下拉框**看着是空的**。而 `<option>` 的**个数**照样是 4 ⇒ 上面那条"四支"的断言绿着。
+   ⇒ 契约：**过 HTTP 一律是对象 `{v,t}`**（在 `_param_defs()` 里那一步翻好）。
+     三方（引擎发的 / 前端读的 / 布局自检 mock 里的）谁改歪都会被这里抓住。
+   ⚠ 引擎那两条要在**剥掉 Python 注释**的源码上查（说明注释里就写着这个形状，会被自己骗）。 */
+const svcCode = svcSrc.replace(/#[^\n]*/g, '');
+const mockCode = mockSrc.replace(/\/\*[\s\S]*?\*\//g, '');
+check('★★ 引擎发出去的 opts 是对象 {v,t}（元组过 JSON 会变成数组对 ⇒ 下拉就空了）',
+  /q\['opts'\] = \[\{'v': o\[0\], 't': o\[1\]\} for o in/.test(svcCode), '',
+  '`_param_defs()` 里少了"元组 → 对象"那一步 ⇒ 前端收到的还是数组对，下拉框空着');
+check('★ 前端读的就是 `o.v` / `o.t`（跟着对象的字段名走，不是元组下标）',
+  /o\.v/.test(gradeSrc) && /o\.t/.test(gradeSrc) &&
+    !/<option[^>]*key=\{o\[0\]\}/.test(gradeSrc), '',
+  '前端按元组下标读 ⇒ 引擎一发对象它就全 undefined（下拉空掉的另一半）');
+check('★ 布局自检 mock 里的 opts 也是对象（三方一致，谁漂了都红）',
+  /opts: \[\{ v: '[a-z_]+', t: '[^']+' \}/.test(mockCode), '',
+  'mock 和引擎不是一个形状 ⇒ 检查绿着、真界面是空的（这个 bug 就是这么溜过去的）');
+
 /* ---------- ★ 09-15 参数串：前端到底发得出去吗（"点渲染没反应"的根因守卫） ----------
    为什么单开一段：前端 `grade.params` 是**对象** `{KEY: 数}`，而引擎那口子收的是
    `KEY:VAL,KEY:VAL` 字符串。过去 main.js 直接 `encodeURIComponent(对象)` ⇒ 发出去变成
@@ -558,10 +579,15 @@ check('★ 真正在用的两个状态键在 defaultConfig 里有正经初值（
   /lastCur:\s*0/.test(mainJsCode) && /lastMode:\s*'pick'/.test(mainJsCode), '',
   '不声明 ⇒ 新装的用户配置里没这两个键，看着像"状态记忆没实现"');
 
-/* ---------- 11. 大图缩放（09-15 SV 选「B」） ----------
-   ★ 机制在**源码层**钉死，行为在布局自检 `[14]` 里量。
-   ⚠ 锚点必须取**声明本身**：ZoomImage.tsx 的说明注释里就写着 `{passive:false}` 这几个字，
-     拿 `passive: false` 当锚点会被自己的注释骗（09-15 在 api/index.ts 上栽过一次）。 */
+/* ---------- 11. 大图：一律「适应」+ 视图三档 A / A|B / B（09-15 SV 定） ----------
+   ★ 原文：「两图总用自适应**删除其他的** 并且加一个…类似于 LR 中的 `A` `A|B` 的小按钮，
+            **默认 A|B** 即对比原片，`B` 则为当前调色效果**铺满**」
+   ⇒ 两件事：① 白天做的缩放（滚轮 / 1:1 / 双击 / 百分比徽标）**全删**；
+             ② 换成三档"看图姿势"：A = 只看原片 · A|B = 左右对比（默认）· B = 只看调色后。
+   ★ 机制在**源码层**钉死，行为（点下去真剩几张图）在布局自检 `[14]` 里量。
+   ⚠ 锚点一律取**代码本身**：`FitImage.tsx` 的说明注释里就写着「1:1」「滚轮」这些字，
+     拿它们当锚点会被自己的注释骗 ⇒ 下面全部在**剥掉注释**的源码上查
+     （09-15 在 api/index.ts 上因为注释栽过一次）。 */
 /* ---------- [10.5] 右栏滑杆：每根一个重置 / 参数名字号 ×1.5 / 「?」点开说明 ----------
    ★ 三条都是 09-15 SV 直接点的名（原话）：
      「每个滑杆给个重置按钮 参数名文本字号大1.5倍 不要悬浮文字 改成后面加个问号点击出详细说明」
@@ -620,22 +646,40 @@ check('★ 空态那层**不许挡住**底栏自己的滚动/点击',
   '盖在上面还吃事件 ⇒ 底栏虽然空、但连滑动/点空白都失灵（比空着更难查）');
 
 
-const zoomSrc = read('src/components/ZoomImage.tsx');
-const viewerCode = read('src/components/Viewer.tsx');
-check('★ 两处大图共用 ZoomImage（别再各写一套）',
-  /import\s*\{\s*ZoomImage\s*\}/.test(viewerCode) &&
-    (viewerCode.match(/<ZoomImage\b/g) || []).length === 2 &&
-    !/transform:\s*`translate/.test(viewerCode), '',
-  'Viewer 自己又写一套缩放 ⇒ 两份实现早晚会长歪（本项目的老毛病）');
-check('★ 滚轮用**原生监听 + passive:false**（React 的 onWheel 是 passive 的）',
-  /el\.addEventListener\('wheel', onWheel, \{ passive: false \}\)/.test(zoomSrc), '',
-  '用 React 的 onWheel ⇒ 里面 preventDefault 无效，滚轮会把页面一起滚走');
-check('★ 换图回「适应」（不然翻到下一张还停在上次的放大倍数上）',
-  /useEffect\(\(\) => \{\s*reset\(\);\s*\}, \[src, reset\]\);/.test(zoomSrc), '',
-  '不复位 ⇒ 翻一张图还停在上次那 400%，看着像"图坏了"');
-check('★ 「1:1」的倍率是**算出来的**（按 contain 实际画出的宽，不是盒子宽）',
-  /const drawnW = \(\(\) => \{/.test(zoomSrc) && /bw \/ bh > ar \? bh \* ar : bw/.test(zoomSrc), '',
-  '拿盒子宽当基准 ⇒ contain 留的黑边被算进去，徽标上的 100% 是假的');
+console.log('\n[11] 大图：一律「适应」+ 视图三档（A / A|B / B）');
+const viewerCode = read('src/components/Viewer.tsx').replace(/\/\*[\s\S]*?\*\//g, '');
+const fitSrc = read('src/components/FitImage.tsx');
+const fitCode = fitSrc.replace(/\/\*[\s\S]*?\*\//g, '');
+check('★ 缩放那个组件**已经删掉了**（别再留个没人用的 ZoomImage 让人捡去用）',
+  !exists('src/components/ZoomImage.tsx'), '',
+  '文件还在 ⇒ 下一个人会以为"缩放还在、只是没用上"，又给接回去');
+/* ⚠ 是 **2 处**不是 3：选片台一处 + `Pane` 里一处（`Pane` 渲染两份 ⇒ 屏幕上最多三张图，
+   但写法只有两处 —— 数 `<FitImage` 的**出现次数**，不是数屏幕上的图）。 */
+check('★★ 三张图共用 `FitImage`（选片台一张 + 调色台两栏，写法只有两处）',
+  /import\s*\{\s*FitImage\s*\}/.test(viewerCode) &&
+    (viewerCode.match(/<FitImage\b/g) || []).length === 2 &&
+    !/transform:\s*`scale/.test(viewerCode), '',
+  'Viewer 自己又写一套尺寸 ⇒ 两份实现早晚会长歪（本项目的老毛病）');
+check('★★★ 缩放**全删**（滚轮 / 1:1 / 双击 / 百分比徽标）—— SV 09-15 定「删除其他的」',
+  !/wheel/i.test(fitCode) && !/scale\(/.test(fitCode) && !/1:1/.test(fitCode) &&
+    !/data-zoom/.test(fitCode) && !/data-zoom/.test(viewerCode), '',
+  '还留着某一样（或某个 `data-zoom` 探针）⇒ 就是没删干净，他要的是"总用适应"');
+check('★ 图仍然是 contain + 绝对定位（防"小窗下被裁"那个老 bug 复发）',
+  /objectFit: 'contain'/.test(fitCode) && /position: 'absolute'/.test(fitCode), '',
+  '退回 maxWidth/maxHeight:100% ⇒ 高度不确定时图按原尺寸渲染、被外层 overflow 裁掉');
+check('★★★ 三档就是 A / A|B / B，且**默认 A|B**（一进来是左右对比，不是单张）',
+  /useState<ViewMode>\('ab'\)/.test(viewerCode) &&
+    /\{ id: 'a', label: 'A'/.test(viewerCode) &&
+    /\{ id: 'ab', label: 'A\|B'/.test(viewerCode) &&
+    /\{ id: 'b', label: 'B'/.test(viewerCode), '',
+  '默认档不是 ab ⇒ 一进调色台看到的是单张');
+check('★★ 三档**真的改画面**（两栏按档位条件渲染，不是画个按钮摆着）',
+  /\{view !== 'b' && <Pane title="原图"/.test(viewerCode) && /\{view !== 'a' && \(/.test(viewerCode),
+  '', '按钮点了没反应 ⇒ 比没有按钮更糟');
+check('★★ 切档**不碰渲染**（换看法 ≠ 重新出一张；`setView` 附近不许出现出图调用）',
+  !/setView[\s\S]{0,60}?requestRender\(\)/.test(viewerCode) &&
+    !/onChange=\{setView\}[\s\S]{0,200}?requestRender\(\)/.test(viewerCode), '',
+  '切个视图就重出一张 ⇒ 变成"切档等 6 秒"（那张 dataURL 本来就还在手上）');
 
 /* ---------- 12. 相纸（09-15 SV 选「C」） ----------
    ★ 为什么单开一组：一张真卷出图 = **(负片, 相纸)** 二元组。原来只开放了负片那一半
