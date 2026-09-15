@@ -1054,6 +1054,120 @@ console.log('\n[13] 右栏：基准默认 / 恢复默认 / 存到主题');
   }
 }
 
+/* ---------- 14. 大图缩放（09-15 SV 选「B」） ---------- */
+/* ★ 为什么要这一组：以前**全仓库搜缩放零命中** ⇒ 大图永远只能"整张塞进窗口"。
+   而验收皮肤**必须看 1:1** —— 颗粒粗细、磨皮够不够、对焦在不在眼睛上，
+   在缩略图里根本看不出来。参照物是 spektrafilm 的 `100%/200%/400%/重置视图`。
+   ⚠ 这里断言的**不是"有个按钮"**，而是那个徽标上的数：
+     口径 = 「1 个屏幕像素对应几个图像像素」，点「1:1」之后**必须读作 100%**。
+     用盒子宽高去算这个数**一定是错的** —— `object-fit:contain` 会留黑边。 */
+console.log('\n[14] 大图缩放（适应 / 1:1 / 滚轮）');
+{
+  const wraps = page.locator('[data-zoom-pct]');
+  const nWraps = await wraps.count();
+  check('★ 分屏两栏各有缩放控件（原图 / 调色后，一份实现两个入口）', nWraps === 2,
+    `${nWraps} 个`,
+    '大图不能放大 ⇒ 验收皮肤只能看缩略图（颗粒/磨皮/对焦都看不出来）');
+
+  const readZoom = () =>
+    page.evaluate(() => {
+      const all = [...document.querySelectorAll('[data-zoom-pct]')];
+      const el = all[all.length - 1];
+      if (!el) return null;
+      return {
+        pct: Number(el.getAttribute('data-zoom-pct')),
+        state: el.getAttribute('data-zoom'),
+      };
+    });
+
+  const fit = await readZoom();
+  check('切进调色台时是「适应」（先看整张构图）', !!fit && fit.state === 'fit',
+    JSON.stringify(fit), '一进来就是放大的 ⇒ 根本看不到构图');
+
+  const oneBtn = page.locator('[data-zoom-btn="1to1"]').last();
+  check('「调色后」栏有「1:1」按钮', (await oneBtn.count()) > 0);
+  if ((await oneBtn.count()) > 0) {
+    await oneBtn.click();
+    await page.waitForTimeout(250);
+    const z = await readZoom();
+    check('★★ 点「1:1」⇒ 徽标读作 100%（口径：1 屏幕像素 = 1 图像像素）',
+      !!z && z.pct === 100, `读到 ${z && z.pct}%`,
+      '不是 100% ⇒ 要么拿盒子宽高当基准（contain 留黑边 ⇒ 必然偏），要么压根没算基准倍率');
+    check('★ 「1:1」确实改动了显示（和「适应」不是同一个数）',
+      !!z && !!fit && z.pct !== fit.pct, `${fit && fit.pct}% → ${z && z.pct}%`);
+
+    /* ★★ 滚轮：两件事一起验 ——
+       ① 真的放大了 ② **preventDefault 生效**（页面没跟着滚）。
+       ②才是重点：React 的 `onWheel` 是 **passive** 的，在里面 preventDefault 无效，
+       页面会跟着滚一下。所以必须用原生监听 + `{passive:false}`。
+       断言 `ev.defaultPrevented` 直接测到了这一点，而不是"看着像没滚"。 */
+    const prevented = await page.evaluate(() => {
+      const all = [...document.querySelectorAll('[data-zoom-pct]')];
+      const el = all[all.length - 1];
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      const ev = new WheelEvent('wheel', {
+        deltaY: -120,
+        clientX: r.left + r.width / 2,
+        clientY: r.top + r.height / 2,
+        bubbles: true,
+        cancelable: true,
+      });
+      el.dispatchEvent(ev);
+      return ev.defaultPrevented;
+    });
+    /* ⚠ 必须**分两步读**：`defaultPrevented` 是同步的（当场能拿到），
+       但徽标是 React state ⇒ 同一个 tick 里读还是旧值 —— 第一版就栽在这，
+       报出「100% → 100%」，看着像"滚轮没生效"，其实只是没等重渲染。 */
+    await page.waitForTimeout(250);
+    const wPct = await page.evaluate(() => {
+      const all = [...document.querySelectorAll('[data-zoom-pct]')];
+      const el = all[all.length - 1];
+      return el ? Number(el.getAttribute('data-zoom-pct')) : -1;
+    });
+    check('★ 滚轮真的放大了（徽标变大）', !!z && wPct > z.pct,
+      z ? `${z.pct}% → ${wPct}%` : '(没测到)');
+    check('★★ 滚轮被拦住了（页面没跟着滚）—— 原生监听 + passive:false',
+      prevented === true, String(prevented),
+      'React 的 onWheel 是 passive 的 ⇒ 在里面 preventDefault 无效，页面会跟着滚');
+
+    /* ★★ 这条表面上是"复位"，实际盯的是**放大之后控件还点得动吗** ——
+       第一版用 `setPointerCapture` 把指针捕获到外层容器，浮在里面的按钮就再也
+       收不到 click（放大 → 按钮全失灵）。失败信息必须写清这一点，不然下一个人
+       会以为"只是复位坏了"，改错地方。 */
+    const fitBtn = page.locator('[data-zoom-btn="fit"]').last();
+    await fitBtn.click();
+    await page.waitForTimeout(250);
+    const back = await readZoom();
+    check('★ 点「适应」能复位（数值和刚进来时一模一样）',
+      !!back && back.state === 'fit' && !!fit && back.pct === fit.pct,
+      JSON.stringify(back),
+      '放大之后就点不动了/不复位 ⇒ 多半是「拖动平移」把指针捕获到了外层容器（`setPointerCapture`），'
+        + '把按钮的 click 吃掉了；或者复位没把倍率和位移一起归零');
+
+    /* ★ 双击切换（缩小状态下双击 ⇒ 1:1）—— 顺手验一下它和按钮走的是同一套状态 */
+    const dbl = page.locator('[data-zoom-pct]').last();
+    await dbl.dblclick();
+    await page.waitForTimeout(250);
+    const z2 = await readZoom();
+    check('★ 双击大图 ⇒ 进 1:1（和按钮走同一套状态）', !!z2 && z2.pct === 100,
+      `读到 ${z2 && z2.pct}%`);
+  }
+
+  /* ★ 「原图」栏必须也是同一套（一份实现两条入口）—— 左栏要是没缩放，
+     就没法"原图和成片同倍率对比"，那这个功能的一半价值就没了。 */
+  const oneBtn0 = page.locator('[data-zoom-btn="1to1"]').first();
+  if ((await oneBtn0.count()) > 0) {
+    await oneBtn0.click();
+    await page.waitForTimeout(250);
+    const z0 = await page.evaluate(() => {
+      const el = document.querySelectorAll('[data-zoom-pct]')[0];
+      return el ? Number(el.getAttribute('data-zoom-pct')) : -1;
+    });
+    check('★ 「原图」栏也是同一套缩放（左栏也要能 1:1）', z0 === 100, `读到 ${z0}%`);
+  }
+}
+
 /* ---------- 收尾：整轮跑下来有没有未捕获报错 ---------- */
 /* ★ 为什么要放在**最后**再查一次：中间那些组会翻图/切主题/切台，
    每次都会走 `saveLast()` 那条链。第一组只查了"刚打开时"有没有报错，

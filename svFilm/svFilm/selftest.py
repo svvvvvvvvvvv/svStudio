@@ -1899,6 +1899,68 @@ def t_pipeline_e2e():
               d4.shape == np.asarray(r.disp).shape and float(d4.max()) <= 1 + 1e-9)
 
 
+def t_stock_map_valid():
+    r"""卷表里的**每个名字**都必须在 vendored spektrafilm 里真实存在。
+
+    ★ 为什么必须有这一组（09-15 挖出来的真 bug）：
+      `spektra.STOCK_MAP` 里 `gold200` / `ultramax400` 的相纸名写成了
+      `kodak_endura_premium`，而人家叫 **`premier`** ⇒ 谁哪天把这两卷放出来，
+      **一点就崩**（`init_params` 报 `FileNotFoundError`，找不到那个 json）。
+      一直没暴露：这俩在"备着"那一栏、界面没放、自检也只测那 5 个真卷。
+      **纯查表就能防住的事故**，不该等用户点出来。
+    ★ 顺手守一条**重复声明**：同一份映射在 `stocks.TABLE[*]['spek']` 里又写了一遍
+      （film / print / pe）⇒ 两边漂了就是"报告说的是一个卷、实际跑的是另一个"。
+    ⚠ 查的是**仓库自带那份**（`_sf()` 选定的 root），不是本机 pip 装的那份 ——
+      本机那份是 editable 指向已退休老目录的，见 `spektra._sf()` 的注释。
+    """
+    print('[卷表：每个名字都要在 spektrafilm 里真实存在]')
+    try:
+        spektra._sf()
+        from spektrafilm.model.stocks import FilmStocks, PrintPapers
+        import spektrafilm as _sfmod
+    except Exception as e:                                        # noqa: BLE001
+        check('★ 卷表校验：能 import vendored spektrafilm 的卷/纸枚举', False,
+              '%s: %s' % (type(e).__name__, str(e)[:90]))
+        return
+    films = {e.value for e in FilmStocks}
+    papers = {e.value for e in PrintPapers}
+    check('★ 卷表校验：能 import vendored spektrafilm 的卷/纸枚举', True,
+          '胶片 %d 种 / 相纸 %d 种' % (len(films), len(papers)))
+
+    bad_f = sorted({f for f, _p in spektra.STOCK_MAP.values() if f not in films})
+    bad_p = sorted({p for _f, p in spektra.STOCK_MAP.values() if p not in papers})
+    check('★ 卷表里**每个负片名**在 spektrafilm 里都真实存在',
+          not bad_f, '查无此片: %s' % bad_f)
+    check('★ 卷表里**每个相纸名**在 spektrafilm 里都真实存在',
+          not bad_p, '查无此纸（拼错？）: %s' % bad_p)
+
+    # 光有枚举还不够 —— 名字对但 json 缺，照样是 init 时才炸。逐个查文件。
+    pdir = os.path.join(os.path.dirname(os.path.abspath(_sfmod.__file__)),
+                        'data', 'profiles')
+    miss = []
+    for f, p in sorted(set(spektra.STOCK_MAP.values())):
+        for nm in (f, p):
+            if not os.path.exists(os.path.join(pdir, nm + '.json')):
+                miss.append(nm)
+    check('★ 每一条 (负片, 相纸) 的 profile json **真的在盘上**',
+          not miss, '缺文件: %s' % sorted(set(miss)))
+
+    # 两份卷表不许漂
+    drift = []
+    for n in stocks.names():
+        sp = (stocks.get(n) or {}).get('spek')
+        if not sp:
+            continue                      # neutral 本来就没有 spek
+        ours = spektra.STOCK_MAP.get(n)
+        if ours is None:
+            drift.append('%s 不在 STOCK_MAP 里' % n)
+        elif (ours[0], ours[1]) != (sp.get('film'), sp.get('print')):
+            drift.append('%s: STOCK_MAP %s ≠ TABLE %s'
+                         % (n, ours, (sp.get('film'), sp.get('print'))))
+    check('★ 两份卷表不许漂（STOCK_MAP 与 stocks.TABLE 的片/纸必须一致）',
+          not drift, str(drift))
+
+
 def main():
     for fn in (t_color, t_analyze, t_tone_mid_target, t_tone_monotone, _legacy(t_style_lock),
                _legacy(t_style_contrast_direction), _legacy(t_style_tone_curve), _legacy(t_style_chroma_ends), t_denoise,
@@ -1908,7 +1970,9 @@ def main():
                t_review_fixes, t_entry_settle, t_entry_toe, t_anchor,
                t_film_color, t_stage_cache, t_sliders,
                # 09-15 补的四组（各对着一次真踩过的事故）
-               t_entry_raw_only, t_stock_matrix, t_routing_contract, t_pipeline_e2e):
+               t_entry_raw_only, t_stock_matrix, t_routing_contract, t_pipeline_e2e,
+               # 09-15 晚：卷表拼错名（选中即崩）⇒ 纯查表就能防住
+               t_stock_map_valid):
         fn()
     print('-' * 52)
     if FAIL:

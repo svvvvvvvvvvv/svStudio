@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { API, Photo, RenderOpts } from '../api';
 import { useStore } from '../store/useStore';
+import { ZoomImage } from './ZoomImage';
 
 /**
  * 中间大图区。
@@ -15,6 +16,10 @@ import { useStore } from '../store/useStore';
  *   溢出后被外层 `overflow:hidden` **裁掉**（SV 报的「小窗下两张图被裁」）。
  *   现在改成：父容器 `position:relative`，图 `position:absolute` + `calc(100% - 2*pad)`
  *   + `object-fit:contain` —— 尺寸**确定**、比例**一定保持**、永远不裁。
+ *
+ * ★★ 缩放（09-15 SV 选「B」）：两处大图**共用 `ZoomImage`**（一份实现两条入口，
+ *   别再各写一套）—— 滚轮缩放 + 「适应 / 1:1」两档 + 双击切换。
+ *   为什么要有：验收皮肤必须看 1:1（颗粒、磨皮、对焦在眼睛上，缩略图里看不出来）。
  */
 export function Viewer() {
   const sessionPath = useStore((s) => s.sessionPath);
@@ -53,18 +58,12 @@ export function Viewer() {
         background: 'var(--bg)',
       }}
     >
-      <img
+      {/* ⚠ 选片台读的是**原始文件**（`rel` 那条路）—— 这是 SV 定的「选片台优先读 jpg 展示」，
+          出图源那件事只对**调色台**生效，别顺手改这里。 */}
+      <ZoomImage
         src={'file:///' + (sessionPath + '\\' + p.rel).replace(/\\/g, '/')}
         alt={p.name}
-        style={{
-          position: 'absolute',
-          top: 18,
-          left: 18,
-          width: 'calc(100% - 36px)',
-          height: 'calc(100% - 36px)',
-          objectFit: 'contain',
-          display: 'block',
-        }}
+        pad={18}
       />
     </div>
   );
@@ -273,7 +272,8 @@ function Pane({
       </div>
       {/* ★ 图区：绝对定位 + calc 尺寸 + object-fit:contain
           —— 不依赖"父高是否确定"，所以不会出现"图比面板大、被 overflow 裁掉"。
-          仍然保留 minHeight:0（防 flex 子项不肯收缩这类老问题）。 */}
+          仍然保留 minHeight:0（防 flex 子项不肯收缩这类老问题）。
+          ★ 缩放交给 `ZoomImage`（滚轮 + 适应/1:1 + 双击），口径见那个文件头。 */}
       <div
         style={{
           position: 'relative',
@@ -284,19 +284,7 @@ function Pane({
         }}
       >
         {src ? (
-          <img
-            src={src}
-            alt={title}
-            style={{
-              position: 'absolute',
-              top: PANE_PAD,
-              left: PANE_PAD,
-              width: `calc(100% - ${PANE_PAD * 2}px)`,
-              height: `calc(100% - ${PANE_PAD * 2}px)`,
-              objectFit: 'contain',
-              display: 'block',
-            }}
-          />
+          <ZoomImage src={src} alt={title} pad={PANE_PAD} />
         ) : (
           <span
             style={{

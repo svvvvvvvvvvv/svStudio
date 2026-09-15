@@ -79,6 +79,21 @@ def _sf():
         if root not in sys.path:
             sys.path.insert(0, root)
         from spektrafilm.runtime import init_params, simulate    # noqa: E402
+        # ★★ 断言真的加载到了 `root` 那一份 —— **别再让它静默拿别的副本**。
+        #   本机 spektrafilm 是 `pip install -e` 装的，而那个 editable 安装指向一个
+        #   **已经退休的老目录**（site-packages 里 `__editable__*.pth` 只有一行老路径）。
+        #   我们把仓库自带那份插进 `sys.path` 最前 ⇒ 正常情况加载的就是它。
+        #   但只要有谁"直接 import 一下"（不走这个函数），就会拿到老副本且**不报错**
+        #   ⇒ 验的是老代码、结论不可信（又一种"假绿"）。这里钉死它。
+        import spektrafilm as _sfmod                              # noqa: E402
+        _got = os.path.abspath(getattr(_sfmod, '__file__', '') or '')
+        _want = os.path.abspath(root)
+        if not _got.startswith(_want + os.sep):
+            raise RuntimeError(
+                'spektrafilm 加载到的**不是**我们指定的那一份（有人抢先 import 了别的副本！）\n'
+                '  应该来自: %s\n  实际加载: %s\n'
+                '  ⇒ 真卷会跑在**别的代码**上，结论不可信。多半是本机 pip 装的那份\n'
+                '    （editable 安装、指向已退休的老目录）在路径里抢先了。' % (_want, _got))
         _SF[0] = (init_params, simulate)
     return _SF[0]
 
@@ -93,8 +108,13 @@ STOCK_MAP = {
     # 备着（不选就不会加载）：
     'portra160':     ('kodak_portra_160',     'kodak_portra_endura'),
     'portra800':     ('kodak_portra_800',     'kodak_portra_endura'),
-    'gold200':       ('kodak_gold_200',       'kodak_endura_premium'),
-    'ultramax400':   ('kodak_ultramax_400',   'kodak_endura_premium'),
+    # ⚠ 09-15 修：这两行原来写的是 `kodak_endura_premium`，而 spektrafilm 里那张纸叫
+    #   `kodak_endura_premier`（premium / premier 是两个词，不是少打/多打一个字母）。
+    #   名字不认得 ⇒ `init_params` 直接 `FileNotFoundError` ⇒ **选中这一卷就崩**。
+    #   一直没暴露：这俩在"备着"那一栏、界面没放出来、自检也只测那 5 个真卷。
+    #   ⇒ 现在由 `selftest.t_stock_map_valid` 逐条钉住（名字 + json 文件都要真在）。
+    'gold200':       ('kodak_gold_200',       'kodak_endura_premier'),
+    'ultramax400':   ('kodak_ultramax_400',   'kodak_endura_premier'),
     'xtra400':       ('fujifilm_xtra_400',    'fujifilm_crystal_archive_typeii'),
     'velvia100':     ('fujifilm_velvia_100',  'kodak_supra_endura'),
     'provia100f':    ('fujifilm_provia_100f', 'kodak_supra_endura'),

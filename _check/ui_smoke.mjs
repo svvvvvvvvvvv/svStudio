@@ -626,6 +626,28 @@ check('★ 真正在用的两个状态键在 defaultConfig 里有正经初值（
   /lastCur:\s*0/.test(mainJsCode) && /lastMode:\s*'pick'/.test(mainJsCode), '',
   '不声明 ⇒ 新装的用户配置里没这两个键，看着像"状态记忆没实现"');
 
+/* ---------- 11. 大图缩放（09-15 SV 选「B」） ----------
+   ★ 机制在**源码层**钉死，行为在布局自检 `[14]` 里量。
+   ⚠ 锚点必须取**声明本身**：ZoomImage.tsx 的说明注释里就写着 `{passive:false}` 这几个字，
+     拿 `passive: false` 当锚点会被自己的注释骗（09-15 在 api/index.ts 上栽过一次）。 */
+console.log('\n[11] 大图缩放（一份实现两个入口）');
+const zoomSrc = read('src/components/ZoomImage.tsx');
+const viewerCode = read('src/components/Viewer.tsx');
+check('★ 两处大图共用 ZoomImage（别再各写一套）',
+  /import\s*\{\s*ZoomImage\s*\}/.test(viewerCode) &&
+    (viewerCode.match(/<ZoomImage\b/g) || []).length === 2 &&
+    !/transform:\s*`translate/.test(viewerCode), '',
+  'Viewer 自己又写一套缩放 ⇒ 两份实现早晚会长歪（本项目的老毛病）');
+check('★ 滚轮用**原生监听 + passive:false**（React 的 onWheel 是 passive 的）',
+  /el\.addEventListener\('wheel', onWheel, \{ passive: false \}\)/.test(zoomSrc), '',
+  '用 React 的 onWheel ⇒ 里面 preventDefault 无效，滚轮会把页面一起滚走');
+check('★ 换图回「适应」（不然翻到下一张还停在上次的放大倍数上）',
+  /useEffect\(\(\) => \{\s*reset\(\);\s*\}, \[src, reset\]\);/.test(zoomSrc), '',
+  '不复位 ⇒ 翻一张图还停在上次那 400%，看着像"图坏了"');
+check('★ 「1:1」的倍率是**算出来的**（按 contain 实际画出的宽，不是盒子宽）',
+  /const drawnW = \(\(\) => \{/.test(zoomSrc) && /bw \/ bh > ar \? bh \* ar : bw/.test(zoomSrc), '',
+  '拿盒子宽当基准 ⇒ contain 留的黑边被算进去，徽标上的 100% 是假的');
+
 /* ---------- 汇总 ---------- */
 console.log('\n' + '-'.repeat(50));
 if (fail === 0) {
