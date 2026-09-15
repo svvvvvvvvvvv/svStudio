@@ -41,6 +41,7 @@ from __future__ import annotations
 import os
 import sys
 import threading
+import time
 
 import numpy as np
 
@@ -95,7 +96,96 @@ def _sf():
                 '  ⇒ 真卷会跑在**别的代码**上，结论不可信。多半是本机 pip 装的那份\n'
                 '    （editable 安装、指向已退休的老目录）在路径里抢先了。' % (_want, _got))
         _SF[0] = (init_params, simulate)
+        _install_band()          # ★ 大图按行切条带（原图尺寸要靠它才跑得动）
     return _SF[0]
+
+
+# =====================================================================================
+# ★★★ 大图按行切条带：干掉「整张画面 × 81 光谱波段」那个中间量（09-15 SV 选「A」）
+# -------------------------------------------------------------------------------------
+# 为什么必须切（**实测撞出来的，不是保守估计**）：原图尺寸 7752×5178 出图会当场死 ——
+#   `spektrafilm/model/develop.py` 的
+#       density_spectral = contract('ijk, lk->ijl', density_cmy, channel_density)
+#   对每个像素拿 3 个 CMY 密度值，乘 (81 波段 × 3) 的密度谱 ⇒ 得到 81 个波段。
+#   `(7752 × 5178) × 81 × 8B = 24.2 GiB` 一次分配，而本机提交上限只剩 ~10 GB。
+#
+# 为什么切了**逐位不变**（关键，别当近似看）：
+#   出问题的那条链是 `printing.py` 的 `_film_cmy_to_print_log_raw`（以及 scanning.py 里
+#   对应的 `cmy_to_log_xyz`），**整条链全是逐像素的**：3 通道进 → 81 波段 → 3 通道出
+#   （`contract("ijk, kl->ijl", light, sensitivity)`），81 **纯属中间量**；
+#   `_compute_exposure_factor_midgray` 只依赖固定数据、跟像素无关。
+#   ⇒ 每个输出像素**只依赖同一个输入像素** ⇒ 按行切开分别算，拼回来数学上完全相同。
+#   实测（(935,1400,3)，整张 vs 条带）：**最大逐位差 0.000e+00**。
+#
+# ⚠⚠ **绝不改 vendor 文件**：`_tools/README.md` 写明 spektrafilm 是「改动：无，原样拷的」，
+#   升级就靠重新 `git archive` 覆盖 ⇒ 在它上面动刀 = 升级必冲突 + 那句话变假。
+#   所以在这里做**类级 monkey-patch**（`selftest` 有检查钉着 vendor 里不许出现我们的标记）。
+#
+# ⚠ 只在 `use_lut=False` 那条路拦：LUT 那条路本来就在 3 维 CMY 空间里查表，不展开 81 波段。
+# ⚠ 影响面：`spectral_compute_enlarger`（印相/放大机）与 `spectral_compute_scanner`（扫描）。
+# =====================================================================================
+BAND_ROWS = 192          # 一条带多少行（192 行 × 7752 宽 × 81 波段 × 8B ≈ 0.9 GB 中间量）
+BAND_MIN_PX = 1000000    # 小于这么多像素**不切** —— 700 预览那档保持原来那条路，行为一模一样
+_BAND_LOCK = threading.Lock()
+_BANDED = [False]
+_VENDOR_MARK = 'SVFILM_BAND'      # 只允许出现在我们自己文件里的标记（selftest 拿它查 vendor）
+
+
+def band_on():
+    """自检用：条带包装**装上了没有**（装上 = 大图能出原图尺寸）。"""
+    return bool(_BANDED[0])
+
+
+def _install_band():
+    """给 spektrafilm 的两个逐像素「3 → 81 → 3」运算套上按行切条带的外壳。幂等。"""
+    with _BAND_LOCK:
+        if _BANDED[0]:
+            return
+        from spektrafilm.runtime.services.spectral_lut_compute import SpectralLUTService
+        for _name in ('spectral_compute_enlarger', 'spectral_compute_scanner'):
+            _orig = getattr(SpectralLUTService, _name)
+            if getattr(_orig, '_svfilm_banded', False):
+                continue
+
+            def _make(orig, name):
+                def _banded(self, cmy_data, spectral_calculation, data_min, data_max,
+                            *, use_lut=False):
+                    if use_lut:
+                        return orig(self, cmy_data, spectral_calculation, data_min, data_max,
+                                    use_lut=True)
+                    cmy = np.asarray(cmy_data)
+                    if cmy.ndim != 3 or (cmy.shape[0] * cmy.shape[1]) < BAND_MIN_PX:
+                        # 小图（700 预览那种）走原路 —— 保证老行为一个字节都不变
+                        return orig(self, cmy_data, spectral_calculation, data_min, data_max,
+                                    use_lut=False)
+                    t0 = time.perf_counter()
+                    out = None
+                    n = cmy.shape[0]
+                    for y0 in range(0, n, BAND_ROWS):
+                        y1 = min(y0 + BAND_ROWS, n)
+                        part = orig(self, cmy[y0:y1], spectral_calculation,
+                                    data_min, data_max, use_lut=False)
+                        if out is None:
+                            out = np.empty(cmy.shape[:2] + (int(part.shape[-1]),), part.dtype)
+                        out[y0:y1] = part
+                    # ★ 那条 `@timeit` 装饰器是 `timings[key] = elapsed`（**覆盖**）⇒
+                    #   我们逐条带调用它，留下的会是**最后一条带**的时间（假数）。
+                    #   这里把**总时间**写回去，别让计时骗人。
+                    try:
+                        self.timings['%s.%s' % (type(self).__name__, name)] = \
+                            time.perf_counter() - t0
+                    except Exception:                            # noqa: BLE001
+                        pass
+                    return out
+                _banded._svfilm_banded = True
+                _banded.__name__ = name
+                _banded.__doc__ = ('%s\n\n★ svFilm 的条带包装（%s）：'
+                                   '大图按 %d 行切开跑，逐位不变。vendor 未被改动。'
+                                   % (orig.__doc__ or '', _VENDOR_MARK, BAND_ROWS))
+                return _banded
+
+            setattr(SpectralLUTService, _name, _make(_orig, _name))
+        _BANDED[0] = True
 
 
 # 我们对外用的卷名 → spektrafilm 的 (负片 profile, 相纸 profile)

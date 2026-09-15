@@ -1104,12 +1104,14 @@ ipcMain.handle('export-grade', async (e, payload) => {
     为什么要引擎来写：`io.save` 已经处理好 EXIF / 4:4:4（无色度抽样）/ 质量；
     前端拿 base64 再写一遍 = 丢相机信息 + 多一次编解码。
 
-    ⚠ **导出尺寸由引擎定**（不传 `side` ⇒ 引擎按自己的工作分辨率 `C.MAX_SIDE` 出）——
+    ⚠ **导出尺寸由引擎定**（不传 `side` ⇒ 引擎按**原图全尺寸**出，09-15 SV 选「A」定的）——
       前端不许写死一个数：这条链上"前端自己写死默认值"已经踩过三次（基准名/纸名/滑杆初值）。
       导出的真实尺寸由引擎**回来告**（返回 w/h），界面只负责把它显示出来。
-    ⚠ 导出跟预览**不是一个尺寸**（预览固定 700）：颗粒是物理量，尺寸一变观感就会变
-      —— 这一点要如实告诉用户，别让他以为"导出跟屏幕上看到的一模一样"。
-    ⚠ 大尺寸要重新解码 + 重新跑链（RAW 十几秒）⇒ 超时放到 15 分钟。 */
+    ⚠ 导出跟预览**不是一个尺寸**（预览固定 700）：颗粒是物理量，尺寸一变观感就会变 ——
+      **而且是"越大颗粒越明显"**（实测同一块平坦区 2048/3000/原图 = 0.63/0.77/1.87）。
+      这一点要如实告诉用户，别让他以为"导出跟屏幕上看到的一模一样"。
+    ⚠ 原图尺寸要重新解码 + 重新跑链，**RAW 一张约 6 分半**（2048 那档只要 29 秒）
+      ⇒ 超时放到 15 分钟（900000 ms）。 */
 ipcMain.handle('export-image', async (e, payload) => {
   const p = payload || {};
   const src = String(p.src || '');
@@ -1117,7 +1119,7 @@ ipcMain.handle('export-image', async (e, payload) => {
   const stem = path.basename(src).replace(/\.[^.]+$/, '');
   const dir = path.dirname(src);
   const res = await dialog.showSaveDialog(win, {
-    title: '导出成片（按引擎出图尺寸重新渲染）',
+    title: '导出成片（原图尺寸重新渲染，要等几分钟）',
     defaultPath: path.join(dir, stem + '_svfilm.jpg'),
     filters: [{ name: 'JPEG', extensions: ['jpg', 'jpeg'] }]
   });

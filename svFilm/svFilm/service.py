@@ -110,8 +110,12 @@ def _decode_sig():
 
 
 def _load_key(path, side):
-    """解码缓存的键 = 路径 + 尺寸 + **解码签名**。"""
-    return (os.path.abspath(path), int(side), _decode_sig())
+    """解码缓存的键 = 路径 + 尺寸 + **解码签名**。
+
+    ⚠ `side=None` = **原图全尺寸**（09-15 SV 选「A」的导出默认）⇒ 必须映射成**独立的键**，
+      不能 `int(None)` 崩、也不能跟别的尺寸撞在一起（撞了就是"拿 700 那份当真"）。
+    """
+    return (os.path.abspath(path), 'full' if side is None else int(side), _decode_sig())
 
 
 def _cache_put(path, side, sample):
@@ -206,13 +210,16 @@ def _export_one(i, out_path, stock, base, paper, params, side, quality, src_path
       `io.save` 已经处理好了 **EXIF / 4:4:4（无色度抽样）/ 质量**；
       前端拿 base64 再写一遍 = 丢相机信息 + 多一次编解码。
 
-    ⚠ 导出尺寸与预览尺寸**不是**同一个：预览固定 700，导出默认 `MAX_SIDE`（2048）。
-      胶片颗粒是**物理量**，尺寸一变观感就会变（颗粒相对画面的大小变了）——
-      这是这条链的本性，不是 bug。所以由调用方**显式**给 `side`，引擎照那个尺寸
-      **重新解码 + 重新跑一遍**（不复用预览那份 Sample：尺寸不同，复用就是作弊）。
+    ⚠ 导出尺寸与预览尺寸**不是**同一个：预览固定 700，导出**默认就是原图全尺寸**
+      （09-15 SV 选「A」定的）。胶片颗粒是**物理量**，尺寸一变观感就会变 ——
+      **而且是"越大颗粒越明显"**（每个像素收集到的银盐颗粒 ∝ 像素面积，越小越少 ⇒ 相对噪声越大）：
+      同一块平坦区实测 2048/3000/原图 = 0.63/0.77/1.87。这不是 bug，是这条链的本性。
+      所以由调用方**显式**给 `side`，引擎照那个尺寸**重新解码 + 重新跑一遍**
+      （不复用预览那份 Sample：尺寸不同，复用就是作弊）。
     ⚠ **不挂段缓存**（`cache=None`）：导出是大尺寸，塞进 LRU 会把预览那几套挤掉。
-    ⚠ 尺寸上限由调用方把关 —— 40MP 全尺寸在这条链上很危险：中间量是 float64，
-      一个 40MP 的 (H,W,3) 就 ~960MB，链上有好几个。
+    ⚠ 原图全尺寸现在**跑得动**（`spektra._install_band()` 把 3→81→3 那个逐像素的
+      大中间量按行切条带，逐位不变）：实测 7752×5178 = **380 s/张、峰值提交 13.3 GB、19 MB**。
+      上限由 `C.EXPORT_MAX_SIDE` 把关（**默认 None = 不限**；设成数字就夹住并回 `side_clamped`）。
 
     返回 `(info, err)`；成功时 `info['ok'] = True`。
     """
@@ -233,20 +240,33 @@ def _export_one(i, out_path, stock, base, paper, params, side, quality, src_path
     #   一个 (81, 40M) 的 float64 中间量就要 **24.2 GiB**，引擎进程会当场死掉。
     #   上限 3000 长边（6MP）：真跑完 56 秒、峰值数组 138 MB，安全。
     #   ⚠ 被夹住要**说出来**（返回 `side_clamped`）—— 不许静默降级成"小一点的图"。
-    side = int(side)
-    _cap = int(getattr(C, 'EXPORT_MAX_SIDE', 3000))
-    side_clamped = bool(side > _cap)
-    if side_clamped:
-        side = _cap
+    # ★★ 尺寸口径（09-15 SV 选「A」：**默认就出原图尺寸**）：
+    #   `side=None`（调用方不传）= **原图全尺寸**；给数字 = 那个长边。
+    #   ⚠ `io._resize` 对 `max_side=None` 是"保持原样" ⇒ 这条路上不需要别的哨兵值。
+    _cap = getattr(C, 'EXPORT_MAX_SIDE', None)      # None = 不设上限
+    if side is None:
+        side, side_clamped = None, False
+    else:
+        side = int(side)
+        side_clamped = bool(_cap) and side > int(_cap)
+        if side_clamped:
+            side = int(_cap)
     with _Overrides(_parse_params(params)):
-        # ★ 按导出尺寸重新解码 + 重新跑（`_load_one` 自带"路径+尺寸+入口签名"那一层缓存）
-        s, _ms = _load_one(src, side)
-        r = pipeline.run_from(s, stock=stock or None, base=base or None,
-                              cache=None, paper=paper or None)
+        try:
+            # ★ 按导出尺寸重新解码 + 重新跑（`_load_one` 自带"路径+尺寸+入口签名"那一层缓存）
+            s, _ms = _load_one(src, side)
+            r = pipeline.run_from(s, stock=stock or None, base=base or None,
+                                  cache=None, paper=paper or None)
+        except MemoryError:
+            # 原图尺寸要 ~13 GB（65% 在"胶片出图"那一大段）。内存不够时**说清楚**，
+            # 别让它冒一个 numpy 的 `_ArrayMemoryError` 让人看不懂。
+            return None, {'error': '内存不够跑这个尺寸（%s）。关掉几个占内存的程序再试，'
+                                   '或把 config.EXPORT_MAX_SIDE 设成 3000 当上限。'
+                                   % ('原图' if side is None else '%d 长边' % side)}
     io.save(r.disp, out_path, exif=(s.exif or None), quality=int(quality))
     return dict(ok=True, path=out_path.replace('\\', '/'),
                 w=int(r.disp.shape[1]), h=int(r.disp.shape[0]), side=side,
-                side_clamped=side_clamped,
+                full=side is None, side_clamped=side_clamped,
                 ms=round(r.report.get('ms', 0)),
                 bytes=os.path.getsize(out_path)), None
 
@@ -439,13 +459,14 @@ class _H(BaseHTTPRequestHandler):
                 return self._img(b, info['mime'])
             if u.path == '/export':
                 # ★★ 导出成片（09-15 SV 选「A」）：把渲染结果写成**真照片文件**。
-                #   ⚠ `side` 由调用方**显式**给（不传 = `MAX_SIDE` 2048 工作分辨率）——
-                #     绝不悄悄用 700 那份预览（那是"看着对、其实缩水"）。
-                #   ⚠ 写盘要时间（2048 长边的 RAW 一张十几秒）⇒ 前端那边的超时要放宽。
+                #   ⚠ `side` 不传 = **原图全尺寸**（SV 选「A」定的默认）——
+                #     绝不是悄悄用 700 那份预览（那是"看着对、其实缩水"）。
+                #   ⚠ 写盘要时间：2048 长边十来秒、**原图尺寸 ~6 分半**（RAW）⇒ 前端超时要放宽。
+                _sv = (q.get('side') or '').strip()
                 info2, err2 = _export_one(int(q.get('id') or 0), q.get('path'),
                                           q.get('stock'), q.get('base'), q.get('paper'),
                                           q.get('params'),
-                                          int(q.get('side') or C.MAX_SIDE),
+                                          int(_sv) if _sv else None,
                                           q.get('q') or C.JPEG_QUALITY,
                                           src_path=q.get('src'))
                 if info2 is None:

@@ -547,11 +547,13 @@ export const useStore = create<AppState>((set, get) => ({
      EXIF / 4:4:4 / 质量 —— 前端再写一遍 = 丢相机信息 + 多一次编解码。
 
      ★ 三件"跟屏幕上那张不一样"的事，提示里要如实说：
-       ① 尺寸 —— 走**引擎的出图尺寸**（前端不传 side ⇒ 引擎按 `MAX_SIDE` 出），不是预览那 700。
-          颗粒是物理量，尺寸一变观感就会变（大尺寸下颗粒相对画面更细）。
-       ② 代价 —— 要重新解码 + 重新跑链：≈ **半分钟一张 RAW**（3000 长边约 1 分钟）。
-       ③ 有硬上限 —— 原图全尺寸在这条链上**直接 OOM**（实测一次要 24.2 GiB，
-          见 `service._export_one`）⇒ 引擎会夹到 3000 并回 `side_clamped`。
+       ① 尺寸 —— 走**引擎的出图尺寸**（前端不传 side ⇒ 引擎按**原图全尺寸**出），不是预览那 700。
+          颗粒是物理量，尺寸一变观感就会变 —— **而且是"越大颗粒越明显"**
+          （每个像素收集到的银盐颗粒 ∝ 像素面积；实测同一块平坦区 2048/3000/原图 = 0.63/0.77/1.87）。
+          ⚠ 09-15 我一度说成"越大越细"，那是拿"相邻像素差"当尺子量的 —— 那把尺子跨分辨率不可比。
+       ② 代价 —— 要重新解码 + 重新跑链：**原图尺寸一张 RAW ≈ 6 分半**（3000 长边约 1 分钟）。
+       ③ 上限 —— 默认**不限**（原图尺寸能出）；只有 `config.EXPORT_MAX_SIDE` 被设成数字时才会夹，
+          夹住会回 `side_clamped`，**不静默降级**。
      ⚠ 出图源用 `p.loadPath`（同名 RAW 优先，`main.js` 的 `attachLoadPath` 给的）；
        **别用 `rel`** —— 那是身份键（星级/归档按它索引），拿它出图是另一类 bug。
      ⚠ 绝不在这里拼参数串：原样把对象交给 main.js，由它走唯一的 `paramStr`
@@ -580,7 +582,8 @@ export const useStore = create<AppState>((set, get) => ({
       if (r?.ok) {
         const mb = r.bytes ? `（${(r.bytes / 1024 / 1024).toFixed(1)} MB）` : '';
         const cl = r.side_clamped ? `（原尺寸超过引擎上限，已按 ${r.side} 长边导出）` : '';
-        get().showToast(`已导出 ${r.w}×${r.h}${mb}${cl} → ${r.path}`);
+        const tag = r.full ? '原图尺寸 ' : '';
+        get().showToast(`已导出 ${tag}${r.w}×${r.h}${mb}${cl} → ${r.path}`);
       } else {
         get().showToast('导出失败：' + (r?.error || '未知'));
       }

@@ -2222,6 +2222,110 @@ def t_paper_choice():
     check('★ 换纸之后产物确实不同（没被上一张兜住）', d12 > 0.02, 'mean=%.5f' % d12)
 
 
+def t_band_render():
+    r"""大图切条带（09-15 SV 选「A」：**导出默认原图尺寸**）—— 必须**逐位不变**。
+
+    为什么这条必须有：原图 7752×5178 原来**当场 OOM**（spektrafilm 里一个「整张 × 81 波段」
+    的 float64 中间量要一次分配 24.2 GiB）。修法是把它按行切条带 —— 而这一步**只能是精确的**：
+    只要有人（包括将来的我）把它改成"近似"或者顺手改了 vendor，这条就会红。
+    """
+    import re
+    import time
+
+    print('[大图条带：原图尺寸靠它才跑得动，且必须逐位不变]')
+
+    from . import service
+
+    spektra._sf()                     # 装上包装（幂等：装两次不许套两层）
+    spektra._sf()
+    check('★ 条带包装装上了（没装 ⇒ 一选原图尺寸就把引擎打死）', spektra.band_on())
+
+    # ---- 行为：拿一个**纯逐像素**的假 callback，比"整张"与"条带" ----
+    calls = [0]
+    _SLEEP = 0.02
+
+    def _cb(a):
+        calls[0] += 1
+        time.sleep(_SLEEP)            # 让"总时间 vs 最后一条带"能真的被区分开
+        # 逐像素：每个输出像素只依赖**同一个输入像素**（跟 spektrafilm 那个 3→81→3 同性质）
+        return np.stack([a[..., 0] * 1.7 + 0.11,
+                         a[..., 1] * 0.6 + 0.02,
+                         a[..., 2] * a[..., 2] + 0.3], axis=-1)
+
+    class _Fake:
+        timings = {}
+
+    # ⚠ `@timeit(include_class=True)` 存的键是 `类名.标签` —— 这里假 self 的类名就是 `_Fake`。
+    _K = '_Fake.spectral_compute_enlarger'
+    from spektrafilm.runtime.services.spectral_lut_compute import SpectralLUTService
+    arr = np.random.default_rng(7).random((40, 60, 3))
+    _o_rows, _o_min = spektra.BAND_ROWS, spektra.BAND_MIN_PX
+    try:
+        spektra.BAND_ROWS, spektra.BAND_MIN_PX = 9, 4         # 40 行 / 9 ⇒ 5 条带
+        calls[0] = 0
+        _Fake.timings.pop(_K, None)
+        got = SpectralLUTService.spectral_compute_enlarger(_Fake(), arr, _cb, 0.0, 1.0)
+        n_band = calls[0]
+        _t_band = _Fake.timings.get(_K)
+        spektra.BAND_MIN_PX = 10 ** 9                         # 关掉条带 = 原来的行为
+        calls[0] = 0
+        _Fake.timings.pop(_K, None)
+        ref = SpectralLUTService.spectral_compute_enlarger(_Fake(), arr, _cb, 0.0, 1.0)
+        n_one = calls[0]
+        _t_one = _Fake.timings.get(_K)
+    finally:
+        spektra.BAND_ROWS, spektra.BAND_MIN_PX = _o_rows, _o_min
+
+    check('★★★ 条带切出来的结果跟整张跑**逐位一致**（这是"能切"的全部理由，不是近似）',
+          got.shape == ref.shape and np.array_equal(got, ref),
+          '最大差 %.3e' % float(np.max(np.abs(got - ref))))
+    check('★ 真的切成了多条带（40 行 / 9 行一条 ⇒ 恰好 5 次）', n_band == 5, '%d 次' % n_band)
+    check('★ 小图（低于阈值）**走原路、只算一次** ⇒ 700 预览那条路一个字节都不变',
+          n_one == 1, '%d 次' % n_one)
+    check('★★ 计时不被条带骗：`@timeit` 是**覆盖写** ⇒ 留着的必须是**总时间**（≈5×单次），'
+          '不是最后一条带（≈1×单次）',
+          _t_band is not None and _t_one is not None and _t_band > 3 * _SLEEP,
+          '条带录得 %.3f s / 整张录得 %.3f s' % (_t_band or -1, _t_one or -1))
+    with open(spektra.__file__, encoding='utf-8') as _f:
+        check('★ `use_lut=True` 那条路不拦（它本来就不展开 81 波段）',
+              'if use_lut:' in _f.read())
+
+    # ---- 硬规矩：**vendor 一个字节都不许动** ----
+    here = os.path.abspath(spektra.__file__)
+    repo = os.path.dirname(os.path.dirname(here))
+    vend = os.path.join(repo, '_tools', 'spektrafilm', 'src')
+    hits = []
+    for root, _dirs, files in os.walk(vend):
+        for f in files:
+            if f.endswith('.py'):
+                with open(os.path.join(root, f), encoding='utf-8', errors='replace') as fh:
+                    if spektra._VENDOR_MARK in fh.read():
+                        hits.append(os.path.join(root, f))
+    check('★★★ vendor（spektrafilm）里**不许出现我们的标记** —— README 写着「改动：无，原样拷的」，'
+          '改了它升级必冲突、那句话也变假', not hits, '；'.join(hits) or '干净')
+    with open(here, encoding='utf-8') as fh:
+        check('★ 标记确实在**我们自己的** `spektra.py` 里（否则上面那条查的是空气）',
+              spektra._VENDOR_MARK in fh.read())
+
+    # ---- 导出那个口子：默认原图尺寸 ----
+    with open(os.path.join(repo, 'svFilm', 'service.py'), encoding='utf-8') as fh:
+        svc = fh.read()
+    check('★★ 导出**不传 side = 原图尺寸**（`int(_sv) if _sv else None`）',
+          'int(_sv) if _sv else None' in svc)
+    check('★★ 尺寸上限默认**不限**（`config.EXPORT_MAX_SIDE = None`）',
+          getattr(C, 'EXPORT_MAX_SIDE', '缺失') is None,
+          repr(getattr(C, 'EXPORT_MAX_SIDE', '缺失')))
+    check('★ 上限被设成数字时**会夹住并说出来**（`side_clamped`，不静默降级）',
+          'side_clamped' in svc and 'bool(_cap) and side > int(_cap)' in svc)
+    check('★ 解码缓存的键吃得下 `None`（原图尺寸不能撞上别的尺寸 = 拿 700 那份当真）',
+          service._load_key('x.RAF', None) != service._load_key('x.RAF', 700)
+          and service._load_key('x.RAF', None) != service._load_key('x.RAF', 2048))
+    check('★ 内存不够时说人话（不许冒出 numpy 的 `_ArrayMemoryError`）',
+          'except MemoryError' in svc and '关掉几个占内存的程序' in svc)
+    check('★ 导出那一路**不再**拿 `C.MAX_SIDE` 当默认（那会把 2048 当"原图"发出去）',
+          not re.search(r"if u\.path == '/export':[\s\S]{0,1600}?or C\.MAX_SIDE", svc))
+
+
 def main():
     for fn in (t_color, t_analyze, t_tone_mid_target, t_tone_monotone, _legacy(t_style_lock),
                _legacy(t_style_contrast_direction), _legacy(t_style_tone_curve), _legacy(t_style_chroma_ends), t_denoise,
@@ -2235,7 +2339,10 @@ def main():
                # 09-15 晚：卷表拼错名（选中即崩）⇒ 纯查表就能防住
                t_stock_map_valid,
                # 09-15 晚：相纸可选（SV 选「C」）⇒ 换纸必须真的换画面
-               t_paper_choice):
+               t_paper_choice,
+               # 09-15 深夜：SV 选「A」⇒ 导出默认**原图尺寸**，靠"大图切条带"才跑得动
+               #   ⇒ 必须钉住"切了逐位不变" + "vendor 一个字节都没动"
+               t_band_render):
         fn()
     print('-' * 52)
     if FAIL:
