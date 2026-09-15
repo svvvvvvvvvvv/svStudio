@@ -299,62 +299,6 @@ export function GradePanel() {
         </div>
       )}
 
-      {/* ---- 成色基准（竖排单选） ---- */}
-      <div>
-        <Text
-          size="1"
-          weight="bold"
-          style={{ color: 'var(--text-dim)', letterSpacing: 1 }}
-        >
-          成色基准
-        </Text>
-        <Flex direction="column" gap="1" mt="1">
-          {bases.map((b) => {
-            const on = grade.base === b.name;
-            /* ★ `data-base-on` = 「这支是不是当前选中的」——
-               布局自检靠它断言"基准**必须有且只有一支**选中"。
-               不去认颜色/边框（那是皮肤，改样式就废了），也不去数"有没有高亮"。
-               为什么值得钉死：默认值曾经是前端写死的 `'all'`，而引擎基准表里没有这一支
-               ⇒ **四支一支都选不中**，同时引擎静默按"不套基准"出图（画面是错的、还看不出来）。 */
-            return (
-              <button
-                key={b.name}
-                data-base={b.name}
-                data-base-on={on ? '1' : '0'}
-                onClick={() => setGrade({ base: b.name })}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 7,
-                  padding: '6px 9px',
-                  borderRadius: 'var(--r-sm)',
-                  border: on ? '1px solid var(--accent)' : '1px solid var(--line)',
-                  background: on
-                    ? 'rgba(10,132,255,.10)'
-                    : 'rgba(255,255,255,.03)',
-                  color: on ? 'var(--accent)' : 'var(--text-dim)',
-                  cursor: 'pointer',
-                  fontSize: 11.5,
-                  textAlign: 'left',
-                }}
-              >
-                <span
-                  style={{
-                    width: 11,
-                    height: 11,
-                    borderRadius: 999,
-                    border: on ? '4px solid var(--accent)' : '1.5px solid var(--line)',
-                    boxSizing: 'border-box',
-                    flex: '0 0 auto',
-                  }}
-                />
-                {b.label || b.name}
-              </button>
-            );
-          })}
-        </Flex>
-      </div>
-
       {/* ---- 参数（按组平铺） ---- */}
       {groups.map(([g, list]) => (
         <div key={g}>
@@ -385,11 +329,13 @@ export function GradePanel() {
                   <Flex justify="between" align="center" gap="2">
                     <Flex align="center" gap="1" style={{ minWidth: 0 }}>
                       {/* ★★ 参数名（09-15 SV）：
-                          ① **字号 ×1.5** —— 原来 Radix size="1" 是 12px ⇒ 现在 18px；
+                          ① **字号**：原来 Radix size="1" = 12px ⇒ 先放大 1.5 倍到 18px，
+                             当晚再定「缩到当前的 0.9 左右」⇒ **16px**；
                           ② **不要悬停提示** —— 那段说明挂在悬停上根本看不清（得悬着不动、还老
                              在鼠标划过时蹦出来），改成后面这个「?」点开看。
-                          ⚠ 名字和数字原来都吃 size="1"（12px）；这次只放大**名字**（他点名的就是名字）。 */}
-                      <Text style={{ fontSize: 18, lineHeight: 1.35 }}>{d.name}</Text>
+                          ⚠ 名字和数字原来都吃 size="1"（12px）；那行**不能带 size** ——
+                             Radix 的 size="1" 会盖住 inline fontSize（踩过）。 */}
+                      <Text style={{ fontSize: 16, lineHeight: 1.35 }}>{d.name}</Text>
                       {/* ★★ 「?」= 详细说明（09-15 SV 选的做法）。内容就是引擎 `PARAMS` 里那段
                           `d`（`svFilm/service.py` 写的，带数字和 ⚠ 提醒），**前端不许自己编文案**。
                           用 Popover 不用 Dialog：贴着这一根弹出来、点别处就关，不打断手感。
@@ -511,6 +457,64 @@ export function GradePanel() {
           </Flex>
         </div>
       ))}
+
+      {/* ---- 成色基准（★ 09-15 SV：从上面挪到**这里**）----
+          为什么挪：它对画面成色的影响很大（不套基准 / 只加雾 / 退黄+加雾 / 全对齐），
+          但它原来竖排四行摆在「卷 / 相纸」下面 ⇒ 把滑杆往下推掉四行的位置，
+          而他天天拧的是滑杆。挪到底部 + 改成**一横排紧凑 chip**（占一行、会换行）。
+          ⚠ `data-base` / `data-base-on` 一个都不许少：布局自检靠它断言
+            「基准**必须有且只有一支**选中」——不去认颜色/边框（那是皮肤，改样式就废了）。
+            为什么值得钉死：默认值曾经是前端写死的 `'all'`，而引擎基准表里没有这一支
+            ⇒ **四支一支都选不中**，同时引擎静默按"不套基准"出图（画面是错的、还看不出来）。 ---- */}
+      <div>
+        <Text
+          size="1"
+          weight="bold"
+          style={{ color: 'var(--text-dim)', letterSpacing: 1 }}
+        >
+          成色基准
+        </Text>
+        <Flex gap="1" mt="1" wrap="wrap">
+          {bases.map((b) => {
+            const on = grade.base === b.name;
+            return (
+              <button
+                key={b.name}
+                data-base={b.name}
+                data-base-on={on ? '1' : '0'}
+                onClick={() => setGrade({ base: b.name })}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '4px 8px',
+                  borderRadius: 999,
+                  border: on ? '1px solid var(--accent)' : '1px solid var(--line)',
+                  background: on
+                    ? 'rgba(10,132,255,.10)'
+                    : 'rgba(255,255,255,.03)',
+                  color: on ? 'var(--accent)' : 'var(--text-dim)',
+                  cursor: 'pointer',
+                  fontSize: 11.5,
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                <span
+                  style={{
+                    width: 9,
+                    height: 9,
+                    borderRadius: 999,
+                    border: on ? '3px solid var(--accent)' : '1.5px solid var(--line)',
+                    boxSizing: 'border-box',
+                    flex: '0 0 auto',
+                  }}
+                />
+                {b.label || b.name}
+              </button>
+            );
+          })}
+        </Flex>
+      </div>
 
       <Flex gap="2" mt="1">
         {/* ★ 这两个按钮 09-15 之前是**死的**（没有 onClick，点了什么都不发生） */}

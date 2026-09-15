@@ -465,17 +465,35 @@ def load_raw(path, max_side=C.MAX_SIDE):
         # ★ 位置逐张听相机（09-13 深夜）：落点 `a` 改由「机型×DR 实测落点规律」**逐张**定。
         #   拿不到（机型没标定 / DR 不认 / e 算不出）⇒ 回落 ENTRY_LEVEL，**逐位同旧行为**。
         a_settle = None
+        _shift = float(getattr(C, 'ENTRY_SETTLE_SHIFT_EV', 0.0))
         if getattr(C, 'ENTRY_SETTLE_ENABLE', False):
             _e = scene_exposure_index(lin)
             a_settle = cameras.entry_settle_level(model, dr, _e)
             if a_settle is not None:
                 # 「往大师那头靠多少」= 全局偏移（档），默认 0 ⇒ 纯"位置听相机的"
-                _shift = float(getattr(C, 'ENTRY_SETTLE_SHIFT_EV', 0.0))
                 if abs(_shift) > 1e-9:
                     a_settle *= 2.0 ** _shift
                 cam['entry_settle'] = 'e=%+.2f DR%s → 落点 ×%.3f' % (_e, dr, a_settle)
                 cam['entry_settle_e'] = _e
                 cam['entry_settle_shift_ev'] = _shift
+        # ★★★ 09-15 A1（SV 拍板）：这一根以前**只在标定过落点规律的机身上通电**。
+        #   原因：上面那道 `if a_settle is not None` —— 机型没标定 / DR 不认 / e 算不出
+        #   （`SETTLE_LAW` 里**目前只有 x-t30 iii**）就回 None ⇒ `_shift` 被**静默丢掉**，
+        #   界面上这根滑杆拉到底、点渲染，画面一个像素都不变，也不报错
+        #   （SV 09-15 报的就是它，同一症状的**第三个**根因）。
+        #   ⇒ 修法：没标定的机身本来用的就是全局落点 `ENTRY_LEVEL`，那就把同一个偏移
+        #     乘到它身上 —— 「整张亮暗(总)」从此在哪台机身上都通电。
+        #   ⚠ `_shift == 0` 时这里**一个字节都不动**（`a_settle` 保持 None ⇒ `entry_tone`
+        #     走 `ENTRY_LEVEL`）⇒ 逐位同旧行为，自检里那条"出厂值逐位相同"照旧成立。
+        #   ⚠ 它与「整张亮暗」(`SPEK_PE_SHIFT`) 不是一回事：那根在**印相那一步**（真卷落点），
+        #     这根在**入口**（场景线性光）。两卷都跑入口，所以这根两卷都有效。
+        if a_settle is None and abs(_shift) > 1e-9:
+            a_settle = float(getattr(C, 'ENTRY_LEVEL', 1.0)) * (2.0 ** _shift)
+            cam['entry_settle'] = ('未标定落点规律（%s DR%s）→ 全局落点 %.3f ×%.3f'
+                                   % (model, dr, float(getattr(C, 'ENTRY_LEVEL', 1.0)),
+                                      2.0 ** _shift))
+            cam['entry_settle_shift_ev'] = _shift
+            cam['entry_settle_fallback'] = True
         lin = entry_tone(lin, bias, C, level=a_settle)
         # 报告用：此时曲线只贡献**零点**（形状已由固定成形负责），措辞别让人以为还在复现相机。
         cam['bias_source'] = cam.get('bias_source', '').replace('实测相机曲线', '实测零点')
