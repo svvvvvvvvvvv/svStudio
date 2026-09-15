@@ -34,6 +34,10 @@ contextBridge.exposeInMainWorld('api', {
   engineLoad: (paths) => ipcRenderer.invoke('engine-load', paths),
   engineBase: (id) => ipcRenderer.invoke('engine-base', id),
   engineRender: (id, opts) => ipcRenderer.invoke('engine-render', id, opts),
+  /** ★★ 导出成片（09-15 SV 选「A」）：引擎渲染完**直接写盘** ——
+      走 `io.save` 那条路，EXIF / 4:4:4 质量都在里面，不用前端搬 base64。
+      返回 `{ ok, path, w, h, bytes, ms }`；用户取消 ⇒ `{ ok:false, canceled:true }`。 */
+  exportImage: (payload) => ipcRenderer.invoke('export-image', payload),
   engineRawUrl: (sessionPath, rel) =>
     ipcRenderer.invoke('engine-raw-url', sessionPath, rel),
   /* ---- 调色参数按主题存（每个主题一份配置，跟着主题走） ---- */

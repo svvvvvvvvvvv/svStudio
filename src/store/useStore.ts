@@ -124,6 +124,9 @@ interface AppState {
   resetGrade: () => void;
   /** 右栏「存到主题」：把当前卷/相纸/基准/滑杆值写进 `config.grades[主题名]`（进主题时自动套回） */
   saveGradeToTheme: () => Promise<void>;
+  /** ★★ 导出成片（09-15 SV 选「A」第 ② 项）：引擎渲染完**直接写盘**（EXIF 走 `io.save`）。
+   *  尺寸/质量由**引擎**定（前端不写死）；真实尺寸用回来的 `w/h` 显示。 */
+  exportImage: () => Promise<void>;
   setRenderBusy: (v: boolean) => void;
   /** 请分屏出一次图（右栏「渲染」按钮 / 切进调色台 都调它） */
   requestRender: () => void;
@@ -536,6 +539,55 @@ export const useStore = create<AppState>((set, get) => ({
       get().showToast(`配方已存到「${name}」`);
     } catch (e) {
       get().showToast('存失败：' + String(e));
+    }
+  },
+
+  /* ★★ 导出成片（09-15 SV 选「A」第 ② 项）：把**渲染结果**写成真照片文件。
+     为什么这件事交给引擎（而不是前端拿 base64 自己写）：`io.save` 已经处理好
+     EXIF / 4:4:4 / 质量 —— 前端再写一遍 = 丢相机信息 + 多一次编解码。
+
+     ★ 三件"跟屏幕上那张不一样"的事，提示里要如实说：
+       ① 尺寸 —— 走**引擎的出图尺寸**（前端不传 side ⇒ 引擎按 `MAX_SIDE` 出），不是预览那 700。
+          颗粒是物理量，尺寸一变观感就会变（大尺寸下颗粒相对画面更细）。
+       ② 代价 —— 要重新解码 + 重新跑链：≈ **半分钟一张 RAW**（3000 长边约 1 分钟）。
+       ③ 有硬上限 —— 原图全尺寸在这条链上**直接 OOM**（实测一次要 24.2 GiB，
+          见 `service._export_one`）⇒ 引擎会夹到 3000 并回 `side_clamped`。
+     ⚠ 出图源用 `p.loadPath`（同名 RAW 优先，`main.js` 的 `attachLoadPath` 给的）；
+       **别用 `rel`** —— 那是身份键（星级/归档按它索引），拿它出图是另一类 bug。
+     ⚠ 绝不在这里拼参数串：原样把对象交给 main.js，由它走唯一的 `paramStr`
+       （09-15 那次「23 根滑杆一根没接上」就是前端把对象直接变成 `[object Object]`）。 */
+  exportImage: async () => {
+    const st = get();
+    const p = st.photos[st.cur];
+    if (!p || !p.loadPath) {
+      st.showToast('这张没有可用的原图，导不了');
+      return;
+    }
+    if (st.renderBusy) {
+      st.showToast('引擎正忙，等这一发完再导');
+      return;
+    }
+    set({ renderBusy: true });         // 复用"引擎忙"这一个状态：导出期间两个按钮都锁住
+    try {
+      const r = await API.exportImage({
+        src: p.loadPath,
+        stock: st.grade.stock,
+        base: st.grade.base,
+        paper: st.grade.paper,
+        params: st.grade.params || {},
+      });
+      if (r?.canceled) return;         // 用户自己取消 ⇒ 不提示（这不是错误）
+      if (r?.ok) {
+        const mb = r.bytes ? `（${(r.bytes / 1024 / 1024).toFixed(1)} MB）` : '';
+        const cl = r.side_clamped ? `（原尺寸超过引擎上限，已按 ${r.side} 长边导出）` : '';
+        get().showToast(`已导出 ${r.w}×${r.h}${mb}${cl} → ${r.path}`);
+      } else {
+        get().showToast('导出失败：' + (r?.error || '未知'));
+      }
+    } catch (e) {
+      get().showToast('导出失败：' + String(e));
+    } finally {
+      set({ renderBusy: false });
     }
   },
 

@@ -139,10 +139,15 @@ function SplitView() {
     };
   }, [p, sessionPath, engineOk, ensureEngine, showToast]);
 
-  /* ---- 渲染：只在 renderTick 变化时出图（不再自动出图，所以也不需要防抖） ----
-     仍保留两条护栏：
+  /* ---- 渲染：只在 renderTick 变化时出图 ----
+     ★★ 09-15 SV 选「A」把契约从「两个触发点」扩成三个：
+       ① 进 / 切进调色台  ② 右栏「渲染」按钮  ③ **拖右栏滑杆**（实时预览）。
+       换卷 / 换基准 / 换相纸 / 换图 / 恢复默认 **仍然不自动出图**（参数先攒着）。
+     四条护栏：
        ① 同时只跑一发（手快连点 / 反复切台子会连发两三次）；
-       ② 出图中有明显反馈（旧图原地不动 + 没有转圈 ⇒ 看着就像"没反应"）。 */
+       ② 60ms 防抖（拖一格发一发会把队列塞满）；
+       ③ **跑完补发最新那一发** —— 忙的时候发来的不许丢（丢了 = 松手后画面停在中间格）；
+       ④ 出图中有明显反馈（旧图原地不动 + 没有转圈 ⇒ 看着就像"没反应"）。 */
   const opts: RenderOpts = {
     stock: grade.stock,
     base: grade.base,
@@ -156,9 +161,14 @@ function SplitView() {
   const doneTickRef = useRef(-1);
   const busyRef = useRef(false);
   const pumpRef = useRef<() => void>(() => {});
+  /* ★★ 09-15 SV 选「A」补的一个 ref：**最新一发是谁**。
+     异步回调里读不到新的 `renderTick`（闭包过期）⇒ 只能靠 ref 记住它，
+     跑完拿它跟"我刚跑的是哪一发"比 —— 不相等说明参数又动过，得补发。 */
+  const tickRef = useRef(renderTick);
 
   // 每次渲染记下「最新想要的参数」—— 异步回调里读 ref，避免闭包过期
   wantOptsRef.current = opts;
+  tickRef.current = renderTick;
 
   pumpRef.current = async () => {
     const id = imgId;
@@ -184,6 +194,12 @@ function SplitView() {
       busyRef.current = false;
       setBusy(false);
       setRenderBusy(false);
+      /* ★★ 忙的时候发来的那一发**不许丢**（老代码在这里直接 return 掉，是"拖了没反应"的根因）：
+         拖着滑杆时参数一直在变，而这一发在跑的过程中 tick 早就又涨了
+         ⇒ 跑完必须补发"最新那一发"，否则松手后画面停在中间某一格
+         （参数是新的、画面是旧的 —— 看起来就像没反应）。
+         ⚠ 失败的那一发不重试（`doneTickRef` 没更新、tick 也没变 ⇒ 不会自激）。 */
+      if (tickRef.current !== tick) pumpRef.current();
     }
   };
 
@@ -192,7 +208,11 @@ function SplitView() {
     // ⚠ 请求常常比装载先到（切台子那一刻图还没 load 完）⇒ 不能只认「变化」，
     //   要认「这一发还没出过」：imgId 到位后 effect 会再跑一次，那时才真正出图。
     if (doneTickRef.current === renderTick) return;
-    pumpRef.current();
+    /* ★★ 防抖 60ms（09-15 SV 选「A」）：拖着滑杆时 `onValueChange` 每动一小格就 +1，
+       不防抖一秒能发几十发，而每发 1~4 秒 ⇒ 全是废活。
+       ⚠ 只防抖「发起」，不丢「结果」：合并交给上面的 pump（跑完补发最新那一发）。 */
+    const t = window.setTimeout(() => pumpRef.current(), 60);
+    return () => window.clearTimeout(t);
   }, [renderTick, engineOk, imgId]);
 
   return (

@@ -300,8 +300,23 @@ await page.addInitScript(() => {
            （"看着对、其实对不上"）。 */
         paper: opts && opts.paper,
       });
+      /* ★ 让 mock 渲染"真的花点时间" —— 只给「忙的时候发来的那一发会不会被丢掉」那条检查用：
+         拖着滑杆时参数是**连续变化**的，而渲染要花时间；只有渲染真的花时间，
+         "跑完补发最新那一发"那段逻辑才走得到（否则全被 60ms 防抖合并成 1 发，等于没测）。
+         默认 0（其余检查要快，不想白等）。 `window.__RENDER_MS` 由那条检查自己设。 */
+      const _ms = window.__RENDER_MS || 0;
+      if (_ms > 0) await new Promise((r) => setTimeout(r, _ms));
       return { ok: true, image: mk(5) };
     },
+    /* ★★ 导出成片（09-15 SV 选「A」）：回来的是**文件路径**（写盘由引擎做，为的是保住 EXIF），
+       不是图片数据 —— 形状照 `main.js` 的 `export-image` 抄：`{ ok, path, w, h, bytes, ms }`。
+       顺手记下发出去的请求，"带的是出图源吗 / 参数是原样交出去吗"靠它断言。 */
+    exportImage: async (payload) => {
+      (window.__exports = window.__exports || []).push(JSON.parse(JSON.stringify(payload || {})));
+      return { ok: true, path: 'D:\\lib\\主题A\\DSCF1000_svfilm.jpg',
+               w: 2048, h: 1365, bytes: 838860, ms: 29100 };
+    },
+
     /* ---- 照片导入（SD 卡 / U 盘 → 照片库） ----
        ⚠⚠ mock **必须实现前端会调的每一个 IPC**：漏一个 ⇒ 那次调用**同步抛 TypeError**、
        `.catch` 根本没机会接 ⇒ 一路往控制台丢未捕获异常，而检查只看接口，看不见
@@ -488,7 +503,8 @@ if (await gradeTab.count()) {
     /\.jpe?g$/i.test(last), last.split(/[\\/]/).pop() || '(没记到)');
   check('★ 没有 RAW 时标题栏改口成 JPG', /JPG 出图/.test(txt2), '',
     '没有 RAW 却说 RAW，等于骗人');
-  /* ★★ 契约（SV 09-15 定）：自动出图只有两个触发点 —— ① 进/切进调色台 ② 点「渲染」。
+  /* ★★ 契约（SV 09-15 定「两个触发点」→ 09-15 晚选「A」扩成三个）：
+     自动出图 = ① 进/切进调色台 ② 点「渲染」 ③ 拖右栏滑杆（第 6 节单独钉那三条）。
      「换图」不在里面 ⇒ 翻过来之后**渲染次数不许涨**，右栏留白等那一发。
      这条盯的是**机制**（引擎被叫了几次），不是界面文案 —— 文案是间接证据：
      装载链断了也会留白，那时候这条会"绿得莫名其妙"（下面那条才管装载链）。 */
@@ -589,13 +605,16 @@ check(
   '图比面板还大 ⇒ 会被 overflow 裁掉'
 );
 
-/* ---------- 6. 「任何操作都不自动出图」（换卷/换基准/拖滑杆） ---------- */
-/* ★★ 契约（SV 09-15 定）：自动出图**只有两个触发点** —— ① 进/切进调色台 ② 点右栏「渲染」。
-   「换卷 / 换基准 / 拖滑杆 / 换图」都只改参数、不动画面。
-   为什么必须钉死：以前是"任何改动都自动出图"，拖一次滑杆能瞬间打出几十发 6~15 s 的渲染
-   互相抢占，最后那张反而迟迟不出来 —— 看着就跟"点了没反应"一模一样。
-   盯的是**机制**：引擎被叫了几发（不是界面文案）。 */
-console.log('\n[6] 任何操作都不自动出图');
+/* ---------- 6. 自动出图只在这三个触发点（换卷/换基准/换图 ⇒ 不出；拖滑杆 ⇒ 出） --- */
+/* ★★ 契约（SV 09-15 定「只有两个触发点」→ 09-15 晚选「A」扩成三个）：
+     ① 进 / 切进调色台   ② 点右栏「渲染」   ③ **拖右栏滑杆**（"滑动每个参数都能实时预览"）。
+   「换卷 / 换基准 / 换相纸 / 换图 / 恢复默认」**仍然不出图** —— 只改参数、不动画面。
+   为什么拖滑杆那一条要单独钉**三层**：以前是"任何改动都自动出图"，拖一次能瞬间打出几十发
+   6~15 s 的渲染互相抢占，最后那张反而迟迟不出来（看着就像"点了没反应"）；
+   而修的时候又容易走过头 —— 忙的时候收到的那一发被直接丢掉 ⇒ 松手后画面停在中间某一格
+   （参数是新的、画面是旧的）。所以同时钉：**会出图**、**合并**、**最后一发是最新值**。
+   盯的是**机制**：引擎被叫了几发、最后一发带的是什么值（不是界面文案）。 */
+console.log('\n[6] 自动出图：换卷/换基准/换图不出，拖滑杆出（但合并、且最后一发是最新值）');
 await page.setViewportSize({ width: 1440, height: 900 });
 await page.waitForTimeout(400);
 const renders = () => page.evaluate(() => window.__renders || 0);
@@ -616,21 +635,62 @@ if (afterFirstRender) {
     const b = page.locator('button').filter({ hasText: /全对齐/ }).first();
     if (await b.count()) await b.click();
   });
-  /* 拖滑杆：走 Radix 滑杆**自己的键盘交互**（值一定会变），不是直接调 store */
+  /* 拖滑杆：走 Radix 滑杆**自己的键盘交互**（值一定会变），不是直接调 store。
+     ★ 先把 mock 渲染调慢（300ms）：不慢的话拖动那几发全被 60ms 防抖合成 1 发，
+       "忙的时候收到的那一发会不会被丢掉"根本没被走到 ⇒ 那三条检查全是假的。 */
   const sl = page.locator('[role="slider"]');
   const nSl = await sl.count();
   check('右栏有滑杆可拖（这条才测得动）', nSl > 0, `${nSl} 根`);
   if (nSl > 0) {
+    await page.evaluate(() => { window.__RENDER_MS = 300; });
     const before = await renders();
     const v0 = await sl.first().getAttribute('aria-valuenow');
     await sl.first().focus();
-    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(500);
+    for (let i = 0; i < 6; i++) {
+      await page.keyboard.press('ArrowRight');
+      await page.waitForTimeout(40);
+    }
+    await page.waitForTimeout(1500);          // 等"最后一发"落地
     const v1 = await sl.first().getAttribute('aria-valuenow');
-    check('拖滑杆之后值**真的变了**（否则下面那条是空转）', !!v1 && v1 !== v0, `${v0} → ${v1}`);
+    check('拖滑杆之后值**真的变了**（否则下面几条是空转）', !!v1 && v1 !== v0, `${v0} → ${v1}`);
     const after = await renders();
-    check('★ 拖滑杆 ⇒ 不自动出图', after === before, `渲染 ${before} → ${after} 发`,
-      `拖滑杆触发了渲染（多发 ${after - before} 发）`);
+    check('★★ 拖滑杆 ⇒ **会**自动出图（09-15 SV 选「A」：实时预览）', after > before,
+      `渲染 ${before} → ${after} 发`);
+    check('★★ 但**合并**：6 次连续变化 ⇒ 至多发 4 发（不合并会发 6 发以上）',
+      after - before <= 4, `渲染 ${before} → ${after} 发（多发 ${after - before}）`,
+      '防抖/合并没生效 ⇒ 拖一次就打出一串 1~4 秒的渲染互相抢占');
+    /* ★★ 真正要守的那条：**忙的时候发来的最后一发不许丢**。
+       丢了 = 松手后画面停在中间某一格（参数是新的、画面是旧的）——
+       这正是 09-15 修的那个 bug（老代码 `if (busyRef.current) return;` 把它扔了）。 */
+    const args2 = await page.evaluate(() => (window.__renderArgs || []).slice());
+    const last = (args2[args2.length - 1] || {}).params || {};
+    const hit = Object.values(last).some((v) => Math.abs(Number(v) - Number(v1)) < 1e-9);
+    check('★★ 最后一发渲染带的是**最新值**（不是拖动途中某一格）', hit,
+      `最后一发的参数 ${JSON.stringify(last)} 里找不到 ${v1}`,
+      '忙时那一发被丢掉 ⇒ 松手后画面停在中间格，看着像"拖了没反应"');
+    await page.evaluate(() => { window.__RENDER_MS = 0; });
+  }
+
+  /* ★★ 「导出成片」（09-15 SV 选「A」第 ② 项）：按钮 → 请求里带的东西对不对。
+     钉三件：① 真的发出去了；② 带的是**出图源**（loadPath，绝对路径），不是身份键 rel；
+             ③ 参数是**原样交出去的对象**（拼串是 main.js 一家的事，前端不许自己拼）。 */
+  const exBtn = page.locator('button', { hasText: /^导出成片/ }).first();
+  check('右栏有「导出成片」按钮（否则下面几条全是空转）', (await exBtn.count()) > 0);
+  if (await exBtn.count()) {
+    const beforeEx = await page.evaluate(() => (window.__exports || []).length);
+    await exBtn.click();
+    await page.waitForTimeout(600);
+    const ex = await page.evaluate(() => window.__exports || []);
+    check('★ 点「导出成片」⇒ 真的发了导出请求', ex.length === beforeEx + 1,
+      `导出请求 ${beforeEx} → ${ex.length} 条`);
+    const e = ex[ex.length - 1] || {};
+    check('★ 导出带的是**出图源**（绝对路径的 loadPath），不是身份键 rel',
+      /[\\/]/.test(String(e.src || '')), String(e.src || '(空)'),
+      '`rel` 只是文件名（星级/归档/缩略图都按它索引）—— 拿它当出图源就是喂错文件');
+    check('★ 导出把**参数对象**原样交出去（不自己拼串、也不自己写死尺寸）',
+      e.params && typeof e.params === 'object' && !Array.isArray(e.params) && !('side' in e),
+      JSON.stringify(e),
+      '前端自己拼串 = 09-15 那 23 根滑杆全没接上的老路；写死尺寸 = 引擎改了工作分辨率前端不跟');
   }
 }
 
@@ -643,16 +703,27 @@ if (afterFirstRender) {
 console.log('\n[7] 滑杆 → 渲染参数');
 const renderArgs = () => page.evaluate(() => (window.__renderArgs || []).slice());
 if (afterFirstRender && rBtn && (await page.locator('[role="slider"]').count()) > 0) {
-  const a0 = await renderArgs();
-  const p0 = (a0[a0.length - 1] || {}).params || {};
+  /* ★ 09-15 晚（SV 选「A」之后）改了这里的**前提**：拖滑杆现在会**自动出图**
+     ⇒ 不能再假设"上一发渲染的 params 是空的"（第 6 节刚拖过）。
+     改成：先「恢复默认」+ 渲染一发（此时一根都没碰过 ⇒ params 必须是空的），
+     再**只拖一格、故意不点「渲染」** —— 量的正是"拖动自己发出的那一发"。
+     ★ 这样反而更硬：它顺带证明了「拖滑杆带的是新值」这条路真的通。 */
+  const resetBtn7 = page.locator('button', { hasText: '恢复默认' }).first();
+  if (await resetBtn7.count()) await resetBtn7.click();
   await rBtn.click();
   await page.waitForTimeout(900);
-  const a1 = await renderArgs();
-  const p1 = (a1[a1.length - 1] || {}).params || {};
-  const keys = Object.keys(p1);
+  const a0 = await renderArgs();
+  const p0 = (a0[a0.length - 1] || {}).params || {};
   check('★ 没碰过的滑杆不进参数串（未触碰 = 用引擎出厂值）', Object.keys(p0).length === 0,
     `上一发 params = ${JSON.stringify(p0)}`,
     '未触碰的滑杆也被塞进参数串 ⇒ 会和引擎出厂值打架');
+  const sl7 = page.locator('[role="slider"]').first();
+  await sl7.focus();
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(1200);            // 拖动自己会发一发，等它落地
+  const a1 = await renderArgs();
+  const p1 = (a1[a1.length - 1] || {}).params || {};
+  const keys = Object.keys(p1);
   check('★ 拖过的滑杆**真的进了**渲染请求（不是空对象）', keys.length >= 1,
     JSON.stringify(p1), '参数是空的 ⇒ 滑杆白拧（就是"点渲染没反应"那一类）');
   const changed = [...new Set([...Object.keys(p0), ...keys])].filter((k) => p0[k] !== p1[k]);

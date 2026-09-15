@@ -192,6 +192,38 @@ check(
   'mock 形状跟 main.js 不一致，会骗过自检'
 );
 
+/* ★★ 导出成片（09-15 SV 选「A」第 ② 项）——`export-image` 是**唯一**一个
+   "回来的是文件路径、不是图片数据"的通道（写盘由引擎做，为的是保住 EXIF）。
+   两边的字段名必须对得上，而且**前端不许自己拼参数串**（要走唯一的 `paramStr`）。 */
+const preloadSrc = read('preload.js');
+const apiSrc = read('src/api/index.ts');
+const svcSrcForExport = read('svFilm/svFilm/service.py');
+check('★ main.js 有 export-image 通道，且回来的是**文件路径**（不是 image 数据）',
+  /ipcMain\.handle\('export-image'[\s\S]{0,3000}?Object\.assign\(\{ ok: true \}, r\.data/.test(mainJsSrc),
+  '', '导出拿不到路径 ⇒ 界面只能说"失败了"，用户不知道文件去哪了');
+check('★ 导出的请求也走 paramStr（不许前端自己 encodeURIComponent 参数对象）',
+  /export-image[\s\S]{0,3000}?'&params=' \+ encodeURIComponent\(paramStr\(p\.params\)\)/.test(mainJsSrc),
+  '', '把参数**对象**直接编码 ⇒ `[object Object]` ⇒ 引擎静默解出空对象（09-15 那 23 根滑杆的坑）');
+check('★ preload 暴露了 exportImage',
+  /exportImage: \(payload\) => ipcRenderer\.invoke\('export-image'/.test(preloadSrc),
+  '', '少了它 ⇒ 右栏那个按钮点了报 undefined');
+check('★ api 层也封了 exportImage（和别的通道一样三件齐：类型 + Window + 封装）',
+  /exportImage: \(payload: any\) => Promise<any>/.test(apiSrc) &&
+    /exportImage: \(payload: any\) => api\(\)\.exportImage\(payload\)/.test(apiSrc),
+  '', 'preload 有、api 没封 ⇒ 前端调不到（"接了半截"那一类）');
+check('★ 导出用 p.loadPath（同名 RAW 优先），不是身份键 rel',
+  /exportImage[\s\S]{0,1500}?src: p\.loadPath/.test(storeSrc),
+  '', '拿 `rel` 当出图源 ⇒ 喂错文件（星级/归档也按 rel 索引，动它会连坐）');
+check('★ 导出尺寸**由引擎定**（前端一个写死的 side 都没有）',
+  !/side: \d+/.test(storeSrc), '',
+  '前端写死导出尺寸 ⇒ 引擎改了工作分辨率，前端还按老数字要图');
+check('★★ 引擎 /export 有**尺寸上限**（原图全尺寸会当场 OOM）',
+  /EXPORT_MAX_SIDE/.test(svcSrcForExport) && /side_clamped/.test(svcSrcForExport),
+  '', '不设上限 ⇒ 导出 40MP 时 spektrafilm 要一次分配 24.2 GiB，引擎进程直接死');
+check('★★ 被夹住要说出来（`side_clamped` 一路回到提示里）',
+  /side_clamped/.test(storeSrc) && /side_clamped/.test(svcSrcForExport), '',
+  '静默降级 ⇒ 用户以为导出的是原尺寸');
+
 /* ---------- [8] 滑杆：引擎的 PARAMS ↔ 布局自检的 mock ↔ 前端初值 ---------- */
 /* ★★ 09-15 加这组的原因：布局自检**跑的是它自己那份假数据**。原来那份里还写着旧名字
    （「本张落点」「提亮」）和旧区间，而检查只断言"名字在不在" ⇒ **它绿着，真界面早就不一样了**。

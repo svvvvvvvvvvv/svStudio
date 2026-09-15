@@ -190,7 +190,9 @@ export function GradePanel() {
         </Text>
 
         {/* ★★ 「渲染」按钮（SV 09-15：放到胶片卷下面）。
-            改卷/改相纸/改基准/拉滑杆/换图**都不会自动出图** —— 按下它才出，切进调色台时也会出一次。 */}
+            改卷 / 改相纸 / 改基准 / 换图**不会自动出图** —— 按下它才出，切进调色台时也会出一次。
+            ⚠ 09-15 晚 SV 选「A」之后**多了一条**：**拖右栏滑杆会实时出图**
+              （带 60ms 防抖 + "忙时补发最新一发"，见 `Viewer.tsx`）。 */}
         <Button
           mt="3"
           size="2"
@@ -205,7 +207,29 @@ export function GradePanel() {
           size="1"
           style={{ color: 'var(--text-faint)', marginTop: 5, display: 'block' }}
         >
-          改完卷 / 相纸 / 基准 / 参数，按这里出图（不会自动出）
+          改完卷 / 相纸 / 基准按这里出图；滑杆是拖到哪出到哪
+        </Text>
+
+        {/* ★★ 「导出成片」（09-15 SV 选「A」第 ② 项）：把**渲染结果**写成真照片文件。
+            三件跟"屏幕上那张"不一样的事写在按钮下面，别让人以为"导出=把屏幕存下来"：
+              · 尺寸走引擎的**出图尺寸**，不是预览那 700 —— 颗粒是物理量，尺寸一变观感就会变；
+              · 要**重新解码 + 重新跑一遍**，约半分钟一张（RAW）；
+              · 相机信息（EXIF）保留，文件默认叫 `<原名>_svfilm.jpg`、存在原图旁边。 */}
+        <Button
+          mt="2"
+          size="1"
+          variant="soft"
+          disabled={renderBusy || !engineOk}
+          onClick={() => useStore.getState().exportImage()}
+          style={{ width: '100%', cursor: renderBusy ? 'default' : 'pointer' }}
+        >
+          {renderBusy ? '引擎忙…' : '导出成片'}
+        </Button>
+        <Text
+          size="1"
+          style={{ color: 'var(--text-faint)', marginTop: 4, display: 'block' }}
+        >
+          按引擎出图尺寸重出一张（约半分钟一张），相机信息保留
         </Text>
       </div>
 
@@ -364,9 +388,17 @@ export function GradePanel() {
                     max={d.hi}
                     step={d.step}
                     value={[v]}
-                    onValueChange={([nv]) =>
-                      setGrade({ params: { ...params, [d.k]: nv } })
-                    }
+                    /* ★★ 09-15 SV 选「A」：**拖着滑杆就出图**（"滑动每个参数都能实时预览"）。
+                       两条护栏都在 Viewer 那边，这里不许自己加节流：
+                         ① 合并 —— 同时只跑一发，跑完发现"参数又变了"就补发**最新那一发**；
+                         ② 防抖 —— 60ms 内的连续变化只发起一次。
+                       ⚠ 这里要**每一格都发**：真正"松手后停在旧画面"的那个 bug，
+                         根因是上游把请求丢了（Viewer 忙着时直接 return），不是发得太多。
+                         在这儿省一发 = 把"最后一发"也省掉 ⇒ 松手后画面停在中间某一格。 */
+                    onValueChange={([nv]) => {
+                      setGrade({ params: { ...params, [d.k]: nv } });
+                      requestRender();
+                    }}
                   />
                 </div>
               );

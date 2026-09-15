@@ -68,6 +68,10 @@ declare global {
       getGrade: (themeName: string) => Promise<GradeState | null>;
       setGrade: (themeName: string, grade: GradeState) => Promise<boolean>;
       exportGrade: (payload: any) => Promise<any>;
+      /** ★★ 导出成片（09-15 SV 选「A」）：**引擎渲染完直接写盘** ⇒ 回来的是文件路径，
+       *  不是图片数据。`{ ok, path, w, h, bytes, ms }`；取消 ⇒ `{ ok:false, canceled:true }`。
+       *  ⚠ 导出尺寸由引擎定（不传 side），前端不许写死 —— 用回来的 w/h 显示。 */
+      exportImage: (payload: any) => Promise<any>;
       /* ---- 照片导入 ---- */
       pickFile: (opts?: { title?: string; filters?: any[] }) => Promise<string | null>;
       importDetect: () => Promise<ImportDetectResult>;
@@ -407,6 +411,7 @@ export const API = {
   setGrade: (themeName: string, grade: GradeState) =>
     api().setGrade(themeName, grade),
   exportGrade: (payload: any) => api().exportGrade(payload),
+  exportImage: (payload: any) => api().exportImage(payload),
 
   /* 照片导入 */
   pickFile: (opts?: { title?: string; filters?: any[] }) => api().pickFile(opts),

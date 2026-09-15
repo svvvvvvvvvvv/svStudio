@@ -1100,6 +1100,41 @@ ipcMain.handle('export-grade', async (e, payload) => {
 });
 
 
+/** ★★ 导出**成片**（09-15 SV 选「A」第 ② 项）：把**渲染结果**写成真照片文件。
+    为什么要引擎来写：`io.save` 已经处理好 EXIF / 4:4:4（无色度抽样）/ 质量；
+    前端拿 base64 再写一遍 = 丢相机信息 + 多一次编解码。
+
+    ⚠ **导出尺寸由引擎定**（不传 `side` ⇒ 引擎按自己的工作分辨率 `C.MAX_SIDE` 出）——
+      前端不许写死一个数：这条链上"前端自己写死默认值"已经踩过三次（基准名/纸名/滑杆初值）。
+      导出的真实尺寸由引擎**回来告**（返回 w/h），界面只负责把它显示出来。
+    ⚠ 导出跟预览**不是一个尺寸**（预览固定 700）：颗粒是物理量，尺寸一变观感就会变
+      —— 这一点要如实告诉用户，别让他以为"导出跟屏幕上看到的一模一样"。
+    ⚠ 大尺寸要重新解码 + 重新跑链（RAW 十几秒）⇒ 超时放到 15 分钟。 */
+ipcMain.handle('export-image', async (e, payload) => {
+  const p = payload || {};
+  const src = String(p.src || '');
+  if (!src) return { ok: false, error: '没有可导出的原图（这张没有出图源）' };
+  const stem = path.basename(src).replace(/\.[^.]+$/, '');
+  const dir = path.dirname(src);
+  const res = await dialog.showSaveDialog(win, {
+    title: '导出成片（按引擎出图尺寸重新渲染）',
+    defaultPath: path.join(dir, stem + '_svfilm.jpg'),
+    filters: [{ name: 'JPEG', extensions: ['jpg', 'jpeg'] }]
+  });
+  if (res.canceled || !res.filePath) return { ok: false, canceled: true };
+  const qs = '?src=' + encodeURIComponent(src) +
+    '&path=' + encodeURIComponent(res.filePath) +
+    '&stock=' + encodeURIComponent(p.stock || '') +
+    '&base=' + encodeURIComponent(p.base || '') +
+    '&paper=' + encodeURIComponent(p.paper || '') +
+    /* ⚠⚠ `paramStr` 是**唯一**允许把参数对象变成字符串的地方 ——
+       09-15 那次「23 根滑杆一根都没接上」就是把对象直接 encodeURIComponent 成 `[object Object]`。 */
+    '&params=' + encodeURIComponent(paramStr(p.params));
+  const r = await engineGet('/export' + qs, 900000);
+  return r.ok ? Object.assign({ ok: true }, r.data || {}) : r;
+});
+
+
 /* =========================================================
    照片导入（SD 卡 / U 盘 → 照片库）
    ---------------------------------------------------------
