@@ -950,6 +950,35 @@ ipcMain.handle('engine-base', async (e, id) => {
   return r.ok ? { ok: true, image: r.image } : r;
 });
 
+/** 把滑杆参数转成引擎认的那一串：`KEY:VAL,KEY:VAL`。
+ *
+ *  ★★ 09-15 修一个**静默到极点**的 bug（SV 报「调滑杆点渲染没反应」的根因）：
+ *    前端 `grade.params` 是**对象** `{ SPEK_PE_SHIFT: 0.91 }`（见 GradePanel 的 setGrade），
+ *    而这里原来直接 `encodeURIComponent(o.params || '')` —— 对对象做 encodeURIComponent
+ *    会先 ToString，结果是 `%5Bobject%20Object%5D`；引擎那边 `_parse_params` 按 `KEY:VAL`
+ *    切分、切不出冒号就**静默丢掉**（契约就是"不合法不报错"）⇒ 解出空字典 `{}`。
+ *    实测（`_probe_wire_e2e.py`，真起服务发真 HTTP）：
+ *        params=[object Object]  → 中位亮度 41.76（与"不传参数"**逐位一样**）
+ *        params=SPEK_PE_SHIFT:0.91,ENTERYSETTLE...,→ 36.70（−5.06 L*）
+ *    ⇒ 也就是说：**23 根滑杆一根都没接上**，出图永远是"出厂值"那一张。
+ *      ⚠ 上一轮的自检只验到"引擎收得下参数"，没验到"前端发得出参数" —— 闸挡住了 ≠ 没脸。
+ *
+ *  收口在这里（IPC 边界）而不是前端：这样以后不管谁调 `engine-render` 都不会再踩。
+ *  字符串照原样透传（留给脚本风格的 A/B 调用），非数字/NaN 一律丢掉（别污染 float() 解析）。
+ */
+function paramStr(p) {
+  if (!p) return '';
+  if (typeof p === 'string') return p;
+  if (typeof p !== 'object') return '';
+  const out = [];
+  for (const k of Object.keys(p)) {
+    const v = p[k];
+    if (typeof v !== 'number' || !isFinite(v)) continue;
+    out.push(k + ':' + v);
+  }
+  return out.join(',');
+}
+
 ipcMain.handle('engine-render', async (e, id, opts) => {
   const o = opts || {};
   const qs = '?id=' + encodeURIComponent(String(id)) +
@@ -957,7 +986,7 @@ ipcMain.handle('engine-render', async (e, id, opts) => {
     '&base=' + encodeURIComponent(o.base || '') +
     '&side=' + encodeURIComponent(String(o.side || 700)) +
     '&fmt=jpg&q=' + encodeURIComponent(String(o.q || 92)) +
-    '&params=' + encodeURIComponent(o.params || '');
+    '&params=' + encodeURIComponent(paramStr(o.params));
   // 换卷 6~7 秒，首次含模型加载更久
   const r = await engineGet('/render' + qs, 300000);
   return r.ok ? { ok: true, image: r.image } : r;

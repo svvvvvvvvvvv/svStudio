@@ -219,6 +219,48 @@ check(
   '老写法还在'
 );
 
+/* ---------- ★ 09-15 参数串：前端到底发得出去吗（"点渲染没反应"的根因守卫） ----------
+   为什么单开一段：前端 `grade.params` 是**对象** `{KEY: 数}`，而引擎那口子收的是
+   `KEY:VAL,KEY:VAL` 字符串。过去 main.js 直接 `encodeURIComponent(对象)` ⇒ 发出去变成
+   `%5Bobject%20Object%5D` ⇒ 引擎按冒号切、切不出来就**静默丢掉**（契约就是"不合法不报错"）
+   ⇒ 解出空字典 ⇒ **23 根滑杆一根都没接上**，出图永远是"出厂值"那张。
+   ⚠ 上一轮的门禁只验到"引擎收得下参数"，没验"前端发得出参数" —— 闸挡住了 ≠ 没脸。
+   ⚠ 所以这一段**真把 main.js 里那段源码取出来在 Node 里跑**，不是拿正则看"有没有写
+     paramStr"（那种检查挡不住"函数体写错"，等于没查）。                        */
+// ⚠ 必须先剥掉注释再查（那条老写法就写在上面的说明注释里，会被自己的注释误判 —— 09-15 踩过）
+const mainJsCode = mainJsSrc.replace(/\/\*[\s\S]*?\*\//g, '');
+const psM = mainJsCode.match(/function paramStr\(p\)\s*\{[\s\S]*?\n\}/);
+check('main.js 里有 paramStr（参数串的收口点）', !!psM, '', '函数没了？');
+let ps = null;
+if (psM) {
+  try {
+    ps = new Function(psM[0] + '; return paramStr;')();
+  } catch (e) {
+    ps = null;
+  }
+}
+check('paramStr 能在 Node 里独立跑起来（无依赖、可单测）', typeof ps === 'function',
+  '', '取出来的那段源码跑不了');
+if (typeof ps === 'function') {
+  const got = ps({ SPEK_PE_SHIFT: 0.91, ENTRY_SETTLE_SHIFT_EV: -0.25 });
+  check('★ paramStr 把对象转成 KEY:VAL,...',
+    got === 'SPEK_PE_SHIFT:0.91,ENTRY_SETTLE_SHIFT_EV:-0.25', got);
+  check('★ paramStr 的结果里没有 object（老 bug 不会复发）',
+    !/object/i.test(got), got, '又变成 [object Object] 了');
+  check('paramStr 对字符串原样透传（脚本风格的 A/B 调用）',
+    ps('TONE_TOE:0.5') === 'TONE_TOE:0.5', '', String(ps('TONE_TOE:0.5')));
+  check('paramStr 丢掉 NaN / 非数字（不污染引擎的 float() 解析）',
+    ps({ A: 1, B: NaN, C: 'x', D: 2 }) === 'A:1,D:2',
+    '', String(ps({ A: 1, B: NaN, C: 'x', D: 2 })));
+  check('paramStr 空输入给空串', ps(null) === '' && ps({}) === '',
+    '', `${JSON.stringify(ps(null))} / ${JSON.stringify(ps({}))}`);
+}
+check('★ engine-render 真的走了 paramStr（没被绕过）',
+  /&params=' \+ encodeURIComponent\(paramStr\(o\.params\)\)/.test(mainJsCode),
+  '', '还在直接 encodeURIComponent(o.params)');
+check('engine-render 里没留下"直接编码对象"的老写法',
+  !/encodeURIComponent\(o\.params(?!Str)/.test(mainJsCode), '', '老写法还在');
+
 /* ---------- 汇总 ---------- */
 console.log('\n' + '-'.repeat(50));
 if (fail === 0) {
