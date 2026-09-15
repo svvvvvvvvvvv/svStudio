@@ -28,12 +28,18 @@ export type Mode = 'pick' | 'grade';
 export type Filter = 'all' | 'unrated' | '1' | '2' | '3' | '4' | '5';
 
 /**
- * 「这个文件夹已经试过建预览索引、但**失败了**」—— 每个进程只试一次。
+ * 「这个文件夹试过建预览索引、但**失败了**」—— 记的是**原因**（路径 → 上次为什么没成）。
  * ★ 为什么要记：失败的原因通常是**环境和依赖**（没装 rawpy / 脚本不在 / 盘掉线），
  *   重试一百次也是同一个结果。反复弹"没生成"只会训练用户忽略提示。
- * ⚠ 只记**失败**：成功的不记 —— 源目录后来多了新片还要能重跑（`needsIndex` 会再亮）。
+ * ⚠★ 但**不能拿它把用户挡住**（09-15 修）：以前被拦住时是一声不吭 `return false`
+ *   ⇒ 他再点进那个文件夹**什么都不发生、也不说为什么**，和这轮反复出现的
+ *   「点了没反应 / 空和坏了长得一样」是同一个病。现在分成两条路：
+ *   · **自动补建**（扫完列表顺手建）照旧拦住 —— 防刷屏，也防反复起无用进程；
+ *   · **用户自己点进这个文件夹**一律重试（`force`）—— 他明确点了就该有回音：
+ *     要么成了，要么听到原因。
+ * ⚠ 只记**失败**：成功时删掉它 —— 源目录后来多了新片还要能重跑（`needsIndex` 会再亮）。
  */
-const _indexFailed = new Set<string>();
+const _indexFailed = new Map<string, string>();
 
 interface AppState {
   /* ---- 配置 ---- */
@@ -91,8 +97,9 @@ interface AppState {
   /** 移除一个库外目录（只从列表去掉，**不删任何文件**）。正在看它 ⇒ 回首页。 */
   removeExtraRootDir: (dir: string) => Promise<void>;
   /** ★★ 给一个**纯 RAW 的库外目录**建/补预览索引（幂等）。
-   *  返回 true = 这次真转出了东西。失败会**把原因说出来**（不报的话那个目录就是空的）。 */
-  indexExternalDir: (srcDir: string) => Promise<boolean>;
+   *  返回 true = 这次真转出了东西。失败会**把原因说出来**（不报的话那个目录就是空的）。
+   *  ⚠ `force` = "这一发是用户自己点的" ⇒ 一律重试，不被"上次失败过"挡住。 */
+  indexExternalDir: (srcDir: string, force?: boolean) => Promise<boolean>;
   /** 把列表里所有"还没建索引"的库外目录补上，返回这次总共转出的张数。
    *  ⚠ 必须**在 `refreshSessions` 之后**调：得先有列表，才知道谁需要建。 */
   indexMissingExternal: () => Promise<number>;
@@ -314,25 +321,30 @@ export const useStore = create<AppState>((set, get) => ({
      ★ 出图（渲染）仍然用源目录的 RAW —— 那条线在 main.js 的 `attachLoadPath`。
      ========================================================= */
 
-  indexExternalDir: async (srcDir) => {
+  indexExternalDir: async (srcDir, force) => {
     const d = String(srcDir || '').trim();
     if (!d) return false;
-    /* 已经试过、且失败过 ⇒ 本轮不再重试（原因多半是环境/依赖，重试结果一样） */
-    if (_indexFailed.has(normPath(d))) return false;
+    /* 失败过 ⇒ **自动**那条路不再重试（原因多半是环境/依赖，重试结果一样）。
+       ⚠★ 用户**自己点进来**的（`force`）不拦 —— 见 `_indexFailed` 上面那段。 */
+    const key = normPath(d);
+    if (_indexFailed.has(key) && !force) return false;
     set({ extIndexBusy: true, busy: true, busyText: '正在生成预览小图…' });
     try {
       const r = await API.extIndex(d);
       if (!r?.ok) {
-        _indexFailed.add(normPath(d));
+        const why = String(r?.error || '原因没返回');
+        _indexFailed.set(key, why);
         /* ★★ 必须说出来：不报的话那个目录在左栏里就是**空的**，
            而"空"和"坏了"在界面上长得一模一样（本轮反复踩的就是这个）。 */
-        get().showToast('预览小图没生成：' + (r?.error || '原因没返回'));
+        get().showToast('预览小图没生成：' + why);
         return false;
       }
+      _indexFailed.delete(key);
       return !!r.n;
     } catch (e) {
-      _indexFailed.add(normPath(d));
-      get().showToast('预览小图没生成：' + String(e));
+      const why = String(e);
+      _indexFailed.set(key, why);
+      get().showToast('预览小图没生成：' + why);
       return false;
     } finally {
       set({ extIndexBusy: false, busy: false, busyText: '' });
@@ -368,7 +380,9 @@ export const useStore = create<AppState>((set, get) => ({
        —— "显示 4 张 / 里面 0 张"这种对不上，比直接报错还难查。 */
     if (s && s.needsIndex && s.srcDir) {
       set({ busy: true, busyText: '正在生成预览小图…' });
-      await get().indexExternalDir(s.srcDir);
+      /* ⚠★ `true` = 这一发是**用户自己点进来的**（`silent` 那条只在开台子恢复上次的
+         主题时走，那时失败记录本来就是空的）⇒ 一定重试，不许被静默拦住。 */
+      await get().indexExternalDir(s.srcDir, true);
       await get().refreshSessions();
     }
     set({ sessionPath, sessionName: name, busy: true, busyText: '读取照片…' });

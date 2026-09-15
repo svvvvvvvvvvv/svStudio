@@ -952,18 +952,28 @@ if (eirM && eidM) {
 
 /* ---- ④ 接线钉子（这一段的坑都在"两边传的不是同一个东西"上） ---- */
 check('★★★ 建索引传的是**源目录**（`s.srcDir`），不是预览缓存目录（`s.path`）',
-  /indexExternalDir\(s\.srcDir\)/.test(storeSrc) && !/indexExternalDir\(s\.path\)/.test(storeSrc),
+  /* ⚠ 第二参（`force`）是可选的，正则别把括号写死 —— 09-15 加了 `, true` 就假红过一次。 */
+  /indexExternalDir\(s\.srcDir[,)]/.test(storeSrc) && !/indexExternalDir\(s\.path/.test(storeSrc),
   '', '传缓存目录 ⇒ 那儿一张 RAW 都没有，扫出来永远是空的，而界面一点错都不报');
-check('★ 进主题时「索引还没建」就先补上（否则列表显示 4 张、点进去 0 张）',
+check('★ 进主题时「索引还没建」就先补上，而且**带 `force` 重试**（否则列表显示 4 张、点进去 0 张）',
   /if \(s && s\.needsIndex && s\.srcDir\)/.test(storeSrc) &&
-    /await get\(\)\.indexExternalDir\(s\.srcDir\);/.test(storeSrc), '',
-  '不先补 ⇒ 列表和里面张数对不上，用户以为片子丢了');
+    /await get\(\)\.indexExternalDir\(s\.srcDir, true\);/.test(storeSrc), '',
+  '不先补 ⇒ 列表和里面张数对不上，用户以为片子丢了；少了 `true` ⇒ 失败过一次以后再点那个文件夹一声不吭');
 check('★★ 建不了的时候要**说出原因**（否则那目录永远是空的，而"空"和"坏了"长得一样）',
   /* ⚠ 两条失败路径**都要出声**：① 脚本跑了但说"没成功" ② 起进程/调用本身抛了。
-     只钉一条的话，另一条被删掉照样绿（"只查标题在不在"的翻版）。 */
-  /'预览小图没生成：' \+ \(r\?\.error/.test(storeSrc) &&
-    /'预览小图没生成：' \+ String\(e\)/.test(storeSrc), '',
+     只钉一条的话，另一条被删掉照样绿（"只查标题在不在"的翻版）。
+     ⇒ 两条路现在都写成 `+ why`，靠正则分不出来了 ⇒ 数**条数**：
+       同一句 toast 至少 2 次、`_indexFailed.set(` 至少 2 次。 */
+  (storeSrc.match(/预览小图没生成：/g) || []).length >= 2 &&
+    (storeSrc.match(/_indexFailed\.set\(/g) || []).length >= 2, '',
   '只 catch 不报 ⇒ 用户看到的就是一个空主题');
+check('★★★ 失败过也**不许静默挡住**：自动那条路拦，用户点的那条路必须重试',
+  /if \(_indexFailed\.has\(key\) && !force\) return false;/.test(storeSrc), '',
+  '不带 `&& !force` ⇒ 再点那个文件夹一声不吭、什么都不发生（"点了没反应"那一类）');
+check('★★ 记住的是**失败原因**（Map<路径,原因>），不是光记"失败过"；成功要清掉',
+  /const _indexFailed = new Map<string, string>\(\);/.test(storeSrc) &&
+    /_indexFailed\.delete\(key\)/.test(storeSrc), '',
+  '只记布尔 ⇒ 第二次被挡住时说不出为什么；成功不清 ⇒ 环境补好了也不会再试');
 check('★ main.js 暴露了 `ext-index` 通道 + `ext-index-progress` 事件',
   /ipcMain\.handle\('ext-index'/.test(mainJsCode) && /ext-index-progress/.test(mainJsCode), '',
   '没有通道 ⇒ 前端调下去同步抛 TypeError（"漏 setConfig"那次的翻版）');
