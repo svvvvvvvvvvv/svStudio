@@ -5,23 +5,17 @@ import { useStore } from '../store/useStore';
 /**
  * 左侧图库目录栏。
  *
- * ★ 三件事（09-15 SV 定）：
- *  ① **固定显示**（图库目录应该固定在左侧，进主题后也不消失，随时切主题）。
- *     ⚠ 一开始是 `{sessionName && <SessionPane/>}` —— 那就是"空库 / 新库没有主题 ⇒
- *       左栏不显示"，于是**导入按钮永远点不到**（新库恰恰是最需要导入的时候）。
- *  ② 顶部加「导入照片」+「换图库」。
- *     换图库的通道（`pick-directory`）一直就有，只是**前端没人接**；
- *     首页那句「先点右上角「切换照片库」」指的是一个不存在的按钮。
- *  ③ ★ **「加入目录…」**（09-15 SV：*"如果一张照片已经在我的电脑中，我可以通过加这个目录
- *     让这个目录出现在图片库那一栏中"*）—— 把硬盘上**已有的**照片文件夹挂进这个列表。
+ * ★★ 09-15 SV 定案：**只有一条路** ——
+ *   照片已经在硬盘上，就把它那个目录「加入目录」挂进这个列表（**原地读、不复制**）。
+ *   早先那套「导入照片」（插卡 / U 盘 → 复制进库 → 按「日期_主题_地点」建档）**已整条删掉**：
+ *   多一条复制路径就多一份"两边规则慢慢长歪"的风险，而 SV 的用法本来就是「RAW 在哪就在哪看」。
  *
- * ★★ ②③ 是两件**不同**的事，别混：
- *   | | 导入照片 | 加入目录 |
- *   |---|---|---|
- *   | 干什么 | **复制**进照片库、按「日期_主题_地点」建档 | 把已有目录**就地**列进来 |
- *   | 动原文件吗 | 不动（只读源） | 不动（原地读） |
- *   | 原目录删了 | 库里的副本还在 | 那条就从列表消失（会留一条「找不到」） |
- *   | 用在哪 | 卡 / U 盘里的新片 | 已经在硬盘上的片子 |
+ * ★ 两条布局规矩（别退回去）：
+ *  ① **固定显示**：图库目录固定在左侧，进主题后也不消失，随时切主题。
+ *     ⚠ 一开始是 `{sessionName && <SessionPane/>}` —— "空库 / 新库没有主题 ⇒ 左栏不显示"，
+ *       于是入口永远点不到（新库恰恰最需要它）。
+ *  ② 顶部**只放「加入目录」这一个按钮**。「换图库」降到最底下那一行小字里
+ *     —— 它跟"当前库根是哪个"本来就是同一件事，摆一起才对。
  *
  * ⚠ 库外条目上的「×」**只从列表移除，不删任何文件**（按钮 title 里必须写清 ——
  *   用户看到 × 的第一反应是"会不会删我文件"）。
@@ -30,13 +24,11 @@ export function SessionPane() {
   const sessions = useStore((s) => s.sessions);
   const sessionName = useStore((s) => s.sessionName);
   const enter = useStore((s) => s.enterSession);
-  const openImport = useStore((s) => s.openImport);
   const changeLibRoot = useStore((s) => s.changeLibRoot);
   const addExtraRoot = useStore((s) => s.addExtraRootDir);
   const removeExtraRoot = useStore((s) => s.removeExtraRootDir);
   const libRoot = useStore((s) => s.libRoot);
   const busy = useStore((s) => s.busy);
-  const running = useStore((s) => s.importRunning);
 
   const pickLib = async () => {
     const p = await API.pickDirectory();
@@ -60,29 +52,17 @@ export function SessionPane() {
         paddingTop: 6,
       }}
     >
-      {/* ---- 顶部动作：导入 / 加入目录 / 换图库 ---- */}
+      {/* ---- 顶部动作：**只有「加入目录」这一个按钮**（09-15 SV 定案） ---- */}
       <Flex direction="column" gap="1" px="2" pb="2" data-lib-actions>
         <Button
           size="1"
           variant="soft"
-          data-import-open
-          disabled={busy || running}
-          onClick={() => openImport()}
-        >
-          导入照片
-        </Button>
-        <Button
-          size="1"
-          variant="ghost"
           data-add-dir
           disabled={busy}
           onClick={addDir}
           title="把硬盘上已有的照片文件夹挂进这个列表（原地读，不复制一份）"
         >
           加入目录
-        </Button>
-        <Button size="1" variant="ghost" disabled={busy} onClick={pickLib}>
-          换图库
         </Button>
       </Flex>
 
@@ -98,9 +78,9 @@ export function SessionPane() {
         <Text size="1" style={{ color: 'var(--text-faint)', padding: '0 12px', lineHeight: 1.7 }}>
           这个库里还没有主题。
           <br />
-          插卡后点上面的「导入照片」；
+          照片已经在硬盘上，就点上面的「加入目录」，
           <br />
-          片子已经在硬盘上，就点「加入目录」。
+          把它那个文件夹挂进这一栏（原地读，不复制）。
         </Text>
       ) : (
         sessions.map((s) => {
@@ -178,7 +158,7 @@ export function SessionPane() {
               {s.external && (
                 <button
                   data-session-del={s.rootDir || s.path || s.name}
-                  disabled={busy || running}
+                  disabled={busy}
                   title={'从列表移除（不删任何文件）\n' + (s.rootDir || s.path || '')}
                   onClick={() => {
                     const d = s.rootDir || s.path;
@@ -203,22 +183,42 @@ export function SessionPane() {
         })
       )}
 
-      {/* 库根：切错盘 / 看不着主题时，这一行是唯一的线索 */}
-      <Text
-        size="1"
-        data-lib-root
-        title={libRoot}
-        style={{
-          color: 'var(--text-faint)',
-          padding: '10px 12px',
-          marginTop: 'auto',
-          fontSize: 10.5,
-          lineHeight: 1.5,
-          wordBreak: 'break-all',
-        }}
+      {/* 库根 + 换图库：切错盘 / 看不着主题时，这一行是唯一的线索。
+          「换图库」放这儿而不放顶栏 —— 它和"当前库根是哪个"本来就是同一件事。 */}
+      <Flex
+        align="center"
+        gap="1"
+        px="2"
+        data-lib-root-row
+        style={{ marginTop: 'auto', paddingTop: 10, paddingBottom: 10 }}
       >
-        {libRoot || '（未设置图库）'}
-      </Text>
+        <Text
+          size="1"
+          data-lib-root
+          title={libRoot}
+          style={{
+            color: 'var(--text-faint)',
+            flex: 1,
+            minWidth: 0,
+            fontSize: 10.5,
+            lineHeight: 1.5,
+            wordBreak: 'break-all',
+          }}
+        >
+          {libRoot || '（未设置图库）'}
+        </Text>
+        <Button
+          size="1"
+          variant="ghost"
+          data-change-lib
+          disabled={busy}
+          onClick={pickLib}
+          title="换一个照片库根目录（左栏列出来的就是它的子文件夹）"
+          style={{ flex: '0 0 auto', fontSize: 10.5 }}
+        >
+          换图库
+        </Button>
+      </Flex>
     </Flex>
   );
 }

@@ -398,196 +398,30 @@ check('★ 出图源的标记进的是 note（没污染 img 的 alt）',
   /note=\{p \? \(p\.loadIsRaw/.test(viewerSrc) && /title="调色后"/.test(viewerSrc), '',
   'alt 被改掉的话，布局自检靠 alt 认栏位会一起失效');
 
-/* ---------- [9] 照片导入（SD 卡 → 照片库） ----------
-   ★★ 这一组为什么值得单独写：导入是**会真写盘、真动几百个文件、十几分钟**的操作。
-      它出错的方式和别的功能不一样 —— 不是"界面不好看"，是**把卡里的东西搞丢**。
-      所以这一段只做三件事，全都冲着"别动源卡"和"别导错地方"：
-        ① 参数拼装（纯函数）：必填项、空值不传、`--key=value` 形式
-        ② 输出解析（纯函数）：拿**脚本的真实输出**当样本，断言解析得出来
-        ③ 接线守卫：左栏常显、跑完进新主题、**主进程这段一行文件操作都没有**
-   ⚠ 这里**不是**拿正则看"有没有写某个函数名"——那挡不住"函数体写错"，等于没查。
-     前两项是把 main.js 里那两段源码抽出来在 Node 里**真跑**。 */
-console.log('\n[9] 照片导入（纯函数真跑 + 接线守卫）');
-const biM = mainJsCode.match(/function buildImportArgs\(o, dryRun\)\s*\{[\s\S]*?\n\}/);
-const piM = mainJsCode.match(/function parseImportOutput\(text\)\s*\{[\s\S]*?\n\}/);
-check('main.js 里有 buildImportArgs（表单 → 命令行，纯函数）', !!biM, '', '函数没了？');
-check('main.js 里有 parseImportOutput（脚本输出 → 结构化，纯函数）', !!piM, '', '函数没了？');
-let bi = null;
-if (biM) {
-  try {
-    bi = new Function(biM[0] + '; return buildImportArgs;')();
-  } catch (e) {
-    bi = null;
-  }
-}
-check('buildImportArgs 能在 Node 里独立跑起来', typeof bi === 'function', '', '取出来那段跑不了');
-if (typeof bi === 'function') {
-  const A = (o, d) => bi(o, d).join(' ');
-  check(
-    '★ 参数用 --key=value 形式（空格分隔会被 argparse 串位）',
-    A({ topic: '互勉约拍', place: '园岭新村', destRoot: 'D:\\照片库' }, true) ===
-      '--topic=互勉约拍 --place=园岭新村 --dest-root=D:\\照片库 --dry-run',
-    A({ topic: '互勉约拍', place: '园岭新村', destRoot: 'D:\\照片库' }, true),
-    '拼出来的串不对'
-  );
-  check(
-    '★ 日期留空 / auto 都不传（脚本自己会从 EXIF 推断）',
-    bi({ topic: 't', place: 'p', date: '' }, false).includes('--date=') === false &&
-      bi({ topic: 't', place: 'p', date: 'auto' }, false).includes('--date=') === false &&
-      bi({ topic: 't', place: 'p', date: '2026-04-24' }, false).includes('--date=2026-04-24'),
-    '',
-    '把 auto 当"用户填了日期"传过去了 ⇒ 日期推断死了'
-  );
-  check(
-    '★ 空的可选项一律不传（不是传空串 —— 传空串会把脚本的默认值覆盖掉）',
-    bi({ topic: 't', place: 'p', src: '', destRoot: '', folder: '' }, false).join(' ') ===
-      '--topic=t --place=p',
-    bi({ topic: 't', place: 'p', src: '', destRoot: '', folder: '' }, false).join(' '),
-    '空值也传了 ⇒ 预演和实跑的结论会跟真跑不一致'
-  );
-  check('不预演时没有 --dry-run', !bi({ topic: 't', place: 'p' }, false).includes('--dry-run'));
-  let threw = '';
-  try {
-    bi({ place: 'p' }, true);
-  } catch (e) {
-    threw = e.message;
-  }
-  check('★ 缺主题时**当场抛错**（不是让子进程跑到一半报 argparse usage）',
-    /主题/.test(threw), threw, '没抛 ⇒ 用户会看到一屏英文');
-  /* 值里带换行/回车：不能让一行参数变成两行（日志与解析都会被带歪） */
-  check('参数值里的换行被清掉',
-    bi({ topic: 'a\nb', place: 'p' }, false).join(' ').includes('\n') === false);
-}
-let pi = null;
-if (piM) {
-  try {
-    pi = new Function('path', piM[0] + '; return parseImportOutput;')(path);
-  } catch (e) {
-    pi = null;
-  }
-}
-check('parseImportOutput 能在 Node 里独立跑起来', typeof pi === 'function', '', '取出来那段跑不了');
-if (typeof pi === 'function') {
-  /* ⚠⚠ 这份样本**是从脚本的真实输出抄下来的**（09-15 实跑 `--dry-run` 拿的），
-     不是我自己编的句型。编的句型会"两边一起错、检查全绿"。
-     ⚠ 反斜杠要写两个 —— JS 字符串里 `'\D'` 会变成 `'D'`（反斜杠被吃掉）。 */
-  const DRY_OUT = [
-    '源目录 : D:\\DCIM\\100_FUJI',
-    '文件数 : 524 个   总大小 12.34 GB',
-    '  类型 : JPG×300, RAF×224',
-    '  日期 : 2026-04-24 ~ 2026-04-25（跨 2 天）',
-    '候选盘 : E: 剩 362.89 GB',
-    '目标盘 : E（剩 362.89 GB）',
-    '目标目录: E:\\照片库\\2026-04-24_旅行_长洲岛',
-    '',
-    '[dry-run] 未执行复制。去掉 --dry-run 正式导入。',
-  ].join('\n');
-  const RUN_OUT = DRY_OUT.slice(0, DRY_OUT.indexOf('\n[dry-run]')) + [
-    '',
-    '开始复制…',
-    '  100/524  已复制 2.30 GB  (85 MB/s)',
-    '复制完成：新增 524，跳过(已存在) 0，失败 0',
-    '校验    ：源 524 个 / 12.34 GB  →  目标 524 个 / 12.34 GB',
-    '校验通过：文件数与总字节数一致',
-    '',
-    '耗时 45.2 秒',
-    '导入位置：E:\\照片库\\2026-04-24_旅行_长洲岛',
-  ].join('\n');
-
-  const d = pi(DRY_OUT);
-  check('★ 解析出「要拷几个 / 多大」（预演的核心信息）',
-    d.files === 524 && d.total === '12.34 GB', `${d.files} / ${d.total}`,
-    '解析不出来 ⇒ 界面显示"要拷 — 个文件"');
-  check('★ 解析出目标文件夹名（跑完要靠它进新主题的选片台）',
-    d.folder === '2026-04-24_旅行_长洲岛', d.folder, `期望 2026-04-24_旅行_长洲岛，实际 ${d.folder}`);
-  check('★ 认出这是一次预演（不是真拷了）', d.dryRun === true && d.copied == null);
-  const r2 = pi(RUN_OUT);
-  check('★ 真跑的样本解析出「新增/跳过/失败」三个数',
-    r2.copied === 524 && r2.skipped === 0 && r2.failed === 0,
-    `${r2.copied}/${r2.skipped}/${r2.failed}`, '解析不出来 ⇒ 界面说不清到底拷进去没有');
-  check('★ 认出「校验通过」（这是"导入成功"唯一的凭据）', r2.verified === true, '',
-    '校验那条没认出来 ⇒ 用户不知道到底成没成');
-  check('★ 解析出耗时', r2.elapsed === '45.2', r2.elapsed);
-  const e1 = pi('[错误] 找不到源目录。请插好卡/U盘，或用 --src 指定。');
-  check('★ 脚本报错时把它的原话带出来（不是只说"失败了"）',
-    /找不到源目录/.test(e1.error), e1.error, '用户看不到为什么失败');
-  check('空输入不炸（第一次打开对话框就是空）',
-    pi('').files == null && pi('').folder === '');
-  /* ★★ 台词漂移守卫：解析锚的是脚本里那几句话，脚本改了台词这里就静静失效。
-     脚本在仓库外（用户自己的 skills 目录），所以按"找得到就查、找不到就跳过"处理。 */
-  const impScript = [
-    process.env.SVIMPORT_SCRIPT || '',
-    path.join(os.homedir(), '.workbuddy', 'skills', 'photo-import', 'scripts', 'import_photos.py'),
-  ].find((p) => p && fs.existsSync(p));
-  if (impScript) {
-    const isrc = fs.readFileSync(impScript, 'utf8');
-    const anchors = ['源目录 :', '文件数 :', '目标目录:', '[dry-run] 未执行复制', '耗时', '导入位置：'];
-    const missing = anchors.filter((a) => !isrc.includes(a));
-    check('★ 导入脚本的台词没变（解析锚的就是这几句）', missing.length === 0,
-      `${anchors.length} 句全在`, `脚本里没了：${missing.join(' , ')} —— 改脚本就要改 main.js 的 parseImportOutput`);
-    /* ★ 只复制、绝不动源：脚本自己的契约，也在这一起钉住 */
-    check('★ 导入脚本自己不删/不移动源文件（"只复制"的契约没被破坏）',
-      !/os\.remove|os\.unlink|shutil\.move/.test(isrc), '',
-      '脚本里出现了删除/移动 —— 源卡安全性不再有保证');
-  } else {
-    ok('导入脚本不在本机（跳过台词漂移检查）');
-  }
-}
-
-/* 接线：入口在哪、跑完去哪、主进程有没有自己去动文件 */
 const storeCode = storeSrc.replace(/\/\*[\s\S]*?\*\//g, '');
-const runM = storeCode.match(/runImport: async \(\) => \{[\s\S]*?\n  \},/);
-check('★ 左栏**常显**（不挂在 sessionName 上）—— 空库/新库也得点得到导入',
-  !/\{sessionName && <SessionPane/.test(appTsx) && /<SessionPane \/>/.test(appTsx),
-  '', '左栏还在条件渲染 ⇒ 新库里"导入照片"永远点不到（而新库最需要它）');
-check('★ App 挂了导入对话框', /<ImportDialog \/>/.test(appTsx));
+check('★ 左栏**常显**（不挂在 sessionName 上）—— 空库/新库也得点得到「加入目录」',
+  !/\{sessionName && <SessionPane/.test(appTsx) && /<SessionPane \/>/.test(appTsx), '',
+  '左栏还在条件渲染 ⇒ 新库里所有入口都点不到（而新库最需要它）');
+/* ★★ 09-15 SV 定案：「导入照片」（插卡 / U 盘 → 复制进库）**整条删掉**，
+   照片已经在硬盘上 ⇒ 只有一条路：把它那个目录「加入目录」进来（原地读、不复制）。
+   下面这一组挡三种"半截状态"：①功能没了、按钮还在 ②按钮没了、功能还在 ③组件删了、界面还挂着。 */
 const sessTsx = read('src/components/SessionPane.tsx');
-check('★ 左栏顶部有导入入口 + 换图库', /data-import-open/.test(sessTsx) && /换图库/.test(sessTsx));
-check('★ 导入跑完用 refreshSessions（不是 loadSessions）',
-  !!runM && /refreshSessions\(\)/.test(runM[0]) && !/loadSessions\(\)/.test(runM[0]),
-  '', 'loadSessions 会顺带"恢复到上次的主题"，把刚导进来的又换掉 ⇒ 跑完看到的还是旧主题');
-check('★ 导入跑完直接进新主题 + 切到选片台',
-  !!runM && /enterSession\(folder\)/.test(runM[0]) && /setMode\('pick'\)/.test(runM[0]),
-  '', '导完停在原地 ⇒ 用户以为白导了');
-check('★ 主进程的导入那段**一行文件操作都没有**（复制全交给脚本）',
-  (() => {
-    const sec = mainJsCode.slice(mainJsCode.indexOf('function importScriptPath()'));
-    return sec.length > 1000 &&
-      !/rmSync|unlinkSync|renameSync|copyFileSync|createWriteStream|writeFileSync/.test(sec);
-  })(),
-  '', '主进程自己动文件了 ⇒ "只复制、绝不动源卡"那份契约就不再有保证');
-check('★ 导入脚本路径不写死个人路径（走配置 / 环境变量）',
-  /SVIMPORT_SCRIPT/.test(mainJsCode) && /SVIMPORT_PY/.test(mainJsCode) && !/Users\\psw99/.test(mainJsCode),
-  '', '写死了本机路径 ⇒ 仓库不能开源、换台机器就跑不了');
-check('★ 进度事件的通道名两端一致',
-  /webContents\.send\('import-progress'/.test(mainJsSrc) &&
-    /ipcRenderer\.on\('import-progress'/.test(preload),
-  '', '主进程发一个名、preload 听另一个名 ⇒ 进度永远是空的（而且不报错）');
-check('★ 对话框收尾**取消订阅**（否则切主题几次就多路重复推送）',
-  /typeof off === 'function'/.test(read('src/components/ImportDialog.tsx')),
-  '', '没退订 ⇒ 日志行会重复出现');
-/* ★ 实测出来的一个反直觉行为（`_probe_import_e2e.mjs` 真跑出来的）：
-   目标文件夹**同名已存在**时，脚本不合并、而是新建 `_2`；而且 dry-run 阶段**不做**改名检查
-   ⇒ 预演里显示的目录名会和实跑不一样。不是 bug（"不许偷偷合进旧文件夹"的代价），
-   但界面必须把这句 `[提示] 已存在，改用 …` 显出来，否则用户会莫名多出一个 `_2` 主题。 */
-check('★ 「同名已存在 ⇒ 改用 _2」这句提示会显示给用户',
-  /plan\.renamed/.test(read('src/components/ImportDialog.tsx')) && /renamed/.test(apiTs),
-  '', '不显示的话，用户会莫名多出一个 _2 主题、而且看不出为什么');
-/* ★ 进度条：**必须从日志派生**、不许在 store 里再存一份"百分比"。
-   存两份的下场是它们不同步 —— 而这个项目里"看着对、其实对不上"这类 bug 最难发现
-   （滑杆的 dv、出图源的 rel、星级的三处同步，都是同一类）。 */
-const diaSrc = read('src/components/ImportDialog.tsx');
-check('★ 进度条从日志派生（没有第二份"百分比"状态）',
-  /data-import-fill/.test(diaSrc) && /已复制/.test(diaSrc) && /const prog = useMemo/.test(diaSrc),
-  '', '条没接上日志 ⇒ 永远停在 0%');
-check('★ store 里没偷偷存一份 importPercent 之类的重复状态',
-  !/importPercent|importPct/.test(storeSrc), '', '又存了两份会不同步的状态');
-check('★ 布局自检的 mock 也实现了导入通道（否则那条真浏览器检查是空转）',
-  /importDetect: async/.test(mockSrcFlat) &&
-    /importPreview: async/.test(mockSrcFlat) &&
-    /importRun: async/.test(mockSrcFlat) &&
-    /onImportProgress:/.test(mockSrcFlat),
-  '', 'mock 少一个 ⇒ 点下去静默抛错，检查看不见');
+check('★ 左栏顶部**只有**「加入目录」这一个按钮',
+  /data-add-dir/.test(sessTsx) && !/data-import-open/.test(sessTsx), '',
+  '两个入口并存 ⇒ 用户分不清该点哪个（这正是这轮要治的）');
+check('★ 「换图库」还在（只是从顶栏挪到底部小字里，功能没丢）',
+  /data-change-lib/.test(sessTsx) && /换图库/.test(sessTsx), '',
+  '换图库被顺手删了 ⇒ 新机器上库根永远是系统「图片」目录、改不了');
+check('★ 已删的导入对话框没有残留引用（App / api / store）',
+  !/<ImportDialog/.test(appTsx) && !/ImportDialog/.test(apiTs) && !/ImportDialog/.test(storeSrc), '',
+  '残留引用 ⇒ tsc / 构建期报错，或运行期白屏');
+check('★ 主进程 / preload 里没有导入残留（4 个通道整条清掉）',
+  !/import-detect|import-preview|import-run|import-progress/.test(mainJsSrc) &&
+    !/importDetect|importPreview|importRun|onImportProgress|pickFile/.test(preload), '',
+  '通道删一半 ⇒ preload 调一个不存在的主进程 handler（同步抛错、catch 接不到）');
+check('★ 源码里没有写死的个人路径（要开源）',
+  !/Users[\\/]+psw99|E:[\\/]+WorkBuddy[\\/]+摄影助手/.test(mainJsSrc + preload + apiTs), '',
+  '写死了本机路径 ⇒ 换台机器就跑不了、也没法开源');
 
 /* ---------- [10] 基准默认 / 右栏两个按钮 / 按主题存配方（09-15） ---------- */
 /* ★ 这一组对着三个真问题：

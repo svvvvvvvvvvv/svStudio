@@ -15,8 +15,8 @@ export function HomeView() {
       <Flex align="center" justify="center" style={{ height: '100%' }}>
         <Callout.Root color="gray">
           <Callout.Text>
-            这个库里还没有主题。插好卡后点左侧「导入照片」把片拷进来，
-            或者点左侧「换图库」换一个照片库目录。
+            这个库里还没有主题。照片已经在硬盘上，就点左侧「加入目录」
+            把它那个文件夹挂进来（原地读，不复制）；想换库就点左下角「换图库」。
           </Callout.Text>
         </Callout.Root>
       </Flex>

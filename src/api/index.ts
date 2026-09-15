@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /**
- * ★★ 这是 preload.js 里 35 个 IPC 通道的 **唯一 TypeScript 封装修**.
+ * ★★ 这是 `preload.js` 里全部 IPC 通道的 **唯一 TypeScript 封装修**.
  *
  * ⚠⚠ 铁律（09-15 改写）：**加一个通道必须四边同步**，少一边就是静默坏掉：
  *      ① `main.js` 里 `ipcMain.handle('xxx', …)`（返回形状 = 契约，见本文件末尾那段注释）
@@ -8,7 +8,7 @@
  *      ③ 本文件 `Window.api` 的类型 + `export const API` 里的封装（静态自检 [4] 组双向查这三边）
  *      ④ 用它的组件
  *    「`preload.js` 一个字节都不许改」是**老规矩、已经作废** —— 写那句话的时候改它的风险
- *    大于收益；但「导入照片」这种必须动主进程能力的功能绕不开它。规矩换成：
+ *    大于收益；但**要动主进程能力的功能**绕不开它。规矩换成：
  *    **改它必须四边一起改**（静态自检 [4] 组会检查 preload ↔ API 两边方法名双向对得上）。
  *
  * 每个方法对应 preload 里同名的一项，返回结构以 `main.js` 实际返回 + 老 app.js 实际
@@ -72,13 +72,6 @@ declare global {
        *  不是图片数据。`{ ok, path, w, h, bytes, ms }`；取消 ⇒ `{ ok:false, canceled:true }`。
        *  ⚠ 导出尺寸由引擎定（不传 side），前端不许写死 —— 用回来的 w/h 显示。 */
       exportImage: (payload: any) => Promise<any>;
-      /* ---- 照片导入 ---- */
-      pickFile: (opts?: { title?: string; filters?: any[] }) => Promise<string | null>;
-      importDetect: () => Promise<ImportDetectResult>;
-      importPreview: (opts: ImportOpts) => Promise<ImportResult>;
-      importRun: (opts: ImportOpts) => Promise<ImportResult>;
-      /** 返回取消订阅函数 */
-      onImportProgress: (cb: (line: string) => void) => () => void;
       /* ---- 库外·纯 RAW 目录的预览索引 ---- */
       /** 给一个**纯 RAW 的库外目录**建/补预览索引（幂等）。
        *  ★ 源目录只读；缓存写在应用目录下、可以整个删。
@@ -301,84 +294,6 @@ export interface GradeState {
   [k: string]: any;
 }
 
-/* ---------------- 照片导入（SD 卡 / U 盘 → 照片库） ---------------- */
-
-/** 检测到的一张卡（或任何带 `DCIM` 的目录） */
-export interface ImportCard {
-  /** 盘符，如 'J' */
-  drive: string;
-  /** 有照片的那个子目录，如 `J:\DCIM\100_FUJI` */
-  path: string;
-  /** 里面有多少个照片/视频 */
-  n: number;
-}
-
-export interface ImportDetectResult {
-  ok: boolean;
-  cards: ImportCard[];
-  /** 导入脚本路径（**空串 = 还没配**，界面要引导用户选一次，之后写进 config） */
-  script: string;
-  /** 目标库根 = 工作台当前的照片库（片导到别处就"导入后看不见"了） */
-  libRoot: string;
-}
-
-/** 导入表单。`destRoot` 留空 ⇒ main.js 自动取工作台当前的照片库 */
-export interface ImportOpts {
-  src?: string;
-  topic?: string;
-  place?: string;
-  /** YYYY-MM-DD；留空/'auto' = 从 EXIF 推断 */
-  date?: string;
-  destRoot?: string;
-  destDrive?: string;
-  /** 完整文件夹名（覆盖自动命名） */
-  folder?: string;
-  /** 跨多天也平铺，不按日期建子目录 */
-  keepFlat?: boolean;
-  /** 跳过拷完的校验（不建议） */
-  noVerify?: boolean;
-}
-
-/**
- * ★★ 导入脚本 stdout 解析出来的「计划 / 结果」。
- *    锚的是脚本里的固定台词（`源目录 :` / `文件数 :` / `目标目录:` /
- *    `复制完成：新增 N，跳过(已存在) N，失败 N` / `耗时 N 秒`）。
- *    唯一出处是 `main.js` 的 `parseImportOutput()` —— 改脚本台词必须两边一起改
- *    （`_check/ui_smoke.mjs` 有静态检查把这两边钉在一起）。
- */
-export interface ImportPlan {
-  src?: string;
-  files?: number | null;
-  total?: string;
-  types?: string;
-  dates?: string;
-  candidates?: string;
-  destDrive?: string;
-  /** 目标目录（完整路径） */
-  dest?: string;
-  /** 文件夹名 = **新主题名**（跑完直接进它的选片台） */
-  folder?: string;
-  /** 目标库根 */
-  destRoot?: string;
-  copied?: number | null;
-  skipped?: number | null;
-  failed?: number | null;
-  elapsed?: string;
-  verified?: boolean;
-  dryRun?: boolean;
-  renamed?: string;
-  warning?: string;
-  error?: string;
-}
-
-export interface ImportResult {
-  ok: boolean;
-  /** 原始 stdout（出错时给人看现场，别只给一句"失败了"） */
-  text?: string;
-  plan?: ImportPlan | null;
-  error?: string;
-}
-
 /* ------------- 库外·纯 RAW 目录的预览索引（`ext-index`） ------------- */
 
 /**
@@ -471,14 +386,6 @@ export const API = {
     api().setGrade(themeName, grade),
   exportGrade: (payload: any) => api().exportGrade(payload),
   exportImage: (payload: any) => api().exportImage(payload),
-
-  /* 照片导入 */
-  pickFile: (opts?: { title?: string; filters?: any[] }) => api().pickFile(opts),
-  importDetect: () => api().importDetect(),
-  importPreview: (opts: ImportOpts) => api().importPreview(opts),
-  importRun: (opts: ImportOpts) => api().importRun(opts),
-  /** ★ 返回**取消订阅函数**（`useEffect` 里直接 return 它） */
-  onImportProgress: (cb: (line: string) => void) => api().onImportProgress(cb),
 
   /* 库外·纯 RAW 目录的预览索引 */
   extIndex: (srcDir: string) => api().extIndex(srcDir),

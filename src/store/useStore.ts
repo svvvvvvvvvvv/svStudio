@@ -8,8 +8,6 @@ import {
   Paper,
   ParamDef,
   GradeState,
-  ImportCard,
-  ImportPlan,
 } from '../api';
 
 /**
@@ -28,17 +26,6 @@ import {
 export type Mode = 'pick' | 'grade';
 /** 选片台筛选：all=全部 / unrated=未评 / n=几星 */
 export type Filter = 'all' | 'unrated' | '1' | '2' | '3' | '4' | '5';
-
-/** 导入表单（源卡 / 主题 / 地点 / 日期）。日期留空 = 从 EXIF 推断 */
-export interface ImportForm {
-  src: string;
-  topic: string;
-  place: string;
-  date: string;
-}
-
-/** 导入对话框最多留多少行日志（一次几百张也就几十行，留够看现场就行） */
-const IMPORT_LOG_MAX = 400;
 
 /**
  * 「这个库外目录已经试过建预览索引、但**失败了**」—— 每个进程只试一次。
@@ -90,21 +77,6 @@ interface AppState {
    *  （用「次数」而不是 boolean —— 连点两次也能各触发一次，不会被合并掉。） */
   renderTick: number;
 
-  /* ---- 照片导入（SD 卡 / U 盘 → 照片库） ---- */
-  importOpen: boolean;
-  /** 找到的卡（照片最多的排前面） */
-  importCards: ImportCard[];
-  /** 导入脚本路径（**空串 = 还没配** ⇒ 对话框先引导"选一次"，之后写进 config） */
-  importScript: string;
-  importForm: ImportForm;
-  /** 预演出来的计划 / 导入完的结果（没跑过是 null） */
-  importPlan: ImportPlan | null;
-  /** 进度与输出的尾巴（界面只显示最后几行） */
-  importLog: string[];
-  /** 有一发**真导入**在跑（按钮禁用 + 进度区常显 + 不许关对话框） */
-  importRunning: boolean;
-  /** 预演本身的忙碌（和 importRunning 分开：预演也转圈，但不算"在拷"） */
-  importBusy: boolean;
   /** 有一发"建预览索引"在跑（库外·纯 RAW 目录 ⇒ 抠内嵌机内 JPG 写缓存） */
   extIndexBusy: boolean;
 
@@ -112,7 +84,7 @@ interface AppState {
   setReady: (v: boolean) => void;
   setLibRoot: (v: string) => void;
   loadSessions: () => Promise<void>;
-  /** 只重扫主题列表，**不碰**"恢复上次状态"（导入完要用它，见 runImport） */
+  /** 只重扫主题列表，**不碰**"恢复上次状态"（加目录 / 建预览索引后要用它） */
   refreshSessions: () => Promise<void>;
   /** 换照片库（左栏「换图库」）—— 存进配置 + 重扫 + 回首页 */
   changeLibRoot: (root: string) => Promise<void>;
@@ -153,20 +125,6 @@ interface AppState {
   setRenderBusy: (v: boolean) => void;
   /** 请分屏出一次图（右栏「渲染」按钮 / 切进调色台 都调它） */
   requestRender: () => void;
-  /* ---- 导入相关 ---- */
-  openImport: () => Promise<void>;
-  closeImport: () => void;
-  /** 重新找卡 + 问"脚本配了没" */
-  detectImport: () => Promise<void>;
-  setImportForm: (patch: Partial<ImportForm>) => void;
-  /** 选导入脚本（只在还没配过时需要；选完写进 config，以后不用再选） */
-  pickImportScript: () => Promise<void>;
-  /** 预演（脚本的 --dry-run）：只看不复制 */
-  previewImport: () => Promise<boolean>;
-  /** 真跑。跑完刷新主题列表并**直接进新主题的选片台** */
-  runImport: () => Promise<void>;
-  /** 主进程推来的一行进度 */
-  pushImportLog: (line: string) => void;
 }
 
 /** 星级键：老代码 `keyForExif` 是 `sessionName + '||' + photo.name`，保持一致 */
@@ -232,14 +190,6 @@ export const useStore = create<AppState>((set, get) => ({
   renderBusy: false,
   renderTick: 0,
 
-  importOpen: false,
-  importCards: [],
-  importScript: '',
-  importForm: { src: '', topic: '', place: '', date: '' },
-  importPlan: null,
-  importLog: [],
-  importRunning: false,
-  importBusy: false,
   extIndexBusy: false,
 
   setReady: (v) => set({ ready: v }),
@@ -277,8 +227,8 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  /** 只重扫主题列表（导入完要用它 —— 不能直接调 loadSessions：
-   *  那个会顺带"恢复上次主题"，把刚导进来的新主题又换掉） */
+  /** 只重扫主题列表，**不碰**"恢复上次状态" —— 加目录 / 建完预览索引后要用它，
+   *  不能直接调 `loadSessions`（那个会顺带"恢复上次主题"，把刚进来的又换掉） */
   refreshSessions: async () => {
     const root = get().libRoot;
     if (!root) return;
@@ -298,8 +248,8 @@ export const useStore = create<AppState>((set, get) => ({
   /* =========================================================
      库外目录（左栏「加入目录…」）：把硬盘上**已有的**照片文件夹挂进图库列表
      ---------------------------------------------------------
-     ★ 和「导入照片」是**两件不同的事**：导入会**复制**进库、按「日期_主题_地点」建档；
-       这里**一个字节都不动**，只是让那个目录出现在左栏里（原地读）。
+     ★ 这里**一个字节都不动**，只是让那个目录出现在左栏里（原地读）——
+       和「把片拷进库」是完全相反的两件事。
      ★ 存 `config.extraRoots`（用户配置，**不进仓库**）；全局一份，换图库也不丢。
      ★ 身份按**完整路径**：挂进来的目录就算跟库里的主题重名，也各算各的
        （星级 / 成片归档 / 调色配方都不串味）。真重名时 `scanSessions` 给库外那条加 ` ·2`。
@@ -758,132 +708,6 @@ export const useStore = create<AppState>((set, get) => ({
 
   setRenderBusy: (v) => set({ renderBusy: v }),
   requestRender: () => set((s) => ({ renderTick: s.renderTick + 1 })),
-
-  /* ================= 照片导入 =================
-     ★★ 复制这活**不在这里、也不在 main.js 里重写** —— 一路调现成的导入脚本
-        （`photo-import` 的 `import_photos.py`）：只复制不动源卡 / 目标盘自动排除系统盘 /
-        断点续传 / 拷完按「文件数 + 总字节」校验。这里只管表单、进度和"跑完去哪"。 */
-
-  openImport: async () => {
-    set({
-      importOpen: true,
-      importPlan: null,
-      importLog: [],
-      importForm: { src: '', topic: '', place: '', date: '' },
-    });
-    await get().detectImport();
-  },
-
-  closeImport: () => {
-    /* ★ 正在拷就不许关：进度得看得见（看不到进度的"正在复制"= 用户眼里死机了，
-       会去强杀程序 —— 而这正是最不该中断的一步）。 */
-    if (get().importRunning) return;
-    set({ importOpen: false });
-  },
-
-  detectImport: async () => {
-    set({ importBusy: true });
-    try {
-      const r = await API.importDetect();
-      const cards = r?.cards || [];
-      /* ★ 默认选中"照片最多的那张卡" —— 导入脚本自己也是这么挑的
-         （`find_source()`：所有可移动盘的 DCIM 子目录里取张数最多的那个）。
-         两边规则一致，才不会出现"界面显示 A、实际拷的是 B"。 */
-      const cur = get().importForm.src;
-      set({
-        importCards: cards,
-        importScript: r?.script || '',
-        importForm: { ...get().importForm, src: cur || cards[0]?.path || '' },
-      });
-    } catch (e) {
-      get().showToast('找卡失败：' + String(e));
-    } finally {
-      set({ importBusy: false });
-    }
-  },
-
-  setImportForm: (patch) => set({ importForm: { ...get().importForm, ...patch } }),
-
-  pickImportScript: async () => {
-    const p = await API.pickFile({
-      title: '选择导入脚本（import_photos.py）',
-      filters: [{ name: 'Python', extensions: ['py'] }],
-    });
-    if (!p) return;
-    await API.setConfig({ importScript: p });
-    set({ importScript: p });
-    get().showToast('导入脚本已记住，以后不用再选');
-  },
-
-  /** 预演。★ 这一档的存在意义：**先看见"要拷多少 / 拷到哪"，再决定要不要动手** ——
-   *  导入是真会写盘的（几百张、十几分钟），不能点一下就直接开跑。 */
-  previewImport: async () => {
-    const f = get().importForm;
-    if (!f.src) {
-      get().showToast('先选一张卡（或手动指定源目录）');
-      return false;
-    }
-    if (!f.topic || !f.place) {
-      get().showToast('主题和地点都要填 —— 它们组成文件夹名');
-      return false;
-    }
-    set({ importBusy: true, importLog: [], importPlan: null });
-    try {
-      /* ⚠ 目标库**不从前端传**：让 main.js 从配置里取（唯一出处）。
-         前端再传一份的话，两处一旦不一致，片就导进另一个库、工作台扫不到。 */
-      const r = await API.importPreview({ src: f.src, topic: f.topic, place: f.place, date: f.date });
-      set({ importPlan: r?.plan || null });
-      if (!r?.ok) get().showToast('预演失败：' + (r?.error || '看下面的输出'));
-      return !!r?.ok;
-    } catch (e) {
-      get().showToast('预演失败：' + String(e));
-      return false;
-    } finally {
-      set({ importBusy: false });
-    }
-  },
-
-  runImport: async () => {
-    const f = get().importForm;
-    if (!get().importPlan) {
-      get().showToast('先点「只看不复制」看一眼计划');
-      return;
-    }
-    set({ importRunning: true, importLog: [] });
-    try {
-      const r = await API.importRun({ src: f.src, topic: f.topic, place: f.place, date: f.date });
-      const plan = r?.plan || null;
-      set({ importPlan: plan });
-      if (!r?.ok) {
-        get().showToast('导入失败：' + (r?.error || '看下面的输出'));
-        return;
-      }
-      /* ★ 跑完直接进新主题的选片台（沿用已定的规矩：「导入完直接开，不要再问」）。
-         ⚠ 必须用 `refreshSessions()` 而不是 `loadSessions()` —— 后者会顺带
-           "恢复到上次的主题"，把刚导进来的这个又换掉。 */
-      await get().refreshSessions();
-      const folder = plan?.folder || '';
-      set({ importOpen: false });
-      if (folder) {
-        await get().enterSession(folder);
-        get().setMode('pick');
-        get().showToast(`导入完成：${folder}`);
-      } else {
-        get().showToast('导入完成（没解析出新主题名，看下面的输出）');
-      }
-    } catch (e) {
-      get().showToast('导入失败：' + String(e));
-    } finally {
-      set({ importRunning: false });
-    }
-  },
-
-  pushImportLog: (line) => {
-    const log = get().importLog;
-    const next = log.length >= IMPORT_LOG_MAX ? log.slice(-(IMPORT_LOG_MAX / 2)) : log.slice();
-    next.push(line);
-    set({ importLog: next });
-  },
 }));
 
 /**

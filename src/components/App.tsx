@@ -10,7 +10,6 @@ import { GradePanel } from './GradePanel';
 import { Viewer } from './Viewer';
 import { Stars, FilterChips, ExifBar } from './Stars';
 import { SessionPane } from './SessionPane';
-import { ImportDialog } from './ImportDialog';
 import { PickPanel } from './PickPanel';
 import { RenderBar } from './RenderBar';
 
@@ -79,7 +78,7 @@ export function App() {
       <Flex style={{ flex: 1, minHeight: 0 }}>
         {/* ★ 左侧图库目录：**常显**（SV 09-15）——
             进主题后不消失（随时切主题），空库/新库时也必须在：
-            不然「导入照片」这个入口在新库上永远点不到（而新库恰恰最需要它）。 */}
+            不然「加入目录」这个入口在新库上永远点不到（而新库恰恰最需要它）。 */}
         <SessionPane />
 
         {/* 主区：大图/分屏 + 底栏
@@ -159,9 +158,6 @@ export function App() {
         </Box>
       )}
 
-      {/* 导入照片（OD 卡/U 盘 → 照片库）：入口在左栏，但对话框挂在最外层，
-          因为它不属于任何一栏、而且导入完要能直接换到新主题的选片台。 */}
-      <ImportDialog />
     </Flex>
   );
 }
