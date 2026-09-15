@@ -271,22 +271,34 @@ export const useStore = create<AppState>((set, get) => ({
        ⚠ 不加这一步「存到主题」就是**只写不读**（存了个寂寞），正是本项目最忌的
          "看着对、其实对不上"；也所以它没有单独一个按钮的必要 —— 存了就得用上。
        ⚠ 只改状态、**不出图**（沿用"只有两个触发点"的规矩）。 */
+    const list = get().bases;
+    const dfltName = (list.find((x) => x.isDefault) || list[0])?.name ?? '';
     try {
       const g = await API.getGrade(name);
       if (g && typeof g === 'object') {
-        /* 这个主题存过配方 ⇒ 原样套回 */
-        set({ grade: { ...get().grade, ...g } });
+        /* ★★ 存过的配方**也要校验再套**，不能原样信。
+           `base` 是**引擎基准表里的名字**，而这份配置是"人能手改、旧版本也写过"的东西
+           （旧版前端就写死过 `'all'`，那个名字引擎根本不认）。
+           引擎对不认得的名字是**静默**回落成「不套基准」的 —— 见 `stocks.resolve_base`：
+           `key = str(name or 'BASE_NONE').strip().upper()`，既不在表里就取 `'BASE_NONE'`。
+           ⇒ 不校验的话，一进这个主题就是：界面上四支基准**一支都不亮**，
+             出图悄悄变成"什么都没套"，而且**看不出哪里不对**。
+           —— 跟修「默认值」那条是同一个坑，只是入口从"初值"换成了"存过的旧值"。 */
+        const b = String((g as { base?: unknown }).base ?? '');
+        const known = !!b && list.some((x) => x.name === b);
+        set({ grade: { ...get().grade, ...g, base: known ? b : dfltName } });
+        if (!known && list.length) {
+          get().showToast(
+            `「${name}」存的基准引擎不认${b ? '（' + b + '）' : ''}，已回默认`
+          );
+        }
       } else {
         /* 没存过 ⇒ **回出厂**（滑杆清空 + 基准回引擎默认）。
            为什么不"保持上一个主题的值"：那样主题之间会**互相串味**
            （在 A 里拧过的滑杆跟着你进 B），正是本项目最忌的那类"看着对、其实对不上"。
            代价照实说：在 A 里**没存**的临时改动，切走一趟回来就没了
            —— 这恰恰是「存到主题」这个按钮存在的意义。 */
-        const list = get().bases;
-        const dflt = list.find((x) => x.isDefault) || list[0];
-        set({
-          grade: { stock: get().grade.stock, base: dflt?.name ?? '', params: {} },
-        });
+        set({ grade: { stock: get().grade.stock, base: dfltName, params: {} } });
       }
     } catch {
       /* 读不到就当没存过，不吵 */

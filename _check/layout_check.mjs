@@ -1010,6 +1010,48 @@ console.log('\n[13] 右栏：基准默认 / 恢复默认 / 存到主题');
     '只写不读 = 存了个寂寞（本项目最忌的"看着对、其实对不上"）');
   check('★ 这一轮也没把界面弄炸（右栏还在）',
     (await page.locator('button', { hasText: '恢复默认' }).count()) > 0);
+
+  /* ---- ④ 存过的旧配方里 base 是个**引擎不认的名字** ⇒ 进主题必须校验、回默认 ----
+     ★ 为什么单列一条：配置是"人能手改、旧版本也写过"的东西（旧版前端就写死过 `'all'`）。
+       引擎对不认得的名字是**静默**回落成「不套基准」的（`stocks.resolve_base`：
+       既不在表里就取 `BASE_NONE`）⇒ 不校验的后果是"一进这个主题，四支基准一支都不亮、
+       出图悄悄变成什么都没套"，而且**看不出哪里不对**。
+       —— 跟 ①② 是同一个坑，只是入口从"初值"换成了"存过的旧值"。 */
+  await page.addInitScript(() => {
+    window.__grades = {
+      '主题A': { stock: 'portra400', base: 'all', params: { SPEK_PE_SHIFT: 1.1 } },
+    };
+  });
+  await page.reload();
+  await page.waitForTimeout(1800);
+  const gradeTab4 = page.locator('button', { hasText: '调色台' }).first();
+  if (await gradeTab4.count()) {
+    await gradeTab4.click();
+    await page.waitForTimeout(1500);
+  }
+  await openTheme3('主题A');
+  await page.waitForTimeout(800);
+  const badBase = await page.evaluate(() => {
+    const all = [...document.querySelectorAll('[data-base]')];
+    return all.filter((x) => x.getAttribute('data-base-on') === '1')
+      .map((x) => x.getAttribute('data-base'));
+  });
+  check('★ 存过的配方里 base 是引擎不认的名字 ⇒ 进主题时**回引擎默认**（不是原样照信）',
+    badBase.length === 1 && badBase[0] === 'BASE_FULL', `选中 [${badBase.join(',')}]`,
+    '原样信配置 ⇒ 界面上四支基准一支都不亮、出图静默变成"不套基准"');
+  /* ★ 界面亮不亮只是**间接证据**（状态对、请求里照样可能是错的）——
+     所以再真点一次渲染，看**发给引擎的 base**。 */
+  const rBtn4 = page.locator('button', { hasText: '渲染' }).first();
+  check('渲染条在（否则下面那条测的是空气）', (await rBtn4.count()) > 0);
+  if (await rBtn4.count()) {
+    await rBtn4.click();
+    await page.waitForTimeout(1000);
+    const a4 = await renderArgs();
+    const last4 = a4[a4.length - 1] || {};
+    check('★ 渲染请求里带的 base 是**合法名字**（不是那个存错的）',
+      last4.base === 'BASE_FULL', `base=${JSON.stringify(last4.base)}`,
+      '把引擎不认的名字原样发出去 ⇒ 引擎静默按"不套基准"出图，画面错了都不知道');
+  }
 }
 
 /* ---------- 收尾：整轮跑下来有没有未捕获报错 ---------- */

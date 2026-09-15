@@ -580,7 +580,7 @@ check('★ 「存到主题」还**读回来**（进主题时把配方套回）',
   /API\.getGrade\(name\)/.test(storeCode), '',
   '只写不读 = 存了个寂寞（本项目最忌的"看着对、其实对不上"）');
 check('★ 没存过的主题回出厂（不把上一个主题的调整带过去）',
-  /base: dflt\?\.name \?\? '', params: \{\}/.test(storeSrc), '',
+  /base: dfltName, params: \{\}/.test(storeCode), '',
   '沿用上一个主题的值 ⇒ 主题之间串味（在 A 拧过的滑杆跟着进 B）');
 const resetM = storeCode.match(/resetGrade: \(\) => \{[\s\S]*?\n  \},/);
 check('★ 「恢复默认」**不动卷**（只清滑杆 + 基准回默认）',
@@ -595,6 +595,36 @@ check('★ 布局自检的 mock 实现了 getGrade / setGrade（否则那条真�
 check('★ 布局自检 mock 的基准列表照生产端带了 isDefault（形状 + 数据都要照抄）',
   /isDefault: true/.test(mockSrcFlat), '',
   'mock 不带这个字段 ⇒「选中的是引擎给的默认那支」这条测不到（绿着但没有意义）');
+
+/* ★★ 09-15 第二批：同一个坑的**另外两条入口** —— 这两条都不是"少了功能"，
+   是"代码看着对、实际静默降级"（本项目最忌的那类）：
+   ④ 进主题套回配方时**不校验 `base`**：配置是能手改、旧版本也写过的，
+      存过一个引擎不认的名字（旧版就写死过 `'all'`）⇒ 一进这个主题，
+      四支基准一支都不亮 + 出图悄悄变成"不套基准"。 */
+check('★ 进主题套回配方时**要校验基准名**（配置是能被手改/被旧版本写过的）',
+  /list\.some\(\(x\) => x\.name === b\)/.test(storeCode), '',
+  '原样信任配置里的 base ⇒ 存过一个引擎不认的名字就静默变"不套基准"，界面一支都不亮');
+check('★ 校验不过就回引擎默认 + 明说一句（不静默改掉用户存的值）',
+  /base: known \? b : dfltName/.test(storeCode) && /引擎不认/.test(storeSrc), '',
+  '静默改掉存过的值 ⇒ 下次打开"跟存的不一样"，还不知道为什么');
+check('★ 「取引擎默认基准」这个动作读的是 isDefault 那条（不是列表第一支）',
+  /const dfltName = \(list\.find\(\(x\) => x\.isDefault\) \|\| list\[0\]\)\?\.name \?\? ''/.test(storeCode),
+  '', '腿短取 list[0] ⇒ 引擎换了默认就静默错位（mock 里默认那支故意排在最后，所以这条测得出）');
+
+/* ⑤ `defaultConfig()` 里三个"假状态键"：`lastIdx`/`lastFilter`/`mode` —— 注释写着
+   "重启后恢复"，但**全仓库没有任何一处读它们**（真键是平铺的 lastSession/lastCur/lastMode）。
+   留着就是给下一个人下套：读 `cfg.lastIdx` 会拿到几周前的 `220`，还以为是"当前的"。 */
+check('★ main.js 的 defaultConfig 里不再声明没人读的假状态键',
+  !/lastIdx\s*:/.test(mainJsCode) && !/lastFilter\s*:/.test(mainJsCode) &&
+    !/[^A-Za-z]mode\s*:\s*'pick'/.test(mainJsCode), '',
+  '声明 + "重启后恢复"的注释，却没人读 ⇒ 下一个人真去读它，拿到的是几周前的旧值');
+check('★ 老配置里那几个孤儿键会被清掉（照 archiveRoot/lrExe 的老办法）',
+  /delete cfg\.lastIdx/.test(mainJsCode) && /delete cfg\.lastFilter/.test(mainJsCode) &&
+    /delete cfg\.mode\b/.test(mainJsCode) && /delete cfg\.last\b/.test(mainJsCode), '',
+  '不清 ⇒ 用户的 config.json 里永远留着 `last:{cur:12}` 这种孤儿，「谁在读」的问题每年重问一遍');
+check('★ 真正在用的两个状态键在 defaultConfig 里有正经初值（不是靠 ?? 兜底）',
+  /lastCur:\s*0/.test(mainJsCode) && /lastMode:\s*'pick'/.test(mainJsCode), '',
+  '不声明 ⇒ 新装的用户配置里没这两个键，看着像"状态记忆没实现"');
 
 /* ---------- 汇总 ---------- */
 console.log('\n' + '-'.repeat(50));

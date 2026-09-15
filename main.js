@@ -108,10 +108,9 @@ function defaultConfig() {
     importScript: '',
     // ★ 跑导入脚本用哪份 Python（要能 import PIL 读 EXIF）。留空 = 跟引擎共用那份
     importPy: '',
-    lastSession: null,   // { name } 上次进入的主题
-    lastIdx: -1,         // 上次离开的照片 index（重启后恢复）
-    lastFilter: 'all',   // 上次的筛选档（重启后恢复）
-    mode: 'pick',        // 'pick' 选片台 | 'grade' 调色台（顶栏 tab，重启恢复）
+    lastSession: null,   // 上次进入的主题（下面两个平铺键由 src/store/useStore.ts 的 saveLast 写）
+    lastCur: 0,          // 上次选到第几张（恢复时会按实际张数夹范围，防"主题变小了"）
+    lastMode: 'pick',    // 上次在哪个台：'pick' 选片台 | 'grade' 调色台
     grades: {},          // 调色台参数：**按主题存** { 主题名: {stock, base, params:{...}} }
     ratings: {}
   };
@@ -126,6 +125,14 @@ function loadConfig() {
       // 旧版死字段清理（archiveRoot/lrExe 已随 LR 工作流移除）
       delete cfg.archiveRoot;
       delete cfg.lrExe;
+      /* ★ 更早那版的「上次状态」键 —— 现在走平铺的 lastSession/lastCur/lastMode
+         （见 src/store/useStore.ts 的 saveLast）。下面这几个**全仓库谁都不读**：
+         `lastIdx` 的注释当年写着"重启后恢复"，但没有任何一处真的读它。
+         留着只会让下一个人以为"读它就能恢复"（读到的还是几周前的 220）⇒ 清掉。 */
+      delete cfg.lastIdx;
+      delete cfg.lastFilter;
+      delete cfg.mode;
+      delete cfg.last;      // 老版 saveLast 存过的 {cur} 对象（后来改平铺键，这个就成孤儿了）
       return withLibFallback(cfg);
     }
   } catch (e) {
