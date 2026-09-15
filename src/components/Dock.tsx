@@ -149,6 +149,33 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
     >
       {/* ★ 悬浮大预览（高频值走 useRef，零重渲染） */}
       <HoverPreview containerRef={hostRef} />
+      {/* ★★ 底栏空的时候**必须说出为什么**（09-15 SV 报「底部栏没了」）。
+          实测现场：调色台 + 一个一张星都没有的主题 ⇒ `visiblePhotos(..., forGrade=true)`
+          返回空 ⇒ 整条底栏一片空白、一格缩略图都没有，**和"坏了"长得一模一样**
+          （他不止看不到图，连"为什么没有"都无从判断）。
+          ⇒ 空着不出声是本项目最忌的一类（技能 §0：「空」和「坏了」要能分清）。
+          ⚠ 两种空因要分开说：调色台是"只列已打星"，选片台是"当前筛选下没有"。 */}
+      {!list.length && (
+        <div
+          data-dock-empty={mode === 'grade' ? 'grade-no-star' : 'filtered'}
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 12,
+            color: 'var(--text-faint)',
+            pointerEvents: 'none',   // 不许挡住下面那条 Virtuoso 的滚动/点击
+            textAlign: 'center',
+            padding: '0 12px',
+          }}
+        >
+          {mode === 'grade'
+            ? '这个主题还没有打星的片 —— 调色台底栏只列 ★≥1，先去「选片台」打星'
+            : '当前筛选下没有照片（换一个筛选看看）'}
+        </div>
+      )}
       <Virtuoso
         ref={virtuoso}
         horizontalDirection

@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { Button, Flex, Slider, Text, Tooltip } from '@radix-ui/themes';
+import { Button, Flex, Popover, Slider, Text } from '@radix-ui/themes';
 import { useStore } from '../store/useStore';
 
 /**
@@ -150,38 +150,42 @@ export function GradePanel() {
           {stocks.map((s) => {
             const on = s.name === curStock;
             return (
-              <Tooltip key={s.name} content={s.label || s.name}>
-                <button
-                  data-stock={s.name}
-                  data-stock-on={on ? '1' : '0'}
-                  onClick={() => setGrade({ stock: s.name })}
+              /* ★ 09-15 SV：**不要悬浮文字** —— 这里原来把一个悬停提示（Tooltip）套在
+                 图标按钮外面，而按钮底下本来就写着卷名和那行长描述 ⇒ 悬停提示纯属重复，
+                 还老在鼠标划过时蹦出来挡视线。卷的名字与说明现在**只在下面那两行**里出现。
+                 ⚠ 别在注释里写出那个组件的 JSX 写法 —— 自检判断"还有没有它在用"是搜源码的，
+                   自己的注释会把检查骗过去（本项目踩过，见技能 §10「剥掉注释再查源码」）。 */
+              <button
+                key={s.name}
+                data-stock={s.name}
+                data-stock-on={on ? '1' : '0'}
+                onClick={() => setGrade({ stock: s.name })}
+                style={{
+                  border: on
+                    ? '1px solid var(--accent)'
+                    : '1px solid var(--line)',
+                  background: on
+                    ? 'rgba(10,132,255,.12)'
+                    : 'rgba(255,255,255,.03)',
+                  borderRadius: 'var(--r-md)',
+                  padding: '7px 3px 5px',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 3,
+                }}
+              >
+                <FilmIcon name={s.name} />
+                <span
                   style={{
-                    border: on
-                      ? '1px solid var(--accent)'
-                      : '1px solid var(--line)',
-                    background: on
-                      ? 'rgba(10,132,255,.12)'
-                      : 'rgba(255,255,255,.03)',
-                    borderRadius: 'var(--r-md)',
-                    padding: '7px 3px 5px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    alignItems: 'center',
-                    gap: 3,
+                    fontSize: 9.5,
+                    color: on ? 'var(--accent)' : 'var(--text-dim)',
                   }}
                 >
-                  <FilmIcon name={s.name} />
-                  <span
-                    style={{
-                      fontSize: 9.5,
-                      color: on ? 'var(--accent)' : 'var(--text-dim)',
-                    }}
-                  >
-                    {STOCK_COLORS[s.name]?.t || s.name}
-                  </span>
-                </button>
-              </Tooltip>
+                  {STOCK_COLORS[s.name]?.t || s.name}
+                </span>
+              </button>
             );
           })}
         </div>
@@ -373,15 +377,115 @@ export function GradePanel() {
               /* 小数位跟着 step 走 —— 原来一律 toFixed(2)，「颗粒」的实际值 0.024 会显示成
                  "0.02"（step 是 0.002，白丢了精度）。 */
               const dp = d.step >= 1 ? 0 : d.step >= 0.1 ? 1 : d.step >= 0.01 ? 2 : 3;
+              /* ★ 「这根拧过没有」= 参数串里**有没有这个键**（键在 = 有覆盖 = 拧过）。
+                 用它决定重置按钮亮不亮 —— 一眼看出哪几根动过（23 根里找"我改了哪几根"很费眼）。 */
+              const touched = params[d.k] !== undefined;
               return (
                 <div key={d.k}>
-                  <Flex justify="between" align="baseline">
-                    <Tooltip content={d.d || ''}>
-                      <Text size="1">{d.name}</Text>
-                    </Tooltip>
-                    <Text size="1" style={{ color: 'var(--text-dim)' }}>
-                      {v.toFixed(dp)}
-                    </Text>
+                  <Flex justify="between" align="center" gap="2">
+                    <Flex align="center" gap="1" style={{ minWidth: 0 }}>
+                      {/* ★★ 参数名（09-15 SV）：
+                          ① **字号 ×1.5** —— 原来 Radix size="1" 是 12px ⇒ 现在 18px；
+                          ② **不要悬停提示** —— 那段说明挂在悬停上根本看不清（得悬着不动、还老
+                             在鼠标划过时蹦出来），改成后面这个「?」点开看。
+                          ⚠ 名字和数字原来都吃 size="1"（12px）；这次只放大**名字**（他点名的就是名字）。 */}
+                      <Text style={{ fontSize: 18, lineHeight: 1.35 }}>{d.name}</Text>
+                      {/* ★★ 「?」= 详细说明（09-15 SV 选的做法）。内容就是引擎 `PARAMS` 里那段
+                          `d`（`svFilm/service.py` 写的，带数字和 ⚠ 提醒），**前端不许自己编文案**。
+                          用 Popover 不用 Dialog：贴着这一根弹出来、点别处就关，不打断手感。
+                          ⚠ 说明**不许常驻 DOM**（常驻的话右栏文字里到处都是说明，自检也读不准）
+                          ⇒ 只有点开那一刻才渲染。 */}
+                      <Popover.Root>
+                        <Popover.Trigger>
+                          <button
+                            data-param-help={d.k}
+                            aria-label={`${d.name} 的说明`}
+                            style={{
+                              flex: '0 0 auto',
+                              width: 16,
+                              height: 16,
+                              padding: 0,
+                              borderRadius: 999,
+                              border: '1px solid var(--line)',
+                              background: 'transparent',
+                              color: 'var(--text-dim)',
+                              fontSize: 11,
+                              lineHeight: '14px',
+                              cursor: 'pointer',
+                            }}
+                          >
+                            ?
+                          </button>
+                        </Popover.Trigger>
+                        <Popover.Content width="330px" data-param-help-pop={d.k}>
+                          <Flex direction="column" gap="2">
+                            <Text size="2" weight="bold">
+                              {d.name}
+                            </Text>
+                            <Text
+                              size="1"
+                              style={{
+                                color: 'var(--text-dim)',
+                                whiteSpace: 'pre-wrap',
+                                lineHeight: 1.7,
+                              }}
+                            >
+                              {d.d || '这一根引擎侧没有写说明'}
+                            </Text>
+                            {/* 顺带把"这个数怎么读"给出来：范围 / 每格 / 出厂值。
+                                ⚠ 出厂值用引擎给的 `dv`，不是前端算的区间中点（老 bug 见 §9）。 */}
+                            <Text size="1" style={{ color: 'var(--text-faint)' }}>
+                              范围 {d.lo} ~ {d.hi} · 每格 {d.step} · 出厂{' '}
+                              {Number(d.dv ?? (d.lo + d.hi) / 2).toFixed(dp)}
+                            </Text>
+                          </Flex>
+                        </Popover.Content>
+                      </Popover.Root>
+                    </Flex>
+                    <Flex align="center" gap="2" style={{ flex: '0 0 auto' }}>
+                      <Text size="1" style={{ color: 'var(--text-dim)' }}>
+                        {v.toFixed(dp)}
+                      </Text>
+                      {/* ★★ 每根滑杆一个重置（09-15 SV）。
+                          做法：把这个键**从参数串里删掉** ⇒ 这根回到引擎给的值（`dv`）。
+                          ⚠ 必须是"删键"，**不能**写回 `dv` —— 「没碰过的键不进参数串」是一条
+                             契约（自检 `[7]` 钉着它：未触碰 = 用引擎出厂值）。写回去等于把
+                             出厂值也塞进请求，和引擎的出厂打架。
+                          ⚠ 没拧过的这根灰着、点不动：既说明"这根还没动过"，也避免手一滑把
+                             别的根改了。 */}
+                      <button
+                        data-param-reset={d.k}
+                        data-param-reset-on={touched ? '1' : '0'}
+                        disabled={!touched}
+                        onClick={() => {
+                          const np = { ...params };
+                          delete np[d.k];
+                          setGrade({ params: np });
+                          /* 和「拖滑杆」同一条规矩：松开就出图。不同步出图的话数字回到默认、
+                             画面还停在拧过的样子 —— 那正是本项目最烦的"看着对、其实对不上"。 */
+                          requestRender();
+                        }}
+                        aria-label={`${d.name} 回到默认`}
+                        style={{
+                          flex: '0 0 auto',
+                          width: 18,
+                          height: 18,
+                          padding: 0,
+                          borderRadius: 999,
+                          border: touched
+                            ? '1px solid var(--accent)'
+                            : '1px solid var(--line)',
+                          background: 'transparent',
+                          color: touched ? 'var(--accent)' : 'var(--text-faint)',
+                          fontSize: 11,
+                          lineHeight: '15px',
+                          cursor: touched ? 'pointer' : 'default',
+                          opacity: touched ? 1 : 0.45,
+                        }}
+                      >
+                        ↺
+                      </button>
+                    </Flex>
                   </Flex>
                   <Slider
                     size="1"

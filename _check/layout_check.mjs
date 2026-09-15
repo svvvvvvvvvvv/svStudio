@@ -739,6 +739,193 @@ if (afterFirstRender && rBtn && (await page.locator('[role="slider"]').count()) 
     '键名不像参数名 ⇒ 前端把别的东西当参数发出去了');
 }
 
+/* ---------- 7.5 ★ 09-15 晚四条：底栏空 ≠ 坏了 / 每根 ↺ 重置 / 名字 18px / 「?」点开说明 --- */
+/* ★ 这四条的共同点：**光看代码看不出来对不对** —— 结构在那儿、点下去没反应照样是绿的。
+   静态自检 `[10.5]` 只钉"结构在不在"，"真点下去发生什么"归这里。 */
+console.log('\n[7.5] 底栏空态 / 滑杆 ↺ 重置 / 参数名字号 / 「?」点开说明');
+const nTh = () => page.locator('[data-idx]').count();
+const latestParams = async () => {
+  const a = await renderArgs();
+  return (a[a.length - 1] || {}).params || {};
+};
+const goGrade = async () => {
+  const t = page.locator('button', { hasText: '调色台' }).first();
+  if (await t.count()) { await t.click(); await page.waitForTimeout(900); }
+};
+const goTheme = async (n) => {
+  const b = page.locator('button', { hasText: n }).first();
+  if (await b.count()) { await b.click(); await page.waitForTimeout(900); }
+};
+
+/* --- A. 「底栏没了」的真相：空着**不出声**，和"坏了"长得一模一样 --- */
+/* 现场：调色台 + 一个一张星都没打过的主题 ⇒ `visiblePhotos(...,forGrade=true)` 返回空
+   ⇒ 整条底栏一片空白、一格缩略图都没有，SV 报的就是「底部栏没了」。
+   要钉两条：① 有星时**不许**出空态（别把判定写反）；② 空的时候**必须说出空因**。 */
+{
+  await goGrade();
+  const nA = await nTh();
+  check('★ 主题A 有 1 张 3★ ⇒ 底栏照常列缩略图、不出空态',
+    nA >= 1 && (await page.locator('[data-dock-empty]').count()) === 0,
+    `${nA} 张 / 空态 ${await page.locator('[data-dock-empty]').count()} 个`,
+    '有星却报空 ⇒ 判定写反了');
+  await goTheme('主题B');            // 主题B 一张星都没打过
+  await goGrade();
+  const emp = page.locator('[data-dock-empty]');
+  check('★★ 一张星都没有 ⇒ 底栏出现**空态**（不是一片空白）', (await emp.count()) === 1,
+    `${await emp.count()} 个`,
+    '空着不出声 ⇒ 和"底栏坏了"分不清，正是 SV 09-15 报的那个');
+  const eTxt = (await emp.count()) ? await emp.first().innerText().catch(() => '') : '';
+  check('★ 空态说的是**空的原因**（不是空白、也不是泛泛一句）', /打星/.test(eTxt),
+    eTxt.replace(/\n/g, ' ').slice(0, 70) || '(空态没字)',
+    '空态没有文字 ⇒ 用户无从判断"为什么没有"');
+  check('★ 空态标明了是**哪一种**空（调色台"只列已打星" ≠ 选片台"筛选后没有"）',
+    (await emp.count()) > 0 && (await emp.first().getAttribute('data-dock-empty')) === 'grade-no-star',
+    String((await emp.count()) ? await emp.first().getAttribute('data-dock-empty') : '(没出现)'));
+  check('★ 空的时候确实**一张缩略图都没画**（否则上面几条是空转）',
+    (await nTh()) === 0, `${await nTh()} 张`);
+  const eBox = (await emp.count()) ? await emp.first().boundingBox() : null;
+  check('★ 空态那块地方**还在**（不是塌成 0 高、也不是被挤出视口）',
+    !!eBox && eBox.height > 40 && eBox.y + eBox.height <= (await page.evaluate(() => innerHeight)) + 1,
+    eBox ? JSON.stringify({ h: Math.round(eBox.height), y: Math.round(eBox.y) }) : '(量不到)',
+    '高 0 或被挤出视口 ⇒ 那是真的"没了"');
+  check('★ 空态不挡点击（`pointer-events: none`，底下那条缩略图列表还要能滚）',
+    (await page.evaluate(() =>
+      getComputedStyle(document.querySelector('[data-dock-empty]')).pointerEvents)) === 'none');
+  await goTheme('主题A');
+  await goGrade();
+  check('★ 切回有星的主题 ⇒ 空态消失、缩略图回来',
+    (await page.locator('[data-dock-empty]').count()) === 0 && (await nTh()) >= 1,
+    `${await nTh()} 张`);
+}
+
+/* --- B. 每根滑杆一个 ↺ 重置 --- */
+/* ★ 契约（和 [7] 那条一起钉着）：
+     ① 重置 = 把这个键**从参数串里删掉**，**不是**写回出厂值 ——
+        「没碰过的键不进参数串」是硬契约；写回 `dv` 等于把出厂值也塞进请求，和引擎自己的出厂打架。
+     ② 没拧过的这根**灰着点不动**（顺带就是"哪几根动过"的指示）。
+     ③ 点 ↺ 也要**出图** —— 和拖滑杆同一条规矩；不然数字回默认、画面还停在拧过的样子。 */
+{
+  const rReset = page.locator('button', { hasText: '恢复默认' }).first();
+  if (await rReset.count()) await rReset.click();
+  await page.waitForTimeout(800);
+  const nSl = await page.locator('[role="slider"]').count();
+  check('右栏有滑杆可拧（否则这一组全是空转）', nSl > 0, `${nSl} 根`);
+  if (nSl > 0) {
+    const k0 = await page.locator('[data-param-reset]').first().getAttribute('data-param-reset');
+    /* 把"这一根的滑杆"标出来：靠**参数键**在 DOM 里往上走到"只含一根滑杆"的那层，
+       不靠"第 i 根滑杆对第 i 个按钮"这种顺序假设（顺序一改就静默错位、检查还照绿）。
+       ⚠ 不能写 `b.closest('div')` —— ↺ 按钮外面还套着两层 Flex，`closest('div')`
+         拿到的是**那个小 Flex**，里面根本没有滑杆（第一版就是这么栽的：
+         配不上 ⇒ 后面 `[data-probe-slider]` 永远等不到，`focus()` 直接 30s 超时）。
+       ⇒ 判定「配得上」的两条：① 往上能找到**恰好含 1 根滑杆**的祖先；
+                             ② 真拖它一格时进参数串的键**就是** `k0`（下面那条行为断言）。 */
+    const pair = await page.evaluate((k) => {
+      const b = document.querySelector(`[data-param-reset="${CSS.escape(k)}"]`);
+      if (!b) return { why: '找不到这个 ↺ 按钮' };
+      let n = b.parentElement;
+      for (let depth = 0; n && depth < 8; depth++, n = n.parentElement) {
+        const c = n.querySelectorAll('[role="slider"]').length;
+        if (c === 1) {
+          n.querySelector('[role="slider"]').setAttribute('data-probe-slider', k);
+          return { ok: true, depth };
+        }
+        if (c > 1) return { why: `往上第 ${depth} 层就有 ${c} 根滑杆 ⇒ 不是"一行一根"` };
+      }
+      return { why: '往上找不到含滑杆的那一行' };
+    }, k0);
+    check('★ 每根滑杆和它那个 ↺ 在**同一行**里（按参数键配得上）', pair.ok === true,
+      pair.ok ? `${k0}（往上第 ${pair.depth} 层）` : String(pair.why),
+      '配不上 ⇒ 点 ↺ 可能把别的参数重置了');
+    if (!pair.ok) {
+      check('★ 配不上 ⇒ 下面那几条没得测（这一条会红，别当没测）', false, '', '先修 DOM 结构');
+    } else {
+    const rb = page.locator(`[data-param-reset="${k0}"]`);
+    check('★ 没拧过的这根：↺ **灰着点不动**',
+      (await rb.isDisabled()) === true && (await rb.getAttribute('data-param-reset-on')) === '0',
+      `disabled=${await rb.isDisabled()} on=${await rb.getAttribute('data-param-reset-on')}`);
+    const sl0 = page.locator(`[data-probe-slider="${k0}"]`);
+    await sl0.focus();
+    await page.keyboard.press('ArrowRight');
+    await page.waitForTimeout(1100);
+    const pTouched = await latestParams();
+    check('★ 拧过之后：参数串里出现了这个键、↺ 也亮了',
+      pTouched[k0] !== undefined && (await rb.isDisabled()) === false &&
+      (await rb.getAttribute('data-param-reset-on')) === '1',
+      `${k0}=${pTouched[k0]} / disabled=${await rb.isDisabled()}`);
+    const nBeforeRst = await renders();
+    await rb.click();
+    await page.waitForTimeout(1100);
+    const pReset = await latestParams();
+    check('★★ 点 ↺ ⇒ 这个键**从参数串里消失**（删键，不是写回出厂值）',
+      !(k0 in pReset), JSON.stringify(pReset),
+      '键还在 ⇒ 出厂值也被塞进请求，和引擎自己的出厂打架');
+    check('★ 重置完 ↺ 又变回灰的（"哪几根动过"要一眼看得出来）',
+      (await rb.isDisabled()) === true && (await rb.getAttribute('data-param-reset-on')) === '0');
+    check('★ 点 ↺ 也会**出图**（数字回默认、画面也必须跟着回）',
+      (await renders()) > nBeforeRst, `渲染 ${nBeforeRst} → ${await renders()} 发`,
+      '不出图 ⇒ 数字回到默认、画面还停在拧过的样子');
+    await page.evaluate((k) => {
+      const el = document.querySelector(`[data-probe-slider="${CSS.escape(k)}"]`);
+      if (el) el.removeAttribute('data-probe-slider');
+    }, k0);
+    }
+  }
+}
+
+/* --- C. 「?」点开看说明（不要悬停提示） --- */
+/* ★ 契约：说明**只能**用引擎 `PARAMS` 里那段 `d`，前端不许自己编文案；
+   而且**不许常驻 DOM**（常驻的话右栏文字里到处都是说明，人看不清、自检也读不准）
+   ⇒ 只有点开那一刻才渲染。 */
+{
+  const nHelp = await page.locator('[data-param-help]').count();
+  const nSlider = await page.locator('[role="slider"]').count();
+  check('★ 每根滑杆后面都有一个「?」（数量对得上）', nHelp > 0 && nHelp === nSlider,
+    `${nHelp} 个「?」/ ${nSlider} 根滑杆`, '数量对不上 ⇒ 有滑杆点不到说明');
+  if (nHelp > 0) {
+    const hb = page.locator('[data-param-help]').first();
+    const k1 = await hb.getAttribute('data-param-help');
+    check('★ 没点开的时候：说明**不在 DOM 里**（不常驻，别把右栏淹了）',
+      (await page.locator('[data-param-help-pop]').count()) === 0,
+      `${await page.locator('[data-param-help-pop]').count()} 个`,
+      '说明常驻在 DOM 里');
+    const nBeforeHelp = await renders();
+    await hb.click();
+    await page.waitForTimeout(600);
+    const pop = page.locator(`[data-param-help-pop="${k1}"]`);
+    check('★ 点「?」⇒ 弹出**这一根自己**的说明', (await pop.count()) === 1,
+      `${await pop.count()} 个 / ${k1}`,
+      '弹了别人的说明（或者压根没弹）');
+    const pTxt = (await pop.count()) ? await pop.first().innerText().catch(() => '') : '';
+    check('★ 说明有实质内容（不是个空壳）', pTxt.length >= 20,
+      `${pTxt.length} 字：${pTxt.replace(/\n/g, ' ').slice(0, 60)}`,
+      '弹出来是空的等于没做');
+    check('★ 说明里带"这个数怎么读"：范围 / 每格 / 出厂',
+      /范围/.test(pTxt) && /每格/.test(pTxt) && /出厂/.test(pTxt),
+      pTxt.replace(/\n/g, ' ').slice(0, 90));
+    check('★ 点说明**不会**触发出图（它不该动画面）', (await renders()) === nBeforeHelp,
+      `渲染 ${nBeforeHelp} → ${await renders()} 发`);
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(500);
+    check('★ 关掉之后说明又不在 DOM 里了',
+      (await page.locator('[data-param-help-pop]').count()) === 0,
+      `${await page.locator('[data-param-help-pop]').count()} 个`);
+  }
+}
+
+/* --- D. 参数名字号 ×1.5（12px → 18px），而且**只有名字**变大 --- */
+{
+  const fs = await page.evaluate(() => {
+    const b = document.querySelector('[data-param-help]');
+    if (!b || !b.parentElement) return '';
+    const cand = [...b.parentElement.querySelectorAll('span,p')].filter(
+      (e) => e.textContent.trim() && e.textContent.trim() !== '?'
+    );
+    return cand.length ? getComputedStyle(cand[0]).fontSize : '';
+  });
+  check('★ 参数名字号 18px（原来 12px，SV 要 ×1.5）', fs === '18px', fs || '(没读到)',
+    '字号没上去 ⇒ 大概是又被 Radix 的 size="1"（12px）盖住了');
+}
+
 /* ---------- 8. 选片台（筛选 / 点缩略图 / 打星落盘） ---------- */
 console.log('\n[8] 选片台行为');
 const dockThumbs = () => page.locator('[data-idx]').count();

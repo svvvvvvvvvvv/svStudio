@@ -548,7 +548,64 @@ check('★ 真正在用的两个状态键在 defaultConfig 里有正经初值（
    ★ 机制在**源码层**钉死，行为在布局自检 `[14]` 里量。
    ⚠ 锚点必须取**声明本身**：ZoomImage.tsx 的说明注释里就写着 `{passive:false}` 这几个字，
      拿 `passive: false` 当锚点会被自己的注释骗（09-15 在 api/index.ts 上栽过一次）。 */
-console.log('\n[11] 大图缩放（一份实现两个入口）');
+/* ---------- [10.5] 右栏滑杆：每根一个重置 / 参数名字号 ×1.5 / 「?」点开说明 ----------
+   ★ 三条都是 09-15 SV 直接点的名（原话）：
+     「每个滑杆给个重置按钮 参数名文本字号大1.5倍 不要悬浮文字 改成后面加个问号点击出详细说明」
+   ⚠★ 这一段**全部用剥掉注释的 `gpCode`** 查 —— 我们自己写的说明注释里就会出现这些字
+     （`data-param-reset` / `Popover` / 参数名…），不剥注释的话检查会被自己的注释骗过去。
+     同款坑踩过两次：`export const API` 当锚点、`base: 'all'` 当锚点（见本文件 [10] 那段注释）。
+   ⚠ 静态只查"结构对不对"；"点下去真发生什么"在布局自检 `[7.5]`（那个才作数）。 */
+console.log('\n[10.5] 右栏滑杆：重置 / 名字字号 / 「?」说明');
+
+check('★★ 参数名再也没有挂在"悬停提示"上（SV：不要悬浮文字）',
+  !/Tooltip/.test(gpCode), '',
+  '还留着悬停提示 ⇒ 鼠标一划过就蹦出说明挡住滑杆（他要的正是把这个去掉）');
+check('★★ 参数名字号是 **1.5 倍**（Radix size="1" 是 12px ⇒ 18px）',
+  /fontSize:\s*18/.test(gpCode), '',
+  '没写 18px ⇒ 那行字还是原来的 12px（他明确说了要大 1.5 倍）');
+check('★ 参数名那行**不再吃 `size="1"`**（否则 18px 会被 Radix 的类盖回去）',
+  !/<Text size="1">\{d\.name\}<\/Text>/.test(gpCode), '',
+  '又回到 size="1" ⇒ 字号白放大（Radix 的 size 类会把 inline 之外的写法压回去）');
+check('★★ 说明改成参数名后面的「?」，点开才出（Popover，不是悬停）',
+  /data-param-help=\{d\.k\}/.test(gpCode) && /Popover\.Content/.test(gpCode) &&
+    /data-param-help-pop=\{d\.k\}/.test(gpCode), '',
+  '没有「?」⇒ 那段详细说明就再也看不到了（悬停被去掉了、又没给新的入口）');
+check('★★ 说明的文案来自**引擎给的那段**（`d`），不是前端自己编一份',
+  /d\.d \|\|/.test(gpCode), '',
+  '前端自己编说明 ⇒ 和引擎 `PARAMS` 里的说法迟早不是一回事（改引擎忘了改这边，没人看得出来）');
+check('★ 说明里顺带给了"这个数怎么读"：范围 / 每格 / **出厂值**',
+  /范围 \{d\.lo\} ~ \{d\.hi\}/.test(gpCode) && /每格 \{d\.step\}/.test(gpCode) &&
+    /d\.dv \?\?/.test(gpCode), '',
+  '没有出厂值就看不出"现在这格离默认差多远"；出厂值必须读 `dv`（前端算的区间中点是老 bug）');
+check('★★ 每根滑杆都配了一个重置按钮（在按参数 map 出来的那一行里）',
+  /data-param-reset=\{d\.k\}/.test(gpCode) &&
+    /data-param-reset-on=\{touched \? '1' : '0'\}/.test(gpCode), '',
+  '没有"每根一个"⇒ 只能整组回默认（23 根一起回，想只退一根做不到）');
+check('★★★ 重置是**把键从参数串里删掉**，不是把默认值写回去',
+  /delete np\[d\.k\]/.test(gpCode) && !/np\[d\.k\]\s*=/.test(gpCode), '',
+  '写回 `dv` ⇒ 把出厂值也塞进了渲染请求，和引擎自己的出厂打架（这条契约由 [7] 那条钉着）');
+check('★ 点重置会顺手出一张（和"拖到哪出到哪"同一条规矩）',
+  /delete np\[d\.k\];[\s\S]{0,220}?requestRender\(\);/.test(gpCode), '',
+  '只改数字不出图 ⇒ 数字回到默认、画面还停在拧过的样子（"看着对、其实对不上"）');
+check('★ 「?」用得着的那两个东西都从 Radix 拿到了（Popover 进来了、Tooltip 出去了）',
+  /import \{[^}]*Popover[^}]*\} from '@radix-ui\/themes'/.test(gradeSrc) &&
+    !/import \{[^}]*Tooltip[^}]*\}/.test(gradeSrc), '',
+  'import 没跟着改 ⇒ tsc 直接红（`Cannot find name`），或者留着没用的 Tooltip 又被下一个人捡去用');
+
+/* ---- 底栏空的时候必须**说出为什么**（09-15 SV 报「底部栏没了」）----
+   ★ 现场：调色台 + 一个一张星都没有的主题 ⇒ 底栏一格都没有，**和"坏了"长得一模一样**。 */
+const dockCode = read('src/components/Dock.tsx').replace(/\/\*[\s\S]*?\*\//g, '');
+check('★★ 底栏**空了要出声**（不是一片空白等着用户猜）',
+  /data-dock-empty=/.test(dockCode), '',
+  '空着不出声 ⇒ 用户只看到"底下那条没了"，无从判断是坏了还是筛掉了（本项目最忌的一类）');
+check('★ 两种"空"要分开说：调色台是"只列已打星"，选片台是"筛选下没有"',
+  /grade-no-star/.test(dockCode) && /mode === 'grade'/.test(dockCode), '',
+  '一句话套两种情形 ⇒ 在选片台点了"5★"却被告知"去选片台打星"，更糊涂');
+check('★ 空态那层**不许挡住**底栏自己的滚动/点击',
+  /pointerEvents: 'none'/.test(dockCode), '',
+  '盖在上面还吃事件 ⇒ 底栏虽然空、但连滑动/点空白都失灵（比空着更难查）');
+
+
 const zoomSrc = read('src/components/ZoomImage.tsx');
 const viewerCode = read('src/components/Viewer.tsx');
 check('★ 两处大图共用 ZoomImage（别再各写一套）',
