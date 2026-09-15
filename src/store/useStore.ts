@@ -106,6 +106,11 @@ interface AppState {
   refreshSessions: () => Promise<void>;
   /** 换照片库（左栏「换图库」）—— 存进配置 + 重扫 + 回首页 */
   changeLibRoot: (root: string) => Promise<void>;
+  /** ★ 「加入目录…」：把一个**硬盘上已有的**照片目录挂进图库列表（原地读，不复制）。
+   *  存 `config.extraRoots`，然后 `refreshSessions()`。 */
+  addExtraRootDir: (dir: string) => Promise<void>;
+  /** 移除一个库外目录（只从列表去掉，**不删任何文件**）。正在看它 ⇒ 回首页。 */
+  removeExtraRootDir: (dir: string) => Promise<void>;
   enterSession: (name: string, opts?: { silent?: boolean }) => Promise<void>;
   goHome: () => void;
   setCur: (i: number) => void;
@@ -167,6 +172,11 @@ function saveLast(patch: { session?: string; cur?: number; mode?: string }) {
 function pickPaper(list: Paper[]): string {
   return (list.find((x) => x.isDefault) || list[0])?.name ?? '';
 }
+
+/** 路径比较用：统一斜杠、去尾反斜杠、转小写（Windows 上 `D:\A\B` 和 `d:/A/b/` 是同一个目录）。
+ *  ★ 只用来**判等 / 判包含**，绝不拿它去读文件（大小写敏感的系统上会读不到）。 */
+const normPath = (p: unknown): string =>
+  String(p ?? '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
 
 export const useStore = create<AppState>((set, get) => ({
   libRoot: '',
@@ -266,10 +276,76 @@ export const useStore = create<AppState>((set, get) => ({
     get().showToast('已切换照片库');
   },
 
+  /* =========================================================
+     库外目录（左栏「加入目录…」）：把硬盘上**已有的**照片文件夹挂进图库列表
+     ---------------------------------------------------------
+     ★ 和「导入照片」是**两件不同的事**：导入会**复制**进库、按「日期_主题_地点」建档；
+       这里**一个字节都不动**，只是让那个目录出现在左栏里（原地读）。
+     ★ 存 `config.extraRoots`（用户配置，**不进仓库**）；全局一份，换图库也不丢。
+     ★ 身份按**完整路径**：挂进来的目录就算跟库里的主题重名，也各算各的
+       （星级 / 成片归档 / 调色配方都不串味）。真重名时 `scanSessions` 给库外那条加 ` ·2`。
+     ========================================================= */
+
+  /** 路径比较用（大小写不敏感、斜杠统一、去尾反斜杠）—— Windows 上必须这么比 */
+  addExtraRootDir: async (dir) => {
+    const d = String(dir || '').trim();
+    if (!d) return;
+    /* ⚠ 已经在图库里的目录不用再加一遍：
+       - 库根自己 ⇒ 加进来等于把整个库当一条
+       - 库根的**直接子目录** ⇒ `scanSessions` 已经把它当主题列出来了；
+         再加一遍会多出一条同内容的（还得靠 ` ·2` 改名），看着像出了 bug */
+    const L = normPath(get().libRoot);
+    const D = normPath(d);
+    if (L && (D === L || D.replace(/\\[^\\]+$/, '') === L)) {
+      get().showToast('这个目录已经在图库列表里了');
+      return;
+    }
+    let list: string[] = [];
+    try {
+      const cfg = await API.getConfig();
+      list = Array.isArray(cfg?.extraRoots) ? cfg.extraRoots : [];
+    } catch {
+      /* 读不到配置就当还没加过 */
+    }
+    if (list.some((x) => normPath(x) === D)) {
+      get().showToast('这个目录已经加过了');
+      return;
+    }
+    await API.setConfig({ extraRoots: [...list, d] });
+    await get().refreshSessions();
+    get().showToast('已加入图库目录（原地读，没有复制文件）');
+  },
+
+  /** 移除一个库外目录 —— **只从列表去掉，不删任何文件** */
+  removeExtraRootDir: async (dir) => {
+    const D = normPath(dir);
+    if (!D) return;
+    let list: string[] = [];
+    try {
+      const cfg = await API.getConfig();
+      list = Array.isArray(cfg?.extraRoots) ? cfg.extraRoots : [];
+    } catch {
+      /* ignore */
+    }
+    await API.setConfig({ extraRoots: list.filter((x) => normPath(x) !== D) });
+    /* 正在看的就是这个根底下的 ⇒ 回首页。
+       不回去的话会停在一个"列表里已经没有、画面却还在"的主题上（那一栏也点不动了） */
+    const cur = get().sessions.find((x) => x.name === get().sessionName);
+    const cp = normPath(cur?.path);
+    if (cp && (cp === D || cp.startsWith(D + '\\'))) get().goHome();
+    await get().refreshSessions();
+    get().showToast('已从列表移除（文件没有动）');
+  },
+
   enterSession: async (name, opts) => {
     const root = get().libRoot;
-    if (!root) return;
-    const sessionPath = root + '\\' + name;
+    /* ★★ 路径**必须从列表里拿**（`s.path`），不能自己拼 `root + '\\' + name`：
+       库外目录（左栏「加入目录…」）根本不在 `libRoot` 底下，拼出来的路径不存在
+       ⇒ 进去就是 0 张照片，而且看着像"这个主题是空的"，**看不出是路径拼错了**。
+       列表里没有（老数据 / 刚导完还没重扫）才回落到拼名字。 */
+    const s = get().sessions.find((x) => x.name === name);
+    const sessionPath = (s && s.path) || (root ? root + '\\' + name : '');
+    if (!sessionPath) return;
     set({ sessionPath, sessionName: name, busy: true, busyText: '读取照片…' });
     try {
       const photos = await API.listPhotos(sessionPath);

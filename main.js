@@ -108,6 +108,11 @@ function defaultConfig() {
     importScript: '',
     // ★ 跑导入脚本用哪份 Python（要能 import PIL 读 EXIF）。留空 = 跟引擎共用那份
     importPy: '',
+    // ★★ 「加入目录…」加进来的**库外目录**（硬盘上已有的照片文件夹，原地读、不复制一份）。
+    //   扫描主题列表时和库内主题并排列出（见 `scanSessions`）；存的是绝对路径。
+    //   ⚠ 这些目录里的照片**不会**被拷进照片库 —— 原目录被删/改名，它们就从列表里消失
+    //     （那时列表里会留一条「找不到」，不静默消失）。
+    extraRoots: [],
     lastSession: null,   // 上次进入的主题（下面两个平铺键由 src/store/useStore.ts 的 saveLast 写）
     lastCur: 0,          // 上次选到第几张（恢复时会按实际张数夹范围，防"主题变小了"）
     lastMode: 'pick',    // 上次在哪个台：'pick' 选片台 | 'grade' 调色台
@@ -194,51 +199,140 @@ function starDirOf(star) {
  * 扫描照片库：一级子目录视为一个「主题」。
  * 主题 = 根含原图，或含任一星级/调色子目录。张数含全部子目录（同主题全量可见）。
  */
-function scanSessions(libRoot) {
-  const out = [];
-  if (!libRoot || !fs.existsSync(libRoot)) return out;
-  let entries;
-  try {
-    entries = fs.readdirSync(libRoot, { withFileTypes: true });
-  } catch (e) {
-    return out;
-  }
-  for (const e of entries) {
-    if (!e.isDirectory()) continue;
-    if (e.name.startsWith('.')) continue;
-    const full = path.join(libRoot, e.name);
-    let files = [];
+/**
+ * 数一个「照片目录」里有几张片（root 直出 + 四个桶，按文件名去重）。
+ * 返回 `{count, archivedCount, hasRaw}`；**不像照片目录就返回 null**（一个 JPG 都没有）。
+ *
+ * ★ 库内主题和**库外目录**（「加入目录…」）共用这一份规则 —— 两处各写一份必然慢慢长歪，
+ *   然后"同一个目录在库里显示 12 张、在库外那栏显示 9 张"这种对不上就会冒出来。
+ * @param {string} full 目录绝对路径
+ * @param {string[]} [names] 已经 readdir 过的名字（省一次系统调用）
+ */
+function describeSessionDir(full, names) {
+  let list = names;
+  if (!list) {
     try {
-      files = fs.readdirSync(full);
-    } catch (err) {
+      list = fs.readdirSync(full);
+    } catch (e) {
+      return null;
+    }
+  }
+  const jpgs = list.filter((f) => IMG_EXT.test(f));
+  const subNames = list.filter((f) => THEME_SUBDIRS.includes(f));
+  if (!jpgs.length && !subNames.length) return null;   // 不是主题
+  // count 按文件名去重：桶里多是 root 同名复制件/成片，重复计数会虚高
+  const rootSet = new Set(jpgs.map((f) => f.toLowerCase()));
+  let count = jpgs.length;
+  let archivedCount = 0;
+  let hasRaw = list.some((f) => RAW_EXT.test(f));
+  for (const sub of THEME_SUBDIRS) {
+    const sd = path.join(full, sub);
+    if (!fs.existsSync(sd)) continue;
+    let sfiles = [];
+    try { sfiles = fs.readdirSync(sd); } catch (err) { sfiles = []; }
+    const sj = sfiles.filter((f) => IMG_EXT.test(f));
+    count += sj.filter((f) => !rootSet.has(f.toLowerCase())).length;
+    if (sfiles.some((f) => RAW_EXT.test(f))) hasRaw = true;
+    if (ARCHIVED_SUBDIRS.includes(sub)) archivedCount += sj.length;
+  }
+  return { count, archivedCount, hasRaw };
+}
+
+/** 在 `used`（小写名字集合）里取一个**唯一**的名字，重了就加 ` ·2` ` ·3` */
+function uniqueName(used, base) {
+  let nm = base;
+  let i = 2;
+  while (used.has(nm.toLowerCase())) {
+    nm = base + ' ·' + i;
+    i += 1;
+  }
+  used.add(nm.toLowerCase());
+  return nm;
+}
+
+/**
+ * 「加入目录…」加进来的**库外目录** → 主题列表条目（原地读，**没有**复制进库）。
+ *
+ * ★ 一个根可能列成**好几条**：
+ *   ① 它**自己**就是照片目录（有 JPG，或库内那四个桶）⇒ 它本身一条（名字 = 目录名）；
+ *   ② 否则（比如 `D:\拍摄素材` 底下是一堆"某次拍摄"）⇒ 把**有照片的子目录**各列一条。
+ * ⚠ 目录不在了（被删 / 改名）**不静默跳过** —— 列一条 `missing:true`，界面上打「找不到」
+ *   且点不进去。静默消失是本项目最烦的那类"看着对、其实对不上"。
+ * ⚠ 纯只读：只 `statSync` / `readdirSync`，不动任何文件。
+ */
+function extraSessions(used) {
+  const out = [];
+  let roots = [];
+  try {
+    roots = loadConfig().extraRoots;
+  } catch (e) { /* 配置读不到就当没加过 */ }
+  if (!Array.isArray(roots)) return out;
+  for (const r0 of roots) {
+    const dir = typeof r0 === 'string' ? r0.trim() : '';
+    if (!dir) continue;
+    let entries = null;
+    try {
+      if (fs.statSync(dir).isDirectory()) entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch (e) { entries = null; }
+    if (!entries) {
+      out.push({
+        name: uniqueName(used, path.basename(dir) || dir),
+        path: dir, count: 0, external: true, rootDir: dir, missing: true,
+      });
       continue;
     }
-    const jpgs = files.filter((f) => IMG_EXT.test(f));
-    const subNames = files.filter((f) => THEME_SUBDIRS.includes(f));
-    if (!jpgs.length && !subNames.length) continue;   // 不是主题
-    // count 按文件名去重：桶里多是 root 同名复制件/成片，重复计数会虚高
-    const rootSet = new Set(jpgs.map((f) => f.toLowerCase()));
-    let count = jpgs.length;
-    let archivedCount = 0;
-    let hasRaw = files.some((f) => RAW_EXT.test(f));
-    for (const sub of THEME_SUBDIRS) {
-      const sd = path.join(full, sub);
-      if (!fs.existsSync(sd)) continue;
-      let sfiles = [];
-      try { sfiles = fs.readdirSync(sd); } catch (err) { sfiles = []; }
-      const sj = sfiles.filter((f) => IMG_EXT.test(f));
-      count += sj.filter((f) => !rootSet.has(f.toLowerCase())).length;
-      if (sfiles.some((f) => RAW_EXT.test(f))) hasRaw = true;
-      if (ARCHIVED_SUBDIRS.includes(sub)) archivedCount += sj.length;
+    const self = describeSessionDir(dir, entries.map((e) => e.name));
+    if (self) {
+      out.push(Object.assign({
+        name: uniqueName(used, path.basename(dir) || dir),
+        path: dir, external: true, rootDir: dir,
+      }, self));
+      continue;
     }
-    out.push({
-      name: e.name,
-      path: full,
-      count,
-      archivedCount,
-      hasRaw
-    });
+    for (const e of entries) {
+      if (!e.isDirectory() || e.name.startsWith('.')) continue;
+      const full = path.join(dir, e.name);
+      const info = describeSessionDir(full);
+      if (!info) continue;
+      out.push(Object.assign({
+        name: uniqueName(used, e.name),
+        path: full, external: true, rootDir: dir,
+      }, info));
+    }
   }
+  return out;
+}
+
+/**
+ * 主题列表 = ① 库内主题（`libRoot` 的直接子目录）＋ ② 库外目录（「加入目录…」）。
+ *
+ * ⚠★ 每条都带 `path`（真实路径）。前端 `enterSession` **必须**用它 —— 库外目录不在
+ *   `libRoot` 底下，靠"库根 + 名字"拼出来的路径根本不存在（进去就是 0 张）。
+ * ⚠ 库内主题的名字**原样保留**：它是星级 / 成片归档 / 配方的身份键，改一个字符
+ *   = 那个人几周的星级全丢。只有库外条目才会为了**不撞名**加 ` ·2`。
+ * ⚠ 库内主题先入 `used` ⇒ 库外条目跟库内重名时，被改名的一定是**库外**那条。
+ */
+function scanSessions(libRoot) {
+  const out = [];
+  const used = new Set();
+  if (libRoot && fs.existsSync(libRoot)) {
+    let entries = [];
+    try {
+      entries = fs.readdirSync(libRoot, { withFileTypes: true });
+    } catch (e) {
+      entries = [];
+    }
+    for (const e of entries) {
+      if (!e.isDirectory()) continue;
+      if (e.name.startsWith('.')) continue;
+      const full = path.join(libRoot, e.name);
+      const info = describeSessionDir(full);
+      if (!info) continue;                             // 不像主题（比如只有空目录）
+      used.add(e.name.toLowerCase());
+      out.push(Object.assign({ name: e.name, path: full }, info));
+    }
+  }
+  for (const s of extraSessions(used)) out.push(s);
   out.sort((a, b) => (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));
   return out;
 }

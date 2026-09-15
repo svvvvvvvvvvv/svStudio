@@ -115,16 +115,30 @@ await page.addInitScript(() => {
   };
   window.api = {
     logLine: async () => true,
-    getConfig: async () => ({ libRoot: 'D:\\lib' }),
+    /* ★ 照生产端抄：`extraRoots` = 左栏「加入目录…」加进来的**库外目录**（绝对路径）。
+       放在 window 上、方法里**现读** —— 测试中途改它才生效（同 __FAIL_HEALTH 的老办法）。 */
+    getConfig: async () => ({ libRoot: 'D:\\lib', extraRoots: window.__extraRoots || [] }),
     /* ⚠ 主题列表要**能变**：导入完 `refreshSessions()` 会重扫，
        新主题必须出现（否则"导入完直接进新主题"这条根本测不到）。
-       照生产端抄：列表是"扫出来的"，不是写死的常量。 */
-    scanSessions: async () =>
-      window.__sessions ||
-      (window.__sessions = [
-        { name: '主题A', count: 12 },
-        { name: '主题B', count: 34 },
-      ]),
+       照生产端抄：列表是"扫出来的"，不是写死的常量。
+       ★ 库外目录跟着**并排**列出来（照 `main.js` 的 `scanSessions`）：带 `path`（真实路径）、
+         `external`、`rootDir`；名字取路径最后一段。
+         ⚠ 少一个字段，「点库外条目用的是它自己的路径吗」就测不到 ——
+           而"路径拼错"正是这个功能最容易坏、又最像"没反应"的地方。 */
+    scanSessions: async () => {
+      const base = window.__sessions || (window.__sessions = [
+        { name: '主题A', count: 12, path: 'D:\\lib\\主题A' },
+        { name: '主题B', count: 34, path: 'D:\\lib\\主题B' },
+      ]);
+      const ex = window.__extraRoots || [];
+      return base.concat(ex.map((d) => ({
+        name: String(d).split(/[\\/]/).filter(Boolean).pop(),
+        path: d,
+        count: 40,
+        external: true,
+        rootDir: d,
+      })));
+    },
     /* ★★ 出图源也要照生产端抄：`main.js` 的 `attachLoadPath()` 会给每张算出 `loadPath`
        （**同名 RAW 优先**，没有 RAW 的主题才回落 JPG）。这里故意混着给：
        i=1,5,9… 是"只有 JPG"的，用来测回落那一档。
@@ -132,6 +146,9 @@ await page.addInitScript(() => {
          两个主题发同一批名字的话，「切主题之后看的是另一张」根本测不出来。
        ★ 导入出来的新主题给第三段号段（3000+）：这样"到底进没进新主题"一眼看得出。 */
     listPhotos: async (sessionPath) => {
+      /* ★ 记下**每次列图用的路径** —— 「点库外条目是不是用了它自己的真实路径」靠它断言。
+         只看照片名不够：路径拼错时画面照样能出，很难判。 */
+      (window.__listPaths || (window.__listPaths = [])).push(sessionPath);
       const theme = String(sessionPath || '').split(/[\\/]/).filter(Boolean).pop() || '主题A';
       const base = theme === '主题B' ? 2000 : /^\d{4}-/.test(theme) ? 3000 : 1000;
       return Array.from({ length: 40 }, (_, i) => {
@@ -163,6 +180,9 @@ await page.addInitScript(() => {
        现在补上并**记下最后一次写进去的东西** —— 「上次看到哪张」有没有真落盘靠它断言。 */
     setConfig: async (patch) => {
       window.__setConfig = { ...(window.__setConfig || {}), ...(patch || {}) };
+      /* ★ 照生产端：写进配置之后**重扫就该看见它** —— 这里把 `extraRoots` 也记到 window 上，
+         否则「加完目录立刻出现在列表里」这条在自检里永远测不到（mock 写死 ⇒ 白测一场）。 */
+      if (patch && Array.isArray(patch.extraRoots)) window.__extraRoots = patch.extraRoots;
       return true;
     },
     /* ⚠ 这个 mock 原来也漏了 `engineStart`（`ensureEngine()` 会调）。
@@ -325,6 +345,11 @@ await page.addInitScript(() => {
          import-detect        → { ok, cards:[{drive,path,n}], script, libRoot }
          import-preview/-run  → { ok, text, plan, error }
          onImportProgress     → 返回**取消订阅函数**（生产端 preload 也是这么给的） */
+    /* ⚠ 这个 mock 原来**没有** `pickDirectory` —— 而左栏「换图库」「加入目录」、
+       导入弹窗的「手动选目录」都会调它。方法不存在 ⇒ 点那一刻**同步抛 TypeError**，
+       `.catch` 接不到（"漏 setConfig"那次的翻版）。
+       ★ 默认返回一个**库外目录**（用来测「加入目录」）；测试可以现改 `window.__pickDir`。 */
+    pickDirectory: async () => window.__pickDir || 'D:\\拍摄素材\\厦门_外拍',
     pickFile: async () => 'D:\\tools\\import_photos.py',
     importDetect: async () => ({
       ok: true,
@@ -1388,6 +1413,80 @@ console.log('\n[15] 相纸（换纸真的换画面吗）');
     await openStock5('portra400');
     const nBack = await page.locator('[data-paper]').count();
     check('★ 切回真卷 ⇒ 相纸栏又出来（不是一次性渲染完就没了）', nBack === 1, `${nBack} 个`);
+  }
+}
+
+/* ---------- 16. 加入目录（库外目录：原地读，不复制） ----------
+   ★ SV 原话：*"如果一张照片已经在我的电脑中，我可以通过加这个目录让这个目录[出现在]
+     图片库那一栏中"*。这是**原地读**，不是复制 —— 和「导入照片」（复制归档）两回事。
+   ★ 这一组的靶心是**路径**：库外目录**不在** `libRoot` 底下。要是 `enterSession`
+     还自己拼 `库根\名字`，点进去读的是一个**不存在**的目录 ⇒ 0 张照片，
+     而且看着像"这个主题是空的"—— 本项目最像"点了没反应"的一类假象。
+   ⇒ 所以探针取「列图时用的那条路径」（`window.__listPaths`），**不是**看照片名：
+     名字对不对不足以说明路径对不对。 */
+console.log('\n[16] 加入目录（库外目录：原地读）');
+{
+  await page.addInitScript(() => {
+    window.__extraRoots = ['D:\\拍摄素材\\厦门_外拍'];
+  });
+  await page.reload();
+  await page.waitForTimeout(1800);
+
+  const addBtn = page.locator('[data-add-dir]').first();
+  check('★ 左栏有「加入目录」入口（没有入口 = 这功能等于不存在）',
+    (await addBtn.count()) > 0, '',
+    '入口不摆出来，用户永远找不到（"导入入口点不到"那次的翻版）');
+
+  const extCount = await page.locator('[data-session-ext]').count();
+  check('★ 库外目录出现在「图库目录」里（和库内主题并排）',
+    extCount >= 1, `${extCount} 条`, '加进来的目录不出现 ⇒ 用户以为白加了');
+  if (extCount === 0) {
+    check('（后面几条依赖列表里有库外条目）', false, '', '列表里没有库外条目，后面全是空转');
+  } else {
+    const badge = await page.locator('[data-session-badge]').first().innerText();
+    check('★ 库外条目打了「库外」徽标（跟库里的主题一眼分得开）',
+      /库外/.test(badge), badge, '不区分 ⇒ 用户以为那些片子已经被复制进库了');
+
+    /* ---- ① 点它 ⇒ 列图用的必须是**它自己的路径** ---- */
+    await page.evaluate(() => { window.__listPaths = []; });
+    await page.locator('[data-session-ext]').first().click();
+    await page.waitForTimeout(1200);
+    const paths = await page.evaluate(() => window.__listPaths || []);
+    const used = paths[paths.length - 1];
+    check('★★★ 点库外条目 ⇒ 读的是**它自己的路径**（不是 `D:\\lib\\名字`）',
+      used === 'D:\\拍摄素材\\厦门_外拍', `读到 ${JSON.stringify(used)}`,
+      `读到 ${JSON.stringify(used)} ⇒ 拼成"库根\\名字"了：库外目录进去永远 0 张照片，` +
+        '看着像空主题，看不出是路径拼错');
+
+    /* ---- ② 「加入目录」真落盘（否则重启就没了） ---- */
+    await page.evaluate(() => {
+      window.__setConfig = null;
+      window.__pickDir = 'D:\\另一个\\外拍';
+    });
+    await addBtn.click();
+    await page.waitForTimeout(1200);
+    const saved = await page.evaluate(() => window.__setConfig || {});
+    check('★ 「加入目录」把目录写进了配置（下次开台子还在）',
+      Array.isArray(saved.extraRoots) && saved.extraRoots.includes('D:\\另一个\\外拍'),
+      JSON.stringify(saved.extraRoots || null), '没落盘 ⇒ 加了个寂寞，重启就没了');
+    const ext2 = await page.locator('[data-session-ext]').count();
+    check('★ 加完立刻出现在列表里（重扫真重扫了，不是只写配置）',
+      ext2 >= 2, `${ext2} 条`, '只写配置不重扫 ⇒ 用户以为没加成，又去加一遍');
+
+    /* ---- ③ 「×」只从列表去掉，**不删文件** ---- */
+    const del = page.locator('[data-session-del]').first();
+    check('★ 库外条目有「×」（加错了能拿掉）', (await del.count()) > 0);
+    const delTitle = (await del.getAttribute('title')) || '';
+    check('★★ 「×」的 tip 明说**不删任何文件**（用户看到 × 第一反应是怕删片子）',
+      /不删任何文件/.test(delTitle), delTitle.slice(0, 40),
+      '没说清 ⇒ 用户不敢点，或者点了以为片子被删了');
+    await page.evaluate(() => { window.__setConfig = null; });
+    await del.click();
+    await page.waitForTimeout(1200);
+    const saved2 = await page.evaluate(() => window.__setConfig || {});
+    check('★ 移除真的改配置（那条从列表里去掉了）',
+      Array.isArray(saved2.extraRoots) && saved2.extraRoots.length === 1,
+      JSON.stringify(saved2.extraRoots || null), '不移除 ⇒ 加错了就永远赖在那儿');
   }
 }
 

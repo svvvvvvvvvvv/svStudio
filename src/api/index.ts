@@ -88,6 +88,17 @@ declare global {
 export interface Session {
   name: string;
   count?: number;
+  /** 目录的**真实路径**（库内主题 = `libRoot\\名字`；库外目录 = 加进来的那个目录本身）。
+   *  ⚠★ `enterSession` **必须**用它 —— 不能再自己拼 `libRoot + '\\' + name`：
+   *    库外目录不在 `libRoot` 底下，拼出来的路径根本不存在。
+   *    （老返回里没有这个字段 ⇒ 调用点要留回落，见 `useStore.enterSession`。） */
+  path?: string;
+  /** 库外目录（左栏「加入目录…」加进来的；**原地读，没有复制进库**） */
+  external?: boolean;
+  /** 这个条目是从哪个库外根来的（一个根可能列成好几条）——「移除」按它移除 */
+  rootDir?: string;
+  /** 目录不在了（被删 / 改名）。条目照样列出来但点不进去 —— 静默消失最难查 */
+  missing?: boolean;
   /** 老代码里 session 可能带这些：done/errors 等 */
   [k: string]: any;
 }
