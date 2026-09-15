@@ -6,6 +6,17 @@ contextBridge.exposeInMainWorld('api', {
   getConfig: () => ipcRenderer.invoke('get-config'),
   setConfig: (patch) => ipcRenderer.invoke('set-config', patch),
   pickDirectory: () => ipcRenderer.invoke('pick-directory'),
+  /* ★ 09-15 SV 选「B」：左栏支持**把文件夹直接拖进来**。
+     ⚠ Electron 33 已经没有 `File.path`（32 起移除）⇒ 只能走 `webUtils.getPathForFile`，
+       而且**必须在这一侧调**（要有 File 对象的上下文）。
+     ⇒ 返回目录/文件的绝对路径；给不了就返回 ''（调用方按"拖进来的不是本地文件夹"处理）。 */
+  getPathForFile: (file) => {
+    try {
+      return require('electron').webUtils.getPathForFile(file) || '';
+    } catch (e) {
+      return '';
+    }
+  },
   scanSessions: (libRoot) => ipcRenderer.invoke('scan-sessions', libRoot),
   listPhotos: (sessionPath) => ipcRenderer.invoke('list-photos', sessionPath),
   readImage: (sessionPath, rel) => ipcRenderer.invoke('read-image', sessionPath, rel),

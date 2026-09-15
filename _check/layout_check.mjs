@@ -97,15 +97,17 @@ await page.addInitScript(() => {
 
   window.api = {
     logLine: async () => true,
-    /* ★ 照生产端抄：`extraRoots` = 左栏「加入目录…」加进来的**库外目录**（绝对路径）。
-       放在 window 上、方法里**现读** —— 测试中途改它才生效（同 __FAIL_HEALTH 的老办法）。 */
-    getConfig: async () => ({ libRoot: 'D:\\lib', extraRoots: window.__extraRoots || [] }),
-    /* ⚠ 主题列表要**能变**：`refreshSessions()` 重扫之后，新加进来的目录必须列出来
+    /* ★ 照生产端抄：`extraRoots` = 左栏加进来的**文件夹**（绝对路径）。
+       放在 window 上、方法里**现读** —— 测试中途改它才生效（同 __FAIL_HEALTH 的老办法）。
+       ★★ 09-15 SV 选「B」：生产端**没有 `libRoot` 了** —— mock 也不许再给。给着的话
+          自检是在测一个已经不存在的键，"左栏只列加过的文件夹"这条永远测不出来。 */
+    getConfig: async () => ({ extraRoots: window.__extraRoots || [] }),
+    /* ⚠ 列表要**能变**：`refreshSessions()` 重扫之后，新加进来的文件夹必须列出来
        （否则"加完立刻出现在列表里"这条根本测不到）。
        照生产端抄：列表是"扫出来的"，不是写死的常量。
-       ★ 库外目录跟着**并排**列出来（照 `main.js` 的 `scanSessions`）：带 `path`（真实路径）、
+       ★ 加进来的文件夹照 `main.js` 的 `extraSessions` 抄：带 `path`（真实路径）、
          `external`、`rootDir`；名字取路径最后一段。
-         ⚠ 少一个字段，「点库外条目用的是它自己的路径吗」就测不到 ——
+         ⚠ 少一个字段，「点条目用的是它自己的路径吗」就测不到 ——
            而"路径拼错"正是这个功能最容易坏、又最像"没反应"的地方。 */
     scanSessions: async () => {
       const base = window.__sessions || (window.__sessions = [
@@ -113,7 +115,7 @@ await page.addInitScript(() => {
         { name: '主题B', count: 34, path: 'D:\\lib\\主题B' },
       ]);
       const ex = window.__extraRoots || [];
-      /* ★ 「只有 RAW、没 JPG」的那种库外目录：`path` 指向的是**预览索引**（缓存），
+      /* ★ 「只有 RAW、没 JPG」的那种文件夹：`path` 指向的是**预览索引**（缓存），
          真身在 `srcDir`（照 `main.js` 的 `externalSessionEntry` 抄）。
          ⚠ 不照抄这一条，「点纯 RAW 条目时是拿哪个目录去建索引」和
            「建完重扫，待建标记要消失」都测不到。开关放 window 上、方法里现读。 */
@@ -336,7 +338,7 @@ await page.addInitScript(() => {
                w: 2048, h: 1365, bytes: 838860, ms: 29100 };
     },
 
-    /* ⚠ 这个 mock 原来**没有** `pickDirectory` —— 而左栏「加入目录」「换图库」都会调它。
+    /* ⚠ 这个 mock 原来**没有** `pickDirectory` —— 而左栏「加入目录」会调它（「换图库」已删）。
        方法不存在 ⇒ 点那一刻**同步抛 TypeError**，`.catch` 接不到（"漏 setConfig"那次的翻版）。
        ★ 默认返回一个**库外目录**（用来测「加入目录」）；测试可以现改 `window.__pickDir`。 */
     pickDirectory: async () => window.__pickDir || 'D:\\拍摄素材\\厦门_外拍',
@@ -1322,11 +1324,12 @@ console.log('\n[15] 相纸（换纸真的换画面吗）');
   }
 }
 
-/* ---------- 16. 加入目录（库外目录：原地读，不复制） ----------
+/* ---------- 16. 加入目录（原地读，不复制） ----------
    ★ SV 原话：*"如果一张照片已经在我的电脑中，我可以通过加这个目录让这个目录[出现在]
      图片库那一栏中"*。这是**原地读**，不是复制 —— 也是 09-15 起**唯一**那条路。
-   ★ 这一组的靶心是**路径**：库外目录**不在** `libRoot` 底下。要是 `enterSession`
-     还自己拼 `库根\名字`，点进去读的是一个**不存在**的目录 ⇒ 0 张照片，
+   ★ 09-15 SV 选「B」：**「图库根」这层砍掉了**，左栏列的就是"你加过的文件夹"。
+   ★ 这一组的靶心仍然是**路径**：加进来的文件夹**没有任何能被拼出来的规律**。要是
+     `enterSession` 还自己拼一个，点进去读的是一个**不存在**的目录 ⇒ 0 张照片，
      而且看着像"这个主题是空的"—— 本项目最像"点了没反应"的一类假象。
    ⇒ 所以探针取「列图时用的那条路径」（`window.__listPaths`），**不是**看照片名：
      名字对不对不足以说明路径对不对。 */
@@ -1344,14 +1347,19 @@ console.log('\n[16] 加入目录（库外目录：原地读）');
     '入口不摆出来，用户永远找不到（"按钮在、功能不在"那次的翻版）');
 
   const extCount = await page.locator('[data-session-ext]').count();
-  check('★ 库外目录出现在「图库目录」里（和库内主题并排）',
+  check('★ 加过的文件夹出现在「图库目录」里',
     extCount >= 1, `${extCount} 条`, '加进来的目录不出现 ⇒ 用户以为白加了');
   if (extCount === 0) {
-    check('（后面几条依赖列表里有库外条目）', false, '', '列表里没有库外条目，后面全是空转');
+    check('（后面几条依赖列表里有加过的文件夹）', false, '',
+      '列表里没有加过的文件夹，后面全是空转');
   } else {
-    const badge = await page.locator('[data-session-badge]').first().innerText();
-    check('★ 库外条目打了「库外」徽标（跟库里的主题一眼分得开）',
-      /库外/.test(badge), badge, '不区分 ⇒ 用户以为那些片子已经被复制进库了');
+    /* ★ 09-15 SV 选「B」：每条都是"加过的文件夹"，「库外」徽标已经没有区分对象了
+       ⇒ 这条换成盯**新**形态：条目上得看得出"这是哪个文件夹"（不然重名时点错都不知道）。 */
+    const firstTitle =
+      (await page.locator('[data-session-ext]').first().getAttribute('title')) || '';
+    check('★ 条目上带完整路径（两个同名文件夹在栏里也能分清是哪个）',
+      /D:\\/.test(firstTitle), firstTitle.slice(0, 60),
+      '不写路径 ⇒ 重名的文件夹在栏里长得一模一样，点错了都看不出来');
 
     /* ---- ① 点它 ⇒ 列图用的必须是**它自己的路径** ---- */
     await page.evaluate(() => { window.__listPaths = []; });

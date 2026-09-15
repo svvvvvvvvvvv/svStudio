@@ -28,7 +28,7 @@ export type Mode = 'pick' | 'grade';
 export type Filter = 'all' | 'unrated' | '1' | '2' | '3' | '4' | '5';
 
 /**
- * 「这个库外目录已经试过建预览索引、但**失败了**」—— 每个进程只试一次。
+ * 「这个文件夹已经试过建预览索引、但**失败了**」—— 每个进程只试一次。
  * ★ 为什么要记：失败的原因通常是**环境和依赖**（没装 rawpy / 脚本不在 / 盘掉线），
  *   重试一百次也是同一个结果。反复弹"没生成"只会训练用户忽略提示。
  * ⚠ 只记**失败**：成功的不记 —— 源目录后来多了新片还要能重跑（`needsIndex` 会再亮）。
@@ -36,8 +36,7 @@ export type Filter = 'all' | 'unrated' | '1' | '2' | '3' | '4' | '5';
 const _indexFailed = new Set<string>();
 
 interface AppState {
-  /* ---- 配置与库 ---- */
-  libRoot: string;
+  /* ---- 配置 ---- */
   ready: boolean;
 
   /* ---- 会话与照片 ---- */
@@ -82,14 +81,12 @@ interface AppState {
 
   /* ---- actions ---- */
   setReady: (v: boolean) => void;
-  setLibRoot: (v: string) => void;
   loadSessions: () => Promise<void>;
   /** 只重扫主题列表，**不碰**"恢复上次状态"（加目录 / 建预览索引后要用它） */
   refreshSessions: () => Promise<void>;
-  /** 换照片库（左栏「换图库」）—— 存进配置 + 重扫 + 回首页 */
-  changeLibRoot: (root: string) => Promise<void>;
-  /** ★ 「加入目录…」：把一个**硬盘上已有的**照片目录挂进图库列表（原地读，不复制）。
-   *  存 `config.extraRoots`，然后 `refreshSessions()`。 */
+  /** ★ 「加入目录…」/ 拖拽：把一个**硬盘上已有的**照片文件夹挂进图库列表（原地读，不复制）。
+   *  存 `config.extraRoots`，然后 `refreshSessions()`。
+   *  ★★ 09-15 SV 选「B」之后**没有"图库根"了** —— 这一栏列的就是你加过的文件夹。 */
   addExtraRootDir: (dir: string) => Promise<void>;
   /** 移除一个库外目录（只从列表去掉，**不删任何文件**）。正在看它 ⇒ 回首页。 */
   removeExtraRootDir: (dir: string) => Promise<void>;
@@ -155,7 +152,6 @@ const normPath = (p: unknown): string =>
   String(p ?? '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
 
 export const useStore = create<AppState>((set, get) => ({
-  libRoot: '',
   ready: false,
 
   sessions: [],
@@ -193,18 +189,14 @@ export const useStore = create<AppState>((set, get) => ({
   extIndexBusy: false,
 
   setReady: (v) => set({ ready: v }),
-  setLibRoot: (v) => set({ libRoot: v }),
 
   loadSessions: async () => {
     const cfg = await API.getConfig();
-    const root = cfg?.libRoot || '';
-    set({ libRoot: root, ratings: cfg?.ratings || {} });
-    let list: Session[] = [];
-    if (root) {
-      list = (await API.scanSessions(root)) || [];
-      set({ sessions: list });
-    }
-    set({ ready: true });
+    set({ ratings: cfg?.ratings || {} });
+    /* ★★ 09-15 SV 选「B」：不用再读什么"库根"了 —— 左栏列的就是加过的文件夹。
+       老配置里的 `libRoot` 由 main.js 的 `migrateConfig` 一次性搬进 `extraRoots`。 */
+    const list: Session[] = (await API.scanSessions()) || [];
+    set({ sessions: list, ready: true });
 
     /* ★★ 恢复上次状态（SV 09-15：进来直接就是台，别停在主题列表）：
        上次的主题 + 选到哪张 + 在哪个台（平铺键，见 saveLast 注释） */
@@ -230,45 +222,27 @@ export const useStore = create<AppState>((set, get) => ({
   /** 只重扫主题列表，**不碰**"恢复上次状态" —— 加目录 / 建完预览索引后要用它，
    *  不能直接调 `loadSessions`（那个会顺带"恢复上次主题"，把刚进来的又换掉） */
   refreshSessions: async () => {
-    const root = get().libRoot;
-    if (!root) return;
-    const list = (await API.scanSessions(root)) || [];
+    const list = (await API.scanSessions()) || [];
     set({ sessions: list });
   },
 
-  /** 换照片库：存进配置 + 清空当前主题 + 重扫 */
-  changeLibRoot: async (root) => {
-    if (!root) return;
-    await API.setConfig({ libRoot: root });
-    set({ libRoot: root, sessionPath: '', sessionName: '', photos: [], cur: 0, sessions: [] });
-    await get().refreshSessions();
-    get().showToast('已切换照片库');
-  },
-
   /* =========================================================
-     库外目录（左栏「加入目录…」）：把硬盘上**已有的**照片文件夹挂进图库列表
+     加过的文件夹（左栏「加入目录…」/ 直接把文件夹拖进来）：把硬盘上**已有的**照片文件夹挂进列表
      ---------------------------------------------------------
-     ★ 这里**一个字节都不动**，只是让那个目录出现在左栏里（原地读）——
-       和「把片拷进库」是完全相反的两件事。
-     ★ 存 `config.extraRoots`（用户配置，**不进仓库**）；全局一份，换图库也不丢。
-     ★ 身份按**完整路径**：挂进来的目录就算跟库里的主题重名，也各算各的
-       （星级 / 成片归档 / 调色配方都不串味）。真重名时 `scanSessions` 给库外那条加 ` ·2`。
+     ★ 这里**一个字节都不动**，只是让那个文件夹出现在左栏里（原地读）——
+       和"把片拷进库"是完全相反的两件事。
+     ★ 存 `config.extraRoots`（用户配置，**不进仓库**）。
+     ★ 身份按**完整路径**：挂进来的文件夹就算跟别的条目重名，也各算各的
+       （星级 / 成片归档 / 调色配方都不串味）。真重名时 `extraSessions` 给后面那条加 ` ·2`。
+     ★★ 09-15 SV 选「B」：**"库根"这一层砍掉了** —— 别再引回 `libRoot` 那套
+       "先设一个大库、库底下分主题"。它在"我手上就是一个文件夹"时是锁死的。
      ========================================================= */
 
-  /** 路径比较用（大小写不敏感、斜杠统一、去尾反斜杠）—— Windows 上必须这么比 */
+  /** 加入一个文件夹（按钮选 / 拖拽都走这里）—— 原地读，**一个字节都不动** */
   addExtraRootDir: async (dir) => {
     const d = String(dir || '').trim();
     if (!d) return;
-    /* ⚠ 已经在图库里的目录不用再加一遍：
-       - 库根自己 ⇒ 加进来等于把整个库当一条
-       - 库根的**直接子目录** ⇒ `scanSessions` 已经把它当主题列出来了；
-         再加一遍会多出一条同内容的（还得靠 ` ·2` 改名），看着像出了 bug */
-    const L = normPath(get().libRoot);
     const D = normPath(d);
-    if (L && (D === L || D.replace(/\\[^\\]+$/, '') === L)) {
-      get().showToast('这个目录已经在图库列表里了');
-      return;
-    }
     let list: string[] = [];
     try {
       const cfg = await API.getConfig();
@@ -277,18 +251,35 @@ export const useStore = create<AppState>((set, get) => ({
       /* 读不到配置就当还没加过 */
     }
     if (list.some((x) => normPath(x) === D)) {
-      get().showToast('这个目录已经加过了');
+      get().showToast('这个文件夹已经加过了');
+      return;
+    }
+    /* ⚠ 已经加过的**上一层**文件夹会把它列出来（`extraSessions` 把"有照片的子目录"
+       各列一条）⇒ 再加一遍只会多出一条同内容的（还得靠 ` ·2` 改名），看着像出了 bug。 */
+    if (list.some((x) => D.startsWith(normPath(x) + '\\'))) {
+      get().showToast('这个文件夹已经在列表里了（它上一层的文件夹已经加过）');
       return;
     }
     await API.setConfig({ extraRoots: [...list, d] });
     await get().refreshSessions();
-    /* ★★ 刚加进来的目录如果是"只有 RAW、没 JPG"的，光挂上去在界面上还是**空的**
+    /* ★ 拖进来 / 选进来的可能是个**文件**，不是一个文件夹 —— 那时 `extraSessions`
+       会留一条「找不到」，看着像坏了。当场发现就退回去，别让它挂在那儿。 */
+    const ok = get().sessions.some(
+      (s) => s.rootDir && normPath(s.rootDir) === D && !s.missing
+    );
+    if (!ok) {
+      await API.setConfig({ extraRoots: list });
+      await get().refreshSessions();
+      get().showToast('这不是一个文件夹，加不进来');
+      return;
+    }
+    /* ★★ 刚加进来的文件夹如果是"只有 RAW、没 JPG"的，光挂上去在界面上还是**空的**
        （工作台只按 JPG 列图）⇒ 顺手把预览小图建出来。失败会自己 toast 报原因。 */
     const built = await get().indexMissingExternal();
     get().showToast(
       built
-        ? `已加入图库目录（${built} 张纯 RAW 已生成预览小图，原目录没动）`
-        : '已加入图库目录（原地读，没有复制文件）'
+        ? `已加入（${built} 张纯 RAW 生成了预览小图，原文件夹没动）`
+        : '已加入（原地读，没有复制文件）'
     );
   },
 
@@ -366,13 +357,11 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => (s.busy ? { busyText: String(t || '') } : {})),
 
   enterSession: async (name, opts) => {
-    const root = get().libRoot;
-    /* ★★ 路径**必须从列表里拿**（`s.path`），不能自己拼 `root + '\\' + name`：
-       库外目录（左栏「加入目录…」）根本不在 `libRoot` 底下，拼出来的路径不存在
-       ⇒ 进去就是 0 张照片，而且看着像"这个主题是空的"，**看不出是路径拼错了**。
-       列表里没有（老数据 / 刚导完还没重扫）才回落到拼名字。 */
+    /* ★★ 路径**必须从列表里拿**（`s.path`）—— 09-15 选「B」之后**连能拼的东西都没有了**
+       （以前至少还能拼 `库根\名字`）。列表里没有就是没有，不许瞎拼一个：
+       拼出来的路径不存在 ⇒ 进去 0 张，看着像"这个是空的"，**看不出是拼错了**。 */
     const s = get().sessions.find((x) => x.name === name);
-    const sessionPath = (s && s.path) || (root ? root + '\\' + name : '');
+    const sessionPath = (s && s.path) || '';
     if (!sessionPath) return;
     /* ★★ 纯 RAW 的库外目录：列图读的是**预览索引**（缓存），索引还没建 / 源目录又多了新片
        ⇒ 先补上再去列图。不补的话列表里张数看得见、点进去却是**空主题**

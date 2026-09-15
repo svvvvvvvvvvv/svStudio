@@ -23,7 +23,9 @@ declare global {
       getConfig: () => Promise<any>;
       setConfig: (patch: any) => Promise<any>;
       pickDirectory: () => Promise<string | null>;
-      scanSessions: (libRoot: string) => Promise<Session[]>;
+      /** ★ 拖进来的文件夹 → 真实路径（Electron 33 没有 `File.path`，必须走 preload 的 webUtils） */
+      getPathForFile: (file: File) => string;
+      scanSessions: () => Promise<Session[]>;
       listPhotos: (sessionPath: string) => Promise<Photo[]>;
       readImage: (sessionPath: string, rel: string) => Promise<string | null>;
       getThumb: (
@@ -342,9 +344,11 @@ export const API = {
   getConfig: () => api().getConfig(),
   setConfig: (patch: any) => api().setConfig(patch),
   pickDirectory: () => api().pickDirectory(),
+  /* ★ 拖进来的文件夹 → 真实路径（Electron 33 没有 `File.path`，走 preload 的 webUtils） */
+  getPathForFile: (file: File) => api().getPathForFile(file),
 
   /* 照片库 */
-  scanSessions: (libRoot: string) => api().scanSessions(libRoot),
+  scanSessions: () => api().scanSessions(),
   listPhotos: (sessionPath: string) => api().listPhotos(sessionPath),
   readImage: (sessionPath: string, rel: string) =>
     api().readImage(sessionPath, rel),

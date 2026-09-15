@@ -409,9 +409,10 @@ const sessTsx = read('src/components/SessionPane.tsx');
 check('★ 左栏顶部**只有**「加入目录」这一个按钮',
   /data-add-dir/.test(sessTsx) && !/data-import-open/.test(sessTsx), '',
   '两个入口并存 ⇒ 用户分不清该点哪个（这正是这轮要治的）');
-check('★ 「换图库」还在（只是从顶栏挪到底部小字里，功能没丢）',
-  /data-change-lib/.test(sessTsx) && /换图库/.test(sessTsx), '',
-  '换图库被顺手删了 ⇒ 新机器上库根永远是系统「图片」目录、改不了');
+check('★★ 「换图库」和「图库根」那一层**已经删干净**（09-15 SV 选「B」）',
+  !/data-change-lib/.test(sessTsx) && !/换图库/.test(sessTsx) &&
+    !/data-lib-root/.test(sessTsx), '',
+  '留着一个「换图库」按钮 ⇒ 后台已经没有"库根"了 ⇒ 点了没反应（比没有这个按钮更坏）');
 check('★ 已删的导入对话框没有残留引用（App / api / store）',
   !/<ImportDialog/.test(appTsx) && !/ImportDialog/.test(apiTs) && !/ImportDialog/.test(storeSrc), '',
   '残留引用 ⇒ tsc / 构建期报错，或运行期白屏');
@@ -659,19 +660,21 @@ console.log('\n[13] 加入目录（库外目录：原地读，不复制）');
 const paneSrc = read('src/components/SessionPane.tsx');
 /* 只取 `extraSessions` 的函数体（下一个函数名当右界）—— 判"这段有没有写盘"用 */
 const exA = mainJsSrc.indexOf('function extraSessions(used)');
-const exB = mainJsSrc.indexOf('function scanSessions(libRoot)');
+const exB = mainJsSrc.indexOf('function scanSessions()');
 const exBody = exA >= 0 && exB > exA ? mainJsSrc.slice(exA, exB) : '';
 
 check('★ 配置里有 `extraRoots`（加过的库外目录，存绝对路径）',
   /extraRoots:\s*\[\]/.test(mainJsSrc), '',
   '没有这个键 ⇒ 加过的目录下次开台子就没了（"加了个寂寞"）');
-check('★ 主题列表把库外目录一起列出来（`scanSessions` 真的**调**了 `extraSessions`）',
-  /function scanSessions\(libRoot\)/.test(mainJsSrc) &&
+check('★★ 主题列表**只**从"加过的文件夹"来（`scanSessions` 除了 `extraSessions` 没有别的来源）',
+  /function scanSessions\(\)/.test(mainJsSrc) &&
     /* ⚠ 锚点必须是**调用点**：函数定义 `function extraSessions(used) {` 里
        也含 `extraSessions(used)` ⇒ 拿它当锚点的话，删掉调用点这检查照样绿。
        （09-15 就是破法 61 把它抓出来的 —— 典型的"只查标题在不在"。） */
-    /for \(const s of extraSessions\(used\)\) out\.push\(s\);/.test(mainJsSrc), '',
-  '只扫 libRoot ⇒ 加进来的目录永远不出现');
+    /for \(const s of extraSessions\(used\)\) out\.push\(s\);/.test(mainJsSrc) &&
+    /* ★ 反向：不许再冒出"扫某个固定根的一级子目录"那段（09-15 那个死锁就是它） */
+    !/fs\.readdirSync\(libRoot/.test(mainJsSrc), '',
+  '只扫某个固定根 ⇒ 加进来的文件夹永远不出现（09-15 那个"点了没反应"就是这么来的）');
 check('★ 库外目录的表从**配置**读（不是前端再传一份）',
   /roots = loadConfig\(\)\.extraRoots;/.test(mainJsSrc), '',
   '两处各存一份 ⇒ 一旦不一致就出现"列表里有、重扫又没了"');
@@ -684,15 +687,20 @@ check('★★ 库外目录不在了 ⇒ 列一条 `missing`，**不静默跳过*
 check('★ 库外条目带 `path` + `external` + `rootDir`（进目录 / 画徽标 / 移除都靠它们）',
   /external: true, rootDir: dir/.test(mainJsSrc) && /external\?: boolean;/.test(apiTs) &&
     /rootDir\?: string;/.test(apiTs), '');
-check('★ 库内主题也带 `path`（这样前端两处走同一条路，不用分叉）',
-  /out\.push\(Object\.assign\(\{ name: e\.name, path: full \}, info\)\)/.test(mainJsSrc), '');
-check('★★ 库内主题的名字**原样保留**（重名只改库外那条 —— 库内名字是星级的身份键）',
-  /used\.add\(e\.name\.toLowerCase\(\)\)/.test(mainJsSrc) &&
-    /function uniqueName\(used, base\)/.test(mainJsSrc), '',
-  '给库内主题也改名 ⇒ 那个人几周的星级 / 配方全丢');
-check('★★★ `enterSession` 用**条目给的真实路径**，不再自己拼 `库根\\名字`',
-  /const sessionPath = \(s && s\.path\) \|\| \(root \? root \+ '\\\\' \+ name : ''\);/.test(storeCode), '',
-  '拼路径 ⇒ 库外目录进去永远 0 张照片（看着像空主题，看不出是路径拼错）');
+check('★ 每条都带 `path`（前端只剩这一条路，进目录**不许**再自己拼）',
+  /name: uniqueName\(used, name\),\s*\n\s*path: full, external: true, rootDir: rootDir,/
+    .test(mainJsSrc), '',
+  '没有真路径 ⇒ `enterSession` 只能瞎拼一个，进去 0 张还看不出是拼错了');
+check('★★ 重名时只改**后面**那条（先来的名字是星级的身份键，一个字符都不许动）',
+  /function uniqueName\(used, base\)/.test(mainJsSrc) &&
+    /name: uniqueName\(used, name\)/.test(mainJsSrc) &&
+    !/used\.add\(e\.name\.toLowerCase\(\)\)/.test(mainJsSrc), '',
+  '两边都改名 / 改错边 ⇒ 那个人几周的星级 / 配方全丢');
+check('★★★ `enterSession` 用**条目给的真实路径**，而且**一点拼路径的退路都不留**',
+  /const sessionPath = \(s && s\.path\) \|\| '';/.test(storeCode) &&
+    !/root \+ '\\\\' \+ name/.test(storeCode) &&
+    !/get\(\)\.libRoot/.test(storeCode), '',
+  '留着拼路径的退路 ⇒ 拼出来的目录不存在，进去 0 张还看不出是拼错了');
 check('★ 加入 / 移除两个动作都在 store 里，四边齐（接口 + 实现）',
   /addExtraRootDir: \(dir: string\) => Promise<void>;/.test(storeCode) &&
     /removeExtraRootDir: \(dir: string\) => Promise<void>;/.test(storeCode) &&
@@ -702,9 +710,49 @@ check('★ 加入 / 移除两个动作都在 store 里，四边齐（接口 + �
 check('★ 加入 / 移除都落到 `config.extraRoots`（同一个键，不各存各的）',
   /API\.setConfig\(\{ extraRoots: \[\.\.\.list, d\] \}\)/.test(storeCode) &&
     /API\.setConfig\(\{ extraRoots: list\.filter\(/.test(storeCode), '');
-check('★ 已经在图库里的目录**拒绝重复加入**（库根 / 库根的直接子目录）',
-  /已经在图库列表里了/.test(storeCode) && /D === L \|\| D\.replace\(/.test(storeCode), '',
-  '不挡 ⇒ 同一个目录列两条（还得靠改名区分），看着像出了 bug');
+check('★ 同一个文件夹不许加两遍（自己 / 上一层已经加过 ⇒ 都挡掉）',
+  /这个文件夹已经加过了/.test(storeCode) &&
+    /D\.startsWith\(normPath\(x\) \+ '\\\\'\)/.test(storeCode), '',
+  '不挡 ⇒ 同一个文件夹列两条（还得靠改名区分），看着像出了 bug');
+
+/* ★★ 老配置迁移：**把函数抽出来真跑一遍**（不是查"函数名在不在"）。
+   09-15 SV 选「B」把「图库根」砍了 —— 老 config 里的 `libRoot` 必须变成
+   "加过的第一个文件夹"，否则他原来那个照片库**凭空从列表里消失**。
+   ⚠ 这是"删键 + 搬家"两步，最容易写成"键删了、东西没搬"（界面上就是一片空）。 */
+const sameSrc = (mainJsSrc.match(/\nfunction samePath\(a, b\) \{[\s\S]*?\n\}\n/) || [''])[0];
+const migSrc = (mainJsSrc.match(/\nfunction migrateConfig\(cfg\) \{[\s\S]*?\n\}\n/) || [''])[0];
+check('★★ 老配置迁移的两个函数能**原样抽出来**（抽不出来下面几条就是空转）',
+  !!sameSrc && !!migSrc, '', '抽不出来 ⇒ 下面那条测的是空气');
+if (sameSrc && migSrc) {
+  const made = [];
+  const migrate = new Function(
+    'saveConfig',
+    sameSrc + migSrc + '\nreturn migrateConfig;'
+  )((c) => made.push(JSON.parse(JSON.stringify(c))));
+
+  const c1 = { libRoot: 'D:\\照片库', extraRoots: [] };
+  migrate(c1);
+  check('★★★ 老 config 的 `libRoot` 变成 `extraRoots` 里的一条（不然他的照片库凭空消失）',
+    !('libRoot' in c1) && c1.extraRoots.length === 1 && c1.extraRoots[0] === 'D:\\照片库',
+    JSON.stringify(c1), '键删了、东西没搬 ⇒ 左栏空着，他会以为片子没了');
+
+  migrate(c1);
+  check('★ 迁移只发生一次（第二次跑不再改、也不重复加）',
+    made.length === 1 && c1.extraRoots.length === 1,
+    `saveConfig 被调 ${made.length} 次`, '不幂等 ⇒ 每次开台子都往列表里塞一条');
+
+  const c2 = { libRoot: 'D:\\照片库', extraRoots: ['E:\\别的'] };
+  migrate(c2);
+  check('★ 已经有 `extraRoots` 时，老 `libRoot` 也照搬（老的排最前）',
+    c2.extraRoots.length === 2 && c2.extraRoots[0] === 'D:\\照片库',
+    JSON.stringify(c2.extraRoots), '漏搬 / 顺序乱 ⇒ 列表里少一条，或者第一条不是原来那个库');
+
+  const c3 = { libRoot: 'd:/照片库/', extraRoots: ['D:\\照片库'] };
+  migrate(c3);
+  check('★ 大小写 / 尾斜杠不同**算同一个**文件夹（不重复加一条）',
+    c3.extraRoots.length === 1, JSON.stringify(c3.extraRoots),
+    '不去重 ⇒ 同一个库在列表里出现两条');
+}
 check('★ 移除**不删任何文件**（store 里那段没有任何删除 API）',
   !/rmSync|unlinkSync|shutil|removeDir/.test(storeCode), '',
   '删文件是"不可逆"，而且是这个动作**明确承诺过不做**的事');
@@ -724,19 +772,24 @@ check('★ 库外条目有「×」，且 title 明说**不删文件**（用户�
        拿它当锚点会被自己的注释骗（09-15 破法 66 抓到的就是这条）。 */
     /'从列表移除（不删任何文件）\\n'/.test(paneSrc), '',
   '没说清 ⇒ 用户不敢点，或者点了以为片子被删了');
-check('★ 库外条目有可断言的标记（布局自检靠它认，不去认颜色）',
-  /data-session-ext=/.test(paneSrc) && /data-session-badge/.test(paneSrc) &&
-    /data-session-gone=/.test(paneSrc), '');
+check('★ 条目有可断言的标记（布局自检靠它认，不去认颜色）',
+  /* ⚠ `data-session-ext` 在这儿**不是**"库外"的意思 —— B 之后每条都来自"加过的文件夹"。
+     留着它是因为布局自检要拿它把"加进来的文件夹"和 mock 里那两条默认条目**区分开**。 */
+  /data-session=/.test(paneSrc) && /data-session-ext=/.test(paneSrc) &&
+    /data-session-gone=/.test(paneSrc) && /data-session-del=/.test(paneSrc), '',
+  '没有能选中的标记 ⇒ 布局自检只能去认颜色/文字，改个样式就误报');
 /* ★★ 跨层钉子：布局自检的 mock 必须**照生产端**给这两样，
    否则真浏览器那组在测一份不存在的形状（"mock 跟着前端一起错"的老坑）。 */
-check('★★ 布局自检 mock 的 `getConfig` 带 `extraRoots`（照生产端抄）',
-  /getConfig: async \(\) => \(\{ libRoot: 'D:\\\\lib', extraRoots: window\.__extraRoots \|\| \[\] \}\)/.test(mockSrcFlat), '',
-  'mock 不给 ⇒ 「加入目录」那条链在自检里根本没有数据可走');
+check('★★ 布局自检 mock 的 `getConfig` 带 `extraRoots`、且**不再有 `libRoot`**（照生产端抄）',
+  /getConfig: async \(\) => \(\{ extraRoots: window\.__extraRoots \|\| \[\] \}\)/.test(mockSrcFlat) &&
+    !/libRoot: 'D:\\\\lib'/.test(mockSrcFlat), '',
+  'mock 不给 ⇒ 「加入目录」那条链在自检里根本没数据可走；' +
+    '还留着 libRoot ⇒ 自检在测一个生产端已经没有的键');
 check('★★ 布局自检 mock 的 `scanSessions` 把库外目录并排列出来（带 path/external/rootDir）',
   /scanSessions: async \(\) => \{/.test(mockSrcFlat) && /external: true,/.test(mockSrcFlat) &&
     /const ex = window\.__extraRoots \|\| \[\];/.test(mockSrcFlat), '',
   'mock 只返回库内主题 ⇒ 「点库外条目用的是真实路径」这条根本测不到');
-check('⚠ 布局自检 mock 必须实现 `pickDirectory`（左栏「换图库 / 加入目录」都会调它）',
+check('⚠ 布局自检 mock 必须实现 `pickDirectory`（左栏「加入目录」会调它）',
   /pickDirectory: async \(\) =>/.test(mockSrcFlat), '',
   '漏了它 ⇒ 点那一刻同步抛 TypeError（漏 setConfig 那次的翻版）');
 
@@ -922,10 +975,14 @@ check('★ 没生成索引时，条目上写明「预览待生成」', /预览�
   '不写 ⇒ 用户点进去看到空的，只能猜是目录空了还是台子坏了');
 check('★ 缓存目录里放一份「这是什么、可以删」的说明', /_说明\.txt/.test(mainJsCode), '',
   '缓存是往用户机器上写东西，得让他知道那是什么、能不能删');
-const ssM = mainJsCode.match(/function scanSessions\(libRoot\)\s*\{[\s\S]*?\n\}/);
-check('★ 库内主题**不开**这个开关（突然冒出一批"只有 RAF"的主题会打乱他现有的列表）',
-  !!ssM && /describeSessionDir\(full\)/.test(ssM[0]) && !/allowRawOnly/.test(ssM[0]),
-  '', '给库内也开 ⇒ 列表里会凭空多出几批只有 RAW 的条目，那是我替他做的决定');
+/* ★ 09-15 SV 选「B」：库内 / 库外那条分界没有了 ⇒ 原来"库内不许开 allowRawOnly"
+   这条已经**没有对象**了。换成盯**新**的形态：两层模型不许偷偷回来。
+   （直接删掉就成了"没护栏"，而这条恰恰是 SV 骂"点了没反应"的根因所在。） */
+check('★★ `scanSessions` 只剩"加过的文件夹"这一条来源（两层模型不许偷偷回来）',
+  /function scanSessions\(\)/.test(mainJsCode) &&
+    !/function scanSessions\(libRoot\)/.test(mainJsCode) &&
+    !/readdirSync\(libRoot/.test(mainJsCode), '',
+  '两层模型回来 ⇒ "我手上就是一个文件夹"那个人又被锁死（09-15 SV 骂的那次）');
 check('⚠ 布局自检 mock 必须实现 `extIndex` + `onExtIndexProgress`（「加入目录」会调）',
   /extIndex: async \(srcDir\) =>/.test(mockSrcFlat) &&
     /onExtIndexProgress: \(cb\) =>/.test(mockSrcFlat), '',

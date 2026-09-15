@@ -96,9 +96,10 @@ let win;
 
 function defaultConfig() {
   return {
-    // ★ 图库根：留空 = 先用系统的「图片」目录（见 withLibFallback），再在台子里切到自己的照片目录。
-    //   不要把某个人的绝对路径写进仓库。
-    libRoot: '',
+    // ★★ 09-15 SV 选「B」：**「图库根」这一层已经砍掉**（`libRoot` 键不再写入）。
+    //   左栏列的就是「你加过的文件夹」（`extraRoots`），不再是"先设一个大库、库底下分主题"。
+    //   老配置里的 `libRoot` 由下面的 `migrateConfig` 一次性搬进 `extraRoots`，不会凭空消失。
+    //   ⚠ 也别再把某个人的绝对路径写进仓库。
     // ★ 引擎用哪份 Python（绝对路径）。留空 = 用 SVFILM_PY / PATH 上的 python
     enginePy: '',
     // ★ 调试产出根（日志/实验中间结果）。留空 = 应用自己的 userData/_debug
@@ -136,23 +137,42 @@ function loadConfig() {
       delete cfg.lastFilter;
       delete cfg.mode;
       delete cfg.last;      // 老版 saveLast 存过的 {cur} 对象（后来改平铺键，这个就成孤儿了）
-      return withLibFallback(cfg);
+      migrateConfig(cfg);
+      return cfg;
     }
   } catch (e) {
     console.error('config load failed', e);
   }
-  return withLibFallback(defaultConfig());
+  return migrateConfig(defaultConfig());
 }
 
-/** 图库根为空时给个像样的默认（系统的「图片」目录），别让新用户对着空列表发呆 */
-function withLibFallback(cfg) {
-  if (!cfg.libRoot) {
-    try {
-      cfg.libRoot = app.getPath('pictures');
-    } catch (e) {
-      /* ignore */
-    }
-  }
+/** 路径比较用（斜杠方向统一、去尾分隔符、大小写不敏感）—— Windows 上必须这么比。
+ *  ⚠ 只用来**判等**，绝不拿它去读文件（大小写敏感的系统上会读不到）。
+ *  ⚠ 光去尾斜杠不够：`d:/照片库/` 和 `D:\照片库` 是同一个目录，
+ *     不把 `/` 统一成 `\` 就判成两个 ⇒ 同一个库在列表里出现两条（09-15 自检抓到的）。 */
+function samePath(a, b) {
+  const N = (p) => String(p || '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
+  return N(a) === N(b);
+}
+
+/**
+ * ★★ 09-15 SV 选「B」：「图库根」这一层砍掉了。
+ *
+ * 老版本存过 `cfg.libRoot`（先设一个大库，左栏列它的一级子目录当"主题"）。这套模型在
+ * "我手上就是一个文件夹、照片直接躺在里面"的时候**直接崩** —— 库根自己列不出来
+ * （`scanSessions` 只认子目录），而「加入目录」又因为"这就是库根自己"被挡掉 ⇒ 锁死。
+ * ⇒ 现在只有一种东西：**你加过的文件夹**（`extraRoots`）。
+ *
+ * 但**不能让它凭空消失**：老配置里的 `libRoot` 要变成"加过的第一个目录"。
+ * 这里**搬完就落盘**（`delete cfg.libRoot` ⇒ 下次不再触发，幂等）。
+ */
+function migrateConfig(cfg) {
+  if (!cfg || !cfg.libRoot) return cfg;
+  const lr = String(cfg.libRoot).trim();
+  if (!Array.isArray(cfg.extraRoots)) cfg.extraRoots = [];
+  if (lr && !cfg.extraRoots.some((x) => samePath(x, lr))) cfg.extraRoots.unshift(lr);
+  delete cfg.libRoot;
+  saveConfig(cfg);
   return cfg;
 }
 
@@ -194,15 +214,10 @@ function starDirOf(star) {
 }
 
 /**
- * 扫描照片库：一级子目录视为一个「主题」。
- * 主题 = 根含原图，或含任一星级/调色子目录。张数含全部子目录（同主题全量可见）。
- */
-/**
  * 数一个「照片目录」里有几张片（root 直出 + 四个桶，按文件名去重）。
  * 返回 `{count, archivedCount, hasRaw}`；**不像照片目录就返回 null**（一个 JPG 都没有）。
  *
- * ★ 库内主题和**库外目录**（「加入目录…」）共用这一份规则 —— 两处各写一份必然慢慢长歪，
- *   然后"同一个目录在库里显示 12 张、在库外那栏显示 9 张"这种对不上就会冒出来。
+ * ★ 09-15 SV 选「B」之后**所有条目都是"加过的文件夹"**，"库根 / 一级子目录"那套说法没有了。
  * @param {string} full 目录绝对路径
  * @param {string[]} [names] 已经 readdir 过的名字（省一次系统调用）
  * @param {{allowRawOnly?: boolean}} [opts] 见下面那个分支的注释
@@ -219,13 +234,13 @@ function describeSessionDir(full, names, opts) {
   const jpgs = list.filter((f) => IMG_EXT.test(f));
   const subNames = list.filter((f) => THEME_SUBDIRS.includes(f));
   if (!jpgs.length && !subNames.length) {
-    /* ★ 库外目录特有的一条岔路（`opts.allowRawOnly`）：一个 JPG 都没有、但有一堆 RAW
+    /* ★ "只有 RAW"的一条岔路（`opts.allowRawOnly`）：一个 JPG 都没有、但有一堆 RAW
        ⇒ 我们**主动**去给它建一份预览索引（抠每张 RAW 里相机自带的机内 JPG，
           见 `tools/make_jpg_index.py`），所以它算"能用的照片目录"，张数按 RAW 数。
-       不做这一步的话，把"只拷了 RAF"的文件夹「加入目录」进来，界面上是**空的**
-       —— 看着像"这个目录里没东西"，其实是"工作台只按 JPG 列图"。
-       ⚠ 库内主题**不走**这条（`scanSessions` 不传这个开关）：库里的片本来就有 JPG，
-         而且突然冒出一批"只有 RAF"的主题会打乱他现有的列表 —— 那是我替他做的决定，不是他要的。 */
+       不做这一步的话，把"只拷了 RAF"的文件夹加进来，界面上是**空的**
+       —— 看着像"这个文件夹里没东西"，其实是"工作台只按 JPG 列图"。
+       ★ 09-15 SV 选「B」之后**所有条目都是"加过的文件夹"**，库内/库外那条分界没有了
+         ⇒ 这个开关现在就恒为 true（形参留着，不想为了删它去动几处调用）。 */
     if (opts && opts.allowRawOnly) {
       const stems = new Set();
       for (const f of list) {
@@ -489,26 +504,23 @@ function externalSessionEntry(full, name, used, rootDir, info) {
  *   = 那个人几周的星级全丢。只有库外条目才会为了**不撞名**加 ` ·2`。
  * ⚠ 库内主题先入 `used` ⇒ 库外条目跟库内重名时，被改名的一定是**库外**那条。
  */
-function scanSessions(libRoot) {
+/**
+ * 主题列表 = **你加过的所有文件夹**（`config.extraRoots`，规则见 `extraSessions`）。
+ *
+ * ★★ 09-15 SV 选「B」：**「图库根」那条路已经删掉**（原来是 `libRoot` 的直接子目录）。
+ *    那套模型在"我手上就是一个文件夹、照片直接躺在里面"的时候直接崩 —— 库根自己列不出来、
+ *    「加入目录」又因为"这就是库根自己"被挡掉，等于锁死，界面上还看不出来。
+ *    现在只有一种东西：加过的文件夹。老配置里的 `libRoot` 由 `migrateConfig`
+ *    一次性搬进 `extraRoots`，不会凭空消失。
+ *
+ * ⚠★ 每条都带 `path`（真实路径）。前端 `enterSession` **必须**用它 —— 再没有
+ *   "库根 + 名字"这种能拼出来的东西了（拼出来的路径根本不存在，进去就是 0 张）。
+ * ⚠ 条目的名字（`s.name`）是星级 / 成片归档 / 调色配方的**身份键**，改一个字符
+ *   = 那个人几周的星级全丢。只有跟前面重名的那条才会为了不撞名加 ` ·2`。
+ */
+function scanSessions() {
   const out = [];
   const used = new Set();
-  if (libRoot && fs.existsSync(libRoot)) {
-    let entries = [];
-    try {
-      entries = fs.readdirSync(libRoot, { withFileTypes: true });
-    } catch (e) {
-      entries = [];
-    }
-    for (const e of entries) {
-      if (!e.isDirectory()) continue;
-      if (e.name.startsWith('.')) continue;
-      const full = path.join(libRoot, e.name);
-      const info = describeSessionDir(full);
-      if (!info) continue;                             // 不像主题（比如只有空目录）
-      used.add(e.name.toLowerCase());
-      out.push(Object.assign({ name: e.name, path: full }, info));
-    }
-  }
   for (const s of extraSessions(used)) out.push(s);
   out.sort((a, b) => (a.name < b.name ? 1 : a.name > b.name ? -1 : 0));
   return out;
@@ -761,7 +773,7 @@ ipcMain.handle('pick-directory', async () => {
   return res.filePaths[0];
 });
 
-ipcMain.handle('scan-sessions', (e, libRoot) => scanSessions(libRoot));
+ipcMain.handle('scan-sessions', () => scanSessions());
 
 ipcMain.handle('list-photos', (e, sessionPath) => listPhotos(sessionPath));
 
