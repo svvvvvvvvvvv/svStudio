@@ -2664,6 +2664,90 @@ def t_single_engine():
           out.strip()[:200])
 
 
+def t_spek_settings():
+    r"""★ 09-16 SV 选「A+B」：spektrafilm 那三个「出厂关着」的开关必须**真的推得进去**。
+
+    为什么值得单开一组：`SettingsParams` 是**普通 dataclass（没有 `__slots__`）** ⇒
+    把名字写成 `use_enlarger_luts`（多个 s）**不会报错**，只会静默多出一个没人读的属性
+    ⇒ 画面一点没变、日志一切正常、时间一秒没省。这是本项目最忌的「静默吞掉」族。
+    ⇒ 两把尺子：① **读回来**等于 config；② **属性集合不许变**（写错名字就会多出来）。
+    再加一条：过一遍 `digest_params()` 之后三个值必须**还在** —— 我们就是靠这个活到管线里的。
+
+    ⚠ 用一个**新造的** params 对象（`init_params`），不碰 `_PARAMS` 里那个复用的缓存对象，
+      免得把这组的改动带进后面几组渲染。
+    """
+    print('[A+B：vendor 出厂关着的三步加速，推得进 params 才算数]')
+
+    # ★★ 顺序不能反：必须**先** _sf() 再 import spektrafilm。
+    #   反过来的话会从 site-packages 里那个 editable 安装（`.pth` 只有一行、指向
+    #   **已退休的老 vendor**）抢先加载 ⇒ spektrafilm 进了 sys.modules ⇒
+    #   `_sf()` 的「你加载的不是我指定那份」断言**当场就红**（断言是对的，是顺序错）。
+    init_params, _ = spektra._sf()
+    from spektrafilm.runtime.params_builder import digest_params
+    p = init_params(film_profile='kodak_portra_400', print_profile='kodak_portra_endura')
+    keys = ('use_enlarger_lut', 'use_scanner_lut', 'use_fast_stats')
+
+    check('S1-0 vendor 出厂默认确实是 False（说明我们是在**覆盖**出厂值，不是重复设置）',
+          tuple(getattr(p.settings, k) for k in keys) == (False, False, False),
+          '%s' % (tuple(getattr(p.settings, k) for k in keys),))
+
+    before = set(p.settings.__dict__)
+    spektra._apply_settings(p)
+    want = (bool(C.SPEK_USE_LUT), bool(C.SPEK_USE_LUT), bool(C.SPEK_FAST_STATS))
+    got = tuple(getattr(p.settings, k) for k in keys)
+    check('★ S1-1 三个开关读回来 = config（写错名字就读不回 True）', got == want,
+          '读回 %s / config 期望 %s' % (got, want))
+
+    extra = sorted(set(p.settings.__dict__) - before)
+    check('★ S1-2 不许写出多余的属性（dataclass 没 __slots__ ⇒ 写错名字不报错）',
+          not extra, '多出来的是 %s' % extra)
+
+    class _Off(object):
+        SPEK_USE_LUT = False
+        SPEK_FAST_STATS = False
+    spektra._apply_settings(p, _Off)
+    got2 = tuple(getattr(p.settings, k) for k in keys)
+    check('★ S1-3 config 关掉时要能真的关掉（A/B 之外的实验路）',
+          got2 == (False, False, False), '%s' % (got2,))
+
+    spektra._apply_settings(p)
+    digest_params(p)
+    got3 = tuple(getattr(p.settings, k) for k in keys)
+    check('★★ S1-4 过一遍 digest_params 之后三个值还在（我们就是靠这个活到管线里的）',
+          got3 == want, 'digest 后 %s' % (got3,))
+
+    # ---- S1-5：真跑一发极小图，看 vendor 的 LUT 分支**到底有没有被走到** ----
+    #   ⚠ S1-1~S1-4 只钉住了 `_apply_settings` **自己**：要是有人把 `_apply_kwargs` 里
+    #     那句调用删了，上面四条**照样全绿** —— 那正是"只查名字在不在"的老毛病。
+    #     ⇒ 真跑一遍，在 vendor 的两个查表入口上各记一笔（这一条才盖住调用点）。
+    from spektrafilm.runtime.services.spectral_lut_compute import SpectralLUTService
+    seen = []
+    _oe = SpectralLUTService.spectral_compute_enlarger
+    _os = SpectralLUTService.spectral_compute_scanner
+
+    def _wrap(orig, tag):
+        def _w(self, cmy_data, spectral_calculation, data_min, data_max, *, use_lut=False):
+            seen.append((tag, bool(use_lut)))
+            return orig(self, cmy_data, spectral_calculation, data_min, data_max,
+                        use_lut=use_lut)
+        return _w
+
+    SpectralLUTService.spectral_compute_enlarger = _wrap(_oe, '放大机')
+    SpectralLUTService.spectral_compute_scanner = _wrap(_os, '扫描')
+    try:
+        _sm = _mk_sample(_gray_img(h=90, w=120, seed=3), 'D:/x/ab.jpg')
+        pipeline.run_from(_sm, stock='portra400', cache=None)
+    finally:
+        SpectralLUTService.spectral_compute_enlarger = _oe
+        SpectralLUTService.spectral_compute_scanner = _os
+    _se = sorted(set(v for t, v in seen if t == '放大机'))
+    _ss = sorted(set(v for t, v in seen if t == '扫描'))
+    check('★★ S1-5 真跑一发极小图：vendor 的**查表分支**被走到了（两侧都要 use_lut=True）',
+          _se == [True] and _ss == [True],
+          '放大机 %s / 扫描 %s（共调用 %d 次）' % (_se, _ss, len(seen)),
+          '`_apply_kwargs` 里那句 `_apply_settings(p, cfg)` 丢了，或者被 digest_params 清掉了')
+
+
 def main():
     for fn in (t_color, t_analyze, t_tone_mid_target, t_tone_monotone, _legacy(t_style_lock),
                _legacy(t_style_contrast_direction), _legacy(t_style_tone_curve), _legacy(t_style_chroma_ends), t_denoise,
@@ -2688,7 +2772,10 @@ def main():
                # 09-15 深夜：SV 报「点出图没反应、后台也没动静」⇒ 台子每次起**两个**引擎、
                #   两个都绑 8765（Windows 上 SO_REUSEADDR 不报错）⇒ 请求被分掉。
                #   ⇒ 必须钉住「一个端口只许一个引擎」（引擎侧这道闸）
-               t_single_engine):
+               t_single_engine,
+               # 09-16 SV 选「A+B」：打开 vendor 出厂关着的三步加速（LUT + fast_stats）
+               #   ⇒ 必须钉住「这三个开关真的推得进 params」，别写错名字被静默吞掉
+               t_spek_settings):
         fn()
     print('-' * 52)
     if FAIL:

@@ -766,6 +766,28 @@ SPEK_SCAN_BLACK_CORR = True
 SPEK_CAMERA_LENS_BLUR_UM = 10.0
 SPEK_SCANNER_LENS_BLUR = 0.6
 SPEK_ENLARGER_LENS_BLUR = 0.0     # ⚠ 源码里无应用点，设了也没用（保留位）
+# ⑦ ★★★ spektrafilm 自己的「出厂关着、我们打开」的开关（09-16 SV 选「A+B」）
+#   `settings.use_enlarger_lut` / `use_scanner_lut`：印相 / 扫描这两步**不再逐像素展开 81 波段**，
+#     改成在 3 维 CMY 空间里查表（`lut_resolution = 17` 的插值近似）。
+#   `settings.use_fast_stats`：统计量在缩略图上算，不在整图上算。
+#   ⚠ vendor（`runtime/params_schema.py:226-229`）这三个**默认都是 False** ⇒ 我们从来没打开过；
+#     上游 GUI 是靠 `params_mapper` 设成 True 的（中文版还发现「保存」那条路绕过了它）。
+#     我们在 `spektra._apply_settings()` 里开，**vendor 文件一个字节都不动**。
+#   ★ 09-16 实测（DSCF0886 · portra400 · 我们自己这条完整链 `pipeline.run_from`）：
+#       700 ：7.7 s → 开 LUT 6.3 s → 再叠 fast_stats 5.7 s
+#       2048：28.7 s → 开 LUT 21.8 s → 再叠 fast_stats 19.4 s
+#     画面差（都缩到同尺寸比，vs 全关）：
+#       **只开 LUT：平均 0.0004~0.0005**（99% 分位 0.0039）—— 比真卷自身 ~3/255 的
+#         **不可复现噪声还小** ⇒ SV 选「A」：开。
+#       **再叠 fast_stats：平均 0.0029 / 0.0075、最大 0.13** ⇒ 这个**看得出来**，
+#         SV 知情后选「B」：也开。
+#   ★ LUT 那条路走的是 `spectral_lut_compute` 的查表分支 ⇒ 我们的「大图切条带」包装**直接放行不切**
+#     （见 `spektra._install_band` 的 `if use_lut: return orig(...)`）—— 因为查表本来就不展开 81 波段。
+#     ⇒ 开了 LUT 之后，原图尺寸那条路的**内存大头（整张 × 81 波段的 float64）直接不存在了**。
+#   ⚠ 想让某次实验走回老路：把这个设成 False（`_apply_settings` 每次都按 config 重设，幂等）。
+SPEK_USE_LUT = True
+SPEK_FAST_STATS = True
+
 
 # ========== L4 护栏（只做"不许超过"，不做"必须等于"） ==========
 CAP_WHITE_FRAC = 0.030          # 死白（>=254）占比上限

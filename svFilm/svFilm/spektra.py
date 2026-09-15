@@ -311,6 +311,32 @@ def _get_params(film, printp):
             _PARAMS[key] = p
         return p
 
+def _apply_settings(p, cfg=C):
+    r"""把 spektrafilm 的「出厂关着、我们打开」的 settings 开关推进参数对象。
+
+    ★ 09-16 SV 选「A+B」（先量后开）：只开 LUT 时画面差 0.0004~0.0005（比真卷自身的
+      不可复现噪声还小），再叠 `use_fast_stats` 才到 0.0029~0.0075（看得出来，他知情）。
+
+    为什么放在这里而不是别处：
+      `simulate()` 走的是默认的 `digest_params_first=True` ⇒ 每次渲染前都会跑
+      `digest_params(params)`；而 `digest_params` **不碰**这三个字段（它只在
+      `settings.preview_mode` / `debug.lut_mode` 为真时清零一批东西）⇒
+      只要 preview_mode 与 lut_mode 都是 False，我们设的值就能活到管线里
+      （与 `_apply_kwargs` 上面那段说明同源）。
+
+    ⚠ `SettingsParams` 是**普通 dataclass（没有 `__slots__`）** ⇒ 名字写错**不会报错**，
+      只会静默地多出一个没人读的属性：画面一点没变、日志一切正常、时间一秒没省。
+      这正是本项目反复踩的「静默吞掉」族 ⇒ `selftest.t_spek_settings` 用
+      「读回来 = config」＋「属性集合不许变」两把尺子钉着它，不许只查名字在不在。
+
+    ⚠ 幂等：每次都按 config 重设，不依赖上一轮的值（`_PARAMS` 里那个对象是**复用**的）。
+    """
+    p.settings.use_enlarger_lut = bool(getattr(cfg, 'SPEK_USE_LUT', True))
+    p.settings.use_scanner_lut = bool(getattr(cfg, 'SPEK_USE_LUT', True))
+    p.settings.use_fast_stats = bool(getattr(cfg, 'SPEK_FAST_STATS', False))
+    return p
+
+
 
 def has(stock_name):
     return stock_name in STOCK_MAP
@@ -382,6 +408,9 @@ def render(lin, stock_name, cfg=C, print_exposure=None, print_profile=None):
         p.scanner.lens_blur = float(getattr(cfg, 'SPEK_SCANNER_LENS_BLUR', 0.0))
         p.enlarger.lens_blur = float(getattr(cfg, 'SPEK_ENLARGER_LENS_BLUR', 0.0))
 
+        # ⑦ ★ 09-16 SV 选「A+B」：打开 vendor「出厂关着」的三步加速（长注释见 config.py）
+        _apply_settings(p, cfg)
+
     # 每次 simulate 前按需改（params 对象是复用的 ⇒ 跑完要**还回去**）
     with _LOCK:
         old_pe = p.enlarger.print_exposure
@@ -405,6 +434,9 @@ def render(lin, stock_name, cfg=C, print_exposure=None, print_profile=None):
             'cam_blur': p.camera.lens_blur_um,
             'scan_blur': p.scanner.lens_blur,
             'enl_blur': p.enlarger.lens_blur,
+            'use_lut': p.settings.use_enlarger_lut,
+            'use_scan_lut': p.settings.use_scanner_lut,
+            'use_fast_stats': p.settings.use_fast_stats,
         }
         try:
             # ★★ 浓淡旋钮（09-14 SV 选「A」）：层间抑制 = 彩度的物理来源。
@@ -441,6 +473,9 @@ def render(lin, stock_name, cfg=C, print_exposure=None, print_profile=None):
             p.camera.lens_blur_um = _snap['cam_blur']
             p.scanner.lens_blur = _snap['scan_blur']
             p.enlarger.lens_blur = _snap['enl_blur']
+            p.settings.use_enlarger_lut = _snap['use_lut']
+            p.settings.use_scanner_lut = _snap['use_scan_lut']
+            p.settings.use_fast_stats = _snap['use_fast_stats']
     return np.clip(np.asarray(out, np.float64), 0.0, 1.0)
 
 
