@@ -198,6 +198,12 @@ export function GradePanel() {
                     {b.L95?.toFixed(0)}
                   </span>
                 )}
+                {typeof b.evDown === 'number' && (
+                  <span style={{ fontSize: 10, opacity: 0.7 }}>
+                    压 {b.evDown.toFixed(2)} 档 · 高光 −{b.hiDown?.toFixed(0)} · 阴影 +
+                    {b.shUp?.toFixed(0)}
+                  </span>
+                )}
               </button>
             );
           })}

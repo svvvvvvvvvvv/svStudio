@@ -222,3 +222,64 @@ def fit_gamut(lin_rgb, Y=None):
     k = (mx - Y) / np.maximum(1.0 - Y, 1e-6)
     k = np.where(over, np.maximum(k, 1.0), 1.0)
     return Y[..., None] + (r - Y[..., None]) / k[..., None]
+
+
+
+# ---------------------------------------------------------------------------
+# 作用在**成片**上的三条档（`config.TONE_AFTER_ENGINE = True`）
+# ---------------------------------------------------------------------------
+# 和上面 `STYLES` 的区别：`STYLES` 打的是**绝对靶**（大师真片量出来的 L5/L50/L95），
+# 只在"动作在引擎之前"时说得通；动作挪到引擎之后，改的都是**相对量** ——
+#   压一点曝光 + 压很多高光 + **提**一点阴影。
+# ⚠ 方向别搞反：高光**往下**压、阴影**往上**提。
+REL = {
+    '高长调': dict(ev_down=0.06, hi_down=6.0, sh_up=14.0,
+                 desc='压得最少、阴影提得最多 ⇒ 亮而长'),
+    '中性调': dict(ev_down=0.125, hi_down=12.0, sh_up=12.0,
+                 desc='中间的力度'),
+    '暗调': dict(ev_down=0.35, hi_down=18.0, sh_up=8.0,
+               desc='压得最多、阴影提得最少 ⇒ 暗而厚'),
+}
+
+
+def rel_of(name, cfg=C):
+    """取这一档的三个力度（名字不认得 ⇒ 回默认档，不静默乱走）。"""
+    tbl = getattr(cfg, 'TONE_REL', None) or REL
+    return tbl.get(str(name)) or tbl.get(DEFAULT) or REL[DEFAULT]
+
+
+def settle_finished(disp, style=DEFAULT, cfg=C):
+    """在**成片**（显示域）上做曝光风格：压曝光 / 压高光 / 提阴影。
+
+    三点（L5 / L50 / L95）在 log2 亮度域插值 —— 和 `solve()` 同一个曲线机器，
+    区别只是这里的靶是**相对当前的成片**算出来的，不是某个绝对数。
+
+    @returns {(numpy.ndarray, dict)} 出图 + 报告（进去多少、出来多少，能自查）
+    """
+    st = rel_of(style, cfg)
+    lin = color.s2l(np.clip(np.asarray(disp, np.float64), 0.0, 1.0))
+    Y, p = measure(lin)
+    y5, y50, y95 = (max(p[5.0], _EPS), max(p[50.0], _EPS), max(p[95.0], _EPS))
+
+    # 暗部往**上**提、高光往**下**压、整张按档数往下搬
+    Tb = float(np.clip(color.lin_of_L(float(color.L_of_lin(y5)) + float(st['sh_up'])), _EPS, None))
+    Tm = float(np.clip(color.lin_of_L(float(color.L_of_lin(y50))) * (2.0 ** -float(st['ev_down'])),
+                       _EPS, None))
+    Tw = float(np.clip(color.lin_of_L(float(color.L_of_lin(y95)) - float(st['hi_down'])), _EPS, None))
+    # 单调钳：靶必须 黑 < 中 < 白（留 2% 余量）
+    Tb = min(Tb, Tm * 0.98)
+    Tw = max(Tw, Tm * 1.02)
+
+    curve = ToneCurve([_t(_EPS), _t(y5), _t(y50), _t(y95)], [_t(_EPS), _t(Tb), _t(Tm), _t(Tw)])
+    out = np.clip(color.l2s(np.clip(lin * curve.gain(Y)[..., np.newaxis], 0.0, None)), 0.0, 1.0)
+
+    info = dict(
+        style=str(style),
+        ev_down=float(st['ev_down']), hi_down=float(st['hi_down']), sh_up=float(st['sh_up']),
+        L5_in=float(color.L_of_lin(y5)), L50_in=float(color.L_of_lin(y50)),
+        L95_in=float(color.L_of_lin(y95)),
+        L5_out=float(color.L_of_lin(Tb)), L50_out=float(color.L_of_lin(Tm)),
+        L95_out=float(color.L_of_lin(Tw)),
+        applied=True,
+    )
+    return out, info

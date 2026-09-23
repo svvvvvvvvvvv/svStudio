@@ -135,9 +135,13 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         raise KeyError('没有这个胶片风格: %s（可选：%s）' % (name, '、'.join(presets.names())))
     style = tone.DEFAULT if style is None else str(style)
 
+    # 曝光风格作用在哪一段（见 config.TONE_AFTER_ENGINE）。缓存键要带上它，
+    # 否则改了开关、缓存里还是另一条路出来的那张（"拧了没反应"的经典长相）。
+    _after = bool(getattr(cfg, 'TONE_AFTER_ENGINE', False))
+
     _ckey, _entry = None, None
     if cache is not None:
-        _ckey = ('film', _sample_uid(s), name, style, getattr(cfg, 'MAX_SIDE', None))
+        _ckey = ('film', _sample_uid(s), name, style, getattr(cfg, 'MAX_SIDE', None), _after)
         _entry = cache.get(_ckey)
 
     if _entry is not None:
@@ -145,7 +149,22 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         t_info = dict(_entry['t_info'])
         gk = float(_entry['gk'])
         anc = dict(_entry['anc'])
+    elif _after:
+        # ========== 曝光风格作用在胶片引擎**之后**的成片上 ==========
+        # 引擎之前一个像素都不动：喂进去的就是 RAW 解码出来的场景线性（`io.load_raw`，
+        # 默认走 public 那条加载）。理由见 `config.TONE_AFTER_ENGINE` 那段注释 ——
+        # 在引擎之前调亮度，控制不了成片亮度（引擎的印相配平会把它抹平）。
+        # ⚠ 既然动作在之后，脸锚点 / 高光护栏这两道"引擎之前"的工序就不参与：
+        #   一个是给"自己标的真卷"校落点用的，另一个是给入口曲线兜高光用的。
+        #   新路（public 的加载）不做入口提亮 ⇒ 两道都无事可做。
+        disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg)
+        disp, t_info = tone.settle_finished(disp, style, cfg)
+        gk = 1.0
+        anc = dict(applied=False, note='曝光风格在引擎之后 ⇒ 不做脸锚点')
+        if _ckey is not None:
+            cache.put(_ckey, disp=disp, t_info=t_info, gk=gk, anc=anc)
     else:
+        # ========== 老路：曝光风格作用在引擎**之前**的线性图上 ==========
         # ---- ★★ 脸掩膜：**解码后算一次**（09-15 修的那个洞）----
         #   链尾（胶片出图后）画面已经发白 ⇒ 分割模型认不出脸 ⇒ 掩膜空 ⇒ 两层一起静默失效。
         #   解码后那张脸还是正常曝光 ⇒ 稳。拿不到（模型缺失）⇒ 空掩膜，下游报 no_face，**不崩**。
@@ -194,7 +213,7 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         stock_label=presets.label_of(name)[0],
         stock_desc=presets.label_of(name)[1],
         style=style,
-        style_target=dict(tone.get(style)),
+        style_target=(dict(tone.rel_of(style)) if _after else dict(tone.get(style))),
         tone=t_info,
         anchor=anc,
         stage_cache=dict(hit=bool(_entry is not None)),

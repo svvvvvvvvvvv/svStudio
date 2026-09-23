@@ -382,8 +382,67 @@ def clip_guard(lin, cfg=C):
     return lin * lo, float(lo)
 
 
+def _load_raw_public(path, max_side):
+    r"""RAW → 场景线性，走 **spektrafilm 自己的加载**（与 public GUI 同一条）。
+
+    ★ 为什么要单开这一条：9 条预设的**印相曝光 `pe` 是按 public 那个输入标定的**
+      （线性图中位亮度 Y ≈ 0.056）。本仓库自己的入口会把画面提到"场景线性光"（Y ≈ 0.42，
+      差 **2.9 档**）—— 那 2.9 档在印相时又被提一回 ⇒ **过曝发白**。
+
+    ⚠ 这一条**不做**白平衡 / 入口成形 / 落点 / 高光护栏 —— 那些是"自己调胶片感"时代的做法，
+      喂的是我们自己标的真卷；换成 public 的预设之后它们就不适用了。
+    """
+    import rawpy
+    from . import cameras
+    from . import spektra
+
+    spektra._sf()                       # ★ 先钉扎：保证下面 import 到的是仓库自带那份 vendor
+    from spektrafilm.utils import load_and_process_raw_file
+
+    exif = make = model = thumb = None
+    with rawpy.imread(path) as raw:     # 只为了抠内嵌 JPG 拿 EXIF / 机型（不解码传感器数据）
+        try:
+            th = raw.extract_thumb()
+            if th.format == rawpy.ThumbFormat.JPEG:
+                thumb = th.data
+                tmp = ImageOps.exif_transpose(Image.open(_stdlib_io.BytesIO(th.data)))
+                ex = tmp.getexif()
+                make = str(ex.get(271) or '') or None
+                model = str(ex.get(272) or '') or None
+                exif = _exif_orientation_fixed(tmp)
+        except Exception:
+            pass
+
+    lin = load_and_process_raw_file(
+        path,
+        white_balance=str(getattr(C, 'PUBLIC_WB', 'custom')),
+        temperature=float(getattr(C, 'PUBLIC_WB_TEMPERATURE', 5200.0)),
+        tint=float(getattr(C, 'PUBLIC_WB_TINT', 1.0)),
+        output_colorspace=str(getattr(C, 'PUBLIC_COLORSPACE', 'ProPhoto RGB')),
+        output_cctf_encoding=False,
+    )
+    lin = np.clip(np.asarray(lin, np.float64), 0.0, None)
+    lin = _resize(lin, max_side)
+
+    cam = dict(cameras.lookup(make, model), make=make, model=model)
+    cam['entry_loader'] = 'public'
+    cam['entry_shape'] = 'public GUI 的加载（wb %s %sK / %s / 无 CCTF）' % (
+        getattr(C, 'PUBLIC_WB', 'custom'), getattr(C, 'PUBLIC_WB_TEMPERATURE', 5200.0),
+        getattr(C, 'PUBLIC_COLORSPACE', 'ProPhoto RGB'))
+    cam['bias_source'] = '无（输入＝public 的加载，不做入口提亮）'
+    disp = np.clip(color.l2s(lin), 0.0, 1.0)
+    return Sample(lin, disp, 'raw', path, exif, cam)
+
+
 def load_raw(path, max_side=C.MAX_SIDE):
-    """RAW 解码 + IDT（白平衡 / 色彩矩阵由 rawpy 完成；**基线曝光**按机型表 + DR tag 补回）。"""
+    """RAW 解码 + IDT（白平衡 / 色彩矩阵由 rawpy 完成；**基线曝光**按机型表 + DR tag 补回）。
+
+    ⚠ `config.ENTRY_LOADER` 决定走哪条：`'public'`（默认，与 public GUI 同一条）或
+      `'own'`（本仓库自己的入口成形）。两条路的差别与理由见 `_load_raw_public` 的注释。
+    """
+    if str(getattr(C, 'ENTRY_LOADER', 'own')).lower() == 'public':
+        return _load_raw_public(path, max_side)
+
     import rawpy
     from . import cameras
 

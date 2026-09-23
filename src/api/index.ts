@@ -167,10 +167,16 @@ export interface Style {
   desc?: string;
   /** ★★ 引擎当前配置的默认档（config.STYLE）⇒ 前端只认它定初值 */
   isDefault?: boolean;
-  /** 落点（整张中位亮度 L*）/ 黑位（L5）/ 亮部（L95）—— 给人话说明用 */
+  /** 落点（整张中位亮度 L*）/ 黑位（L5）/ 亮部（L95）—— 给人话说明用。
+   *  ⚠ 只在「曝光风格作用在**引擎之前**」那套配置下才有（打绝对靶）。 */
   L50?: number;
   L5?: number;
   L95?: number;
+  /** ★★ 「曝光风格作用在**引擎之后**」那套配置下的三个力度（相对量）：
+   *  压曝光几档 / 压高光几个 L* / 提阴影几个 L*。 */
+  evDown?: number;
+  hiDown?: number;
+  shUp?: number;
 }
 
 

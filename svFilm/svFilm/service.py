@@ -435,8 +435,19 @@ class _H(BaseHTTPRequestHandler):
                                         desc=presets.label_of(n)[1], engine=True)
                                    for n in presets.names()])
             if u.path == '/styles':
-                # ★ 曝光风格列表。靶值在 `tone.STYLES`（从大师真片量出来的），
-                #   **默认哪一档由引擎给**（`config.STYLE`）—— 前端不许自己写死档位名。
+                # ★ 曝光风格列表。**默认哪一档由引擎给**（`config.STYLE`）——
+                #   前端不许自己写死档位名。
+                # ⚠ 两套语义按 `config.TONE_AFTER_ENGINE` 走：
+                #   动作在引擎之后 ⇒ 每档是**三套力度**（压曝光 / 压高光 / 提阴影），
+                #   动作在引擎之前 ⇒ 每档是**三个绝对靶**（从大师真片量出来的 L5/L50/L95）。
+                if bool(getattr(C, 'TONE_AFTER_ENGINE', False)):
+                    return self._json([
+                        dict(name=n, desc=tone.rel_of(n)['desc'],
+                             isDefault=bool(n == getattr(C, 'STYLE', None)),
+                             evDown=tone.rel_of(n)['ev_down'],
+                             hiDown=tone.rel_of(n)['hi_down'],
+                             shUp=tone.rel_of(n)['sh_up'])
+                        for n in tone.names()])
                 return self._json([dict(name=n, desc=tone.get(n)['desc'],
                                         isDefault=bool(n == getattr(C, 'STYLE', None)),
                                         L50=tone.get(n)['mid_L'],

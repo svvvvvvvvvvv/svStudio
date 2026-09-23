@@ -22,6 +22,10 @@ from . import color, config as C, io, pipeline, presets, spektra, tone
 # ★ 09-23：凡是要点名「一条胶片风格」的地方就用这一条（别把中文名写死到各处）。
 _PRESET = 'Portra400薄荷'
 
+# ★ 自检跟着**当前配置**走：曝光风格作用在引擎之后（三套力度）还是之前（三个绝对靶）。
+#   两套契约完全不同，所以下面凡是分叉的地方都按它选一条 —— 不许只测其中一条。
+_AFTER = bool(getattr(C, 'TONE_AFTER_ENGINE', False))
+
 FAIL = []
 
 
@@ -161,22 +165,61 @@ def t_preset_differs():
 def t_styles():
     check('三条档都在（高长调 / 中性调 / 暗调）', tone.names() == ['高长调', '中性调', '暗调'],
           '、'.join(tone.names()))
-    st = {n: tone.get(n) for n in tone.names()}
-    check('★★ 落点是**从大师真片量出来的**那三个数（P70/P50/P30 = 69.9/58.8/40.5）',
-          abs(st['高长调']['mid_L'] - 69.9) < 0.1
-          and abs(st['中性调']['mid_L'] - 58.8) < 0.1
-          and abs(st['暗调']['mid_L'] - 40.5) < 0.1,
-          ' / '.join('%.1f' % st[n]['mid_L'] for n in tone.names()),
-          '数值被改过 ⇒ 要改请连 `tone.py` 顶部那段"怎么量的"一起改，别只动数')
-    check('三档亮度严格拉开（高 > 中 > 暗）',
-          st['高长调']['mid_L'] > st['中性调']['mid_L'] > st['暗调']['mid_L'])
-    check('名字不认得 ⇒ 回中性调（不是静默不动）',
-          tone.get('不存在的一档')['mid_L'] == st['中性调']['mid_L'])
     check('默认档由 config 给、且在档表里', C.STYLE in tone.names(), C.STYLE)
+    check('名字不认得 ⇒ 回默认档（不是静默不动）',
+          tone.rel_of('不存在的一档') == tone.rel_of(C.STYLE))
+
+    if _AFTER:
+        # ---- 作用在成片上：三条档 = 三套力度（压曝光 / 压高光 / 提阴影）----
+        rl = {n: tone.rel_of(n) for n in tone.names()}
+        check('★★ 三档 = 三套力度，且都满足「压曝光 + 压高光 + **提**阴影」',
+              all(v['ev_down'] > 0 and v['hi_down'] > 0 and v['sh_up'] > 0 for v in rl.values()),
+              ' / '.join('%s 压%.2f 高光−%.0f 阴影+%.0f'
+                         % (n, rl[n]['ev_down'], rl[n]['hi_down'], rl[n]['sh_up'])
+                         for n in tone.names()),
+              '方向搞反了（阴影要**提**）或某一档压得为零')
+        check('★ 「暗调」压得比「高长调」多（档名与实际效果对得上）',
+              rl['暗调']['ev_down'] > rl['中性调']['ev_down'] > rl['高长调']['ev_down'],
+              ' / '.join('%.3f' % rl[n]['ev_down'] for n in tone.names()))
+        check('★ 「高长调」阴影提得比「暗调」多（亮而长 / 暗而厚）',
+              rl['高长调']['sh_up'] > rl['暗调']['sh_up'])
+    else:
+        st = {n: tone.get(n) for n in tone.names()}
+        check('★★ 落点是**从大师真片量出来的**那三个数（P70/P50/P30 = 69.9/58.8/40.5）',
+              abs(st['高长调']['mid_L'] - 69.9) < 0.1
+              and abs(st['中性调']['mid_L'] - 58.8) < 0.1
+              and abs(st['暗调']['mid_L'] - 40.5) < 0.1,
+              ' / '.join('%.1f' % st[n]['mid_L'] for n in tone.names()),
+              '数值被改过 ⇒ 要改请连 `tone.py` 顶部那段"怎么量的"一起改，别只动数')
+        check('三档亮度严格拉开（高 > 中 > 暗）',
+              st['高长调']['mid_L'] > st['中性调']['mid_L'] > st['暗调']['mid_L'])
+        check('名字不认得 ⇒ 回中性调（不是静默不动）',
+              tone.get('不存在的一档')['mid_L'] == st['中性调']['mid_L'])
 
 
 def t_tone_hits():
-    """同一张图，三档分别命中自己的靶。"""
+    """同一张图，三档分别按各自的契约落地。"""
+    if _AFTER:
+        disp = _gray_img(seed=3)
+        got = {}
+        for n in tone.names():
+            out, i = tone.settle_finished(disp, n, C)
+            rl = tone.rel_of(n)
+            # 相对量：中位按档数往下、亮部至少压到 hi_down 附近、暗部**抬起来**
+            check('%s：中位按档数往下搬（不是"算出来了但没做"）' % n,
+                  i['L50_in'] - i['L50_out'] > 0.3,
+                  '中位 %.1f → %.1f' % (i['L50_in'], i['L50_out']))
+            check('%s：亮部往下压、暗部往上**提**' % n,
+                  i['L95_out'] < i['L95_in'] - rl['hi_down'] * 0.6
+                  and i['L5_out'] > i['L5_in'] + rl['sh_up'] * 0.6,
+                  '暗 %.1f→%.1f  亮 %.1f→%.1f'
+                  % (i['L5_in'], i['L5_out'], i['L95_in'], i['L95_out']),
+                  '方向反了：高光要压、阴影要提')
+            got[n] = i['L50_out']
+        check('三档出来的画面亮度真的拉开了（暗调最暗）',
+              got['高长调'] > got['中性调'] > got['暗调'],
+              '%.1f / %.1f / %.1f' % (got['高长调'], got['中性调'], got['暗调']))
+        return
     lin = _lin_from_disp(_gray_img(seed=3))
     for n in tone.names():
         _, i = tone.apply(lin, n, C)
@@ -191,9 +234,15 @@ def t_tone_hits():
 
 
 def t_tone_sane():
-    lin = _lin_from_disp(_gray_img(seed=5))
-    out, _ = tone.apply(lin, '中性调', C)
-    Y0, Y1 = color.Y_of(lin), color.Y_of(out)
+    disp = _gray_img(seed=5)
+    lin = _lin_from_disp(disp)
+    if _AFTER:
+        out, _ = tone.settle_finished(disp, '中性调', C)
+        out_y = _lin_from_disp(out)
+        Y0, Y1 = color.Y_of(lin), color.Y_of(out_y)
+    else:
+        out, _ = tone.apply(lin, '中性调', C)
+        Y0, Y1 = color.Y_of(lin), color.Y_of(out)
     # ① 单调：按输入亮度排好序之后，输出亮度必须也是不减的（翻折 ⇒ 暗部出现台阶）
     #   ⚠ 不能拿两次 `argsort` 的结果比"顺序一致率" —— 输入里有一大片相等的像素
     #     （合成图有 clip 出来的平台），`argsort` 对**并列**的排法不稳定
@@ -212,7 +261,10 @@ def t_tone_sane():
                      ('全白', np.ones((8, 8, 3))),
                      ('全中间灰', np.full((8, 8, 3), 0.18))):
         try:
-            o, _ = tone.apply(img, '中性调', C)
+            if _AFTER:
+                o, _ = tone.settle_finished(img, '中性调', C)
+            else:
+                o, _ = tone.apply(img, '中性调', C)
             good = bool(np.all(np.isfinite(o)))
         except Exception as e:                                    # noqa: BLE001
             good = False
@@ -221,15 +273,30 @@ def t_tone_sane():
               '分位全相等时 log(0) 或除以零 —— 必须有 _EPS 兜着')
 
     # ③ 保险丝：单个像素的增益不许超过 TONE_MAX_GAIN_EV
-    cap = float(C.TONE_MAX_GAIN_EV)
-    g = np.maximum(Y1, 1e-9) / np.maximum(Y0, 1e-9)
-    mx = float(np.max(np.abs(np.log2(np.maximum(g, 1e-9)))))
-    check('单个像素的增益在保险丝之内（不是在拉伸噪声）', mx <= cap + 1e-6,
-          '最大 %.2f EV / 上限 %.2f' % (mx, cap))
+    #   ⚠ 只在"动作在引擎之前"那条路上成立：那条曲线直接乘在线性图上。
+    #     成片那条（`settle_finished`）是显示域的三点曲线，量纲不同，不套这个上限。
+    if not _AFTER:
+        cap = float(C.TONE_MAX_GAIN_EV)
+        g = np.maximum(Y1, 1e-9) / np.maximum(Y0, 1e-9)
+        mx = float(np.max(np.abs(np.log2(np.maximum(g, 1e-9)))))
+        check('单个像素的增益在保险丝之内（不是在拉伸噪声）', mx <= cap + 1e-6,
+              '最大 %.2f EV / 上限 %.2f' % (mx, cap))
+    else:
+        check('★ 成片那条的增益有界（三点曲线本身不会把暗部拉爆）',
+              float(np.max(Y1)) <= 1.0 + 1e-6 and float(np.max(Y1) / max(np.max(Y0), 1e-9)) < 8.0,
+              '最大输出 %.3f' % float(np.max(Y1)))
 
 
 def t_tone_bias():
-    """脸锚点的偏移（`ev_bias`）必须真的动落点。"""
+    """脸锚点的偏移（`ev_bias`）必须真的动落点。
+
+    ⚠ 只有"曝光风格在引擎**之前**"那条路有脸锚点；动作挪到引擎之后就不做了
+    （脸锚点是为"自己标的真卷"校落点用的，见 `pipeline.run_from`）。
+    """
+    if _AFTER:
+        check('★ 动作在引擎之后 ⇒ 不做脸锚点（报告里写明）',
+              True, '已跳过（当前配置不走这条路）')
+        return
     lin = _lin_from_disp(_gray_img(seed=7))
     a = tone.apply(lin, '中性调', C)[1]['L50_out']
     b = tone.apply(lin, '中性调', C, ev_bias=0.5)[1]['L50_out']
@@ -246,21 +313,45 @@ def t_tone_bias():
 # ---------------------------------------------------------------------------
 
 def t_contract():
-    # ① 曝光必须在胶片**之前**
+    # ① 曝光风格与胶片引擎的先后
     calls = []
-    _t0, _p0 = tone.apply, presets.render
-    def _t(*a, **k):
-        calls.append('tone'); return _t0(*a, **k)
-    def _p(*a, **k):
-        calls.append('presets'); return _p0(*a, **k)
-    tone.apply, presets.render = _t, _p
+    if _AFTER:
+        _f, _p0 = tone.settle_finished, presets.render
+
+        def _t(*a, **k):
+            calls.append('tone')
+            return _f(*a, **k)
+
+        def _p(*a, **k):
+            calls.append('presets')
+            return _p0(*a, **k)
+        tone.settle_finished, presets.render = _t, _p
+    else:
+        _t0, _p0 = tone.apply, presets.render
+
+        def _t(*a, **k):
+            calls.append('tone')
+            return _t0(*a, **k)
+
+        def _p(*a, **k):
+            calls.append('presets')
+            return _p0(*a, **k)
+        tone.apply, presets.render = _t, _p
     try:
         pipeline.run_from(_mk_sample(_gray_img(seed=11)), stock=_PRESET, style='中性调')
     finally:
-        tone.apply, presets.render = _t0, _p0
-    check('★★ 曝光风格跑在胶片风格**之前**（因果顺序：先给光、再显影）',
-          calls[:2] == ['tone', 'presets'], '调用序: %s' % calls[:4],
-          '顺序反了 = 对印好的照片再翻拍调增益，物理上不成立，且显示域没有高光余量')
+        if _AFTER:
+            tone.settle_finished, presets.render = _f, _p0
+        else:
+            tone.apply, presets.render = _t0, _p0
+    if _AFTER:
+        check('★★ 曝光风格跑在胶片引擎**之后**（控制不了成片亮度，只能事后收）',
+              calls[:2] == ['presets', 'tone'], '调用序: %s' % calls[:4],
+              '顺序反了 = 又回到"在引擎之前调亮度"，实测那样三条档只拉开 8.8（靶上该 29.4）')
+    else:
+        check('★★ 曝光风格跑在胶片风格**之前**（因果顺序：先给光、再显影）',
+              calls[:2] == ['tone', 'presets'], '调用序: %s' % calls[:4],
+              '顺序反了 = 对印好的照片再翻拍调增益，物理上不成立，且显示域没有高光余量')
 
     # ② 不认得的名字**当场报错**
     try:
@@ -271,14 +362,28 @@ def t_contract():
     check('胶片风格名字不认得 ⇒ 当场报错（不是静默出一张别的）', ok,
           '', '"名字不认得就静默走默认"是本项目最阴的一类坑，出现过三次')
 
-    # ③ 报告要说实话（靶 + 实到）
+    # ③ 报告要说实话（进去多少 / 出来多少，能自查，不用读图）
     r = pipeline.run_from(_mk_sample(_gray_img(seed=17)), stock=_PRESET, style='暗调')
     t = r.report['tone']
-    check('报告里带着"靶是多少 / 实到多少"（能自查，不用读图）',
-          abs(t['L50_out'] - t['mid_L']) < 1.5
-          and r.report['style_target']['mid_L'] == 40.5
-          and r.report['style'] == '暗调',
-          '靶 %.1f 实到 %.1f' % (t['mid_L'], t['L50_out']))
+    if _AFTER:
+        check('报告里带着"进去多少 / 出来多少"（能自查，不用读图）',
+              abs(t['L50_in'] - t['L50_out']) > 0.3
+              and r.report['style_target']['ev_down'] == 0.35
+              and r.report['style'] == '暗调',
+              '中位 %.1f → %.1f' % (t['L50_in'], t['L50_out']))
+        check('★ 报告里带上了三个力度，且阴影是**提**的（`sh_up` > 0）',
+              t['sh_up'] > 0 and t['ev_down'] > 0 and t['hi_down'] > 0,
+              '压%.2f 高光−%.0f 阴影+%.0f' % (t['ev_down'], t['hi_down'], t['sh_up']),
+              '方向搞反了：高光要压、阴影要提')
+        # ⚠ 这里**不量** L5 的升降：喂进去的是合成小图、又过了一遍胶片引擎，
+        #   分布已经很窄（L5≈L50≈L95），三点曲线会退化。真正的方向判据在
+        #   `t_tone_hits`（直接喂 `_gray_img`，分布是正常的）。
+    else:
+        check('报告里带着"靶是多少 / 实到多少"（能自查，不用读图）',
+              abs(t['L50_out'] - t['mid_L']) < 1.5
+              and r.report['style_target']['mid_L'] == 40.5
+              and r.report['style'] == '暗调',
+              '靶 %.1f 实到 %.1f' % (t['mid_L'], t['L50_out']))
 
     check('成片没有 NaN / Inf 且在 [0,1]',
           bool(np.all(np.isfinite(r.disp))) and float(r.disp.min()) >= 0.0
