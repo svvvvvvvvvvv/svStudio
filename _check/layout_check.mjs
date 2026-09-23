@@ -202,9 +202,9 @@ await page.addInitScript(() => {
     engineStocks: async () => ({
       ok: true,
       items: [
-        { name: 'portra400', label: 'Portra 400', desc: '暖调', spek: true },
-        { name: 'fuji_c200', label: 'C200', desc: '青绿', spek: true },
-        { name: 'neutral', label: '中性', desc: '原样', spek: false },
+        { name: 'Portra400薄荷', label: 'Portra400 · 薄荷', desc: '暖调', engine: true },
+        { name: 'C200青蓝', label: 'C200 · 青蓝', desc: '青绿', engine: true },
+        { name: 'neutral', label: '中性', desc: '原样', engine: false },
       ],
     }),
     /* ★★ 基准列表**照生产端数据**抄：`main.js` 转发引擎 `/bases`，引擎现在每条带
@@ -226,7 +226,7 @@ await page.addInitScript(() => {
     /* ★★ 相纸表（09-15 SV 选「C」）。形状照 `main.js` 的 `engine-papers` → 引擎 `/papers` 抄：
        `{ ok, items: [{name,label,desc,isDefault}] }`。
        ★★ 顺序**照引擎 `spektra.PAPER_ORDER` 抄**（第一张是柯达 Portra Endura）——
-          而 `portra400` 的配套纸**恰好就是第一张**、`fuji_c200` 的配套却是第三张。
+          而 `Portra400薄荷` 的配套纸**恰好就是第一张**、`C200青蓝` 的配套却是第三张。
           只有这样，[15] 里"换卷跟着换配套纸"那条才能区分
           「读了引擎的 isDefault」和「腿短取了列表第一个」。
        ⚠ 中性卷 / 名字不认得 ⇒ **空表**（真卷之外没有"相纸"这回事）——
@@ -234,9 +234,16 @@ await page.addInitScript(() => {
          `ui_smoke.mjs` 有一条静态检查把这份名单和 `spektra.py` 钉在一起。 */
     enginePapers: async (stock) => {
       const OWN = {
-        portra400: 'kodak_portra_endura',
-        fuji_c200: 'fujifilm_crystal_archive_typeii',
-        ektar100: 'kodak_endura_premier',
+        // 09-23 起卷表 = public 的 9 条预设（「胶卷 + 风格」）。相纸跟着预设走：同一卷同一纸的成对。
+        Portra400薄荷: 'kodak_portra_endura',
+        Portra400淡雅: 'kodak_portra_endura',
+        Portra400空气感: 'kodak_portra_endura',
+        Pro400H马卡龙: 'fujifilm_crystal_archive_typeii',
+        Pro400H清风: 'fujifilm_crystal_archive_typeii',
+        C200过曝: 'fujifilm_crystal_archive_typeii',
+        C200青蓝: 'fujifilm_crystal_archive_typeii',
+        C200透明: 'fujifilm_crystal_archive_typeii',
+        Ektar100浓彩: 'kodak_endura_premier',
         neutral: null,
       };
       const own = OWN[stock];
@@ -1344,7 +1351,7 @@ console.log('\n[13] 右栏：基准默认 / 恢复默认 / 存到主题');
        —— 跟 ①② 是同一个坑，只是入口从"初值"换成了"存过的旧值"。 */
   await page.addInitScript(() => {
     window.__grades = {
-      '主题A': { stock: 'portra400', base: 'all', params: { SPEK_PE_SHIFT: 1.1 } },
+      '主题A': { stock: 'Portra400薄荷', base: 'all', params: { SPEK_PE_SHIFT: 1.1 } },
     };
   });
   await page.reload();
@@ -1473,7 +1480,7 @@ console.log('\n[14] 视图三档（A / A|B / B）');
      ① 换卷之后相纸**有没有自动跟到新卷的配套纸**（不是留在上一卷那张）
      ② 换纸之后**发出去的请求里带的是不是新纸**（下拉亮对了、请求没带 = 画面不变）
      ③ 中性卷下这一栏**是不是真不显示**（引擎对中性卷返回空表）
-   ⚠ mock 里 `portra400` 的配套纸**恰好是列表第一张**、`fuji_c200` 的配套却是**第三张**
+   ⚠ mock 里 `Portra400薄荷` 的配套纸**恰好是列表第一张**、`C200青蓝` 的配套却是**第三张**
      ⇒ 只有这样才区分得出「读了引擎的 isDefault」和「腿短取了 option[0]」。 */
 console.log('\n[15] 相纸（换纸真的换画面吗）');
 {
@@ -1510,7 +1517,7 @@ console.log('\n[15] 相纸（换纸真的换画面吗）');
   };
 
   const p0 = await paperState();
-  check('★ 真卷下出现相纸下拉（这条不成立，下面全是空转）', !!p0,
+  check('★ 引擎卷下出现相纸下拉（这条不成立，下面全是空转）', !!p0,
     p0 ? `${p0.n} 张` : '(没有 [data-paper])',
     '相纸是成色的另一半，没有它就只能用卷表里写死的那张纸');
   if (!p0) {
@@ -1522,7 +1529,7 @@ console.log('\n[15] 相纸（换纸真的换画面吗）');
       '初值不是引擎标的 isDefault ⇒ 界面显示的纸和实际印的纸不是同一张');
 
     /* ---- ① 换卷 ⇒ 相纸要跟着换（配套纸跟着卷走） ---- */
-    await openStock5('fuji_c200');
+    await openStock5('C200青蓝');
     const p1 = await paperState();
     check('★★ 换卷之后相纸**自动跟到新卷的配套纸**（C200 ⇒ 富士 Crystal Archive II）',
       !!p1 && p1.on === 'fujifilm_crystal_archive_typeii', p1 ? String(p1.on) : '(没了)',
@@ -1569,7 +1576,7 @@ console.log('\n[15] 相纸（换纸真的换画面吗）');
       nNeutral === 0, `${nNeutral} 个下拉`,
       '中性卷也列 8 张纸、一张都不亮 ⇒ 把拧不动的开关摆给用户');
 
-    await openStock5('portra400');
+    await openStock5('Portra400薄荷');
     const nBack = await page.locator('[data-paper]').count();
     check('★ 切回真卷 ⇒ 相纸栏又出来（不是一次性渲染完就没了）', nBack === 1, `${nBack} 个`);
   }

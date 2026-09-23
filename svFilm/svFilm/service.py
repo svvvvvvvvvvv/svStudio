@@ -13,7 +13,7 @@ r"""svFilm 常驻 HTTP 服务 —— 引擎对外的第二条口子（给工作�
 
 ## 设计要点
 - **零依赖**（只用标准库 `http.server`）—— 为了"能搬到别人机器上"。
-- ★ **一条 `/render` 就够**：`GET /render?id=3&stock=portra400&side=700` → 图。
+- ★ **一条 `/render` 就够**：`GET /render?id=3&stock=Portra400薄荷&side=700` → 图。
   前端直接 `<img src="...">`，**改参数 = 改 URL**，不用写任何取字节的代码。
 - **只绑 127.0.0.1**（不对外）。
 - 缓存 = `io.load()` 的产物（Sample），LRU 上限可调。
@@ -447,9 +447,13 @@ class _H(BaseHTTPRequestHandler):
                         continue
                     out.append(dict(name=n, label=s.get('label') or n,
                                     desc=s.get('desc') or '',
-                                    # ★ 是否真卷（物理链）。前端据此**只列生效的滑杆**
-                                    #   （真卷模式下影调/质感那几步被让位，拧了没反应）。
-                                    spek=bool(s.get('spek'))))
+                                    # ★ 是否**走引擎物理链**（真卷 `spek=` 或预设 `preset=`）。
+                                    #   前端据此**只列生效的滑杆** —— 这两条路都会让位
+                                    #   L1 影调 / L2 颜色 / 空间层（引擎自带 H&D + 颗粒 + halation），
+                                    #   拧了没反应的滑杆就不该列出来。
+                                    # ⚠ 09-23 前这个字段叫 `spek` 且只看 `s.get('spek')`；
+                                    #   卷表换成预设后那样会把 9 条预设全判成"中性卷" ⇒ 列出假滑杆。
+                                    engine=bool(s.get('spek') or s.get('preset'))))
                 return self._json(out)
             if u.path == '/bases':
                 out = []

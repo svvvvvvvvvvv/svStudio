@@ -174,8 +174,9 @@ export interface Stock {
   name: string;
   label?: string;
   desc?: string;
-  /** true = 这是真卷（走 spektrafilm）；false/undefined = neutral */
-  spek?: boolean;
+  /** true = **走引擎物理链**（预设 `preset=` / 老真卷 `spek=`）；false/undefined = neutral。
+   *  ⚠ 09-23 前叫 `spek` 且只看真卷 —— 卷表换成 9 条预设后会全判成中性卷。 */
+  engine?: boolean;
 }
 
 export interface Base {

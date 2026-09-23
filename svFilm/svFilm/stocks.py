@@ -33,16 +33,29 @@ from __future__ import annotations
 
 import copy
 
+# 卷表里那 9 条**由它现算**（读 `data/presets/*.json` 的文件名）。
+# ⚠ `presets.py` 顶层只 import config，跟这里不会成环（它要 spektra 的那两处是函数内惰性 import）。
+from . import presets
+
 # 短名 -> 中文名 + 一句话人话说明（汇报时用它，别甩英文代号）
 _LABEL = {
     'neutral': ('中性基准', '不风格化，原样放行（做 A/B 对照用）'),
-    # ★★ 09-14 SV 定：**丢弃作者线，全部用真卷**（他的理由：「作者线们本来就是用真胶片拍的」
-    #   ⇒ 那只是**从真胶片成片上量的二手**（还隔着小红书压缩图），而真卷是**一手**）。
-    'portra400': ('柯达 Portra 400', '真卷：Kodak Portra 400 负片 + Portra Endura 相纸（spektrafilm 物理链）'),
-    'pro400h': ('富士 Pro 400H', '真卷：Fujifilm Pro 400H + Crystal Archive Type II'),
-    'fuji_c200': ('富士 C200', '真卷：Fujifilm C200 + Crystal Archive Type II'),
-    'ektar100': ('柯达 Ektar 100', '真卷：Kodak Ektar 100 + Endura Premier'),
-    'cinestill800t': ('电影卷 800T', '真卷：Kodak Vision3 500T + 2383 印片（Cinestill 800T 就是它去碳层）'),
+
+    # ══ 九条预设（09-23 SV 定案：「把真卷删了，改用 public GUI 那 9 条」）══════════
+    # 键 = 预设 JSON 的文件名（`data/presets/<键>.json`）。
+    # ⚠⚠ 卷名**只写「胶卷 + 风格」**，不带作者名字（本仓库是公开的）。
+    #     名字里的星号风格词（薄荷/清风/空气感…）沿用原预设的叫法，方便对上。
+    # 没在这里写 label 的预设**不让跑**（见文件末尾的断言）—— 宁可当场炸，
+    # 也不要出现「界面上一个没名字的选项」。
+    'Portra400薄荷': ('Portra400 · 薄荷', '暖侧逆光 + 青蓝背景，肤色有血色（最"厚"的一条）'),
+    'Pro400H马卡龙': ('Pro400H · 马卡龙', '马卡龙色系，柔和小清新'),
+    'Portra400淡雅': ('Portra400 · 淡雅', '淡雅、低饱和、通透'),
+    'Pro400H清风': ('Pro400H · 清风', '清风感，冷调淡雅'),
+    'C200过曝': ('C200 · 过曝', '过曝通透、明快'),
+    'Portra400空气感': ('Portra400 · 空气感', '空气感、留白多'),
+    'Ektar100浓彩': ('Ektar100 · 浓彩', '浓彩，饱和度最高的一条'),
+    'C200青蓝': ('C200 · 青蓝', '青蓝调'),
+    'C200透明': ('C200 · 透明', '透明感'),
 }
 
 _ID = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
@@ -99,62 +112,33 @@ TABLE = {
         spatial=_s(),
         source=None, calibrated=True,   # 恒等 = 无需标定
     ),
-
-
-    # ══ 五个真卷（09-14 SV：「丢弃作者线，全部用真卷」）══════════════════════════
-    # 作者线是**从真胶片成片上量的二手**（还隔着小红书压缩图）；真卷是**数据表 + 光谱测量的一手**。
-    # 组装：**我们只出「入口 + 锚点 + 降噪 + 肤色 + 护栏」，胶片性格整段交给真卷**。
-    'portra400': dict(
-        name='portra400', label=_LABEL['portra400'][0], desc=_LABEL['portra400'][1],
-        # ★★ 真卷：走 spektrafilm 的物理链（负片 → 印相 → 扫描）。
-        #   颜色 / 影调 / 颗粒 / halation **全部由它自带** ⇒ 我们的 color/spatial 保持恒等、
-        #   且 pipeline 会**跳过** L1 影调 + L2 颜色 + 空间层。详见 `spektra.py`。
-        spek=dict(film='kodak_portra_400', print='kodak_portra_endura',
-                  pe=0.58),   # 落点标定：让五卷都落在中位 ~55
-        color=_c(), spatial=_s(),
-        source='spektrafilm', calibrated='物理',   # 负片+相纸官配
-    ),
-    'fuji_c200': dict(
-        name='fuji_c200', label=_LABEL['fuji_c200'][0], desc=_LABEL['fuji_c200'][1],
-        # ★★ 真卷：走 spektrafilm 的物理链（负片 → 印相 → 扫描）。
-        #   颜色 / 影调 / 颗粒 / halation **全部由它自带** ⇒ 我们的 color/spatial 保持恒等、
-        #   且 pipeline 会**跳过** L1 影调 + L2 颜色 + 空间层。详见 `spektra.py`。
-        spek=dict(film='fujifilm_c200', print='fujifilm_crystal_archive_typeii',
-                  pe=1.41),   # 落点标定：让五卷都落在中位 ~55
-        color=_c(), spatial=_s(),
-        source='spektrafilm', calibrated='物理',   # 
-    ),
-    'pro400h': dict(
-        name='pro400h', label=_LABEL['pro400h'][0], desc=_LABEL['pro400h'][1],
-        # ★★ 真卷：走 spektrafilm 的物理链（负片 → 印相 → 扫描）。
-        #   颜色 / 影调 / 颗粒 / halation **全部由它自带** ⇒ 我们的 color/spatial 保持恒等、
-        #   且 pipeline 会**跳过** L1 影调 + L2 颜色 + 空间层。详见 `spektra.py`。
-        spek=dict(film='fujifilm_pro_400h', print='fujifilm_crystal_archive_typeii',
-                  pe=0.76),   # 落点标定：让五卷都落在中位 ~55
-        color=_c(), spatial=_s(),
-        source='spektrafilm', calibrated='物理',   # 
-    ),
-    'ektar100': dict(
-        name='ektar100', label=_LABEL['ektar100'][0], desc=_LABEL['ektar100'][1],
-        # ★★ 真卷：走 spektrafilm 的物理链（负片 → 印相 → 扫描）。
-        #   颜色 / 影调 / 颗粒 / halation **全部由它自带** ⇒ 我们的 color/spatial 保持恒等、
-        #   且 pipeline 会**跳过** L1 影调 + L2 颜色 + 空间层。详见 `spektra.py`。
-        spek=dict(film='kodak_ektar_100', print='kodak_endura_premier',
-                  pe=0.81),   # 落点标定：让五卷都落在中位 ~55
-        color=_c(), spatial=_s(),
-        source='spektrafilm', calibrated='物理',   # 
-    ),
-    'cinestill800t': dict(
-        name='cinestill800t', label=_LABEL['cinestill800t'][0], desc=_LABEL['cinestill800t'][1],
-        # ★★ 真卷：走 spektrafilm 的物理链（负片 → 印相 → 扫描）。
-        #   颜色 / 影调 / 颗粒 / halation **全部由它自带** ⇒ 我们的 color/spatial 保持恒等、
-        #   且 pipeline 会**跳过** L1 影调 + L2 颜色 + 空间层。详见 `spektra.py`。
-        spek=dict(film='kodak_vision3_500t', print='kodak_2383',
-                  pe=1.18),   # 落点标定：让五卷都落在中位 ~55
-        color=_c(), spatial=_s(),
-        source='spektrafilm', calibrated='物理',   # Cinestill 800T = Vision3 500T 去碳层
-    ),
 }
+
+# ══ 九条大师预设（09-23 SV 定案：「把真卷删了，改用 public GUI 那 9 条」）══════════════
+# 每一条 = public GUI 导出的一份**完整参数快照**（112 个字段，`data/presets/<名>.json`），
+# 由 `presets.render()` 照读渲染。跟「真卷」的区别：
+#   真卷 = (负片, 相纸) 一对 + 几根 `SPEK_*` 常量；
+#   预设 = (负片, 相纸) **也自己带**，外加曝光 / 曲线 / 耦合剂 / 颗粒 / halation / 柔光 / 锐化 全套。
+# ⇒ pipeline 的 L1 影调 + L2 颜色 + 空间层**继续让位**（与真卷那条路同构），
+#   判据从 `st.get('spek')` 改成 `st.get('preset')`。
+#
+# ★ 表**由 JSON 现算**，不手抄：手抄的话哪天加一条预设就会漏，而「名字不认得 ⇒ 静默走默认」
+#   正是本项目最忌的那类坑（见 §「静默吞掉」族）。
+TABLE.update({
+    n: dict(
+        name=n, label=_LABEL[n][0], desc=_LABEL[n][1],
+        preset=n,                       # ← pipeline 看这个键决定走 `presets.render()`
+        color=_c(), spatial=_s(),       # 恒等：颜色/影调/颗粒全由预设自带
+        source='public-gui', calibrated='参数快照',
+    )
+    for n in presets.names()
+})
+
+_缺少标签 = [n for n in presets.names() if n not in _LABEL]
+if _缺少标签:
+    raise RuntimeError(
+        '这几条预设没有 label/desc，去 `_LABEL` 补上再跑：%s\n'
+        '（宁可当场炸，也不要让界面上出现一个没名字的选项）' % _缺少标签)
 
 NAMES = list(TABLE.keys())
 
@@ -163,11 +147,27 @@ def names():
     return list(NAMES)
 
 
+def _key(name):
+    r"""查表用的键：**大小写无关**，但返回表里那个原样的键。
+
+    为什么不能像原来那样一上来就 `.lower()`：卷名改成「胶卷 + 风格」之后，
+    里面同时有**大写拉丁**和中文（`C200过曝` / `Portra400薄荷` / `Ektar100浓彩`）。
+    原来那一句 `.lower()` 把 `C200过曝` 变成 `c200过曝` ⇒ 表里查不到 ⇒ `KeyError`。
+    """
+    s = str(name).strip()
+    if s in TABLE:
+        return s
+    return _LOWER.get(s.lower(), s)
+
+
+_LOWER = {k.lower(): k for k in TABLE}
+
+
 def get(name):
     """取一份卷（深拷贝，防止调用方改到表）。name=None/'' -> None。"""
     if not name:
         return None
-    k = str(name).strip().lower()
+    k = _key(name)
     if k not in TABLE:
         raise KeyError('没有这个卷: %s（可选：%s）' % (name, ', '.join(NAMES)))
     return copy.deepcopy(TABLE[k])
@@ -177,7 +177,7 @@ def label_of(name):
     """中文名，汇报用。"""
     if not name:
         return 'config 默认'
-    return TABLE[str(name).strip().lower()]['label']
+    return TABLE[_key(name)]['label']
 
 
 # ---------------- 基准成色（不属于任何卷） ----------------

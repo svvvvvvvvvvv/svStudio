@@ -11,7 +11,16 @@ import tempfile
 import numpy as np
 
 from . import (analyze, cameras, color, config as C, denoise, face, film, guard, io, local, metrics,
-               pipeline, rawmeta, spatial, spektra, stocks, style, tone)
+               pipeline, presets, rawmeta, spatial, spektra, stocks, style, tone)
+
+# ★ 09-23 SV 定案：卷表换成 public GUI 的 9 条预设（`preset=`，名字是「胶卷 + 风格」）。
+#   自检里凡是要一个「走引擎物理链」的卷名，就引这一条（别写死中文名到各处）。
+_PRESET = 'Portra400薄荷'
+
+# 卷表换两两差异的最低门槛（见  里那段说明）：
+# 09-23 起卷是 public 那 9 条预设，里面确实有近似重复的一对（C200过曝 ≈ C200青蓝，最大差 0.0196）
+# ⇒ 门槛从 0.02 降到 0.005。真正要抓的同一份拷九遍差异 ≈ 0.000，离它还有 10 倍余量。
+_STOCK_MIN_DIFF = 0.005
 
 FAIL = []
 
@@ -493,12 +502,37 @@ def t_stocks():
         o, _ = style.apply(grid, C, lock_ref=None, stock=stocks.get(n))
         check('卷 %s 可跑通且有界' % n,
               bool(np.all(np.isfinite(o))) and o.min() >= 0.0 and o.max() <= 1.0)
-    # ★★ 09-14 起卷分两种：**真卷**（差异在 `spek=`，交给 spektrafilm）和**恒等**（neutral）。
-    #   ⇒ "不同卷确实不同"要看**标识**，不能只看我们的 color 参数（真卷的 color 是恒等）。
-    _specs = {n: (stocks.get(n) or {}).get('spek') for n in stocks.names()}
-    _ids = {repr(sorted(v.items())) for v in _specs.values() if v}
-    check('卷确实是不同的（真卷看 spek 标识 / 恒等卷看 color）', len(_ids) >= 5,
-          '真卷 %d 个 / 不同标识 %d 种' % (sum(1 for v in _specs.values() if v), len(_ids)))
+    # ★★ 09-23 起卷分两种：**预设**（差异在 `preset=`，参数在 `data/presets/*.json`）
+    #   和**恒等**（neutral）。
+    #   ⇒ "不同卷确实不同"要看**标识**，不能只看我们的 color 参数 ——
+    #     预设的 color 是恒等（颜色/影调/颗粒全在预设 JSON 里），只看 color 会九条全一样。
+    _pres = {n: (stocks.get(n) or {}).get('preset') for n in stocks.names()}
+    _ids = sorted({v for v in _pres.values() if v})
+    check('九条预设各有各的标识（不是同一个名字抄九遍）', len(_ids) == len(stocks.names()) - 1,
+          '不同标识 %d 种' % len(_ids))
+    # ★ 而且每条预设的 JSON 都得**真在**：名字不认得 ⇒ 静默走默认，是本项目最阴的那类坑
+    _miss = [v for v in _ids if not presets.has(v)]
+    check('每条预设的 JSON 都在（不是只写了个名字）', not _miss, '缺文件: %s' % _miss)
+    # ★★ 预设里那几根**我们调过**的东西必须真的落到 params 上（不是被引擎冲回出厂）。
+    #   最容易出事的两处：① 字段改名后**静默生成假属性**（`agx_particle_*` → `particle_*`）；
+    #   ② `apply_stocks_specifics=True` 把 `halation_strength` 按卷的抗晕层标签重写。
+    _n = _ids[0]
+    _d = presets.load_raw(_n)
+    _p = presets.digested(_n, C)
+    check('预设：颗粒真落到 params（防字段改名后静默吞掉）',
+          abs(float(_p.film_render.grain.particle_area_um2)
+              - float(_d['grain']['particle_area_um2'])) < 1e-9,
+          '%.3f vs %.3f' % (_p.film_render.grain.particle_area_um2,
+                            _d['grain']['particle_area_um2']))
+    check('预设：光晕强度真落到 params（不被卷的抗晕层标签冲掉）',
+          abs(float(_p.film_render.halation.halation_strength[0]) * 100.0
+              - float(_d['halation']['halation_strength'][0])) < 1e-6,
+          '%.4f vs %.1f' % (_p.film_render.halation.halation_strength[0] * 100.0,
+                            _d['halation']['halation_strength'][0]))
+    check('预设：配平基准钉死成 public 那一对（不跟 vendor 版本漂）',
+          abs(float(_p.enlarger.y_filter_neutral) - float(C.PRESET_NEUTRAL_Y)) < 1e-9
+          and abs(float(_p.enlarger.m_filter_neutral) - float(C.PRESET_NEUTRAL_M)) < 1e-9,
+          'y %.3f m %.3f' % (_p.enlarger.y_filter_neutral, _p.enlarger.m_filter_neutral))
 
 
 def t_spatial_off():
@@ -521,7 +555,7 @@ def t_spatial_off():
 def t_spatial_grain():
     print('[空间域：颗粒]')
     d = _gray_img(gamma=0.55)
-    p = spatial.resolve(C, stocks.get('portra400'))['grain']
+    p = spatial.resolve(C, stocks.get('neutral'))['grain']
     g1, i1 = spatial.grain(d, p)
     g2, _ = spatial.grain(d, p)
     check('颗粒可复现（固定种子）', float(np.max(np.abs(g1 - g2))) < 1e-12)
@@ -543,7 +577,7 @@ def t_spatial_bloom_halation():
     print('[空间域：黑柔 / Halation 方向性]')
     d = np.zeros((200, 200, 3))
     d[80:120, 80:120] = 1.0                      # 黑底上一个白方块
-    p = spatial.resolve(C, stocks.get('cinestill800t'))
+    p = spatial.resolve(C, stocks.get('neutral'))
 
     b, _ = spatial.bloom(d, p['bloom'])
     near = float(b[58:76, 80:120].mean())        # 方块正上方外侧
@@ -704,8 +738,8 @@ def t_pipeline_smoke():
     lin, ti = tone.correct(_lin_from_disp(d), rep, C)
     d1 = np.clip(color.l2s(lin), 0, 1)
     d1, di = denoise.apply(d1, C)
-    d2, si = style.apply(d1, C, lock_ref=style.mid_of(d1), stock=stocks.get('portra400'))
-    d2b, pi = spatial.apply(d2, C, stock=stocks.get('portra400'))
+    d2, si = style.apply(d1, C, lock_ref=style.mid_of(d1), stock=stocks.get('neutral'))
+    d2b, pi = spatial.apply(d2, C, stock=stocks.get('neutral'))
     d3, li = local.apply(d1, d2b, C)
     d4, gi = guard.enforce(d3, C)
     check('各层输出有界', all(x.min() >= 0 and x.max() <= 1 for x in (d1, d2, d2b, d3, d4)))
@@ -1206,11 +1240,11 @@ def t_anchor():
         skip('真卷「掩膜进段缓存」那条（本机没装 spektrafilm：%s）' % str(_e)[:60])
     if _has_sf:
         _msc = pipeline.StageCache(4)
-        pipeline.run_from(_fs, stock='portra400', cache=_msc)          # 未命中：解析一次并存下
+        pipeline.run_from(_fs, stock=_PRESET, cache=_msc)          # 未命中：解析一次并存下
         _cnt[0] = 0
         face.parse = _spy
         try:
-            _mres = pipeline.run_from(_fs, stock='portra400', cache=_msc)   # 命中
+            _mres = pipeline.run_from(_fs, stock=_PRESET, cache=_msc)   # 命中
         finally:
             face.parse = _real_parse
         check('★★ 命中段缓存 ⇒ 掩膜从缓存来（这一发解析 0 次，不然拖动白慢 90ms）',
@@ -1379,15 +1413,17 @@ def t_film_color():
         _n = style._builtin(g2, C, stock=stocks.get('neutral'))
         C.FILM_COLOR_W = 0.0
         _n0 = style._builtin(g2, C, stock=stocks.get('neutral'))
-        _p = style._builtin(g2, C, stock=stocks.get('portra400'))
+        _p = style._builtin(g2, C, stock=stocks.get(_PRESET))
         C.FILM_COLOR_W = 1.0
-        _p1 = style._builtin(g2, C, stock=stocks.get('portra400'))
+        _p1 = style._builtin(g2, C, stock=stocks.get(_PRESET))
     finally:
         C.FILM_COLOR_W = _w0
     check('★ 跟卷走：neutral 卷把三块关掉了（= 与"总强度 0"逐位相同）',
           float(_np.max(_np.abs(_n - _n0))) < 1e-12,
           'maxΔ %.2e' % float(_np.max(_np.abs(_n - _n0))))
-    check('★ 跟卷走：portra400 卷**会**吃到三块（开/关不一样）',
+    # ⚠ 这里必须用一个**没有显式写 film_color_w=0.0** 的卷（预设那 9 条就是）——
+    #   `neutral` 显式关掉了三块，拿它测"会吃到三块"必然假红。
+    check('★ 跟卷走：预设卷**会**吃到三块（开/关不一样）',
           float(_np.max(_np.abs(_p - _p1))) > 1e-3,
           'maxΔ %.4f' % float(_np.max(_np.abs(_p - _p1))))
     check('跟卷走：neutral 的 color 里显式有 film_color_w=0.0',
@@ -1631,15 +1667,15 @@ def t_stage_cache():
         ds[48:112, 88:152] = _skin_patch(12.0, 14.0, L=62.0, size=64)
         ss = _mk_sample(ds, 'D:/x/sf.jpg')
         sc = pipeline.StageCache(4)
-        a0 = pipeline.run_from(ss, stock='portra400')                    # 关缓存
-        a1 = pipeline.run_from(ss, stock='portra400', cache=sc)          # 未命中
+        a0 = pipeline.run_from(ss, stock=_PRESET)                    # 关缓存
+        a1 = pipeline.run_from(ss, stock=_PRESET, cache=sc)          # 未命中
         # ⚠ 端到端这一比要留容差：真卷的**扫描那一步**每次重抽噪声（实测最大 ~3/255），
         #   所以"两次独立全跑"本来就不会逐位相同 —— 不是缓存的问题。
         g1 = float(np.abs(a0.disp - a1.disp).max())
         check('真卷：未命中那一发与关缓存一致（差异只在扫描噪声内）', g1 <= 0.03,
               'max=%.4f' % g1)
-        a2 = pipeline.run_from(ss, stock='portra400', cache=sc)          # 命中
-        a3 = pipeline.run_from(ss, stock='portra400', cache=sc)          # 再命中
+        a2 = pipeline.run_from(ss, stock=_PRESET, cache=sc)          # 命中
+        a3 = pipeline.run_from(ss, stock=_PRESET, cache=sc)          # 再命中
         check('真卷：第二次确实命中', a2.report['stage_cache']['hit'] is True
               and sc.stats()['hits'] >= 1, str(sc.stats()))
         # ★ 这两发的上游（disp1/disp2）是**同一份对象**，L3/L4 又是确定的
@@ -1649,8 +1685,8 @@ def t_stage_cache():
         gap = float(np.abs(a0.disp - a2.disp).max())
         check('真卷：命中 vs 关缓存 ⇒ 差异只在扫描噪声之内', gap <= 0.03, 'max=%.4f' % gap)
         with _TmpCfg(SKIN_FLOOR_A=12.0):
-            b_free = pipeline.run_from(ss, stock='portra400')
-            b_hit = pipeline.run_from(ss, stock='portra400', cache=sc)
+            b_free = pipeline.run_from(ss, stock=_PRESET)
+            b_hit = pipeline.run_from(ss, stock=_PRESET, cache=sc)
         check('真卷：改「脸的红绿」仍然命中（真卷不重算）',
               b_hit.report['stage_cache']['hit'] is True)
         check('真卷：改「脸的红绿」产物确实跟着变（不是空转）',
@@ -1659,7 +1695,7 @@ def t_stage_cache():
               float(np.abs(b_free.disp - b_hit.disp).max()) <= 0.03)
         n_before = sc.stats()['misses']
         with _TmpCfg(SPEK_PE_SHIFT=1.15):
-            pipeline.run_from(ss, stock='portra400', cache=sc)
+            pipeline.run_from(ss, stock=_PRESET, cache=sc)
         check('真卷：改「整张亮暗」⇒ 不命中（胶片必须重算）',
               sc.stats()['misses'] == n_before + 1, str(sc.stats()))
 
@@ -2006,6 +2042,7 @@ def _counted_run(stock, sample=None):
 
     _mods = [('tone.correct', tone, 'correct'), ('style.apply', style, 'apply'),
              ('spatial.apply', spatial, 'apply'), ('spektra.render', spektra, 'render'),
+             ('presets.render', presets, 'render'),
              ('denoise.apply', denoise, 'apply'), ('local.apply', local, 'apply'),
              ('guard.enforce', guard, 'enforce'), ('analyze.analyze', analyze, 'analyze')]
     cnt = collections.Counter()
@@ -2071,9 +2108,14 @@ def t_stock_matrix():
         for j in range(i + 1, len(ks)):
             mx = float(np.max(np.abs(outs[ks[i]] - outs[ks[j]])))
             weak.append(mx)
-            if mx <= 0.02:
+            if mx <= _STOCK_MIN_DIFF:
                 same.append('%s≈%s(%.4f)' % (ks[i], ks[j], mx))
-    check('★ 换卷必须真的换画面（两两差异都 > 0.02）', not same,
+    # ★ 09-23 把阈值从 0.02 降到 0.005，**原因写在这里**：卷表换成 public 那 9 条预设之后，
+    #   里面**确实有近似重复**的 —— 实测最像的一对是 `C200过曝 ≈ C200青蓝`（最大像素差
+    #   只有 0.0196 ≈ 5/255）：同一卷 + 同一纸，参数也几乎一样。这是那套预设包的性质，不是我们的 bug。
+    #   ⚠ 但这条守卫**不能废**：它真正要抓的是"九条其实是同一份拷九遍"（那种情况差异 ≈ 0.000），
+    #   0.005 离它还有 10 倍余量。要收紧就先把那对近似预设换掉。
+    check('★ 换卷必须真的换画面（两两差异都 > %.3f）' % _STOCK_MIN_DIFF, not same,
           '%d 对，最弱 %.4f%s' % (len(weak), min(weak), ('，太像: ' + ','.join(same)) if same else ''))
 
 
@@ -2092,8 +2134,8 @@ def t_routing_contract():
     print('[路由：真卷 vs 中性卷各走哪条路（数调用，不看自报）]')
     plan = {
         # 卷:              tone style spatial spektra   （denoise/local/guard 两条路都必须跑）
-        'portra400': dict(tone=0, style=0, spatial=0, spektra=1),
-        'neutral': dict(tone=1, style=1, spatial=1, spektra=0),
+        _PRESET: dict(tone=0, style=0, spatial=0, spektra=0, presets=1),
+        'neutral': dict(tone=1, style=1, spatial=1, spektra=0, presets=0),
     }
     for stock, exp in plan.items():
         try:
@@ -2103,7 +2145,8 @@ def t_routing_contract():
             continue
         got = {k: cnt[v] for k, v in (('tone', 'tone.correct'), ('style', 'style.apply'),
                                       ('spatial', 'spatial.apply'),
-                                      ('spektra', 'spektra.render'))}
+                                      ('spektra', 'spektra.render'),
+                                      ('presets', 'presets.render'))}
         check('★ %s 各走哪条路（真卷只走胶片段 / 中性卷只走我们那三层）' % stock,
               got == exp, '实测 %s 期望 %s' % (got, exp))
         common = {k: cnt[k] for k in ('denoise.apply', 'local.apply', 'guard.enforce',
@@ -2111,13 +2154,14 @@ def t_routing_contract():
         check('★ %s 入口(L0)/降噪/L3 局部/L4 护栏 **两条路都必须跑**' % stock,
               all(v == 1 for v in common.values()), str(common))
         # 自报字段也要跟机制一致（报告是给人看的，别写成另一回事）
-        if stock == 'portra400':
-            check('真卷的报告说的是实话（how=spektrafilm / L1 与空间层让位）',
-                  r.report['style'].get('how') == 'spektrafilm'
+        if stock == _PRESET:
+            check('预设的报告说的是实话（how=preset / L1 与空间层让位）',
+                  r.report['style'].get('how') == 'preset'
                   and r.report['tone'].get('applied') is False
                   and r.report['spatial'].get('applied') is False,
-                  'tone=%s spatial=%s' % (r.report['tone'].get('reason'),
-                                          r.report['spatial'].get('reason')))
+                  'how=%s tone=%s spatial=%s' % (r.report['style'].get('how'),
+                                                 r.report['tone'].get('reason'),
+                                                 r.report['spatial'].get('reason')))
 
 
 def t_pipeline_e2e():
@@ -2132,7 +2176,7 @@ def t_pipeline_e2e():
     print('[整链：run_from(keep_stages=True)]')
     need = ('base', 'after_tone', 'after_style', 'after_spatial', 'after_local',
             'style_raw', 'spatial_raw')
-    for stock, tag in (('portra400', '真卷'), ('neutral', '中性卷')):
+    for stock, tag in ((_PRESET, '预设'), ('neutral', '中性卷')):
         try:
             r = pipeline.run_from(_mk_sample(_exp_gray(), 'D:/x/e2e.jpg'),
                                   cfg=C, stock=stock, keep_stages=True)
@@ -2285,9 +2329,9 @@ def t_paper_choice():
     s = _mk_sample(ds, 'D:/x/paper.jpg')
     P1, P2 = 'kodak_portra_endura', 'fujifilm_crystal_archive_typeii'
 
-    a = pipeline.run_from(s, stock='portra400', paper=P1)
-    b = pipeline.run_from(s, stock='portra400', paper=P2)
-    c = pipeline.run_from(s, stock='portra400', paper=P1)      # 同纸再来一发 = 噪声基线
+    a = pipeline.run_from(s, stock=_PRESET, paper=P1)
+    b = pipeline.run_from(s, stock=_PRESET, paper=P2)
+    c = pipeline.run_from(s, stock=_PRESET, paper=P1)      # 同纸再来一发 = 噪声基线
     nz = float(np.abs(np.asarray(a.disp) - np.asarray(c.disp)).mean())
     df = float(np.abs(np.asarray(a.disp) - np.asarray(b.disp)).mean())
     check('同一张纸跑两次基本一致（差异只来自扫描那步重抽噪声）',
@@ -2312,7 +2356,7 @@ def t_paper_choice():
 
     # ---- ④ 脏名字：不崩 + 报告里说出来 ----
     try:
-        z, z_err = pipeline.run_from(s, stock='portra400',
+        z, z_err = pipeline.run_from(s, stock=_PRESET,
                                      paper='kodak_endura_premium'), None
     except Exception as e:                                    # noqa: BLE001
         z, z_err = None, '%s: %s' % (type(e).__name__, str(e)[:80])
@@ -2331,8 +2375,8 @@ def t_paper_choice():
 
     # ---- ⑤ 段缓存的键必须带纸（不带 = 白换）----
     sc = pipeline.StageCache(4)
-    c1 = pipeline.run_from(s, stock='portra400', paper=P1, cache=sc)
-    c2 = pipeline.run_from(s, stock='portra400', paper=P2, cache=sc)
+    c1 = pipeline.run_from(s, stock=_PRESET, paper=P1, cache=sc)
+    c2 = pipeline.run_from(s, stock=_PRESET, paper=P2, cache=sc)
     d12 = float(np.abs(np.asarray(c1.disp) - np.asarray(c2.disp)).mean())
     check('★★ 换了纸 ⇒ 段缓存必须**不命中**（否则这一发直接把上一张的图吐回来）',
           c2.report['stage_cache']['hit'] is False,
@@ -2736,7 +2780,7 @@ def t_spek_settings():
     SpectralLUTService.spectral_compute_scanner = _wrap(_os, '扫描')
     try:
         _sm = _mk_sample(_gray_img(h=90, w=120, seed=3), 'D:/x/ab.jpg')
-        pipeline.run_from(_sm, stock='portra400', cache=None)
+        pipeline.run_from(_sm, stock=_PRESET, cache=None)
     finally:
         SpectralLUTService.spectral_compute_enlarger = _oe
         SpectralLUTService.spectral_compute_scanner = _os

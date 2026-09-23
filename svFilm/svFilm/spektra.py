@@ -247,13 +247,28 @@ PAPERS = {
 PAPER_ORDER = tuple(PAPERS.keys())
 
 
+def _pair_of(stock_name):
+    r"""(负片, 相纸) —— **两条来源**：预设走 `presets`，真卷走 `STOCK_MAP`。
+
+    09-23 之后卷表里是 9 条 public 预设（`preset=`），它们的负片/相纸写在
+    各自的 JSON 里，**不在** `STOCK_MAP`（那张表是给老的真卷留的）。
+    `default_paper` / `papers` / `resolve_paper` 原来只查 `STOCK_MAP`
+    ⇒ 换成预设卷名就返回 None ⇒ **"相纸下拉是空的"**（看着能用其实不生效）。
+    """
+    from . import presets as _pr          # 惰性：别让它和 presets 的惰性 import 撞成环
+    s = str(stock_name or '').strip()
+    if s and _pr.has(s):
+        return (_pr.film_of(s), _pr.paper_of(s))
+    return STOCK_MAP.get(s.lower())
+
+
 def default_paper(stock_name):
-    """这一卷**配套**的相纸（= `STOCK_MAP` 里写的那张）。
+    """这一卷**配套**的相纸（= 它自己带的那张）。
 
     ★ 「默认值由谁给」这条规矩：默认相纸**由引擎给**（就是卷表里配套的那张），
       前端不许自己挑一个 —— 同「基准成色」的 `isDefault`、滑杆的 `dv`。
     """
-    pair = STOCK_MAP.get(str(stock_name or '').lower())
+    pair = _pair_of(stock_name)
     return pair[1] if pair else None
 
 
@@ -266,7 +281,7 @@ def papers(stock_name=None):
       —— 正是本项目最忌的那类"看着能用、其实不生效"。
     """
     if stock_name:
-        pair = STOCK_MAP.get(str(stock_name).lower())
+        pair = _pair_of(stock_name)
         if pair is None:
             return []
         dflt = pair[1]
@@ -289,7 +304,7 @@ def resolve_paper(stock_name, paper=None):
       也不许静默换一张 —— 返回 `(用哪张, 是否回落, 原因)`，由调用方写进报告，
       界面和汇报都能看见。
     """
-    pair = STOCK_MAP.get(str(stock_name or '').lower())
+    pair = _pair_of(stock_name)
     if pair is None:
         return None, False, 'unknown_stock'
     own = pair[1]

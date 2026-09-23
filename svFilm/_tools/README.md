@@ -3,7 +3,7 @@
 ## spektrafilm
 
 **这是什么**：一套物理的胶片模拟引擎（真的胶片相机 + 放大机模型，不是"套滤镜"）。
-svFilm 的**真卷**（portra400 / fuji_c200 / pro400h / ektar100 / cinestill800t）就是靠它算的。
+svFilm 的**卷**（`data/presets/*.json` 那 9 条，09-23 起）就是靠它算的。
 
 | | |
 |---|---|

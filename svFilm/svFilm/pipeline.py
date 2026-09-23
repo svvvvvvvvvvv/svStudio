@@ -18,7 +18,7 @@ from collections import OrderedDict
 
 import numpy as np
 
-from . import analyze, color, config as C, denoise, guard, io, local, spatial, spektra, stocks, style, tone
+from . import analyze, color, config as C, denoise, guard, io, local, presets, spatial, spektra, stocks, style, tone
 
 
 # ========== 段缓存：「胶片出图」那一层及其之前的产物（09-15 SV 选「A」）==========
@@ -219,8 +219,14 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
     #   背景的亮度是这条曲线算出来的**结果**。
     # ★★ 真卷（`spek=`）**不用锚点**：实测真卷自己就把脸放到 L* 78~86（比我们靶 68 还亮），
     #   再提一遍就是过曝（中位 61 → 83）。⇒ 真卷模式下位置整段交给胶片。
-    _pre_spek = (st or {}).get('spek')
-    _spek = _pre_spek                     # 真卷标记（L2 与空间层都要看它；原来在下面才算一次）
+    # ★★★ 09-23 SV 定案：卷表换成 public GUI 的 9 条**大师预设**（`preset=`）。
+    #   预设跟真卷一样是"胶片性格整段自带"（曝光 / 曲线 / 耦合剂 / 颗粒 / halation / 柔光 / 锐化
+    #   全在预设 JSON 里）⇒ 凡是对真卷**让位**的那几处（入口锚点 / L1 影调 / L2 颜色 / 空间层 /
+    #   段缓存），对预设**同样让位**。所以把"走引擎物理链"统一成一个标记 `_engine`。
+    _spek = (st or {}).get('spek')          # 真卷：{'film','print','pe'}
+    _preset = (st or {}).get('preset')      # 预设：预设 JSON 的文件名（`data/presets/`）
+    _pre_engine = bool(_spek or _preset)
+    _engine = _pre_engine
 
     # ---- ★ 相纸（09-15 SV 选「C」）---------------------------------------------
     # 印相纸是**成色的另一半**（同一卷负片印在不同纸上 = 两套不同的颜色，尤其肤色）。
@@ -235,7 +241,7 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
     if keep_stages:
         cache = None
     _ckey, _entry = None, None
-    if cache is not None and _pre_spek:
+    if cache is not None and _pre_engine:
         # ⚠ 键里**必须带相纸**：换了纸而出图还是上一张 = 白换（而且看不出来）。
         _ckey = ('film', _sample_uid(s), (st or {}).get('name'), _paper or '',
                  _sig(cfg, SIG_CACHE))
@@ -280,7 +286,7 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
         #   （比我们靶 68 还亮），再提一遍就是过曝（中位 61 → 83）。
         #   ★ 09-15 SV 选「D」的「脸太亮收回」**不走这里** —— 它在**胶片之后**
         #   （`finish_anchor`）做，因为入口那一半压不动脸（实测只 −5 L\*，见 io.finish_anchor 注释）。
-        if _pre_spek and not bool(getattr(cfg, 'SPEK_ANCHOR', False)):
+        if _pre_engine and not bool(getattr(cfg, 'SPEK_ANCHOR', False)):
             d_ev, anc = 0.0, dict(applied=False, reason='real_stock_真卷自己定曝光')
         else:
             # ★ 掩膜走同一份（`s.disp` 就是解码后那张 ⇒ 与"它自己现算"逐位相同，只是省一次解析）
@@ -302,7 +308,7 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
         # L1 影调修正（**只压不提**：提亮交给入口 settle + 脸锚点，兜底提亮那套 09-14 已删）
         # ★★ 09-14 SV：「丢弃作者线，全部用真卷」。
         #   真卷（带 `spek=` 标记）**自带完整 H&D 曲线** ⇒ 我们的 L1 影调修正要**让位**（不然是两条曲线串）。
-        if _spek:
+        if _engine:
             lin1, t_info = lin_in, dict(applied=False, reason='real_stock_自带H&D曲线')
             disp1 = disp_in
         else:
@@ -313,24 +319,32 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
         if lut is None and cfg.LUT_PATH:
             lut = style.cube_read(cfg.LUT_PATH)
         # 锁中灰的参照 = 修正层实际交出来的中灰（不是配置里的靶）
-        if _spek:
-            # ★★ L2 整段换成**真卷**：喂**场景线性**（`lin_in`），出显示域。
-            #   它自带 H&D + `dir_couplers`(彩度) + 染料；落点由 `SPEK_PRINT_EXPOSURE` 定。
-            # ★ 每卷一个 pe（09-14 标定：不同相纸响应不同 ⇒ 全局一个值会让富士卷偏亮 30 个 L*）
-            # ★★ 09-14 新增：再乘一个**逐张微调系数** `SPEK_PE_SHIFT`。
-            #   为什么要分开：全局改 `SPEK_PRINT_EXPOSURE` **会被每卷的 pe 盖掉**（实测三档同值）
-            #   ⇒ 落点滑杆一直是死的。改成「每卷基准 × 全局系数」后它才真的动得了画面。
-            #   用途：救被闪光顶亮的片（1065/1067）—— 只压这一张，别的片不动。
-            _base_pe = float(_spek.get('pe') or getattr(cfg, 'SPEK_PRINT_EXPOSURE', 0.55))
+        if _engine:
+            # ★★ L2 整段换成**引擎物理链**：喂**场景线性**（`lin_in`），出显示域。
+            #   两条来源：
+            #     · **预设**（`preset=`，09-23 SV 定案后是常态）→ `presets.render()`，
+            #       参数照读预设 JSON（负片/相纸也由它自带）；落点 = 预设自带的 pe × 系数。
+            #     · **真卷**（`spek=`，老路子，保留兼容）→ `spektra.render()`；
+            #       落点 = 每卷标定的 pe × 系数。
+            #   两者的共同点：都自带 H&D + dir_couplers(彩度) + 染料 + 颗粒 + halation
+            #   ⇒ 所以上面几处（入口锚点 / L1 / 空间层 / 段缓存）都让位。
+            #   ★ 相纸从这里进物理链。`_paper` 在上面解析好了：不传 = 这一卷配套的那张；
+            #     传了但认不得 = 已回落成配套纸 + 在下面 `print_fallback` 里说明。
             _shift = float(getattr(cfg, 'SPEK_PE_SHIFT', 1.0) or 1.0)
+            if _preset:
+                _base_pe = presets.pe_of(_preset)
+                disp2 = presets.render(lin_in, _preset, cfg, print_profile=_paper)
+                _how, _film = 'preset', presets.film_of(_preset)
+            else:
+                _base_pe = float(_spek.get('pe') or getattr(cfg, 'SPEK_PRINT_EXPOSURE', 0.55))
+                disp2 = spektra.render(lin_in, st['name'], cfg,
+                                       print_exposure=_base_pe * _shift,
+                                       print_profile=_paper)
+                _how, _film = 'spektrafilm', _spek.get('film')
             _pe = _base_pe * _shift
-            # ★ 相纸从这里进物理链。`_paper` 在上面就解析好了：不传 = 这卷的配套纸；
-            #   传了但认不得 = 已回落成配套纸 + 在下面 `print_fallback` 里说明。
-            disp2 = spektra.render(lin_in, st['name'], cfg, print_exposure=_pe,
-                                   print_profile=_paper)
-            s_info = dict(applied=True, how='spektrafilm', stock=st['name'],
-                          film=_spek.get('film'), print=_paper,
-                          print_default=bool(_paper and _paper == _spek.get('print')),
+            s_info = dict(applied=True, how=_how, stock=st['name'],
+                          film=_film, print=_paper,
+                          print_default=bool(_paper and _paper == spektra.default_paper(st['name'])),
                           print_fallback=bool(_paper_fb),
                           print_fallback_reason=_paper_why,
                           print_exposure=_pe, pe_base=_base_pe, pe_shift=_shift,
@@ -365,10 +379,11 @@ def run_from(sample, cfg=C, stock=None, base=None, out=None, lut=None,
     # ⚠ 09-14 SV：「把脸部立体感的部分删掉」⇒ 原来在 L2 之后 / 空间层之后各插一道
     #   `local.face_tone`（第 4 条「每层护脸」），**已整段删除**。
     disp2r = disp2
-    if _spek:
-        # ★ 真卷自带的 grain / halation / glare 已经是物理级的（分通道、R 最强 ⇒ 红橙）
+    if _engine:
+        # ★ 引擎自带的 grain / halation / glare 已经是物理级的（分通道、R 最强 ⇒ 红橙）
         #   ⇒ 我们的空间层**必须让位**，不然是两套颗粒叠一起。
-        disp2b, sp_info = disp2, dict(applied=False, reason='real_stock_自带颗粒/halation')
+        #   （预设那 9 条同样自带：颗粒、柔光、halation、输出锐化全在预设 JSON 里。）
+        disp2b, sp_info = disp2, dict(applied=False, reason='引擎自带颗粒/halation')
     else:
         disp2b, sp_info = spatial.apply(disp2, cfg, stock=st)        # 空间域（颗粒/黑柔/Halation）
     disp2br = disp2b

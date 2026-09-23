@@ -465,7 +465,9 @@ LAYER_SPEEDS = (0.96, 1.0, 1.03)  # R/G/B：红层稍慢、蓝层稍快（LIMO �
 LAYER_SPEED_STRENGTH = 1.0        # 朝 1.0 插值（0 = 恒等）
 # ---- 【乙】完整密度引擎（log 曝光 → 三条密度曲线 → 透射率）----
 DENSITY_ENABLE = True
-DENSITY_STOCK = 'portra400'      # 用哪条实测曲线（`data/stocks_measured/*.json` + `data/*_char.csv`）
+DENSITY_STOCK = 'portra400'      # 用哪条实测曲线。
+#   ⚠ 这是**曲线文件名**（`data/portra400_char.csv`），**不是卷名** ——
+#     09-23 卷表换成预设后 `portra400` 已不在卷表里，但这个文件还在、这条仍然有效。别顺手删。
 DENSITY_SCALAR = 0.60            # 密度缩放（Emulsifier 原值）
 DENSITY_STRENGTH = 0.35
 DENSITY_FADE_LO = 0.72            # ★ 乙 从这开始淡出（显示域亮度）
@@ -685,6 +687,29 @@ SPEK_ANCHOR = False
 #   ★ 降它时**脸的数值几乎不动**（15.4→14.8）—— 肤色层会自动把脸托回靶，所以不是"分区"。
 #   ⚠ 0.0 = **把这道物理过程整段关掉**；想留一点痕迹就取 0.3（≈7.8，几乎同效）。
 SPEK_COUPLERS = 0.0
+
+# ---- ★★★ 预设模式（09-23 SV 定案：「把真卷删了，改用 public GUI 那 9 条大师预设」）----
+# 那 9 条是**完整的参数快照**（112 个字段），走 `svFilm/presets.py` 直接渲染 ——
+# 不是"卷 + 几根旋钮"，所以下面这几个是「预设 JSON 里没写、必须由 svFilm 定」的部分。
+#
+# ⚠⚠ `PRESET_APPLY_STOCK_SPECIFICS` **不要改成 True**：
+#    True 时引擎会按卷的「抗晕层」标签（`(use, antihalation)`）重写 `halation_strength`
+#    ⇒ 预设里调好的「红光晕 40」被**静默**冲回 0.015（实测 0.40 → 0.015，画面几乎不动）。
+#    ⚠ 这条在 public GUI 里也是坑：它的这个开关**有状态**（首帧 True，跑过一次全分辨率缓存后变 False）
+#    ⇒ 同一张图「预览」和「导出」可能吃到**不同的光晕强度**。`selftest.t_presets` 钉着这一条。
+PRESET_APPLY_STOCK_SPECIFICS = False
+#
+# ⚠ `PRESET_NEUTRAL_FROM_DB`：vendor 0.3.4 会**去数据库查**「中性滤片」，而 public GUI（0.3.2）
+#    用的是它自己那份数据库 —— **两版查出来的不是同一对数**，等于换了一套配平基准（整张偏色）。
+#    我们那 9 条预设是在 0.3.2 上标定的 ⇒ 关掉 DB、改用下面钉死的 0.3.2 实测值，做到**版本无关**。
+#    实测对照：0.3.2 ⇒ y 50.713 / m 51.423（我们采用）；0.3.4 ⇒ y 50.735 / m 48.154（差 m 3.3 CC，肉眼可见）；
+#              schema 默认 ⇒ y 55 / m 65（差得更多）。
+PRESET_NEUTRAL_FROM_DB = False
+PRESET_NEUTRAL_Y = 51.423
+PRESET_NEUTRAL_M = 50.713
+#
+# 预设自带 pe 是否再乘 `SPEK_PE_SHIFT`（落点逐张微调那根）。True = 乘。
+PRESET_PE_SHIFT_FROM_SPEK = True
 
 # ---- ★★ spektrafilm「自带但出厂关着」的暗房/光学效果（09-14 SV：「都打开」）----
 # 每项都注明：① 它到底是什么 ② 为什么出厂关 ③ 打开会改什么 ④ 我们取什么值。

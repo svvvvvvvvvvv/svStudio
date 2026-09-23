@@ -3,16 +3,21 @@ import { Button, Flex, Popover, Slider, Text } from '@radix-ui/themes';
 import { useStore } from '../store/useStore';
 
 /**
- * 每卷代表色（沿用 09-14 已提交的那套，SV 已目测确认「A」）。
- * 形状用 jiaopian.svg 的三条路径，灌各卷颜色；原图是单色灰，不灌色 5 卷一模一样。
+ * 每卷代表色。形状用 jiaopian.svg 的三条路径，灌各卷颜色。
+ * ⚠ 卷表 09-23 起是 public GUI 的 9 条预设（名字 =「胶卷 + 风格」，**不带作者名**）。
+ *   卷名改了要同步这里，否则图标退回中性灰（不会报错，只是看不出是哪一卷）。
  */
 const STOCK_COLORS: Record<string, { a: string; b: string; t: string }> = {
   neutral: { a: '#4b5563', b: '#374151', t: '中性' },
-  portra400: { a: '#e8a87c', b: '#c9764a', t: 'Portra 400' },
-  fuji_c200: { a: '#8fc9a8', b: '#4f9c74', t: 'C200' },
-  pro400h: { a: '#a8c8b8', b: '#5f8f7a', t: 'Pro 400H' },
-  ektar100: { a: '#d98878', b: '#b04a42', t: 'Ektar 100' },
-  cinestill800t: { a: '#d9a066', b: '#a86a2c', t: '500T' },
+  Portra400薄荷: { a: '#e8a87c', b: '#c9764a', t: 'P400 薄荷' },
+  Pro400H马卡龙: { a: '#a8c8b8', b: '#5f8f7a', t: '400H 马卡龙' },
+  Portra400淡雅: { a: '#e6c39a', b: '#c09a6a', t: 'P400 淡雅' },
+  Pro400H清风: { a: '#9ec9c0', b: '#5d9a90', t: '400H 清风' },
+  C200过曝: { a: '#8fc9a8', b: '#4f9c74', t: 'C200 过曝' },
+  Portra400空气感: { a: '#dfc3a8', b: '#b8946f', t: 'P400 空气感' },
+  Ektar100浓彩: { a: '#d98878', b: '#b04a42', t: 'Ektar 浓彩' },
+  C200青蓝: { a: '#8fb4c9', b: '#4f7a9c', t: 'C200 青蓝' },
+  C200透明: { a: '#a8cfc9', b: '#6a9a94', t: 'C200 透明' },
 };
 
 /* 胶卷图形的三条路径（SV 提供的 jiaopian.svg） */
@@ -76,21 +81,22 @@ export function GradePanel() {
   const renderBusy = useStore((s) => s.renderBusy);
   const requestRender = useStore((s) => s.requestRender);
 
-  const curStock = grade.stock || 'portra400';
-  const isSpek = useMemo(
-    () => !!stocks.find((s) => s.name === curStock)?.spek,
+  const curStock = grade.stock || 'Portra400薄荷';
+  const isEngine = useMemo(
+    () => !!stocks.find((s) => s.name === curStock)?.engine,
     [stocks, curStock]
   );
 
-  /** ★ 不生效的滑杆不列：真卷下影调/质感那几根是拧不动的（真卷自带 H&D+颗粒+halation） */
+  /** ★ 不生效的滑杆不列：引擎物理链（预设/真卷）下影调/质感那几根是拧不动的
+   *  （引擎自带 H&D + 颗粒 + halation + 柔光）。 */
   const defs = useMemo(
     () =>
       paramDefs.filter((p) => {
-        if (p.spek === true && !isSpek) return false;
-        if (p.spek === false && isSpek) return false;
+        if (p.spek === true && !isEngine) return false;
+        if (p.spek === false && isEngine) return false;
         return true;
       }),
-    [paramDefs, isSpek]
+    [paramDefs, isEngine]
   );
 
   /** 按 grp 分组（像 LR 那样平铺，不用下拉框） */
@@ -505,7 +511,7 @@ export function GradePanel() {
           ★★ 只在真卷下出现：中性卷走的是 Lab 引擎，根本没有「负片 + 相纸」这个二元组，
              引擎对中性卷返回的是**空表**（见 `spektra.papers()`），这里自然就不显示。
           ⚠ 这一栏是"人像成色的另一半"：同一卷负片印在不同纸上，是两套不同的脸色。 */}
-      {isSpek && papers.length > 0 && (
+      {isEngine && papers.length > 0 && (
         <div>
           <Flex justify="between" align="baseline">
             <Text

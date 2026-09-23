@@ -189,7 +189,7 @@ export const useStore = create<AppState>((set, get) => ({
      ⚠ 规矩同滑杆那条：**前端不许自己发明初值**。
      ★ `paper` 同理**故意不写**（undefined）：进调色台时由 `loadEngine` 按当前卷问引擎要，
        引擎标 `isDefault` 的那张就是初值。 */
-  grade: { stock: 'portra400', base: '', params: {} },
+  grade: { stock: 'Portra400薄荷', base: '', params: {} },
   renderBusy: false,
   renderTick: 0,
 
@@ -625,7 +625,7 @@ export const useStore = create<AppState>((set, get) => ({
   /* ★ 右栏「恢复默认」（09-15 接上 —— 之前这个按钮**没有 onClick**，点了什么都不发生）：
      只清「调出来的东西」= 23 根滑杆全清（引擎自动回到它自己 `config` 里的出厂值）+
      基准回引擎默认那支 + **相纸回这一卷的配套纸**。
-     ⚠ **不动卷**：卷（portra400 / cinestill800t…）是"这张要弄成什么"，不是调出来的，
+     ⚠ **不动卷**：卷（Portra400薄荷 / C200青蓝…）是"这张要弄成什么"，不是调出来的，
      被「恢复默认」顺手抹掉会很意外。
      ⚠ 也不自动出图 —— 沿用 SV 定的"只有两个触发点"（右栏「渲染」/ 切进调色台）。 */
   resetGrade: () => {
