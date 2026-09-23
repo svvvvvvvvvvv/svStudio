@@ -4,7 +4,6 @@
   python -m svFilm.cli probe  <img...>                 只看数，不写文件
   python -m svFilm.cli one    <img> -o out.jpg
   python -m svFilm.cli dir    <in_dir> -o <out_dir> [--jobs 4]
-  python -m svFilm.cli bake   <out.cube> [--size 33]
 """
 from __future__ import annotations
 
@@ -14,39 +13,27 @@ import json
 import os
 import sys
 
-from . import analyze, config as C, io, stocks, style
+from . import config as C, io, presets, tone
 
 
 def _fmt_probe(res):
-    a = res.report['analyze']
-    g = a['gray255']
-    bn = res.report.get('base_label') or '无'
-    return ('%-16s %-4s %-12s 基准%-10s 中灰%6.1f(L*%5.1f) 黑%5.1f 白%6.1f '
-            '死白%6.2f%% 彩度P90 %5.1f  ev%+5.2f  → %s' % (
+    t = res.report.get('tone') or {}
+    return ('%-16s %-4s %-14s %-6s  L5 %5.1f  L50 %5.1f(靶%5.1f)  L95 %5.1f  '
+            '曝光%+.2fEV  %5.0fms' % (
                 res.sample.name, res.sample.kind,
-                (res.report.get('stock') or 'config默认'), bn,
-                g[C.PCT_MID], a['L_pcts'][C.PCT_MID],
-                g[C.PCT_BLACK], g[C.PCT_WHITE],
-                a['dead_white_frac'] * 100.0, a['chroma_c90'],
-                a['ev_est'], a['decision']))
+                (res.report.get('stock') or 'config默认'),
+                (res.report.get('style') or ''),
+                t.get('L5_out', 0), t.get('L50_out', 0), t.get('mid_L', 0),
+                t.get('L95_out', 0), t.get('ev_mid', 0),
+                res.report.get('ms', 0)))
 
 
 def cmd_probe(args):
     from . import pipeline
     for p in _expand(args.inputs, args.recursive):
         res = pipeline.run(p, src=args.src, max_side=args.max_side,
-                           stock=args.stock, base=args.base)
-        line = _fmt_probe(res)
-        if args.after:
-            r = res.report
-            g = r['guard']
-            t = r['tone']
-            sp = r.get('spatial') or {}
-            line += '  ||  出片 中灰%6.1f 死白%6.2f%% 彩度%5.1f  修正%s  空间%s' % (
-                _gray_mid(res.disp) * 255.0, g['dead_white_frac'] * 100.0, g['chroma_c90'],
-                ('%+.2fEV' % t['ev_mid']) if t['applied'] else '未触发',
-                ('有' if sp.get('any') else '无'))
-        print(line)
+                           stock=args.stock, style=args.style)
+        print(_fmt_probe(res))
     return 0
 
 
@@ -100,7 +87,7 @@ def _gray_mid(disp):
 def cmd_one(args):
     from . import pipeline
     res = pipeline.run(args.input, src=args.src, max_side=args.max_side,
-                       stock=args.stock, base=args.base)
+                       stock=args.stock, style=args.style)
     out = args.out or (os.path.splitext(args.input)[0] + '_svFilm.jpg')
     res.save(out)
     print(res.summary())
@@ -113,16 +100,16 @@ def cmd_one(args):
 
 def _worker(t):
     from . import pipeline
-    src, max_side, outdir, p, stock, base = t
+    src, max_side, outdir, p, stock, style = t
     name = os.path.splitext(os.path.basename(p))[0]
     # 输出名带 _svFilm 后缀：不能叫 <名字>.jpg —— 那会和"相机直出同名 JPG"撞名字，
     # 下游一旦按"同名 JPG = 机内直出"去解读，就会把自己的产出当成相机底来看
-    suffix = '_svFilm' + (('_' + stock) if stock else '') + (('_' + base) if base else '')
+    suffix = '_svFilm' + (('_' + stock) if stock else '') + (('_' + style) if style else '')
     out = os.path.join(outdir, name + suffix + '.jpg')
     if os.path.abspath(out) == os.path.abspath(p):
         return (p, None, '', '输出会覆盖输入，已跳过')
     try:
-        res = pipeline.run(p, src=src, max_side=max_side, stock=stock, base=base)
+        res = pipeline.run(p, src=src, max_side=max_side, stock=stock, style=style)
         res.save(out)
         return (p, out, res.summary(), None)
     except Exception as e:                                  # noqa: BLE001
@@ -193,7 +180,7 @@ def cmd_dir(args):
     sys.stdout.flush()
 
     from . import pipeline
-    tasks = [(args.src, args.max_side, args.out, p, args.stock, args.base) for p in ps]
+    tasks = [(args.src, args.max_side, args.out, p, args.stock, args.style) for p in ps]
     done = fail = 0
     if jobs == 1:
         for t in tasks:
@@ -214,47 +201,30 @@ def cmd_dir(args):
     return 0 if fail == 0 else 1
 
 
-def cmd_bake(args):
-    from . import paths
-    if args.purpose:
-        root = args.root or '.'
-        out = paths.debug_path(args.purpose, args.out, root, args.date)
-    else:
-        out = args.out
-    os.makedirs(os.path.dirname(os.path.abspath(out)) or '.', exist_ok=True)
-    st = stocks.get(args.stock)
-    style.bake_cube(out, size=args.size, stock=st, base=args.base)
-    bn = stocks.base_label(C, args.base)
-    print('已烘焙 -> %s (size %d%s%s)' % (os.path.abspath(out), args.size,
-                                     (', 卷 ' + st['label']) if st else '',
-                                     (', 基准 ' + bn) if bn != '无' else ''))
-    return 0
-
-
 def cmd_stocks(args):
-    """列出所有卷（人话说明）。"""
-    print('%-16s %-14s %s' % ('卷名', '中文名', '一句话'))
+    """列出所有胶片风格（9 条预设）。"""
+    print('%-16s %-16s %s' % ('胶片风格', '中文名', '一句话'))
     print('-' * 92)
-    for n in stocks.names():
-        s = stocks.TABLE[n]
+    for n in presets.names():
+        lb, ds = presets.label_of(n)
         flag = ' ←' if (args.stock or C.STOCK) == n else ''
-        print('%-16s %-14s %s%s' % (n, s['label'], s['desc'], flag))
+        print('%-16s %-16s %s%s' % (n, lb, ds, flag))
     print('-' * 92)
-    print('用法：--stock <卷名>；不指定 = config.STOCK（当前 %s）' % (C.STOCK or 'None'))
+    print('用法：--stock <风格名>；不指定 = config.STOCK（当前 %s）' % (C.STOCK or 'None'))
     return 0
 
 
-def cmd_bases(args):
-    """列出基准成色的四条候选（不属于任何卷，是"我方中性路径对齐大师平均"的三档）。"""
-    print('%-16s %-14s %s' % ('预设名', '中文名', '画面上看得出来什么'))
-    print('-' * 108)
-    for n in stocks.base_names():
-        d = C.BASE_TABLE.get(n, {})
-        flag = ' ←' if (args.base or C.BASE) == n else ''
-        print('%-16s %-14s %s%s' % (n, d.get('label', n), d.get('desc', ''), flag))
-    print('-' * 108)
-    print('用法：--base <预设名>；不指定 = config.BASE（当前 %s）' % C.BASE)
-    print('出处：卷标定报告 §四（我方中性路径 vs 大师平均的系统性差）')
+def cmd_styles(args):
+    """列出三条曝光风格（靶值是从大师真片量出来的）。"""
+    print('%-8s %6s %6s %6s  %s' % ('曝光风格', '落点L50', '黑位L5', '亮部L95', '什么样子'))
+    print('-' * 92)
+    for n in tone.names():
+        d = tone.get(n)
+        flag = ' ←' if (args.style or C.STYLE) == n else ''
+        print('%-8s %6.1f %6.1f %6.1f  %s%s' % (n, d['mid_L'], d['black_L'], d['white_L'], d['desc'], flag))
+    print('-' * 92)
+    print('用法：--style <风格名>；不指定 = config.STYLE（当前 %s）' % (C.STYLE or 'None'))
+    print('出处：1144 张大师真片按各自中位亮度排序后取 P30/P50/P70 三档量出来的（见 tone.py）')
     return 0
 
 
@@ -293,19 +263,18 @@ def build_parser():
         p.add_argument('--src', default=None, choices=[None, 'auto', 'raw', 'jpg'])
         p.add_argument('--max-side', type=int, default=None, dest='max_side')
         p.add_argument('--stock', default=None,
-                       help='胶片卷：%s；不指定 = config.STOCK' % '/'.join(stocks.names()))
-        p.add_argument('--base', default=None,
-                       help='基准成色：%s；不指定 = config.BASE' % '/'.join(stocks.base_names()))
+                       help='胶片风格：%s；不指定 = config.STOCK' % '/'.join(presets.names()))
+        p.add_argument('--style', default=None,
+                       help='曝光风格：%s；不指定 = config.STYLE' % '/'.join(tone.names()))
 
     ap.add_argument('--version', action='version', version='svFilm ' + C.VERSION)
 
-    p = sub.add_parser('stocks', help='列出所有胶片卷')
+    p = sub.add_parser('stocks', help='列出所有胶片风格（9 条预设）')
     p.add_argument('--stock', default=None)
     p.set_defaults(func=cmd_stocks)
-
-    p = sub.add_parser('bases', help='列出基准成色候选（中性路径对齐大师平均的三档）')
-    p.add_argument('--base', default=None)
-    p.set_defaults(func=cmd_bases)
+    p = sub.add_parser('styles', help='列出三条曝光风格（靶值来自大师真片）')
+    p.add_argument('--style', default=None)
+    p.set_defaults(func=cmd_styles)
 
     p = sub.add_parser('probe', help='只分析不写文件')
     p.add_argument('inputs', nargs='+')
@@ -333,16 +302,6 @@ def build_parser():
                    help='给 JPG 去这个目录找同名 RAW 来跑（选片目录只有 JPG 时用）')
     common(p)
     p.set_defaults(func=cmd_dir)
-
-    p = sub.add_parser('bake', help='把 L2 风格层烘成 .cube')
-    p.add_argument('out', help='文件名；给了 --purpose 时只当文件名，落进效果debug 树')
-    p.add_argument('--size', type=int, default=33)
-    p.add_argument('--stock', default=None, help='烘哪个卷（不指定 = config 默认风格）')
-    p.add_argument('--base', default=None, help='叠哪一档基准成色')
-    p.add_argument('--purpose', default=None, help='三级目录名，给了就走效果debug 规范')
-    p.add_argument('--root', default=None, help='效果debug 的上级目录')
-    p.add_argument('--date', default=None)
-    p.set_defaults(func=cmd_bake)
 
     p = sub.add_parser('calib', help='量机型表要填的基线增益（需 RAW+JPG 同名对）')
     p.add_argument('inputs', nargs='+')

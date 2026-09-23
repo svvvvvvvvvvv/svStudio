@@ -18,18 +18,18 @@ export function TopBar() {
   const setBusy = useStore((s) => s.setBusy);
   const showToast = useStore((s) => s.showToast);
 
-  /** 同步星级：把当前主题里每张的星级与物理目录对齐 */
+  /** 同步星级：把当前目录里每张的星级与物理目录对齐 */
   const syncStars = async () => {
     if (!sessionName || !photos.length) return;
     setBusy(true, '同步星级…');
     try {
       const items = photos.map((p) => ({
         rel: p.rel,
-        star: ratings[ratingKey(sessionName, p.name)] || 0,
+        star: ratings[ratingKey(sessionName, p.rel)] || 0,
       }));
-      const r = await API.archivePhotos({ themePath: sessionPath, items });
-      const n = (r?.done?.length ?? 0) + (r?.removed?.length ?? 0);
-      showToast(`已同步 ${n} 张${r?.failed?.length ? `，${r.failed.length} 张失败` : ''}`);
+      const r = await API.archivePhotos({ dirPath: sessionPath, items });
+      const nFail = r?.failed?.length || 0;
+      showToast(`已同步 ${r?.done || 0} 张${nFail ? `，${nFail} 张失败` : ''}`);
     } catch (e) {
       showToast('同步失败：' + String(e));
     } finally {
@@ -109,7 +109,7 @@ export function TopBar() {
 
       {sessionName && (
         <Button size="1" variant="ghost" onClick={goHome}>
-          主题列表
+          目录列表
         </Button>
       )}
 
@@ -129,9 +129,9 @@ export function TopBar() {
         </Button>
       )}
 
-      {/* ★ 已打星 / 当前主题张数：直接从 ratings 派生，不用手动维护计数 */}
+      {/* ★ 已打星 / 当前目录张数：直接从 ratings 派生，不用手动维护计数 */}
       <Badge color="gray">
-        {photos.filter((p) => (ratings[ratingKey(sessionName, p.name)] || 0) >= 1).length} /{' '}
+        {photos.filter((p) => (ratings[ratingKey(sessionName, p.rel)] || 0) >= 1).length} /{' '}
         {photos.length}
       </Badge>
     </Flex>

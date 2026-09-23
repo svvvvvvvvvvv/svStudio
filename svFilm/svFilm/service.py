@@ -28,10 +28,10 @@ $PY -m svFilm.service --port 8800 --cache 40
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/health` | `{ok, cached, version}` |
-| GET | `/stocks` | 卷列表（name/label/desc） |
-| GET | `/bases` | 基准成色列表 |
+| GET | `/stocks` | **胶片风格**列表（9 条预设：name/label/desc） |
+| GET | `/styles` | **曝光风格**列表（高长调 / 中性调 / 暗调） |
 | GET | `/load?paths=a,b&side=700` | **同步**载入并缓存（慢，1.9 s/张；前端分批调） |
-| GET | `/render?id=3&stock=&base=&side=&fmt=jpg` | 出图（直接返回图片字节） |
+| GET | `/render?id=3&stock=Portra400薄荷&style=中性调&side=700` | 出图（直接返回图片字节） |
 | GET | `/stats?id=3` | 只出数字，不出图（调参时看指标用） |
 | GET | `/list` | 当前缓存里有什么 |
 """
@@ -49,7 +49,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 
 from . import config as C
-from . import io, pipeline, spektra, stocks
+from . import io, pipeline, presets, tone
 
 VERSION = 'svstudio-1'
 DEFAULT_PORT = 8765
@@ -94,7 +94,6 @@ _DECODE_SIG_KEYS = tuple(sorted(
 def _decode_sig():
     """解码阶段那一段的参数指纹。
 
-    ⚠ 必须在 `_Overrides` 上下文**里面**调用才准 —— 滑杆传进来的覆盖就是靠那个生效的。
     """
     out = []
     for k in _DECODE_SIG_KEYS:
@@ -137,7 +136,6 @@ def _cache_get(i):
 def _ensure_decoded(i, row):
     """出图前比一次解码签名：不一致就**重新解码**（否则入口那两根滑杆是死的）。
 
-    ⚠ 必须在 `_Overrides` 里调用（要看到滑杆传进来的参数）。
     """
     cur = _decode_sig()
     if row.get('decoded') == cur:
@@ -196,7 +194,7 @@ def _want_side(side):
     return max(16, min(req, cap)), None, req
 
 
-def _render_bytes(i, stock, base, side, fmt, quality, params=None, paper=None):
+def _render_bytes(i, stock, style, side, fmt, quality):
     """出图。
 
     ★★ 09-15 修一个真 bug：`side` 以前是**收下就扔**（文档写的是"前端要别的尺寸得
@@ -212,9 +210,8 @@ def _render_bytes(i, stock, base, side, fmt, quality, params=None, paper=None):
         都不一样（实测同一块平坦区的颗粒：2048/3000/原图 = 0.63/0.77/1.87），
         复用就是拿小尺寸的像素冒充大尺寸。
 
-    `paper` = 相纸（09-15 SV 选「C」）。空 = 这一卷**配套**的那张（默认值由引擎给）。
-      认不得的名字**不会**直接崩：`pipeline.run_from` 会回落成配套纸，
-      并在报告里标 `print_fallback`（不静默 —— 这是本项目最阴的那一类坑）。
+    `style` = 曝光风格（高长调 / 中性调 / 暗调）。空 = 用 `config.STYLE`。
+      ⚠ 胶片风格与曝光风格**互相独立**：9 条 × 3 档 = 27 种组合，都能出。
     """
     row = _cache_get(i)
     if not row:
@@ -223,13 +220,12 @@ def _render_bytes(i, stock, base, side, fmt, quality, params=None, paper=None):
     if err:
         return None, {'error': err}
     cur_side = int(row.get('side') or DEFAULT_SIDE)
-    with _Overrides(_parse_params(params)):
-        if want is None or want == cur_side:
-            s = _ensure_decoded(i, row)       # ★ 解码阶段参数改了要重新解码（见 _decode_sig）
-        else:
-            s, _ms = _load_one(row.get('path'), want)      # ★ 换尺寸 = 重新解码
-        r = pipeline.run_from(s, stock=stock or None, base=base or None,
-                              cache=_STAGES[0], paper=paper or None)
+    if want is None or want == cur_side:
+        s = _ensure_decoded(i, row)       # ★ 解码阶段参数改了要重新解码（见 _decode_sig）
+    else:
+        s, _ms = _load_one(row.get('path'), want)      # ★ 换尺寸 = 重新解码
+    r = pipeline.run_from(s, stock=stock or None, style=style or None,
+                          cache=_STAGES[0])
     disp = np.clip(r.disp, 0.0, 1.0)
     arr = (disp * 255.0 + 0.5).astype(np.uint8)
     info = {'ms': round(r.report.get('ms', 0)),
@@ -255,7 +251,7 @@ def _render_bytes(i, stock, base, side, fmt, quality, params=None, paper=None):
     return buf.getvalue(), info
 
 
-def _export_one(i, out_path, stock, base, paper, params, side, quality, src_path=None):
+def _export_one(i, out_path, stock, style, side, quality, src_path=None):
     r"""★ 导出**成片**（09-15 SV 选「A」第 ② 项）：把渲染结果写成真照片文件。
 
     为什么这件事由引擎做（而不是把 base64 交给前端让它写）：
@@ -303,18 +299,16 @@ def _export_one(i, out_path, stock, base, paper, params, side, quality, src_path
         side_clamped = bool(_cap) and side > int(_cap)
         if side_clamped:
             side = int(_cap)
-    with _Overrides(_parse_params(params)):
-        try:
-            # ★ 按导出尺寸重新解码 + 重新跑（`_load_one` 自带"路径+尺寸+入口签名"那一层缓存）
-            s, _ms = _load_one(src, side)
-            r = pipeline.run_from(s, stock=stock or None, base=base or None,
-                                  cache=None, paper=paper or None)
-        except MemoryError:
-            # 原图尺寸要 ~13 GB（65% 在"胶片出图"那一大段）。内存不够时**说清楚**，
-            # 别让它冒一个 numpy 的 `_ArrayMemoryError` 让人看不懂。
-            return None, {'error': '内存不够跑这个尺寸（%s）。关掉几个占内存的程序再试，'
-                                   '或把 config.EXPORT_MAX_SIDE 设成 3000 当上限。'
-                                   % ('原图' if side is None else '%d 长边' % side)}
+    try:
+        # ★ 按导出尺寸重新解码 + 重新跑（`_load_one` 自带"路径+尺寸+入口签名"那一层缓存）
+        s, _ms = _load_one(src, side)
+        r = pipeline.run_from(s, stock=stock or None, style=style or None, cache=None)
+    except MemoryError:
+        # 原图尺寸要 ~13 GB（65% 在"胶片出图"那一大段）。内存不够时**说清楚**，
+        # 别让它冒一个 numpy 的 `_ArrayMemoryError` 让人看不懂。
+        return None, {'error': '内存不够跑这个尺寸（%s）。关掉几个占内存的程序再试，'
+                               '或把 config.EXPORT_MAX_SIDE 设成 3000 当上限。'
+                               % ('原图' if side is None else '%d 长边' % side)}
     io.save(r.disp, out_path, exif=(s.exif or None), quality=int(quality))
     return dict(ok=True, path=out_path.replace('\\', '/'),
                 w=int(r.disp.shape[1]), h=int(r.disp.shape[0]), side=side,
@@ -362,29 +356,27 @@ def _base_bytes(i, fmt='jpg', quality=92, side=None):
     return buf.getvalue(), info
 
 
-def _stats_of(i, stock, base, params=None, paper=None):
+def _stats_of(i, stock, style=None):
     row = _cache_get(i)
     if not row:
         return {'error': 'id 不在缓存里'}
-    with _Overrides(_parse_params(params)):
-        s = _ensure_decoded(i, row)           # ★ 同上：解码阶段参数改了要重新解码
-        r = pipeline.run_from(s, stock=stock or None, base=base or None,
-                              cache=_STAGES[0], paper=paper or None)
+    s = _ensure_decoded(i, row)           # ★ 解码阶段参数改了要重新解码
+    r = pipeline.run_from(s, stock=stock or None, style=style or None,
+                          cache=_STAGES[0])
     from . import color
     lab = color.to_lab(np.clip(r.disp, 0, 1))
     L = lab[..., 0]
     Cc = np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2)
-    st = r.report.get('style') or {}
+    t = r.report.get('tone') or {}
     return dict(ms=round(r.report.get('ms', 0)),
-                stock=r.report.get('stock'), base=r.report.get('base'),
-                # ★ 报出**实际用的那张相纸**（不是请求里那个）—— 认不得的名字会被回落成
-                #   配套纸，这里带 `paper_fallback` 说明"回落过了"，
-                #   免得画面跟预期不一样却查不出原因。
-                paper=st.get('print'), paper_default=st.get('print_default'),
-                paper_fallback=st.get('print_fallback'),
-                paper_fallback_reason=st.get('print_fallback_reason'),
-                L50=round(float(np.median(L)), 1),
-                L90=round(float(np.percentile(L, 90)), 1),
+                stock=r.report.get('stock'), style=r.report.get('style'),
+                # ★ 曝光这一道**实打实做到哪了**（不是请求里那个）—— 一眼看出
+                #   "靶是多少 / 实际到多少"，免得画面跟预期不一样却查不出原因。
+                L5=round(float(t.get('L5_out', 0)), 1),
+                L50=round(float(t.get('L50_out', 0)), 1),
+                L95=round(float(t.get('L95_out', 0)), 1),
+                ev=round(float(t.get('ev_mid', 0)), 2),
+                L50_measured=round(float(np.median(L)), 1),
                 b=round(float(np.median(lab[..., 2])), 2),
                 c50=round(float(np.median(Cc)), 2))
 
@@ -436,44 +428,21 @@ class _H(BaseHTTPRequestHandler):
                                        #   （前端状态条想显示"这一发是重算的还是复用的"就看 hit）
                                        stage_cache=(_STAGES[0].stats() if _STAGES[0] else None)))
             if u.path == '/stocks':
-                # ★ 卷列表从引擎取（`stocks.NAMES`）—— 别在这里写死名字：
-                #   09-14 出过 bug：`air` 从卷表删掉后，这里还在点名它 ⇒
-                #   `stocks.get('air')` 抛 KeyError ⇒ /stocks 直接 500。
-                out = []
-                for n in stocks.NAMES:
-                    try:
-                        s = stocks.get(n) or {}
-                    except KeyError:
-                        continue
-                    out.append(dict(name=n, label=s.get('label') or n,
-                                    desc=s.get('desc') or '',
-                                    # ★ 是否**走引擎物理链**（真卷 `spek=` 或预设 `preset=`）。
-                                    #   前端据此**只列生效的滑杆** —— 这两条路都会让位
-                                    #   L1 影调 / L2 颜色 / 空间层（引擎自带 H&D + 颗粒 + halation），
-                                    #   拧了没反应的滑杆就不该列出来。
-                                    # ⚠ 09-23 前这个字段叫 `spek` 且只看 `s.get('spek')`；
-                                    #   卷表换成预设后那样会把 9 条预设全判成"中性卷" ⇒ 列出假滑杆。
-                                    engine=bool(s.get('spek') or s.get('preset'))))
-                return self._json(out)
-            if u.path == '/bases':
-                out = []
-                for n, d in (C.BASE_TABLE or {}).items():
-                    out.append(dict(name=n, label=d.get('label') or n,
-                                    desc=d.get('desc') or '',
-                                    # ★ 哪一支是引擎当前配置的默认（`config.BASE`）。
-                                    #   前端据此**选初值** —— 不许自己写死基准名。
-                                    #   过去前端写死 'all'，而 'all' 不在表里 ⇒
-                                    #   `stocks.resolve_base` **静默**回落成 `BASE_NONE`
-                                    #   （"不套基准"）⇒ 默认出图等于没套基准，
-                                    #   界面上还一支都选不中（看不出哪里不对）。
-                                    isDefault=bool(n == getattr(C, 'BASE', None))))
-                return self._json(out)
-            if u.path == '/papers':
-                # ★ 相纸清单（09-15 SV 选「C」：印相纸要能选，别写死）。
-                #   **必须带 `stock`** —— 默认相纸是**跟着卷走的**：引擎在"这一卷配套的那张"
-                #   上标 `isDefault`，前端只认它（同基准那条规矩：默认值一律由引擎给）。
-                #   ⚠ 一个都不标（stock 不是真卷）= 这条路没有"相纸"概念（neutral 走 Lab 引擎）。
-                return self._json(spektra.papers(q.get('stock') or None))
+                # ★ 胶片风格列表从 `presets` 现读（别在这里写死名字：09-14 出过 bug，
+                #   `air` 从卷表删掉后这里还在点名 ⇒ /stocks 直接 500）。
+                #   每一条 = 一份 public GUI 的完整参数快照（`data/presets/*.json`）。
+                return self._json([dict(name=n, label=presets.label_of(n)[0],
+                                        desc=presets.label_of(n)[1], engine=True)
+                                   for n in presets.names()])
+            if u.path == '/styles':
+                # ★ 曝光风格列表。靶值在 `tone.STYLES`（从大师真片量出来的），
+                #   **默认哪一档由引擎给**（`config.STYLE`）—— 前端不许自己写死档位名。
+                return self._json([dict(name=n, desc=tone.get(n)['desc'],
+                                        isDefault=bool(n == getattr(C, 'STYLE', None)),
+                                        L50=tone.get(n)['mid_L'],
+                                        L5=tone.get(n)['black_L'],
+                                        L95=tone.get(n)['white_L'])
+                                   for n in tone.names()])
             if u.path in ('/', '/index.html') and _WEB[0]:
                 # ★ 可选：把工作台的静态页 serve 出来（路径由 `--web` 给，**不写死** ⇒ 边界不破）
                 fp = os.path.join(_WEB[0], 'index.html')
@@ -499,12 +468,6 @@ class _H(BaseHTTPRequestHandler):
                     if n.lower().endswith(exts):
                         ps.append(os.path.join(d, n).replace('\\', '/'))
                 return self._json(dict(dir=d, n=len(ps), files=ps[:lim]))
-            if u.path == '/params':
-                # ★ 09-15：改由 `_param_defs()` 出，每项带 `dv`（= 引擎此刻实际用的值，
-                #   `inv` 的已翻成人话）。**前端必须用它当滑杆初值** —— 过去那版这里也返回了
-                #   一个 `value`，但前端从来没用，而是自己取"区间中点" ⇒ 显示的数和实际生效的
-                #   数对不上（13 根里 12 根）。那个 `value` 字段一并去掉，避免两个名字并存再踩一次。
-                return self._json(_param_defs())
             if u.path == '/list':
                 with _cache_lock:
                     out = [dict(id=i, path=v['path'], side=v['side'])
@@ -534,10 +497,9 @@ class _H(BaseHTTPRequestHandler):
                 return self._img(b, info['mime'], info)
             if u.path == '/render':
                 b, info = _render_bytes(int(q.get('id') or 0), q.get('stock'),
-                                        q.get('base'), q.get('side'),
+                                        q.get('style'), q.get('side'),
                                         (q.get('fmt') or 'jpg').lower(),
-                                        q.get('q') or 92, q.get('params'),
-                                        q.get('paper'))
+                                        q.get('q') or 92)
                 if b is None:
                     return self._json(info, 404)
                 return self._img(b, info['mime'], info)
@@ -548,8 +510,7 @@ class _H(BaseHTTPRequestHandler):
                 #   ⚠ 写盘要时间：2048 长边十来秒、**原图尺寸 ~6 分半**（RAW）⇒ 前端超时要放宽。
                 _sv = (q.get('side') or '').strip()
                 info2, err2 = _export_one(int(q.get('id') or 0), q.get('path'),
-                                          q.get('stock'), q.get('base'), q.get('paper'),
-                                          q.get('params'),
+                                          q.get('stock'), q.get('style'),
                                           int(_sv) if _sv else None,
                                           q.get('q') or C.JPEG_QUALITY,
                                           src_path=q.get('src'))
@@ -558,344 +519,11 @@ class _H(BaseHTTPRequestHandler):
                 return self._json(info2)
             if u.path == '/stats':
                 return self._json(_stats_of(int(q.get('id') or 0), q.get('stock'),
-                                            q.get('base'), q.get('params'),
-                                            q.get('paper')))
+                                            q.get('style')))
             return self._json({'error': 'no such path', 'path': u.path}, 404)
         except Exception as e:                                    # noqa: BLE001
             return self._json({'error': '%s: %s' % (type(e).__name__, str(e)[:200])}, 500)
 
-
-# ---- ★ 通用参数口子：`params=KEY:VAL,KEY:VAL` 临时覆盖 config -------------------
-# 为什么这么做：**不用为每一个旋钮写代码**。前端只要知道「哪个参数、什么范围」，
-# 就能自动生成滑杆；引擎这边一个口子全接住。
-_param_lock = threading.Lock()
-
-# 允许被外部覆盖的前缀（**白名单**，防止前端乱改引擎契约里的东西）
-# ★ 09-15 补 `CONTRAST` / `CHROMA_`：这两类**名字配不上任何前缀** ⇒
-#   过去就算加了滑杆也**传不进来**，而且是**静默丢弃**（下面的契约就是不合法就丢、
-#   不报错）⇒ 拧了没反应还不知道为什么。这是"加滑杆"必须先修的地基。
-# ★ 同时清掉两个**死前缀**（历史遗留，config 里根本没有以它们开头的键）：
-#   `COLOR_`（整体色偏其实叫 `COL_A/COL_B`，配不上）、`SHARP_`（查无此键）。
-PARAM_PREFIX = ('TONE_', 'GRAIN_', 'BLOOM_', 'HALATION_', 'DENOISE_', 'WHITE_MICRO',
-                'FACE_', 'DENSITY_', 'CROSSTALK_', 'LAYER_', 'ENTRY_', 'SHADOW_',
-                'SKIN_', 'ANCHOR_', 'CAP_', 'SPEK_', 'CONTRAST', 'CHROMA_')
-
-# 不收白名单里的这些（结构性/开关类/内部系数，乱改会破契约）
-PARAM_BLOCK = ('ENTRY_CURVE', 'ENTRY_SHOULDER_KIND', 'LUT_PATH', 'BASE', 'STOCK',
-               # ⚠ 前缀一放开就会**连坐**这几个"只是名字撞上前缀"的内部系数：
-               'CONTRAST_S_SCALE', 'CONTRAST_S_CLAMP',   # style.py 的 S 形振幅系数
-               'CHROMA_REF')                             # 彩度 gamma 的参考点
-
-
-# ★ 09-15（B3）：布尔开关的几种写法都认（前端发的是 1/0，手写 A/B 时可能写 true/false）。
-#   认不出来 ⇒ 返回 None ⇒ **丢掉**（不是当成 False：那会把"写错了"变成"悄悄关掉一层"）。
-_TRUE_WORDS = ('1', 'true', 'yes', 'on', 't', 'y')
-_FALSE_WORDS = ('0', 'false', 'no', 'off', 'f', 'n')
-
-
-def _as_bool(v):
-    s = (v or '').strip().lower()
-    if s in _TRUE_WORDS:
-        return True
-    if s in _FALSE_WORDS:
-        return False
-    return None
-
-
-def _parse_params(txt):
-    """`KEY:VAL,KEY:VAL` → dict。不合法/不在白名单的**静默丢掉**（不让前端报错卡住）。
-
-    ★ 09-15 起这里还负责两件事，两件都**由 `PARAMS` 表驱动**（单一真相源，
-      所以不许在这里写死参数名）：
-        · `inv`  方向翻转：滑杆的**显示值**与引擎值互为倒数（见「整张亮暗」）
-        · `pair` 成对联动：有的旋钮必须**同时**改两个常量才成立（见「黑柔」的守恒）
-    """
-    out = {}
-    for seg in (txt or '').split(','):
-        if ':' not in seg:
-            continue
-        k, v = seg.split(':', 1)
-        k, v = k.strip(), v.strip()
-        if not k or k in PARAM_BLOCK:
-            continue
-        if not any(k.startswith(p) for p in PARAM_PREFIX):
-            continue
-        if not hasattr(C, k):
-            continue
-        cur = getattr(C, k)
-        # ★★ 09-15（B3）三类控件：数字 / 整层开关（bool）/ 下拉（enum）。
-        #   `kind` **由 PARAMS 表给**（单一真相源，所以这里不许写死参数名）。
-        #   ⚠ 这条闸原来只认 `(int, float)` —— `DENOISE_ENABLE` 这种 bool 被
-        #     `not isinstance(cur, bool)` 挡掉、`SPEK_DIFFUSION_FAMILY` 这种字符串连
-        #     `float()` 都过不去 ⇒ **界面上有控件、拧不动、还不报错**（本项目最阴的一类）。
-        kind = _PARAM_KIND.get(k, 'num')
-        if kind == 'bool':
-            _b = _as_bool(v)
-            if _b is not None:
-                out[k] = _b
-        elif kind == 'enum':
-            # 表里没有的名字**一律丢掉** —— 不能让 vendor 拿到编不出来的型号（那是崩，不是"没反应"）
-            if v in _PARAM_OPTS.get(k, ()):
-                out[k] = v
-        elif isinstance(cur, (int, float)) and not isinstance(cur, bool):
-            try:
-                out[k] = float(v)
-            except ValueError:
-                pass
-    # ---- ① 显示值 → 引擎值（方向翻转）----
-    for k in list(out):
-        if k in _PARAM_INV and abs(out[k]) > 1e-9:
-            out[k] = 1.0 / out[k]
-    # ---- ② 成对联动（主项在场就覆盖从项；单独给从项仍然放行，留给 A/B 用）----
-    for k, mate in _PARAM_PAIR.items():
-        if k in out:
-            out[mate] = out[k]
-    return out
-
-
-class _Overrides:
-    """临时覆盖 config（**用完还原**）。常驻服务是多线程的 ⇒ 加锁。"""
-
-    def __init__(self, kv):
-        self.kv = kv or {}
-
-    def __enter__(self):
-        self.old = {}
-        _param_lock.acquire()
-        for k, v in self.kv.items():
-            self.old[k] = getattr(C, k)
-            cur = self.old[k]
-            # ⚠ 顺序要紧：`isinstance(True, int)` **也是 True** ⇒ bool 必须先判，
-            #   否则开关会被写成 0/1 整数（下游 `bool(...)` 虽然还能用，但类型就脏了）。
-            if isinstance(cur, bool):
-                setattr(C, k, bool(v))
-            elif isinstance(cur, str):
-                setattr(C, k, str(v))
-            elif isinstance(cur, int):
-                setattr(C, k, int(round(v)))
-            else:
-                setattr(C, k, float(v))
-        return self
-
-    def __exit__(self, *a):
-        for k, v in self.old.items():
-            setattr(C, k, v)
-        _param_lock.release()
-        return False
-
-
-# ---- 前端要的「可调参数清单」（带范围）--------------------------------------
-# 只列**真值得给人拧的**那几个 —— 别把 config 里 200 个常量全倒出来。
-# `grp`   = 前端按这个分组画（真卷 / 脸 / 影调 / 质感）
-# `spek`  = True 只在**真卷**模式下生效；False 只在**中性基准**下生效；None = 都生效。
-#   ⚠ 真卷自带 H&D + 颗粒 + halation，我们的影调/空间层**让位**了
-#     ⇒ 那几根在真卷下拧了**没反应**，前端要求「不生效的就别列出来」（SV 09-14）。
-# `dv`    = **不写在这里**！由 `_param_defs()` 从 config 现读（见那个函数的注释）。
-# `inv`   = True ⇒ 滑杆显示的是"引擎值的倒数"（人话方向翻过来，见「整张亮暗」）
-# `pair`  = 从项名字：主项一动就把从项同步成同值（见「黑柔」的守恒）
-# ★★ 09-15 SV 选「C」：13 根 → **23 根**。范围收窄的口径是"把用不到的长尾砍掉"，
-#   方向统一成**右 = 强、左端 = 关掉/不动**（唯一例外是「整张亮暗」，它靠 `inv` 翻正）。
-# ★ 「对齐大师」那一档都写进 `d` 里了 —— 这是 SV 定的规矩：每个菜单都要有"照大师那一栏"。
-PARAMS = [
-    # ========== 影调（★ 09-15 SV 定的右栏顺序：影调 → 真卷 → 物理/质感 → 脸）==========
-    dict(k='ENTRY_SETTLE_SHIFT_EV', name='整张亮暗(总)', lo=-1.0, hi=1.5, step=0.05, grp='影调',
-         d='在"听相机曝光"之上，整体再提亮 / 压暗（单位：档）。0 = 不动。'
-           '★ 09-15 修：**任何机型都通电**。以前只有量过落点规律的机型才认这个数，'
-           '别的机身上它被**静默丢掉**（拧了、点渲染都不动）；现在没量过的机身走全局落点，'
-           '一样按这一档平移。'
-           '⚠ 只对 **RAW** 有效（JPG 的相机曲线已经压过了，入口这一段不跑）。'
-           '⚠ 大师的中灰是 58，我们够不到（那个数绑着别人的场景+曝光+冲扫）⇒ '
-           '这是"朝那个方向偏"，不是"对齐到 58"'),
-    dict(k='ENTRY_TOE',       name='暗部亮度',   lo=0.0,  hi=1.0,  step=0.02, grp='影调',
-         # ⚠ 名字按**看得见的方向**取，别按引擎的措辞取：引擎里它叫 ENTRY_TOE = "最深处的
-         #   增益下限"，1.0 = 关掉 = 暗部最亮 ⇒ 直接叫「入口黑位」会让人以为往右更黑（反的）。
-         #   现在右 = 暗部更亮，和「整张亮暗(总)」同向。
-         d='最暗那一段保留多少光。0 = 全压死（黑位最深）；1.00 = 完全不压（回到没有趾部）。'
-           '出厂 0.32 是照作者线的黑位 7.5 定的。只动暗部，中灰和亮部一个像素不动。'
-           '⚠ 只对 **RAW** 有效'),
-    dict(k='CONTRAST',        name='明度对比',   lo=0.85, hi=1.20, step=0.01, grp='影调', spek=False,
-         d='S 形对比（只动明暗、中灰不移动）。1.00 = 不动；越大画面越硬。真卷下不生效'),
-    dict(k='CHROMA_S',        name='彩度',       lo=0.70, hi=1.40, step=0.01, grp='影调', spek=False,
-         d='整张彩度倍率。1.00 = 不动。真卷下不生效 —— 那边的彩度归「整张浓淡」管'),
-    dict(k='TONE_LIFT',       name='中高调抬起', lo=0,  hi=14,  step=0.5, grp='影调', spek=False,
-         d='整张变亮（白点锚在 100 ⇒ 顺带带出高光肩部）。⚠ 实测它只改整体亮暗、不改形状'),
-    dict(k='TONE_TOE',        name='趾部压深',   lo=0,  hi=2.0, step=0.05, grp='影调', spek=False,
-         d='暗部相对中灰再压深多少。1.0 = 出厂值（按大师全体的相对形状解出来的最优）。'
-           '它比「入口黑位」更靠下游、只管中间调以下'),
-    dict(k='TONE_SHOULDER',   name='高光肩部',   lo=0,  hi=4,   step=0.05, grp='影调', spek=False,
-         d='高光段整段下收多少。2.0 = 出厂值（大师的高光顶实测 97.0，肩部 2 正好对上）；'
-           '0 = 开顶（白能真到白，代价是高光偏暖的胶片味会淡）'),
-
-    # ========== 真卷（物理链：落点 / 印相曲线 / 预闪 / 扫描）==========
-    dict(k='SPEK_PE_SHIFT',   name='整张亮暗',   lo=0.62, hi=1.43, step=0.01, grp='真卷', spek=True,
-         inv=True,
-         d='整张更亮还是更暗。1.00 = 不动，越大越亮。相机给多了曝光的片（闪光顶亮、脸发白）'
-           '往左拉回来。⚠ 往右别拉到头，高光会先顶'),
-    dict(k='SPEK_COUPLERS',   name='整张浓淡',   lo=0.0,  hi=0.5,  step=0.01, grp='真卷', spek=True,
-         d='彩度（胶片层间抑制的强度）。越小越淡。0 = 关掉这道过程（画面彩度 7.57，作者线的靶 '
-           '6.79，已经很贴）；1.0 = 出厂物理值（12.13，明显更艳）。它不动明暗对比'),
-    dict(k='SPEK_MORPH_GAMMA', name='印相反差',  lo=1.00, hi=1.30, step=0.01, grp='真卷', spek=True,
-         d='相纸曲线的陡度 —— 改的是对比的"形状"（不是加滤镜）。1.00 = 关掉；越大画面越硬、'
-           '层次往亮部靠。⚠ 它一动，整张的落点也跟着动，要配着「整张亮暗」一起看'),
-    dict(k='SPEK_MORPH_FAST',  name='印相·快层', lo=0.80, hi=1.40, step=0.02, grp='真卷', spek=True,
-         d='只加在"快层"（颗粒最细那一层）上的额外陡度。1.00 = 不动。'
-           '⚠ 它和「印相反差」是**相乘**的；只动这一根会让三个通道的曲线不同步（画面偏色），'
-           '要试就把快慢两层给同一个数'),
-    dict(k='SPEK_MORPH_SLOW',  name='印相·慢层', lo=0.80, hi=1.40, step=0.02, grp='真卷', spek=True,
-         d='只加在"慢层"（颗粒最粗那一层）上的额外陡度。1.00 = 不动。⚠ 和快层成对用，理由同上'),
-    dict(k='SPEK_MORPH_EXHAUST', name='显影疲劳', lo=0.0, hi=1.0,  step=0.02, grp='真卷', spek=True,
-         d='显影液用旧了（局部耗尽）的效果：把每层曲线往一起拉，**中灰不动**。0 = 关。'
-           '越大越"闷"、暗部层次越挤'),
-    dict(k='SPEK_PREFLASH',    name='预闪',      lo=0.0,  hi=0.05, step=0.001, grp='真卷', spek=True,
-         d='暗房技法：不放底片、只让灯透过片基先给相纸一点均匀曝光。0 = 关。'
-           '⚠ **方向是反的** —— 实测 0.10 就让画面中位从 74.5 掉到 48.0、亮部 86.2→64.2'
-           '（相纸多吃光 = 整张往下压）⇒ 这里只开到 0.05，一格一格试'),
-    dict(k='SPEK_PREFLASH_Y_SHIFT', name='预闪偏黄', lo=-1.0, hi=1.0, step=0.02, grp='真卷', spek=True,
-         d='预闪那束光偏黄多少（暖）。0 = 中性。⚠ 只有「预闪」不是 0 的时候才看得出来'),
-    dict(k='SPEK_PREFLASH_M_SHIFT', name='预闪偏品红', lo=-1.0, hi=1.0, step=0.02, grp='真卷', spek=True,
-         d='预闪那束光偏品红多少。0 = 中性。⚠ 只有「预闪」不是 0 的时候才看得出来'),
-    dict(k='SPEK_SCANNER_LENS_BLUR', name='成片锐度', lo=0.0, hi=1.5, step=0.05, grp='真卷', spek=True,
-         d='扫描端的锐化强度。0 = 不锐化（画面更软），0.60 = 出厂'),
-
-    # ========== 质感（空间光学：柔光族 / 镜头 / 降噪 / 颗粒 / 黑柔 / 晕圈）==========
-    dict(k='SPEK_DIFFUSION_STRENGTH', name='柔光', lo=0.0, hi=0.5, step=0.01, grp='质感', spek=True,
-         d='柔光的强度（挂放大机时颗粒保持锐利）。0 = 关；0.25 ≈ 1/4 档。'
-           '⚠ 大师的柔度是 11.19，我们关掉就已经 9.72 ⇒ 我们本来比大师更柔，'
-           '想照大师对齐就拉到 0'),
-    dict(k='SPEK_DIFFUSION_FAMILY', name='柔光型号', kind='enum', grp='质感', spek=True,
-         opts=(('black_pro_mist', '黑柔（BPM）'), ('pro_mist', '白柔（Pro Mist）'),
-               ('glimmerglass', '微光（Glimmerglass）'), ('cinebloom', '电影柔光（CineBloom）')),
-         d='柔光的"牌子" —— 决定化开的形状、晕圈大小、纱雾轻重。'
-           '★ 同一个档位**电影柔光比黑柔柔得多**：实测中尺度柔度（越小越柔）'
-           '关 9.72 → 黑柔1/2 8.55 → 电影1/2 6.18；黑柔最保分辨率、电影柔光晕开最大、微光居中。'
-           '⚠ 换型号画面立刻变（这是重新渲染一发的量级）'),
-    dict(k='SPEK_DIFFUSION_ENLARGER', name='柔光挂放大机', kind='bool', grp='质感', spek=True,
-         d='把柔光挂在**放大机**上（印相那一步、颗粒画出来之前）⇒ 光化开了但**颗粒还是锐的**'
-           '（09-15 你选的就是这一支）'),
-    dict(k='SPEK_DIFFUSION_CAMERA', name='柔光挂相机', kind='bool', grp='质感', spek=True,
-         d='把柔光挂在**相机**上（RAW 那一端）⇒ **颗粒跟着一起柔**、整张更"化"。'
-           '⚠ 两个都挂 = 两处各柔一遍，力度会叠起来'),
-    dict(k='SPEK_DIFFUSION_SCALE', name='柔光尺度', lo=0.3, hi=3.0, step=0.1, grp='质感', spek=True,
-         d='化开的范围有多大。1.0 = 出厂。越大 = 大范围柔（像隔一层玻璃）；越小 = 只柔细节'),
-    dict(k='SPEK_CAMERA_LENS_BLUR_UM', name='镜头模糊', lo=0.0, hi=40.0, step=1.0, grp='质感',
-         spek=True,
-         d='镜头本身的像差（单位 μm，按出图尺寸换算成像素 ⇒ 出图越大它越明显）。'
-           '10 = 出厂；0 = 一点都不加（画面最"数码"地锐）。'
-           '⚠ 它和「成片锐度」是一糊一锐两头，两个一起拉会互相抵消'),
-    dict(k='DENOISE_ENABLE', name='降噪', kind='bool', grp='质感',
-         d='RAW 提亮之后暗部的色斑/噪点要不要收拾。默认开，只在"暗部 + 平坦区"下手、'
-           '边缘和细节一个像素不动 ⇒ 关掉只会让暗部更脏，不会让细节更多'),
-    dict(k='GRAIN_AMOUNT',    name='颗粒',       lo=0,  hi=0.06, step=0.002, grp='质感', spek=False,
-         gate='GRAIN_ENABLE',
-         d='颗粒强度。0 = 关。高光端本来就精确归零、暗部也会淡出 ⇒ 它主要作用在中间调。'
-           '⚠ 名字前面那个勾 = 这一整层开不开（关掉 = 这层不跑，不是把强度拧到 0）'),
-    dict(k='GRAIN_SIZE',      name='颗粒大小',   lo=0.6, hi=2.5, step=0.05, grp='质感', spek=False,
-         d='颗粒的尺度（高斯半径 px @2048 长边）。小 = 细盐，大 = 粗砂'),
-    dict(k='BLOOM_AMOUNT',    name='黑柔',       lo=0,  hi=0.20, step=0.005, grp='质感', spek=False,
-         pair='BLOOM_SPREAD', gate='BLOOM_ENABLE',
-         d='黑柔的强度（高光外溢）。0 = 关。⚠ 它和「化开」必须**成对相等**才能量守恒'
-           '（加进去的光 = 扣掉的）—— 引擎已经自动同步，你只拧这一根就行，别去碰另一个。'
-           '⚠ 名字前面那个勾 = 这一整层开不开'),
-    dict(k='HALATION_AMOUNT', name='红橙晕圈',   lo=0,  hi=0.25, step=0.01, grp='质感', spek=False,
-         gate='HALATION_ENABLE',
-         d='高光边缘的红橙光晕（电影卷片基把红光散射回来）。0 = 关。'
-           '⚠ 名字前面那个勾 = 这一整层开不开'),
-    dict(k='HALATION_RADIUS', name='晕圈半径',   lo=8.0, hi=30.0, step=0.5, grp='质感', spek=False,
-         d='红边的扩散半径。小 = 贴着亮边一条硬红边，大 = 糊开一大片'),
-    dict(k='WHITE_MICRO',     name='白区层次',   lo=0,  hi=1.5, step=0.05, grp='质感',
-         d='白衣 / 白墙那块的中尺度微反差。0 = 不动。1.00 = 出厂，'
-           '**这就是"够得着的上限"** —— 大师的 4.69 追不到，那道差是内容差（人家的白是天空和阳光）'),
-
-    # ========== 脸（两条路都生效：L3 肤色层是保留的）=========
-    dict(k='FACE_SPAN_KMAX',  name='脸的层次',   lo=1.0,  hi=3.0,  step=0.05, grp='脸',
-         gate='FACE_DEPTH_ENABLE',
-         d='脸内部明暗最多拉开几倍。1.0 = 不动，越大越立体。2.0 = 作者线那一档（就是出厂值），'
-           '再往上容易显脏。'
-           '⚠ 名字前面那个勾 = 这道"收脸"整道关掉（连下面那根「脸的靶跨度」一起停）'),
-    dict(k='FACE_TGT_SPAN',   name='脸的靶跨度', lo=20.0, hi=50.0, step=0.5, grp='脸',
-         d='脸的明暗想拉到多开（配合上一根用）。35 = 作者线的下限，就是出厂值；'
-           '调大 = 想要更立体的脸'),
-    dict(k='SKIN_FLOOR_A',    name='脸的红绿',   lo=11.0, hi=20.0, step=0.1, grp='脸',
-         d='脸的 a*（+ 偏红润 / − 偏绿）。**16.3 = 33 位大师脸的中间值**（照大师对齐选它）；'
-           '出厂 14.5 是"作者线那档"，更淡'),
-    dict(k='SKIN_FLOOR_B',    name='脸的黄蓝',   lo=12.0, hi=22.0, step=0.1, grp='脸',
-         d='脸的 b*（+ 偏黄暖 / − 偏蓝冷）。**18.5 = 33 位大师脸的中间值**；出厂 16.5 更冷一点'),
-    dict(k='SKIN_PROTECT_STRENGTH', name='肤色保护', lo=0.0, hi=1.0, step=0.02, grp='脸',
-         d='风格层压彩度时，脸少降多少。0 = 不保护（脸跟着整张一起变淡），1 = 脸完全不掉色'),
-    # ★★ 09-15 SV 选「D」：把"收脸"放出来，但**默认 0 = 一个像素都不动**。
-    #   为什么单开一根而不是直接改默认：09-14 定的「只提不压」是**故意**的
-    #   （两个方向都锚会把整张亮度分布拉散，实测 L50 由 41~68 → 35~84）
-    #   ⇒ 做成滑杆 ⇒ 拖了才生效，**出厂结果逐位不变**。
-    dict(k='ANCHOR_DOWN_GAIN', name='脸太亮收回', lo=0.0, hi=1.0, step=0.02, grp='脸',
-         d='脸**比该有的亮度还亮**（发白）时，往靶收多少。**0.00 = 完全不动（出厂）**；'
-           '1.00 = 完全收到靶 68 —— 那就是 33 位大师脸的中位 67.9，也是'
-           '「脸的红绿 / 黄蓝」正在对齐的同一个数（实测一张中位 89 的脸 ⇒ 68.0）。'
-           '⚠ 它是整张乘**同一个**增益（不分区）⇒ 脸回来了，背景也跟着暗一些，'
-           '所以出厂没开。脸本来就偏暗的片**不受影响**（只收不回）。'
-           '⚠ 别再拿「整张亮暗」去救发白的脸：那根在印相那一步，压在相纸曲线的平肩上'
-           '（实测整张掉 11 L* 而脸只掉 0.5）。'),
-]
-_PARAM_KEYS = tuple(p['k'] for p in PARAMS)
-_PARAM_INV = frozenset(p['k'] for p in PARAMS if p.get('inv'))
-_PARAM_PAIR = {p['k']: p['pair'] for p in PARAMS if p.get('pair')}
-# ★★ 09-15（B3）：这一行的 `kind` / `opts` / `gate` 全由 PARAMS 表驱动 ——
-#   `_parse_params` 靠前两个决定"怎么解析"，前端靠全部三个决定"画什么控件"。
-_PARAM_KIND = {p['k']: p.get('kind', 'num') for p in PARAMS}
-_PARAM_OPTS = {p['k']: tuple(o[0] for o in p['opts']) for p in PARAMS if p.get('opts')}
-# ⚠⚠ 「整层开关」那几根键（GRAIN_ENABLE / BLOOM_ENABLE / HALATION_ENABLE / FACE_DEPTH_ENABLE）
-#    **只在 `gate=` 里出现过、自己不是一行参数** ⇒ 不补进来的话它们会落回默认的 'num'，
-#    而 `isinstance(True, bool)` 会被数字那条闸挡掉 ⇒ **勾掉开关静默发不出去**（勾了没反应）。
-_PARAM_KIND.update({p['gate']: 'bool' for p in PARAMS if p.get('gate')})
-
-
-def _param_defs():
-    """给前端的滑杆清单：给每一项补上 `dv` = **引擎此刻实际在用的值**。
-
-    ★★ 为什么必须由引擎现读（不能在前端写死、也不能把数抄进 PARAMS 表里）：
-      过去前端的初值是"区间正中间" `(lo+hi)/2`，而引擎用的是 config 的出厂值
-      ⇒ **13 根滑杆里有 12 根，显示的数字和实际生效的对不上**：
-        整张浓淡 显示 0.50 / 实际 0.00（彩度 9.40 vs 7.57，差一档半）；
-        颗粒     显示 0.050 / 实际 0.024（翻倍）。只有「趾部压深」恰好对得上。
-      ⚠ 画面本身没错（没拧过的键不参与覆盖，引擎照出厂走）—— **错的是那行字**。
-      现在从 config 现读，以后改出厂值它自动跟上，永远不会再漂。
-    ⚠ `inv` 的项要给**显示值**（= 1 / 引擎值），否则滑杆一跳就跳到倒数上去。
-    ★ 09-15（B3）：`dv` 的类型跟着 `kind` 走 —— 数字给 float、整层开关（`kind='bool'`）
-      给 bool、下拉（`kind='enum'`）给选项名；挂了 `gate` 的那几根再补一个 `gate_dv`。
-      **控件的初值只能由引擎给**（前端不许自己编默认），这一条对三种控件都成立。
-    """
-    out = []
-    for p in PARAMS:
-        q = dict(p)
-        cur = getattr(C, q['k'], None)
-        # ⚠ bool **必须先判**：`isinstance(True, int)` 也成立 ⇒ 顺序反了开关的 dv 会变 1/0
-        if isinstance(cur, bool):
-            q['dv'] = bool(cur)
-        elif isinstance(cur, (int, float)):
-            cur = float(cur)
-            if q.get('inv') and abs(cur) > 1e-9:
-                cur = 1.0 / cur
-            q['dv'] = cur
-        elif isinstance(cur, str):
-            q['dv'] = cur                       # 下拉（柔光型号）
-        else:
-            q['dv'] = None                      # 理论上不会发生，自检盯着
-        # ★ 带「整层开关」的那几根：把开关**此刻的值**一起给前端（勾选框的初值）
-        _g = q.get('gate')
-        if _g:
-            q['gate_dv'] = bool(getattr(C, _g, False))
-        # ★★★ 09-15（SV 报「柔光下拉框为空」）：`opts` **必须在过 HTTP 之前**从
-        #   PARAMS 表里的紧凑元组 `(('black_pro_mist','黑柔（BPM）'), …)`
-        #   翻成对象 `[{'v': …, 't': …}, …]` 再发出去。
-        #   病理：元组经 JSON 序列化变成**数组对** `[['black_pro_mist','黑柔（BPM）'], …]`，
-        #        而前端读的是 `o.v` / `o.t` ⇒ 四个 `<option>` 的 value/text 全是 undefined
-        #        ⇒ **下拉框看着是空的**（选项在，只是没字、值也是空的）。
-        #        更阴的是：`<option>` 的**个数**还是 4 ⇒ 布局自检那条"4 支"的断言照样绿。
-        #   ⇒ 形状只在**这一个边界**上统一：表里保持紧凑元组（人改起来短），
-        #     出 HTTP 一律是对象（前端只认对象）。自检 `t_param_kinds` 钉着这个形状。
-        if q.get('opts'):
-            q['opts'] = [{'v': o[0], 't': o[1]} for o in q['opts']]
-        out.append(q)
-    return out
 
 
 _CACHE_MAX = [DEFAULT_CACHE]

@@ -3,19 +3,18 @@
 
 为什么需要它
 ------------
-工作台**一张片 = 一个 RAW**（09-15 SV 定；身份键一律写成 `<stem>.JPG`）。
+工作台**一张片 = 一个 RAW**（身份键 = 文件名去扩展名，大写）。
 预览 / 缩略图 / 大图 / EXIF **一律从这个 RAW 里抠相机自带的那张机内 JPG** ——
+**JPG 不是一种片，只是从 RAW 里取出来的一段现成的图**，
 所以目录里有没有独立的 JPG 文件，跟能不能看图**完全无关**（这就是这个脚本存在的全部理由）。
 
 这个脚本把每张 RAW 的机内 JPG 抠出来、缩到长边 1600 存进缓存目录。
 出图（渲染）用的**永远是源目录里那个 RAW 原件**（工作台直接在源目录里找，不靠缓存）。
 
     源目录（只读）                     缓存目录（随便删）
-    D:\\示例库\\主题A\\             %APPDATA%\\svstudio\\extpreview\\主题A@a1b2c3d4\\
+    D:\\示例库\\某次拍摄\\           %APPDATA%\\svstudio\\extpreview\\某次拍摄@a1b2c3d4\\
       DSCF0001.RAF      ────抠内嵌JPG──▶   DSCF0001.JPG   （长边 1600，带 EXIF）
       DSCF0002.RAF                        DSCF0002.JPG
-      DSCF0009.JPG      ────不用索引（孤 JPG，直接用原文件）
-                                          _src.txt       （已删：不需要它了）
 
 ★ 为什么用「内嵌机内 JPG」而不是自己解码渲染：
   抠它只是**从 RAW 文件里取现成的一段**，实测 3~4 ms/张；真解码一张 4400 万像素要几秒。
@@ -25,7 +24,7 @@
 
 用法
 ----
-  python make_jpg_index.py --src "D:\\示例库\\主题A" --out "%APPDATA%\\svstudio\\extpreview\\xxx"
+  python make_jpg_index.py --src "D:\\示例库\\某次拍摄" --out "%APPDATA%\\svstudio\\extpreview\\xxx"
   python make_jpg_index.py --src ... --out ... --max-side 1600 --quality 88 --force
 
 退出码：0 = 跑完（个别文件失败会计数、不影响整体）；2 = 起不来（源目录/输出目录有问题）。
@@ -202,7 +201,7 @@ def main():
     print('源目录  : %s' % src)
     print('索引目录: %s' % out)
     if not raws:
-        print('[跳过] 这个目录里没有 RAW（孤 JPG 不需要索引，工作台直接用原文件）')
+        print('[跳过] 这个目录里没有 RAW —— 工作台只认 RAW，这个目录是空的')
         print('%s %s' % (KS, json.dumps(
             {'src': src, 'out': out, 'n': 0, 'skip': 0, 'fail': 0, 'bytes': 0, 'ms': 0},
             ensure_ascii=False)))

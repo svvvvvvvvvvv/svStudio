@@ -111,8 +111,8 @@ await page.addInitScript(() => {
            而"路径拼错"正是这个功能最容易坏、又最像"没反应"的地方。 */
     scanSessions: async () => {
       const base = window.__sessions || (window.__sessions = [
-        { name: '主题A', count: 12, path: 'D:\\lib\\主题A' },
-        { name: '主题B', count: 34, path: 'D:\\lib\\主题B' },
+        { name: '目录A', count: 12, path: 'D:\\lib\\目录A' },
+        { name: '目录B', count: 34, path: 'D:\\lib\\目录B' },
       ]);
       const ex = window.__extraRoots || [];
       /* ★ 「一张 JPG 都没有、只有 RAW」的那种文件夹（照 `main.js` 的 `externalSessionEntry` 抄）：
@@ -138,33 +138,29 @@ await page.addInitScript(() => {
         return e;
       }));
     },
-    /* ★★ 出图源也要照生产端抄：`main.js` 的 `attachLoadPath()` 会给每张算出 `loadPath`
-       （**同名 RAW 优先**，没有 RAW 的主题才回落 JPG）。这里故意混着给：
-       i=1,5,9… 是"只有 JPG"的，用来测回落那一档。
-       ★ 照片名**按主题区分**（照生产端：不同主题是不同批照片）——
-         两个主题发同一批名字的话，「切主题之后看的是另一张」根本测不出来。
-       ★ 导入出来的新主题给第三段号段（3000+）：这样"到底进没进新主题"一眼看得出。 */
+    /* ★★ 形状照生产端抄：`main.js` 的 `listPhotos()` 给每张片 `name` / `rel` / `loadPath`。
+       ★ 照片名**按目录区分**（照生产端：不同目录是不同批照片）——
+         两个目录发同一批名字的话，「切目录之后看的是另一张」根本测不出来。
+       ★ 导入出来的新目录给第三段号段（3000+）：这样"到底进没进新目录"一眼看得出。 */
     listPhotos: async (sessionPath) => {
       /* ★ 记下**每次列图用的路径** —— 「点库外条目是不是用了它自己的真实路径」靠它断言。
          只看照片名不够：路径拼错时画面照样能出，很难判。 */
       (window.__listPaths || (window.__listPaths = [])).push(sessionPath);
-      const theme = String(sessionPath || '').split(/[\\/]/).filter(Boolean).pop() || '主题A';
-      const base = theme === '主题B' ? 2000 : /^\d{4}-/.test(theme) ? 3000 : 1000;
+      const theme = String(sessionPath || '').split(/[\\/]/).filter(Boolean).pop() || '目录A';
+      const base = theme === '目录B' ? 2000 : /^\d{4}-/.test(theme) ? 3000 : 1000;
+      /* 片 = RAW：`name` 是 RAW 的真实文件名，`rel` 是身份键（去扩展名、大写），
+         `loadPath` 永远指向那张 RAW。 */
       return Array.from({ length: 40 }, (_, i) => {
-        const jpg = `DSCF${base + i}.JPG`;
-        const isRaw = i % 4 !== 1;
+        const stem = `DSCF${base + i}`;
         return {
-          name: jpg,
-          rel: jpg,
-          hasRaw: isRaw,
-          loadPath: `D:\\lib\\${theme}\\DSCF${base + i}.` + (isRaw ? 'RAF' : 'JPG'),
-          loadIsRaw: isRaw,
+          name: stem + '.RAF',
+          rel: stem,
+          loadPath: `D:\\lib\\${theme}\\${stem}.RAF`,
         };
       });
     },
     // ★ mock 必须跟真实返回一致：{url,ow,oh}（09-15 裂图就是把返回当字符串用）
     getThumb: async (a, b, c) => ({ url: mk(c), ow: 400, oh: 300 }),
-    getThumbMeta: async () => ({ ow: 4000, oh: 3000 }),
     getExif: async () => ({ camera: 'X-T4', lens: 'XF35', iso: 400, fnum: 1.4, ss: '1/250', fl: '35mm' }),
     /* ★ 记下**落盘的那份星级** —— 「打星要存下来」这条靠它断言。
        只看界面上的星星是不够的：星星亮着、却没存，重启就没了（这类"看着对、其实丢了"最难发现）。 */
@@ -172,7 +168,7 @@ await page.addInitScript(() => {
       window.__ratingsSaved = r;
       return true;
     },
-    /* ⚠ 这个 mock 原来**漏了 `setConfig`** —— 而 `useStore` 里 `saveLast()` 每次翻图/切主题/
+    /* ⚠ 这个 mock 原来**漏了 `setConfig`** —— 而 `useStore` 里 `saveLast()` 每次翻图/切目录/
        切台都会调它（`.catch(()=>{})` 本意是"存不上就算了"）。
        方法不存在 ⇒ 调用那一刻**同步抛 TypeError**，`.catch` 根本没机会接
        ⇒ 键盘翻图一路在往控制台丢未捕获异常，而检查只看接口，看不见。
@@ -204,7 +200,7 @@ await page.addInitScript(() => {
       items: [
         { name: 'Portra400薄荷', label: 'Portra400 · 薄荷', desc: '暖调', engine: true },
         { name: 'C200青蓝', label: 'C200 · 青蓝', desc: '青绿', engine: true },
-        { name: 'neutral', label: '中性', desc: '原样', engine: false },
+        { name: 'Ektar100浓彩', label: 'Ektar100 · 浓彩', desc: '浓', engine: true },
       ],
     }),
     /* ★★ 基准列表**照生产端数据**抄：`main.js` 转发引擎 `/bases`，引擎现在每条带
@@ -214,62 +210,27 @@ await page.addInitScript(() => {
         回落成 `BASE_NONE`「不套基准」⇒ 默认出图等于"什么都没套"，界面上还一支都选不中）。
        ⚠ 顺序也照 `config.BASE_TABLE` 抄：默认那支**故意不排第一个** ——
          只有这样才测得动"取的是 `isDefault` 那条"，而不是"腿短取 `list[0]`"。 */
-    engineBases: async () => ({
+    /* ★★ 曝光风格（09-23）：三条档，靶值从大师真片量出来（引擎 tone.STYLES 是唯一出处）。
+       ★ 默认那档**故意不排第一个** —— 只有这样才测得动"取的是 isDefault 那条"，
+         而不是"腿短取 list[0]"（同老基准那条检查的用意）。
+       ⚠ 形状照 main.js 的 engine-styles → 引擎 /styles 抄：{ ok, items:[{name,desc,isDefault,L50,L5,L95}] } */
+    engineStyles: async () => ({
       ok: true,
       items: [
-        { name: 'BASE_NONE', label: '不套基准', desc: '什么都不做' },
-        { name: 'BASE_FOG', label: '只加雾', desc: '黑位抬起来' },
-        { name: 'BASE_DEYELLOW', label: '退黄+加雾', desc: '没那么黄' },
-        { name: 'BASE_FULL', label: '全对齐', desc: '全段对齐', isDefault: true },
+        { name: '暗调', desc: '整张压下来、暗部厚，适合逆光和傍晚', L50: 40.5, L5: 8.7, L95: 90.9 },
+        { name: '高长调', desc: '整体亮、从暗到亮铺得开，通透明快', L50: 69.9, L5: 14.1, L95: 95.5 },
+        { name: '中性调', desc: '大师真片的中位水平，最稳的一条', L50: 58.8, L5: 10.8, L95: 93.7, isDefault: true },
       ],
     }),
-    /* ★★ 相纸表（09-15 SV 选「C」）。形状照 `main.js` 的 `engine-papers` → 引擎 `/papers` 抄：
-       `{ ok, items: [{name,label,desc,isDefault}] }`。
-       ★★ 顺序**照引擎 `spektra.PAPER_ORDER` 抄**（第一张是柯达 Portra Endura）——
-          而 `Portra400薄荷` 的配套纸**恰好就是第一张**、`C200青蓝` 的配套却是第三张。
-          只有这样，[15] 里"换卷跟着换配套纸"那条才能区分
-          「读了引擎的 isDefault」和「腿短取了列表第一个」。
-       ⚠ 中性卷 / 名字不认得 ⇒ **空表**（真卷之外没有"相纸"这回事）——
-         引擎侧 `spektra.papers()` 就是这么定的，mock 跟着抄；
-         `ui_smoke.mjs` 有一条静态检查把这份名单和 `spektra.py` 钉在一起。 */
-    enginePapers: async (stock) => {
-      const OWN = {
-        // 09-23 起卷表 = public 的 9 条预设（「胶卷 + 风格」）。相纸跟着预设走：同一卷同一纸的成对。
-        Portra400薄荷: 'kodak_portra_endura',
-        Portra400淡雅: 'kodak_portra_endura',
-        Portra400空气感: 'kodak_portra_endura',
-        Pro400H马卡龙: 'fujifilm_crystal_archive_typeii',
-        Pro400H清风: 'fujifilm_crystal_archive_typeii',
-        C200过曝: 'fujifilm_crystal_archive_typeii',
-        C200青蓝: 'fujifilm_crystal_archive_typeii',
-        C200透明: 'fujifilm_crystal_archive_typeii',
-        Ektar100浓彩: 'kodak_endura_premier',
-        neutral: null,
-      };
-      const own = OWN[stock];
-      if (!own) return { ok: true, items: [] };
-      const ALL = [
-        ['kodak_portra_endura', '柯达 Portra Endura', '人像纸：肤色最讨喜、暖而柔'],
-        ['kodak_endura_premier', '柯达 Endura Premier', '全能纸：中性偏暖，最"标准"'],
-        ['fujifilm_crystal_archive_typeii', '富士 Crystal Archive II', '清透偏冷'],
-        ['kodak_supra_endura', '柯达 Supra Endura', '饱和度更高，口味更浓'],
-        ['kodak_ektacolor_edge', '柯达 Ektacolor Edge', '更硬更艳'],
-        ['kodak_2383', '柯达 2383 印片', '电影正片印片：暗部厚'],
-        ['kodak_2393', '柯达 2393 印片', '2383 后继，稍柔和'],
-        ['kodak_ultra_endura', '柯达 Ultra Endura（上游标注：数据有问题）', '仅作对照'],
-      ];
-      return {
-        ok: true,
-        items: ALL.map(([name, label, desc]) => ({
-          name, label, desc, isDefault: name === own,
-        })),
-      };
-    },
-    /* ★ 按主题存配方（`main.js` 的 `get-grade` / `set-grade`，09-15 起前端才真调）。
-       ⚠⚠ 这个 mock **必须给**：`enterSession` 现在会调 `getGrade` 套回配方，
-         漏一个就是**同步抛 TypeError**、`.catch` 接不到（`setConfig` 那次的老坑）。
-       ★ 形状照 `main.js` 的 IPC 处理器抄：`get-grade` 返回 **grade 对象本身或 null**
-         （外面没有 `{ok}` 包壳），`set-grade` 返回 boolean。 */
+    /* ★ 按目录存配方（`main.js` 的 `get-grade` / `set-grade`）。
+       ⚠⚠ 这两个 mock **必须给**：`enterSession` 会调 `getGrade` 套回配方、
+          「存到目录」会调 `setGrade` —— 漏一个就是**同步抛 TypeError**、
+          `.catch` 接不到（`setConfig` 那次的老坑）。
+          ⚠ 09-23 我改这份 mock 时**把它们连带删掉了**，症状是“存到目录”那条红着、
+          而 diag 里 `typeof window.api.setGrade === 'undefined'` —— 是**检查的钉子**没了，
+          不是功能坏了。改 mock 时先数一遍"前端会调哪几个"。
+       形状照 `main.js` 的 IPC 处理器抄：`get-grade` 返回 **grade 对象本身或 null**
+       （外面没有 `{ok}` 包壳），`set-grade` 返回 boolean。 */
     getGrade: async (name) => (window.__grades || {})[name] || null,
     setGrade: async (name, g) => {
       /* 深拷一份 —— 存的是"那一刻"的值，不能跟着 store 后续改动一起变 */
@@ -277,32 +238,6 @@ await page.addInitScript(() => {
       window.__gradeSaves = (window.__gradeSaves || 0) + 1;
       return true;
     },
-    engineParams: async () => ({
-      ok: true,
-      /* ★★ 这份假数据**必须照生产端抄**（`svFilm/service.py` 的 `PARAMS`）——
-         09-15 踩过：这里原来还写着旧名字（「本张落点」/「提亮」）和旧区间，
-         而检查只断言"名字在不在"，所以**它绿着、真界面早就不一样了**。
-         现在这几条按真实值抄，并且多带一个 `dv` —— 检查要盯住"滑杆显示的是 dv"。
-         ⚠ 改引擎的 PARAMS 就要回来改这里；`ui_smoke.mjs` 有一条静态检查盯着这两边别漂。
-         ⚠ 09-15「脸太亮收回」是个**默认 0** 的滑杆：它就是这里 `dv: 0.0` 的那条 ——
-            `dv` 不是区间中点（中点 0.5 会把每张片子的脸都往下收），必须跟引擎的出厂值一致。 */
-      items: [
-        { k: 'SPEK_PE_SHIFT', name: '整张亮暗', lo: 0.62, hi: 1.43, step: 0.01, grp: '真卷', spek: true, dv: 1.0, inv: true, d: '整张更亮还是更暗' },
-        { k: 'FACE_SPAN_KMAX', name: '脸的层次', lo: 1.0, hi: 3.0, step: 0.05, grp: '脸', dv: 2.0,
-          gate: 'FACE_DEPTH_ENABLE', gate_dv: true, d: '脸内部明暗最多拉开几倍' },
-        /* ★★ 09-15（B3）：新放的两种控件各留一条 —— 静态自检只钉"引擎表里有 kind"，
-           "选下去 / 勾下去到底有没有发出去"由下面的 [7.6] 真点一遍。 */
-        { k: 'SPEK_DIFFUSION_FAMILY', name: '柔光型号', kind: 'enum', grp: '质感', spek: true,
-          opts: [{ v: 'black_pro_mist', t: '黑柔（BPM）' }, { v: 'pro_mist', t: '白柔（Pro Mist）' },
-                 { v: 'glimmerglass', t: '微光（Glimmerglass）' }, { v: 'cinebloom', t: '电影柔光（CineBloom）' }],
-          dv: 'black_pro_mist', d: '柔光的牌子（同样是 0.5 档，电影柔光比黑柔柔得多）' },
-        { k: 'DENOISE_ENABLE', name: '降噪', kind: 'bool', grp: '质感', dv: true,
-          d: '暗部色斑/噪点要不要收拾（关掉只会更脏，不会让细节更多）' },
-        { k: 'SKIN_FLOOR_A', name: '脸的红绿', lo: 11.0, hi: 20.0, step: 0.1, grp: '脸', dv: 14.5, d: '脸偏红还是偏绿' },
-        { k: 'ANCHOR_DOWN_GAIN', name: '脸太亮收回', lo: 0.0, hi: 1.0, step: 0.02, grp: '脸', dv: 0.0, d: '脸比该有的亮度还亮时，往靶收多少（0 = 不动）' },
-        { k: 'TONE_LIFT', name: '中高调抬起', lo: 0, hi: 14, step: 0.5, grp: '影调', spek: false, dv: 9.0, d: '整张变亮' },
-      ],
-    }),
     /* ★ 记下每一次 /load 的路径 —— 下面要断言「喂给引擎的是 RAW」 */
     /* ⚠⚠ `id` 必须**每张都不一样**（照生产端抄：引擎每 load 一张给一个新 id）。
        09-15 踩过：这里原来写死 `id: 1` ⇒ "换图"在 React 眼里是 imgId 1→null→1、
@@ -327,13 +262,12 @@ await page.addInitScript(() => {
            静态自检里的 paramStr 单测 + 端到端探针兜，别以为这里测到了全部。 */
       (window.__renderArgs = window.__renderArgs || []).push({
         id,
-        params: JSON.parse(JSON.stringify((opts && opts.params) || {})),
-        stock: opts && opts.stock,
-        base: opts && opts.base,
-        /* ★ 相纸也要记（09-15 SV 选「C」）—— 断言的是"**换纸之后发出去的真的是新纸**"。
-           只验界面上那张纸有没有换是不够的：下拉亮对了、请求里却没带，画面就是没变
+        /* ★★ 09-23：调色台只剩两个选择器 ⇒ 只记这两样。
+           断言的是"**界面选了，请求里就真的是它**"——
+           只验界面上亮没亮是不够的：亮对了、请求里却没带，画面就是没变
            （"看着对、其实对不上"）。 */
-        paper: opts && opts.paper,
+        stock: opts && opts.stock,
+        style: opts && opts.style,
       });
       /* ★ 让 mock 渲染"真的花点时间" —— 只给「忙的时候发来的那一发会不会被丢掉」那条检查用：
          拖着滑杆时参数是**连续变化**的，而渲染要花时间；只有渲染真的花时间，
@@ -348,7 +282,7 @@ await page.addInitScript(() => {
        顺手记下发出去的请求，"带的是出图源吗 / 参数是原样交出去吗"靠它断言。 */
     exportImage: async (payload) => {
       (window.__exports = window.__exports || []).push(JSON.parse(JSON.stringify(payload || {})));
-      return { ok: true, path: 'D:\\lib\\主题A\\DSCF1000_svfilm.jpg',
+      return { ok: true, path: 'D:\\lib\\目录A\\DSCF1000_svfilm.jpg',
                w: 2048, h: 1365, bytes: 838860, ms: 29100 };
     },
 
@@ -380,6 +314,34 @@ await page.addInitScript(() => {
         window.__extIdxCb = null;
       };
     },
+    /* ★ 批量出片：形状照 `main.js` 的 `export-batch` / `export-batch-progress` 抄。
+       ⚠ 少了 `onExportBatchProgress`，App 挂载那条 effect 就**同步抛 TypeError**
+       ⇒ 整页白屏、后面每一项都测不到（而且报错只在控制台，界面看着就是"没反应"）。 */
+    exportBatch: async (payload) => {
+      window.__batchCalls = (window.__batchCalls || []).concat([payload]);
+      const items = (payload && payload.items) || [];
+      const n = items.length;
+      if (window.__batchCb) {
+        window.__batchCb({ phase: 'start', i: 1, n, name: 'DSCF1000.RAF' });
+      }
+      for (let i = 0; i < n; i++) {
+        await new Promise((r) => setTimeout(r, 5));
+        if (window.__batchCb) {
+          window.__batchCb({ phase: 'one', i: i + 1, n, name: 'DSCF1000.RAF', ok: true, done: i + 1, failed: 0 });
+        }
+      }
+      if (window.__batchCb) {
+        window.__batchCb({ phase: 'end', i: n, n, done: n, failed: 0, out: 'D:\\lib\\目录A\\调色待验收' });
+      }
+      return { ok: true, dir: 'D:\\lib\\目录A\\调色待验收', done: n, failed: [] };
+    },
+    exportBatchCancel: async () => true,
+    onExportBatchProgress: (cb) => {
+      window.__batchCb = cb;
+      return () => {
+        window.__batchCb = null;
+      };
+    },
   };
 });
 
@@ -394,10 +356,10 @@ check('没有未捕获报错（除了缺 preload 的）',
   pageErrors.filter((e) => !/api|preload/i.test(e)).length === 0,
   '', pageErrors.slice(0, 3).join(' | '));
 
-/* ---------- 2. 进主题，量各段位置 ---------- */
-console.log('\n[2] 布局（进入主题后）');
-// 点第一个主题
-const firstBtn = page.locator('button', { hasText: '主题A' }).first();
+/* ---------- 2. 进目录，量各段位置 ---------- */
+console.log('\n[2] 布局（进入目录后）');
+// 点第一个目录
+const firstBtn = page.locator('button', { hasText: '目录A' }).first();
 if (await firstBtn.count()) {
   await firstBtn.click();
   await page.waitForTimeout(500);
@@ -435,10 +397,6 @@ check(
 );
 check('底栏有高度', boxes.dock && boxes.dock.h > 20, JSON.stringify(boxes.dock));
 
-/* ★ SV 09-15：底部缩略图要能一眼看出「这张有没有 RAW」 */
-const rawBadges = await page.evaluate(() => document.querySelectorAll('[data-raw]').length);
-check('★ 底栏缩略图有 RAW 角标', rawBadges > 0, `${rawBadges} 个`);
-
 /* ---------- 3. 调色台 ---------- */
 console.log('\n[3] 调色台');
 const gradeTab = page.locator('button', { hasText: '调色台' }).first();
@@ -446,28 +404,20 @@ if (await gradeTab.count()) {
   await gradeTab.click();
   await page.waitForTimeout(600);
   const txt = await page.evaluate(() => document.body.innerText);
-  check('切到调色台后出现「胶片卷」', txt.includes('胶片卷'));
-  check('出现「成色基准」', txt.includes('成色基准'));
-  /* ★★ 09-15 回归：以前只查“标题在不在”—— 标题当然在，里面的列表是空的。
+  check('切到调色台后出现「胶片风格」', txt.includes('胶片风格'));
+  check('出现「曝光风格」', txt.includes('曝光风格'));
+  /* ★★ 回归：以前只查"标题在不在"—— 标题当然在，里面的列表是空的。
      必须查**列表里真的有东西**（拿 mock 里那几条的文案当探针）。 */
-  check('★ 胶片卷列表真有内容（不是空列表）', txt.includes('暖调') || txt.includes('青绿'),
-    '', '卷列表是空的 ⇒ 前端读的字段名跟 main.js 对不上');
-  check('★ 成色基准列表真有内容', txt.includes('不套基准') || txt.includes('全对齐'),
-    '', '基准列表是空的');
-  check('★ 真卷下不列「中高调抬起」（那根在真卷下拧了没反应）', !txt.includes('中高调抬起'),
-    '', '列了不该列的滑杆（spek=false 的必须隐藏）');
-  check('列出了「整张亮暗」', txt.includes('整张亮暗'), '', '真卷下的滑杆一个都没画出来');
-  check('列出了「脸的层次」', txt.includes('脸的层次'));
-  /* ★★ 09-15 修的那个 bug 就靠这两条盯着：
-     滑杆初值过去取「区间中点」，而引擎用的是 config 出厂值
-     ⇒ 13 根里 12 根**显示的数字和实际生效的对不上**（画面没错，错的是那行字）。
-     现在必须显示 `dv`。mock 里「脸的红绿」dv=14.5、区间 11~20（中点 15.5）
-     ⇒ 拿它当探针：显示 14.5 才对，显示 15.5 就是又退回取中点了。 */
-  check('★ 滑杆显示的是 dv（引擎此刻实际在用的值）', txt.includes('14.5'),
-    '', '没看到 14.5 ⇒ 前端没在用 dv');
-  check('★ 显示的不是区间中点', !txt.includes('15.5'),
-    '', '显示了 15.5 = 又退回"取区间中点"那个老 bug');
-  /* ★ SV 09-15：「渲染按钮放到胶片卷下」+ 任何操作都不自动出图，只靠这个按钮。 */
+  check('★ 胶片风格列表真有内容（拿 mock 里那句描述当探针）',
+    txt.includes('暖调') || txt.includes('青绿'),
+    '', '风格列表是空的 ⇒ 前端读的字段名跟 main.js 对不上');
+  check('★ 曝光风格列表真有内容', txt.includes('暗调') || txt.includes('高长调'),
+    '', '曝光风格列表是空的');
+  /* ★ 调色台**不该再有任何滑杆**（曝光 + 影调全归引擎）。 */
+  const nSlider3 = await page.locator('[role="slider"]').count();
+  check('★★ 右栏一根滑杆都没有（滑杆全删了）', nSlider3 === 0, `${nSlider3} 根`,
+    '又出现滑杆 ⇒ 有人把老控件捡回来了');
+  /* ★ 渲染按钮在右栏（手停的地方）。 */
   rBtn = page.locator('button', { hasText: /^渲染$/ }).first();
   const rBox = (await rBtn.count()) ? await rBtn.boundingBox() : null;
   check(
@@ -485,20 +435,19 @@ if (await gradeTab.count()) {
   check('★ 分屏两栏都出图了（占位文案应为 0 个）', ph === 0, `占位 ${ph} 个`,
     `还有 ${ph} 个占位 ⇒ 装载/渲染链断了（engineLoad / engineBase / engineRender 的返回形状）`);
 
-  /* ★★ 出图源必须是 RAW（SV 09-15：「工作台本来就要优先用 raw」）。
-     为什么这条是硬要求：入口那一段（零点/成形/趾部/护栏）**只在 `io.load_raw` 里跑**，
-     喂 JPG 的话「整张亮暗(总)」「暗部亮度」这两根滑杆**永远是死的**
-     （实测同一张：走 RAW 能带动 −18.9 ~ +31 L*，走 JPG 是 0.00）。 */
+  /* ★★ 出图源必须是 RAW（片 = RAW，出图只喂原件）。
+     入口那一段（零点/成形/趾部/护栏）只在 `io.load_raw` 里跑，喂缓存里那张 1600 预览图
+     会**悄悄掉画质**。 */
   const loads = await page.evaluate(() => window.__engineLoads || []);
-  check('★ 调色台喂给引擎的是 RAW（不是 JPG）',
+  check('★ 调色台喂给引擎的是 RAW',
     loads.length > 0 && loads.every((x) => /\.raf$/i.test(x)),
     loads.map((x) => x.split(/[\\/]/).pop()).join(', ') || '(一次都没 load)',
-    '喂的是 JPG ⇒ 入口那两根滑杆不生效（整张亮暗(总) / 暗部亮度）');
-  check('★ 标题栏标出了这张的出图源', /RAW 出图/.test(txt),
-    '', '看不出这张是用 RAW 还是 JPG 出的图');
+    '喂的不是 RAW ⇒ 出图源指错了（缓存里是 1600 预览图）');
+  check('★ 标题栏标出了这张的出图源（文件名）', /\.RAF/i.test(txt),
+    '', '标题栏没显示出图源');
 
-  /* 翻到下一张："只有 JPG"的那张（mock 里 i=1），回落那一档也要对：
-     ① 喂的是 JPG ② 标题栏改口成 JPG ③ 点一次「渲染」能真出图
+  /* 翻到下一张：
+     ① 喂的还是那张的 RAW ② 点一次「渲染」能真出图
      ⚠ 不能用底栏缩略图点 —— 调色台的底栏只列 ★≥1，这时候还是空的。
        用方向键翻图（`App.tsx` 的 keydown），顺便把"翻图也要重新算出图源"一起测了。 */
   const phCount = () =>
@@ -519,12 +468,11 @@ if (await gradeTab.count()) {
     new Set(ids).size === ids.length, `id: ${ids.join(',')}`,
     'mock 里 load 返回的 id 重复 ⇒ 换图在 React 眼里没变，下面的断言等于没跑');
   check('★ 翻图后加载的是新那张（不是死守一张）', loads2.length >= 2, `${loads2.length} 次 load`);
-  check('★ 没有 RAW 的照片回落到 JPG（不会空栏）',
-    /\.jpe?g$/i.test(last), last.split(/[\\/]/).pop() || '(没记到)');
-  check('★ 没有 RAW 时标题栏改口成 JPG', /JPG 出图/.test(txt2), '',
-    '没有 RAW 却说 RAW，等于骗人');
-  /* ★★ 契约（SV 09-15 定「两个触发点」→ 09-15 晚选「A」扩成三个）：
-     自动出图 = ① 进/切进调色台 ② 点「渲染」 ③ 拖右栏滑杆（第 6 节单独钉那三条）。
+  check('★ 翻过去那张喂的也是 RAW', /\.raf$/i.test(last),
+    last.split(/[\\/]/).pop() || '(没记到)');
+  check('★ 翻图后标题栏跟着换成新那张的文件名', /\.RAF/i.test(txt2), '',
+    '标题栏没跟着换 ⇒ 出图源没重新算');
+  /* ★★ 契约：自动出图只有 ① 进/切进调色台 ② 点「渲染」。
      「换图」不在里面 ⇒ 翻过来之后**渲染次数不许涨**，右栏留白等那一发。
      这条盯的是**机制**（引擎被叫了几次），不是界面文案 —— 文案是间接证据：
      装载链断了也会留白，那时候这条会"绿得莫名其妙"（下面那条才管装载链）。 */
@@ -534,12 +482,12 @@ if (await gradeTab.count()) {
     `翻图自动出图了（多发 ${renders1 - renders0} 发）—— 违反"只有两个触发点"的契约`);
   check('★ 换图后右栏确实留白等「渲染」', (await phCount()) === 1,
     `占位 ${await phCount()} 个`, '换图后右栏没留白 —— 装载链可能断了');
-  /* 再点一次「渲染」：验的是**"没有 RAW 的主题，回落 JPG 那一档能不能真出图"**。 */
+  /* 再点一次「渲染」：验的是**翻图之后那一发能不能真出图**。 */
   await rBtn.click();
   await page.waitForTimeout(900);
-  check('★ 回落 JPG 后点「渲染」也能出图（占位应为 0 个）',
+  check('★ 翻图后点「渲染」能出图（占位应为 0 个）',
     (await phCount()) === 0, `占位 ${await phCount()} 个`,
-    '没有 RAW 就出不了图 ⇒ 回落那一档卡住了');
+    '翻过一张就出不了图 ⇒ 出图源/装载那条链断了');
   check('★ 「渲染」按钮点下去真的多出一发（不是空按钮）', (await renderCount()) > renders1,
     `${renders1} → ${await renderCount()} 发`);
   await page.keyboard.press('ArrowLeft');          // 翻回第一张
@@ -634,7 +582,7 @@ check(
    而修的时候又容易走过头 —— 忙的时候收到的那一发被直接丢掉 ⇒ 松手后画面停在中间某一格
    （参数是新的、画面是旧的）。所以同时钉：**会出图**、**合并**、**最后一发是最新值**。
    盯的是**机制**：引擎被叫了几发、最后一发带的是什么值（不是界面文案）。 */
-console.log('\n[6] 自动出图：换卷/换基准/换图不出，拖滑杆出（但合并、且最后一发是最新值）');
+console.log('\n[6] 自动出图：只有两个触发点（换风格 / 换图都不出）');
 await page.setViewportSize({ width: 1440, height: 900 });
 await page.waitForTimeout(400);
 const renders = () => page.evaluate(() => window.__renders || 0);
@@ -647,53 +595,17 @@ if (afterFirstRender) {
     check(`★ ${label} ⇒ 不自动出图`, a === b, `渲染 ${b} → ${a} 发`,
       `${label}触发了渲染（多发 ${a - b} 发）—— 违反"只有两个触发点"`);
   };
-  await noRender('换卷', async () => {
-    const b = page.locator('button').filter({ hasText: /^C200/ }).first();
+  await noRender('换胶片风格', async () => {
+    const b = page.locator('[data-stock]').nth(1);
     if (await b.count()) await b.click();
   });
-  await noRender('换基准', async () => {
-    const b = page.locator('button').filter({ hasText: /全对齐/ }).first();
+  await noRender('换曝光风格', async () => {
+    const b = page.locator('[data-style]').first();
     if (await b.count()) await b.click();
   });
-  /* 拖滑杆：走 Radix 滑杆**自己的键盘交互**（值一定会变），不是直接调 store。
-     ★ 先把 mock 渲染调慢（300ms）：不慢的话拖动那几发全被 60ms 防抖合成 1 发，
-       "忙的时候收到的那一发会不会被丢掉"根本没被走到 ⇒ 那三条检查全是假的。 */
-  const sl = page.locator('[role="slider"]');
-  const nSl = await sl.count();
-  check('右栏有滑杆可拖（这条才测得动）', nSl > 0, `${nSl} 根`);
-  if (nSl > 0) {
-    await page.evaluate(() => { window.__RENDER_MS = 300; });
-    const before = await renders();
-    const v0 = await sl.first().getAttribute('aria-valuenow');
-    await sl.first().focus();
-    for (let i = 0; i < 6; i++) {
-      await page.keyboard.press('ArrowRight');
-      await page.waitForTimeout(40);
-    }
-    await page.waitForTimeout(1500);          // 等"最后一发"落地
-    const v1 = await sl.first().getAttribute('aria-valuenow');
-    check('拖滑杆之后值**真的变了**（否则下面几条是空转）', !!v1 && v1 !== v0, `${v0} → ${v1}`);
-    const after = await renders();
-    check('★★ 拖滑杆 ⇒ **会**自动出图（09-15 SV 选「A」：实时预览）', after > before,
-      `渲染 ${before} → ${after} 发`);
-    check('★★ 但**合并**：6 次连续变化 ⇒ 至多发 4 发（不合并会发 6 发以上）',
-      after - before <= 4, `渲染 ${before} → ${after} 发（多发 ${after - before}）`,
-      '防抖/合并没生效 ⇒ 拖一次就打出一串 1~4 秒的渲染互相抢占');
-    /* ★★ 真正要守的那条：**忙的时候发来的最后一发不许丢**。
-       丢了 = 松手后画面停在中间某一格（参数是新的、画面是旧的）——
-       这正是 09-15 修的那个 bug（老代码 `if (busyRef.current) return;` 把它扔了）。 */
-    const args2 = await page.evaluate(() => (window.__renderArgs || []).slice());
-    const last = (args2[args2.length - 1] || {}).params || {};
-    const hit = Object.values(last).some((v) => Math.abs(Number(v) - Number(v1)) < 1e-9);
-    check('★★ 最后一发渲染带的是**最新值**（不是拖动途中某一格）', hit,
-      `最后一发的参数 ${JSON.stringify(last)} 里找不到 ${v1}`,
-      '忙时那一发被丢掉 ⇒ 松手后画面停在中间格，看着像"拖了没反应"');
-    await page.evaluate(() => { window.__RENDER_MS = 0; });
-  }
-
   /* ★★ 「导出成片」（09-15 SV 选「A」第 ② 项）：按钮 → 请求里带的东西对不对。
      钉三件：① 真的发出去了；② 带的是**出图源**（loadPath，绝对路径），不是身份键 rel；
-             ③ 参数是**原样交出去的对象**（拼串是 main.js 一家的事，前端不许自己拼）。 */
+             ③ 带的是**两个选择器**（胶片风格 + 曝光风格），不自己写死尺寸。 */
   const exBtn = page.locator('button', { hasText: /^导出成片/ }).first();
   check('右栏有「导出成片」按钮（否则下面几条全是空转）', (await exBtn.count()) > 0);
   if (await exBtn.count()) {
@@ -707,63 +619,14 @@ if (afterFirstRender) {
     check('★ 导出带的是**出图源**（绝对路径的 loadPath），不是身份键 rel',
       /[\\/]/.test(String(e.src || '')), String(e.src || '(空)'),
       '`rel` 只是文件名（星级/归档/缩略图都按它索引）—— 拿它当出图源就是喂错文件');
-    check('★ 导出把**参数对象**原样交出去（不自己拼串、也不自己写死尺寸）',
-      e.params && typeof e.params === 'object' && !Array.isArray(e.params) && !('side' in e),
+    check('★ 导出带的是**两个选择器**（不自己拼参数串、也不自己写死尺寸）',
+      !!e.stock && !!e.style && !('side' in e) && !('params' in e),
       JSON.stringify(e),
-      '前端自己拼串 = 09-15 那 23 根滑杆全没接上的老路；写死尺寸 = 引擎改了工作分辨率前端不跟');
+      '少一个 ⇒ 导出的和屏幕上那张不是同一张；写死尺寸 = 引擎改了工作分辨率前端不跟');
   }
 }
 
-/* ---------- 7. 拖滑杆 → 渲染请求里带的是**新值**吗 ---------- */
-/* ★ 这一条对着 09-15 那个真 bug：「23 根滑杆一根都没接上」——
-   当时前端发出去的是 `[object Object]`，引擎静默解出 `{}`，点渲染**永远没反应**。
-   ⚠ 这条链**只到 API 边界**（前端 → main.js）：参数的对象里有没有那根新值。
-     再往后那段（对象 → `KEY:VAL` 串）由静态自检里的 `paramStr` 单测
-     + `_debug/_probe_wire_e2e.py` 的端到端探针兜 —— 别以为这里测完了全部。 */
-console.log('\n[7] 滑杆 → 渲染参数');
-const renderArgs = () => page.evaluate(() => (window.__renderArgs || []).slice());
-if (afterFirstRender && rBtn && (await page.locator('[role="slider"]').count()) > 0) {
-  /* ★ 09-15 晚（SV 选「A」之后）改了这里的**前提**：拖滑杆现在会**自动出图**
-     ⇒ 不能再假设"上一发渲染的 params 是空的"（第 6 节刚拖过）。
-     改成：先「恢复默认」+ 渲染一发（此时一根都没碰过 ⇒ params 必须是空的），
-     再**只拖一格、故意不点「渲染」** —— 量的正是"拖动自己发出的那一发"。
-     ★ 这样反而更硬：它顺带证明了「拖滑杆带的是新值」这条路真的通。 */
-  const resetBtn7 = page.locator('button', { hasText: '恢复默认' }).first();
-  if (await resetBtn7.count()) await resetBtn7.click();
-  await rBtn.click();
-  await page.waitForTimeout(900);
-  const a0 = await renderArgs();
-  const p0 = (a0[a0.length - 1] || {}).params || {};
-  check('★ 没碰过的滑杆不进参数串（未触碰 = 用引擎出厂值）', Object.keys(p0).length === 0,
-    `上一发 params = ${JSON.stringify(p0)}`,
-    '未触碰的滑杆也被塞进参数串 ⇒ 会和引擎出厂值打架');
-  const sl7 = page.locator('[role="slider"]').first();
-  await sl7.focus();
-  await page.keyboard.press('ArrowRight');
-  await page.waitForTimeout(1200);            // 拖动自己会发一发，等它落地
-  const a1 = await renderArgs();
-  const p1 = (a1[a1.length - 1] || {}).params || {};
-  const keys = Object.keys(p1);
-  check('★ 拖过的滑杆**真的进了**渲染请求（不是空对象）', keys.length >= 1,
-    JSON.stringify(p1), '参数是空的 ⇒ 滑杆白拧（就是"点渲染没反应"那一类）');
-  const changed = [...new Set([...Object.keys(p0), ...keys])].filter((k) => p0[k] !== p1[k]);
-  check('★ 带的是**新值**：和上一发比，正好变了一根', changed.length === 1,
-    `变了: ${changed.join(',') || '(没有)'}；当前 ${JSON.stringify(p1)}`,
-    '参数没跟着滑杆走');
-  check('参数名看起来是个真参数键（不是 undefined / [object Object] 之类）',
-    keys.every((k) => /^[A-Z][A-Z0-9_]*$/.test(k)), keys.join(','),
-    '键名不像参数名 ⇒ 前端把别的东西当参数发出去了');
-}
-
-/* ---------- 7.5 ★ 09-15 晚四条：底栏空 ≠ 坏了 / 每根 ↺ 重置 / 名字 16px / 「?」点开说明 --- */
-/* ★ 这四条的共同点：**光看代码看不出来对不对** —— 结构在那儿、点下去没反应照样是绿的。
-   静态自检 `[10.5]` 只钉"结构在不在"，"真点下去发生什么"归这里。 */
-console.log('\n[7.5] 底栏空态 / 滑杆 ↺ 重置 / 参数名字号 / 「?」点开说明');
-const nTh = () => page.locator('[data-idx]').count();
-const latestParams = async () => {
-  const a = await renderArgs();
-  return (a[a.length - 1] || {}).params || {};
-};
+/* 共用小工具：这两个按钮在左栏/顶栏上，[7.5] 那一组来回切目录要用 */
 const goGrade = async () => {
   const t = page.locator('button', { hasText: '调色台' }).first();
   if (await t.count()) { await t.click(); await page.waitForTimeout(900); }
@@ -772,19 +635,20 @@ const goTheme = async (n) => {
   const b = page.locator('button', { hasText: n }).first();
   if (await b.count()) { await b.click(); await page.waitForTimeout(900); }
 };
+const nTh = () => page.locator('[data-idx]').count();
 
 /* --- A. 「底栏没了」的真相：空着**不出声**，和"坏了"长得一模一样 --- */
-/* 现场：调色台 + 一个一张星都没打过的主题 ⇒ `visiblePhotos(...,forGrade=true)` 返回空
+/* 现场：调色台 + 一个一张星都没打过的目录 ⇒ `visiblePhotos(...,forGrade=true)` 返回空
    ⇒ 整条底栏一片空白、一格缩略图都没有，SV 报的就是「底部栏没了」。
    要钉两条：① 有星时**不许**出空态（别把判定写反）；② 空的时候**必须说出空因**。 */
 {
   await goGrade();
   const nA = await nTh();
-  check('★ 主题A 有 1 张 3★ ⇒ 底栏照常列缩略图、不出空态',
+  check('★ 目录A 有 1 张 3★ ⇒ 底栏照常列缩略图、不出空态',
     nA >= 1 && (await page.locator('[data-dock-empty]').count()) === 0,
     `${nA} 张 / 空态 ${await page.locator('[data-dock-empty]').count()} 个`,
     '有星却报空 ⇒ 判定写反了');
-  await goTheme('主题B');            // 主题B 一张星都没打过
+  await goTheme('目录B');            // 目录B 一张星都没打过
   await goGrade();
   const emp = page.locator('[data-dock-empty]');
   check('★★ 一张星都没有 ⇒ 底栏出现**空态**（不是一片空白）', (await emp.count()) === 1,
@@ -807,225 +671,11 @@ const goTheme = async (n) => {
   check('★ 空态不挡点击（`pointer-events: none`，底下那条缩略图列表还要能滚）',
     (await page.evaluate(() =>
       getComputedStyle(document.querySelector('[data-dock-empty]')).pointerEvents)) === 'none');
-  await goTheme('主题A');
+  await goTheme('目录A');
   await goGrade();
-  check('★ 切回有星的主题 ⇒ 空态消失、缩略图回来',
+  check('★ 切回有星的目录 ⇒ 空态消失、缩略图回来',
     (await page.locator('[data-dock-empty]').count()) === 0 && (await nTh()) >= 1,
     `${await nTh()} 张`);
-}
-
-/* --- B. 每根滑杆一个 ↺ 重置 --- */
-/* ★ 契约（和 [7] 那条一起钉着）：
-     ① 重置 = 把这个键**从参数串里删掉**，**不是**写回出厂值 ——
-        「没碰过的键不进参数串」是硬契约；写回 `dv` 等于把出厂值也塞进请求，和引擎自己的出厂打架。
-     ② 没拧过的这根**灰着点不动**（顺带就是"哪几根动过"的指示）。
-     ③ 点 ↺ 也要**出图** —— 和拖滑杆同一条规矩；不然数字回默认、画面还停在拧过的样子。 */
-{
-  const rReset = page.locator('button', { hasText: '恢复默认' }).first();
-  if (await rReset.count()) await rReset.click();
-  await page.waitForTimeout(800);
-  const nSl = await page.locator('[role="slider"]').count();
-  check('右栏有滑杆可拧（否则这一组全是空转）', nSl > 0, `${nSl} 根`);
-  if (nSl > 0) {
-    const k0 = await page.locator('[data-param-reset]').first().getAttribute('data-param-reset');
-    /* 把"这一根的滑杆"标出来：靠**参数键**在 DOM 里往上走到"只含一根滑杆"的那层，
-       不靠"第 i 根滑杆对第 i 个按钮"这种顺序假设（顺序一改就静默错位、检查还照绿）。
-       ⚠ 不能写 `b.closest('div')` —— ↺ 按钮外面还套着两层 Flex，`closest('div')`
-         拿到的是**那个小 Flex**，里面根本没有滑杆（第一版就是这么栽的：
-         配不上 ⇒ 后面 `[data-probe-slider]` 永远等不到，`focus()` 直接 30s 超时）。
-       ⇒ 判定「配得上」的两条：① 往上能找到**恰好含 1 根滑杆**的祖先；
-                             ② 真拖它一格时进参数串的键**就是** `k0`（下面那条行为断言）。 */
-    const pair = await page.evaluate((k) => {
-      const b = document.querySelector(`[data-param-reset="${CSS.escape(k)}"]`);
-      if (!b) return { why: '找不到这个 ↺ 按钮' };
-      let n = b.parentElement;
-      for (let depth = 0; n && depth < 8; depth++, n = n.parentElement) {
-        const c = n.querySelectorAll('[role="slider"]').length;
-        if (c === 1) {
-          n.querySelector('[role="slider"]').setAttribute('data-probe-slider', k);
-          return { ok: true, depth };
-        }
-        if (c > 1) return { why: `往上第 ${depth} 层就有 ${c} 根滑杆 ⇒ 不是"一行一根"` };
-      }
-      return { why: '往上找不到含滑杆的那一行' };
-    }, k0);
-    check('★ 每根滑杆和它那个 ↺ 在**同一行**里（按参数键配得上）', pair.ok === true,
-      pair.ok ? `${k0}（往上第 ${pair.depth} 层）` : String(pair.why),
-      '配不上 ⇒ 点 ↺ 可能把别的参数重置了');
-    if (!pair.ok) {
-      check('★ 配不上 ⇒ 下面那几条没得测（这一条会红，别当没测）', false, '', '先修 DOM 结构');
-    } else {
-    const rb = page.locator(`[data-param-reset="${k0}"]`);
-    check('★ 没拧过的这根：↺ **灰着点不动**',
-      (await rb.isDisabled()) === true && (await rb.getAttribute('data-param-reset-on')) === '0',
-      `disabled=${await rb.isDisabled()} on=${await rb.getAttribute('data-param-reset-on')}`);
-    const sl0 = page.locator(`[data-probe-slider="${k0}"]`);
-    await sl0.focus();
-    await page.keyboard.press('ArrowRight');
-    await page.waitForTimeout(1100);
-    const pTouched = await latestParams();
-    check('★ 拧过之后：参数串里出现了这个键、↺ 也亮了',
-      pTouched[k0] !== undefined && (await rb.isDisabled()) === false &&
-      (await rb.getAttribute('data-param-reset-on')) === '1',
-      `${k0}=${pTouched[k0]} / disabled=${await rb.isDisabled()}`);
-    const nBeforeRst = await renders();
-    await rb.click();
-    await page.waitForTimeout(1100);
-    const pReset = await latestParams();
-    check('★★ 点 ↺ ⇒ 这个键**从参数串里消失**（删键，不是写回出厂值）',
-      !(k0 in pReset), JSON.stringify(pReset),
-      '键还在 ⇒ 出厂值也被塞进请求，和引擎自己的出厂打架');
-    check('★ 重置完 ↺ 又变回灰的（"哪几根动过"要一眼看得出来）',
-      (await rb.isDisabled()) === true && (await rb.getAttribute('data-param-reset-on')) === '0');
-    check('★ 点 ↺ 也会**出图**（数字回默认、画面也必须跟着回）',
-      (await renders()) > nBeforeRst, `渲染 ${nBeforeRst} → ${await renders()} 发`,
-      '不出图 ⇒ 数字回到默认、画面还停在拧过的样子');
-    await page.evaluate((k) => {
-      const el = document.querySelector(`[data-probe-slider="${CSS.escape(k)}"]`);
-      if (el) el.removeAttribute('data-probe-slider');
-    }, k0);
-    }
-  }
-}
-
-/* --- C. 「?」点开看说明（不要悬停提示） --- */
-/* ★ 契约：说明**只能**用引擎 `PARAMS` 里那段 `d`，前端不许自己编文案；
-   而且**不许常驻 DOM**（常驻的话右栏文字里到处都是说明，人看不清、自检也读不准）
-   ⇒ 只有点开那一刻才渲染。 */
-{
-  const nHelp = await page.locator('[data-param-help]').count();
-  /* ⚠ 09-15（B3）：分母不能再是 `[role="slider"]` 了 —— 下拉（柔光型号）和整层开关
-     没有滑杆，但**一样要能点开说明**。改成"每一行都有的 ↺ 重置按钮"当分母。 */
-  const nRow = await page.locator('[data-param-reset]').count();
-  check('★ 每一行参数后面都有一个「?」（数量对得上，不只剩下滑杆）', nHelp > 0 && nHelp === nRow,
-    `${nHelp} 个「?」/ ${nRow} 行`, '数量对不上 ⇒ 有参数点不到说明');
-  if (nHelp > 0) {
-    const hb = page.locator('[data-param-help]').first();
-    const k1 = await hb.getAttribute('data-param-help');
-    check('★ 没点开的时候：说明**不在 DOM 里**（不常驻，别把右栏淹了）',
-      (await page.locator('[data-param-help-pop]').count()) === 0,
-      `${await page.locator('[data-param-help-pop]').count()} 个`,
-      '说明常驻在 DOM 里');
-    const nBeforeHelp = await renders();
-    await hb.click();
-    await page.waitForTimeout(600);
-    const pop = page.locator(`[data-param-help-pop="${k1}"]`);
-    check('★ 点「?」⇒ 弹出**这一根自己**的说明', (await pop.count()) === 1,
-      `${await pop.count()} 个 / ${k1}`,
-      '弹了别人的说明（或者压根没弹）');
-    const pTxt = (await pop.count()) ? await pop.first().innerText().catch(() => '') : '';
-    check('★ 说明有实质内容（不是个空壳）', pTxt.length >= 20,
-      `${pTxt.length} 字：${pTxt.replace(/\n/g, ' ').slice(0, 60)}`,
-      '弹出来是空的等于没做');
-    check('★ 说明里带"这个数怎么读"：范围 / 每格 / 出厂',
-      /范围/.test(pTxt) && /每格/.test(pTxt) && /出厂/.test(pTxt),
-      pTxt.replace(/\n/g, ' ').slice(0, 90));
-    check('★ 点说明**不会**触发出图（它不该动画面）', (await renders()) === nBeforeHelp,
-      `渲染 ${nBeforeHelp} → ${await renders()} 发`);
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(500);
-    check('★ 关掉之后说明又不在 DOM 里了',
-      (await page.locator('[data-param-help-pop]').count()) === 0,
-      `${await page.locator('[data-param-help-pop]').count()} 个`);
-  }
-}
-
-/* --- D. 参数名字号（12px → ×1.5=18px → 缩到 0.9 = **16px**），而且**只有名字**变了 --- */
-{
-  const fs = await page.evaluate(() => {
-    const b = document.querySelector('[data-param-help]');
-    if (!b || !b.parentElement) return '';
-    const cand = [...b.parentElement.querySelectorAll('span,p')].filter(
-      (e) => e.textContent.trim() && e.textContent.trim() !== '?'
-    );
-    return cand.length ? getComputedStyle(cand[0]).fontSize : '';
-  });
-  check('★ 参数名字号 16px（12 → 18 → 16，SV 定的）', fs === '16px', fs || '(没读到)',
-    '字号对不上 ⇒ 要么没改，要么又被 Radix 的 size="1"（12px）盖住了');
-}
-
-/* ---------- 8. 选片台（筛选 / 点缩略图 / 打星落盘） ---------- */
-/* ---------- 7.6 ★ 09-15（B3）：三种控件（数字滑杆 / 整层开关 / 下拉型号） ----------
-   ★ 为什么必须"真点一遍"：新放的两种控件走的**全是"静默丢弃"那条老路** ——
-     引擎 `_parse_params` 原来只认数字（bool 被 `not isinstance(cur,bool)` 挡掉、
-     字符串连 `float()` 都过不去）、`main.js` 的 `paramStr` 原来也只放行数字
-     ⇒ **界面上有控件、点下去没反应、还不报错**。静态自检只钉"结构在不在"，
-     "选下去到底发没发出去"只能在这里验。 */
-console.log('\n[7.6] 三种控件（整层开关 / 下拉型号）');
-await page.setViewportSize({ width: 1440, height: 900 });
-await goGrade();
-{
-  /* 先钉在一卷真卷上（下拉与整层开关都在真卷下才出现） */
-  const pv = page.locator('button').filter({ hasText: /^Portra 400/ }).first();
-  if (await pv.count()) { await pv.click(); await page.waitForTimeout(600); }
-
-  const nEnum = await page.locator('[data-param-enum]').count();
-  check('★ 真卷下出现「柔光型号」下拉（引擎 PARAMS 里 kind=enum 的那一根）', nEnum >= 1,
-    `${nEnum} 个下拉`, '下拉没画出来 ⇒ 新的控件类型没接上前端');
-  if (nEnum > 0) {
-    const sel = page.locator('[data-param-enum]').first();
-    const k = await sel.getAttribute('data-param-enum');
-    const nOpt = await sel.locator('option').count();
-    check('★ 下拉的选项数照引擎 opts 来（4 支柔光型号）', nOpt === 4, `${nOpt} 项`,
-      '选项是前端自己编的 ⇒ 编错了引擎会静默丢（画面一点不变）');
-    /* ★★★ 09-15（SV 报「柔光下拉框为空」）：只数**个数**是不够的 ——
-       病理是引擎把 `opts` 当**元组**发出去（过 JSON 变数组对 `[['black_pro_mist','黑柔（BPM）']]`），
-       而前端读 `o.v` / `o.t` ⇒ 四个 `<option>` 的 **value 和文字全是 undefined**，
-       **个数照样是 4** ⇒ 上面那条断言绿着、下拉框却是空的。
-       ⇒ 这里必须真读**值和字**（"能被掩盖的量就换一把尺子"）。 */
-    const optVals = await sel
-      .locator('option')
-      .evaluateAll((os) => os.map((o) => o.getAttribute('value')));
-    const optTexts = await sel
-      .locator('option')
-      .evaluateAll((os) => os.map((o) => (o.textContent || '').trim()));
-    check('★★★ 下拉的选项**有值也有字**（不是四个空壳 —— 这就是 SV 报的「下拉框为空」）',
-      optVals[0] === 'black_pro_mist' && optTexts[0] === '黑柔（BPM）'
-        && optVals.every((v) => !!v) && optTexts.every((t) => !!t),
-      `值 ${JSON.stringify(optVals)} / 字 ${JSON.stringify(optTexts)}`,
-      '选项是空壳 ⇒ 引擎发的 opts 形状和前端读的字段对不上（元组过 JSON 变成数组对，前端读的却是 o.v/o.t）');
-    const b = await renders();
-    await sel.selectOption('cinebloom');
-    await page.waitForTimeout(500);
-    const a = await renders();
-    check('★ 选型号**不自动出图**（沿用"只有两个触发点"：右栏「渲染」/ 切进调色台）',
-      a === b, `渲染 ${b} → ${a} 发`, '选个下拉就出图 ⇒ 违反"只有两个触发点"');
-    const rb = page.locator('button').filter({ hasText: /^渲染$/ }).first();
-    if (await rb.count()) { await rb.click(); await page.waitForTimeout(900); }
-    const lp = await latestParams();
-    check('★★ 引擎收到的参数里**真的有这个型号**（参数串放了字符串）',
-      lp[k] === 'cinebloom', `${k}=${JSON.stringify(lp[k])}`,
-      '没发出去 ⇒ 前端 / paramStr 把字符串静默丢了，选了下拉等于没选');
-    await sel.selectOption('black_pro_mist');
-    await page.waitForTimeout(300);
-  }
-
-  const nSw = await page.locator('[data-param-sw]').count();
-  /* ⚠ 这里跑的是**布局自检自己那份 mock**（只有 2 条带开关的 + 1 条下拉）⇒ 阈值取 2。
-     真面板上的开关远不止这些（见引擎 PARAMS 的 `gate=`）。 */
-  check('★ 出现「整层开关」勾选框（勾在参数名前面）',
-    nSw >= 2, `${nSw} 个`, '整层开关没画出来');
-  if (nSw > 0) {
-    const on0 = await page.locator('[data-param-sw-on="1"]').count();
-    check('★ 整层开关默认是**勾上**的（出厂全开：DENOISE/GRAIN/BLOOM/HALATION/FACE_DEPTH）',
-      on0 >= 2, `${on0} 个勾着`, '默认没勾 ⇒ 一进来就把整层关了（画面直接不对）');
-    const one = page.locator('[data-param-sw]').first();
-    const gk = await one.getAttribute('data-param-sw');
-    const b = await renders();
-    await one.uncheck();
-    await page.waitForTimeout(500);
-    const a = await renders();
-    check('★ 勾掉开关**不自动出图**（它和"换卷/换基准"同类，不是滑杆）', a === b,
-      `渲染 ${b} → ${a} 发`, '勾一下开关就重出一张 ⇒ 违反"只有两个触发点"');
-    const rb2 = page.locator('button').filter({ hasText: /^渲染$/ }).first();
-    if (await rb2.count()) { await rb2.click(); await page.waitForTimeout(900); }
-    const lp2 = await latestParams();
-    check('★★ 勾掉之后引擎真的收到 `开关=0`（布尔也进了参数串）',
-      lp2[gk] === false, `${gk}=${JSON.stringify(lp2[gk])}`,
-      '布尔没发出去 ⇒ 勾了没反应');
-    await one.check();
-    await page.waitForTimeout(300);
-  }
 }
 
 console.log('\n[8] 选片台行为');
@@ -1034,7 +684,7 @@ const dockThumbs = () => page.locator('[data-idx]').count();
    ⚠⚠ 踩过：`Dock.tsx` 的缩略图格子底下也有一行文件名（`Thumb` 没打星时显示 `p.name`），
    形状一模一样（纯文本 div + 居中）⇒ 原来这个 helper 取"最后一个匹配"，
    取到的**永远是底栏最后一张缩略图的文件名**，于是
-   「点缩略图换图了没」「切主题从第一张开始吗」这些断言全在看同一张缩略图 ⇒ 恒假/恒真。
+   「点缩略图换图了没」「切目录从第一张开始吗」这些断言全在看同一张缩略图 ⇒ 恒假/恒真。
    ⇒ 必须把"在缩略图格子里"的那些排除掉（格子上有 `data-idx`）。 */
 const curName = () =>
   page.evaluate(() => {
@@ -1061,8 +711,8 @@ if (await pickTab.count()) {
   /* ★ 打星要**落盘**：只看界面星星亮不亮是不够的 —— 亮着却没存，重启就没了，
      这类"看着对、其实丢了"最难发现。 */
   const saved = await page.evaluate(() => window.__ratingsSaved || null);
-  check('★ 打星真的落盘了，键名是「主题名||文件名」',
-    !!saved && saved['主题A||DSCF1000.JPG'] === 3, JSON.stringify(saved),
+  check('★ 打星真的落盘了，键名是「目录名||文件名」',
+    !!saved && saved['目录A||DSCF1000'] === 3, JSON.stringify(saved),
     '界面上星星亮着、却没存下来');
   const nAll = await dockThumbs();
   check('底栏有缩略图可点', nAll >= 3, `${nAll} 张`);
@@ -1092,15 +742,15 @@ if (await pickTab.count()) {
   }
 }
 
-/* ---------- 9. 状态记忆（切主题 / 切台 再回来） ---------- */
+/* ---------- 9. 状态记忆（切目录 / 切台 再回来） ---------- */
 console.log('\n[9] 状态记忆');
 {
-  /* ⚠★ 切主题**必须走左栏「图库目录」那条路**（`SessionPane` 直接 `enterSession`），
-     不能走「主题列表」—— 主题列表会先 `goHome()`，而 `goHome` 里就把 `cur` 归 0 了
-     ⇒ 再进主题时"下标归零"是 goHome 干的，**验证不到 `enterSession` 自己有没有归零**。
+  /* ⚠★ 切目录**必须走左栏「图库目录」那条路**（`SessionPane` 直接 `enterSession`），
+     不能走「目录列表」—— 目录列表会先 `goHome()`，而 `goHome` 里就把 `cur` 归 0 了
+     ⇒ 再进目录时"下标归零"是 goHome 干的，**验证不到 `enterSession` 自己有没有归零**。
      （09-15 破法验证时发现的：破法⑩把 `enterSession` 的 `cur:0` 删掉，这一组居然全绿 ——
        就是被 goHome 兜住了。改成走左栏之后破法立刻命中。） */
-  const themeList = page.locator('button', { hasText: '主题列表' }).first();
+  const themeList = page.locator('button', { hasText: '目录列表' }).first();
   const openTheme = async (n) => {
     const b = page.locator('button', { hasText: n }).first();
     if (await b.count()) {
@@ -1108,52 +758,56 @@ console.log('\n[9] 状态记忆');
       await page.waitForTimeout(900);
     }
   };
-  await openTheme('主题B');
+  await openTheme('目录B');
   const nb = await curName();
-  check('★ 切到主题B ⇒ 看的是 B 的照片、而且从第一张开始', /DSCF2000/.test(nb), nb || '(没读到)');
-  /* 先在 B 里翻两下（把下标推到 2），再切回 A —— 这样才测得动「切主题会不会把下标带过去」 */
+  check('★ 切到目录B ⇒ 看的是 B 的照片、而且从第一张开始', /DSCF2000/.test(nb), nb || '(没读到)');
+  /* 先在 B 里翻两下（把下标推到 2），再切回 A —— 这样才测得动「切目录会不会把下标带过去」 */
   await page.keyboard.press('ArrowRight');
   await page.keyboard.press('ArrowRight');
   await page.waitForTimeout(500);
   const nb2 = await curName();
-  check('在主题B里翻两张（否则下一条是空转）', /DSCF2002/.test(nb2), nb2 || '(没读到)');
-  await openTheme('主题A');
+  check('在目录B里翻两张（否则下一条是空转）', /DSCF2002/.test(nb2), nb2 || '(没读到)');
+  await openTheme('目录A');
   const na = await curName();
-  check('★ 切回主题A ⇒ 从第一张开始（下标没被带到另一个主题）', /DSCF1000/.test(na),
-    na || '(没读到)', `切主题时下标没归零 ⇒ 切到短主题会出现"打开就白屏"，实际 ${na || '空'}`);
+  check('★ 切回目录A ⇒ 从第一张开始（下标没被带到另一个目录）', /DSCF1000/.test(na),
+    na || '(没读到)', `切目录时下标没归零 ⇒ 切到短目录会出现"打开就白屏"，实际 ${na || '空'}`);
   /* ★ 状态记忆要**真落盘**（`useStore.saveLast` → `api.setConfig`），不是只存在内存里。
      只测"切来切去还在"是不够的 —— 那只证明内存里没丢，关掉程序就没了。 */
   const cfgSaved = await page.evaluate(() => window.__setConfig || {});
   check('★ 「上次看到哪」真写进配置了（下次启动才能回到原地）',
-    cfgSaved.lastSession === '主题A' && typeof cfgSaved.lastCur === 'number',
+    cfgSaved.lastSession === '目录A' && typeof cfgSaved.lastCur === 'number',
     JSON.stringify(cfgSaved),
     '没写进配置 ⇒ 下次启动回不到原来那张');
-  /* 「主题列表」（回首页）这条路也得还在 —— 顺便量一下首页真列出了两个主题 */
+  /* 「目录列表」（回首页）这条路也得还在 —— 顺便量一下首页真列出了两个目录 */
   if (await themeList.count()) {
     await themeList.click();
     await page.waitForTimeout(700);
     const th = await page.evaluate(() => document.body.innerText);
-    check('★ 从调色流程回「主题列表」还列得出两个主题（没把库弄丢）',
-      /主题A/.test(th) && /主题B/.test(th), '', '首页列不出主题了');
-    await openTheme('主题A');
+    check('★ 从调色流程回「目录列表」还列得出两个目录（没把库弄丢）',
+      /目录A/.test(th) && /目录B/.test(th), '', '首页列不出目录了');
+    await openTheme('目录A');
   }
   const txt = await page.evaluate(() => document.body.innerText);
   check('★ 切一圈回来，星级还在（3★ 计数没变）', /3★\s*1/.test(txt), '',
-    '切主题把星级弄丢了');
-  /* 切台再切回来：拖过的那个滑杆值要还在（不是偷偷回默认） */
+    '切目录把星级弄丢了');
+  /* 切台再切回来：选的两个风格要还在（不是偷偷回默认）
+     ★ 09-23：滑杆删了 ⇒ 这条改成盯**两个选择器**的选中状态。
+       同一条契约（状态记忆 / 单一状态源），只是量什么变了。 */
   const gradeTab2 = page.locator('button', { hasText: '调色台' }).first();
   if (await gradeTab2.count()) {
     await gradeTab2.click();
     await page.waitForTimeout(900);
   }
-  const vA = await page.locator('[role="slider"]').first().getAttribute('aria-valuenow');
+  const styleNow = () => page.locator('[data-style][data-style-on="1"]')
+    .first().getAttribute('data-style').catch(() => null);
+  const vA = await styleNow();
   await pickTab.click();
   await page.waitForTimeout(500);
   await gradeTab2.click();
   await page.waitForTimeout(900);
-  const vB = await page.locator('[role="slider"]').first().getAttribute('aria-valuenow');
-  check('★ 切到选片台再回调色台，拖过的滑杆值还在', !!vA && vA === vB, `${vA} → ${vB}`,
-    '切一圈回来滑杆偷偷回默认了');
+  const vB = await styleNow();
+  check('★ 切到选片台再回调色台，选的曝光风格还在', !!vA && vA === vB, `${vA} → ${vB}`,
+    '切一圈回来曝光风格偷偷回默认了');
 }
 
 /* ---------- 10. 错误路径（装载失败 / 引擎没起） ---------- */
@@ -1179,14 +833,14 @@ console.log('\n[10] 错误路径');
   await page.waitForTimeout(600);
 
   /* 引擎没起：整页重来一次，让 api.engineHealth 报"没起"。
-     ⚠ 重开之后**先进一个主题**（`loadSessions` 没配 lastSession ⇒ 停在主题列表，
+     ⚠ 重开之后**先进一个目录**（`loadSessions` 没配 lastSession ⇒ 停在目录列表，
        这时候根本没有调色台分屏，量"引擎未启动"会量到空气）。 */
   await page.addInitScript(() => {
     window.__FAIL_HEALTH = true;
   });
   await page.reload();
   await page.waitForTimeout(1500);
-  const themeA = page.locator('button', { hasText: '主题A' }).first();
+  const themeA = page.locator('button', { hasText: '目录A' }).first();
   if (await themeA.count()) {
     await themeA.click();
     await page.waitForTimeout(800);
@@ -1210,7 +864,7 @@ console.log('\n[10] 错误路径');
 
 /* ---------- 11. 「上次状态」恢复（下次启动能不能回到原地） ---------- */
 /* ★ 这条对着一个**真能走到**的坑：
-   在长主题里翻到第 30 张 → 切到一个只有 12 张的主题（`enterSession` 把 cur 归 0，
+   在长目录里翻到第 30 张 → 切到一个只有 12 张的目录（`enterSession` 把 cur 归 0，
    但落盘的 lastCur 还是 30）→ 关掉再打开 ⇒ 恢复成"第 30 张"= 不存在
    ⇒ 中间显示「没有照片」，在用户眼里就是**打开工作台白屏**，还说不出为什么。
    所以这里专门塞一个**超范围的下标**进去，量它会不会被夹回来。 */
@@ -1220,8 +874,8 @@ console.log('\n[11] 恢复上次状态');
     const orig = window.api.getConfig;
     window.api.getConfig = async () => ({
       ...(await orig()),
-      lastSession: '主题A',
-      lastCur: 999,        // ← 故意超范围（主题A 只有 40 张）
+      lastSession: '目录A',
+      lastCur: 999,        // ← 故意超范围（目录A 只有 40 张）
     });
   });
   await page.reload();
@@ -1235,167 +889,147 @@ console.log('\n[11] 恢复上次状态');
     nm || '(没读到)', `期望夹到 DSCF1039（40 张里的最后一张），实际 ${nm || '空'}`);
 }
 
-/* ---------- 13. 右栏：基准默认 / 恢复默认 / 存到主题 ---------- */
-/* ★ 这一组对着 09-15 修的三个真问题：
-   ① **基准成色一支都没选中**：前端默认发 `'all'`，而引擎基准表（`config.BASE_TABLE`）
-      里没有这一支 ⇒ `stocks.resolve_base` **静默**回落成 `BASE_NONE`（"不套基准"）
-      ⇒ 默认出图等于"什么都没套"，界面上四支**一支都不亮**（画面错了还看不出来）。
-      修法：默认值**由引擎给**（`/bases` 每条带 `isDefault`），前端不许写死基准名。
-   ② 右下角「恢复默认」「存到主题」两个按钮**没有 onClick**（点了什么都不发生）——
-      典型"死按钮"：界面在、功能不在，最难自己发现。
-   ③ 「存到主题」要是**只写不读**（存了不套回来）就是存了个寂寞 ——
-      所以要连"切走再回来，配方真套回来了"一起钉。 */
-console.log('\n[13] 右栏：基准默认 / 恢复默认 / 存到主题');
+/* ---------- 13. 右栏：曝光风格的默认 / 换风格 / 恢复默认 / 存到目录 ---------- */
+/* ★ 09-23 起右栏只有两个选择器（胶片风格网格 + 曝光风格 chips），滑杆/相纸/基准全删。
+   这一组对着三件事：
+   ① **默认档必须由引擎给**：前端初值故意留空，`/styles` 里带 `isDefault` 的那条才是默认。
+      过去在这儿栽过同款（前端写死 `'all'`，引擎表里没有 ⇒ 静默回落、四支一支都不亮）。
+   ② 「恢复默认」「存到目录」两个按钮**必须真接上线**（曾经没有 onClick，点了什么都不发生）。
+   ③ 「存到目录」要是**只写不读**就是存了个寂寞 ⇒ 连"切走再回来，配方真套回来了"一起钉。 */
+console.log('\n[13] 右栏：曝光风格的默认 / 两个按钮 / 按目录存配方');
 {
-  /* ⚠ 前面 [10] 为了测"引擎没起"注入过 `__FAIL_HEALTH = true`（initScript 会一直生效），
-     这里必须显式关掉 —— 否则调色台只剩一句「引擎未启动」，右栏根本没滑杆和按钮可测。
-     （这也是本组最容易写出"假绿"的地方：不关它，下面每条都测到空气。） */
-  await page.addInitScript(() => {
-    window.__FAIL_HEALTH = false;
-  });
+  /* ⚠ [10] 为了测"引擎没起"注入过 `__FAIL_HEALTH = true`（`addInitScript` 会**一直生效**）
+     ⇒ 这里必须显式关掉**并整页重来**，否则右栏只剩一句「引擎未启动」，
+       这一组每条都测到空气（本组最容易写出"假绿"的地方）。
+     ★ 重开之后会按 `lastSession` 直接落进目录A（[11] 注入的那个配置）——
+       所以 `sessionName` 是有值的，「存到目录」才有地方存。 */
+  await page.addInitScript(() => { window.__FAIL_HEALTH = false; });
   await page.reload();
   await page.waitForTimeout(1800);
-  const gradeTab3 = page.locator('button', { hasText: '调色台' }).first();
-  if (await gradeTab3.count()) {
-    await gradeTab3.click();
-    await page.waitForTimeout(1500);
+  /* ★ 走**正规路径**进目录：`sessionName` 只有 `enterSession` 会写，
+     而「存到目录」在 `!sessionName` 时是**直接 return** 的（连 toast 都不弹）
+     ⇒ 不显式进一次目录，那条检查会红得莫名其妙。 */
+  const home13 = page.locator('button', { hasText: /目录列表/ }).first();
+  if (await home13.count()) { await home13.click(); await page.waitForTimeout(700); }
+  await goTheme('目录A');
+  await page.waitForTimeout(400);
+  await goGrade();
+  await page.waitForTimeout(400);
+  const chips = page.locator('[data-style]');
+  const nChip = await chips.count();
+  check('★ 右栏有曝光风格 chips（否则下面几条全是空转）', nChip >= 3, `${nChip} 档`);
+  /* ★★ 默认档**由引擎给**（mock 里 isDefault 那档故意排在最后）—— 这条同时证明
+     "读的是 isDefault"而不是"腿短取第一个"。 */
+  const onIdx = [];
+  for (let i = 0; i < nChip; i++) {
+    if ((await chips.nth(i).getAttribute('data-style-on')) === '1') onIdx.push(i);
   }
+  check('★★ 恰好一档是选中的（不是 0 档、也不是多档同时亮）',
+    onIdx.length === 1, `选中的下标 ${JSON.stringify(onIdx)} / 共 ${nChip} 档`,
+    '0 档 ⇒ 界面上一个都不亮（画面已经在用了、还看不出来）；多档 ⇒ 状态写错');
+  check('★★ 选中的是**引擎标了 isDefault 的那一档**（不是列表第一档）',
+    onIdx.length === 1 && onIdx[0] === nChip - 1,
+    `选中第 ${onIdx[0] + 1} / ${nChip} 档`,
+    '腿短取 list[0] ⇒ 引擎换默认档后静默错位（mock 里默认那档故意排在最后）');
 
-  /* ---- ① 基准：有且只有一支选中，且是引擎标了 isDefault 的那支 ---- */
-  const baseState = await page.evaluate(() => {
-    const all = [...document.querySelectorAll('[data-base]')];
-    return {
-      n: all.length,
-      names: all.map((x) => x.getAttribute('data-base')),
-      on: all.filter((x) => x.getAttribute('data-base-on') === '1')
-        .map((x) => x.getAttribute('data-base')),
-    };
-  });
-  check('右栏列出了基准（这条不成立，下面全是空转）', baseState.n >= 3, `${baseState.n} 支`);
-  check('★ 基准**有且只有一支**是选中的',
-    baseState.on.length === 1, `选中 [${baseState.on.join(',')}] / 共 ${baseState.n} 支`,
-    '一支都不选（或选了两支）⇒ 引擎收到无效名字、静默按"不套基准"出图，界面上还看不出来');
-  /* ★ 关键：mock 里默认那支是**最后一个**（照 `config.BASE_TABLE` 的顺序抄）——
-     所以这条能区分"读了引擎的 isDefault"和"腿短取了列表第一个"。 */
-  check('★ 选中的是**引擎给的默认那支**（不是前端写死的名字、也不是列表第一个）',
-    baseState.on[0] === 'BASE_FULL' && baseState.names[0] !== 'BASE_FULL',
-    `选中 ${baseState.on[0]}；列表顺序 [${baseState.names.join(',')}]`,
-    '前端自己写死基准名（过去写死「all」⇒ 引擎静默回落「不套基准」）');
+  /* ★★ 换一档 ⇒ 请求里带的就是它（少这一条，界面选了、画面不动） */
+  const otherIdx = onIdx.length === 1 ? (onIdx[0] + 1) % nChip : 0;
+  const wantName = await chips.nth(otherIdx).getAttribute('data-style');
+  await chips.nth(otherIdx).click();
+  await page.waitForTimeout(250);
+  const rBtn13 = page.locator('button', { hasText: /^渲染$/ }).first();
+  if (await rBtn13.count()) { await rBtn13.click(); await page.waitForTimeout(1200); }
+  const a13 = await page.evaluate(() => (window.__renderArgs || []).slice());
+  const last13 = a13[a13.length - 1] || {};
+  check('★★ 渲染请求里带的曝光风格**就是刚选的那一档**',
+    last13.style === wantName, `请求 ${JSON.stringify(last13.style)} / 界面选的 ${wantName}`,
+    '界面选了、请求里还是旧的 ⇒ 画面不动，看着像"这一档没效果"');
+  check('★ 渲染请求里同时带着胶片风格（两个选择器都要进请求）',
+    !!last13.stock, JSON.stringify({ stock: last13.stock, style: last13.style }));
 
-  /* ---- ② 「恢复默认」：滑杆真回出厂，而且**不自动出图** ---- */
-  const sl3 = page.locator('[role="slider"]');
-  const nSl3 = await sl3.count();
-  check('右栏有滑杆可拖（否则下面两条是空转）', nSl3 > 0, `${nSl3} 根`);
-  const v0 = await sl3.first().getAttribute('aria-valuenow');
-  await sl3.first().focus();
-  for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
-  await page.waitForTimeout(400);
-  const v1 = await sl3.first().getAttribute('aria-valuenow');
-  check('先把它拖离出厂值（否则"恢复默认"测不出东西）', !!v1 && v1 !== v0, `${v0} → ${v1}`);
-  const rBefore = await page.evaluate(() => window.__renders || 0);
-  await page.locator('button', { hasText: '恢复默认' }).first().click();
-  await page.waitForTimeout(500);
-  const v2 = await sl3.first().getAttribute('aria-valuenow');
-  check('★ 「恢复默认」真把滑杆拉回出厂值', v2 === v0, `${v1} → ${v2}（出厂 ${v0}）`,
-    '按钮没接线（09-15 之前它**没有 onClick**，点了什么都不发生）');
-  check('★ 「恢复默认」不自动出图（沿用"只有两个触发点"）',
-    (await page.evaluate(() => window.__renders || 0)) === rBefore, '',
-    '恢复默认顺手出了一张 —— 违反"只有两个触发点"');
-
-  /* ---- ③ 「存到主题」：真写进去；切走再回来真套回 ---- */
-  await sl3.first().focus();
-  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
-  await page.waitForTimeout(400);
-  const vSaved = await sl3.first().getAttribute('aria-valuenow');
-  check('先拖到一个"记得住"的值（否则下面断言没意义）', !!vSaved && vSaved !== v0, String(vSaved));
-  await page.locator('button', { hasText: '存到主题' }).first().click();
-  await page.waitForTimeout(500);
-  const saved = await page.evaluate(() => window.__grades || {});
-  const keyA = Object.keys(saved)[0];
-  const savedVals = keyA ? Object.values(saved[keyA].params || {}) : [];
-  check('★ 「存到主题」真写进去了（参数不是空对象）',
-    !!keyA && savedVals.length >= 1,
-    keyA ? `${keyA} ⇒ ${JSON.stringify(saved[keyA].params)}` : '(一条都没存)',
-    '按钮没接线，或者存了个空参数（等于存了没用的东西）');
-  check('★ 存下来的就是**刚才拧到的那个值**（不是出厂值、不是别的）',
-    savedVals.map(String).includes(String(vSaved)),
-    `存了 ${JSON.stringify(savedVals)}，刚拧到 ${vSaved}`,
-    '存的不是当前值 ⇒ 下次套回来是错的');
-
-  /* 切到主题B（**没存过**）⇒ 应该回出厂；再切回主题A ⇒ 套回刚才存的那份 */
-  const openTheme3 = async (n) => {
-    const b = page.locator('button', { hasText: n }).first();
-    if (await b.count()) {
-      await b.click();
-      await page.waitForTimeout(1000);
+  /* ★ 「恢复默认」：把曝光风格回引擎默认档，**胶片风格不动** */
+  const curStock13 = last13.stock;
+  const resetBtn13 = page.locator('button', { hasText: '恢复默认' }).first();
+  check('右下角「恢复默认」在（否则下面这条是空转）', (await resetBtn13.count()) > 0);
+  if (await resetBtn13.count()) {
+    await resetBtn13.click();
+    await page.waitForTimeout(400);
+    const onIdx2 = [];
+    for (let i = 0; i < nChip; i++) {
+      if ((await chips.nth(i).getAttribute('data-style-on')) === '1') onIdx2.push(i);
     }
-  };
-  await openTheme3('主题B');
-  const vB = await page.locator('[role="slider"]').first().getAttribute('aria-valuenow');
-  check('★ 切到**没存过**的主题 ⇒ 滑杆回出厂（不把上一个主题的调整带过去）',
-    vB === v0, `${vB}（出厂 ${v0}）`,
-    '主题之间串味 ⇒ 在 A 里拧过的滑杆跟着进了 B');
-  await openTheme3('主题A');
-  const vBack = await page.locator('[role="slider"]').first().getAttribute('aria-valuenow');
-  check('★ 切回主题A ⇒ **套回存过的那份配方**（存了就得用上）',
-    vBack === vSaved, `${vBack}（存的是 ${vSaved}）`,
-    '只写不读 = 存了个寂寞（本项目最忌的"看着对、其实对不上"）');
-  check('★ 这一轮也没把界面弄炸（右栏还在）',
-    (await page.locator('button', { hasText: '恢复默认' }).count()) > 0);
-
-  /* ---- ④ 存过的旧配方里 base 是个**引擎不认的名字** ⇒ 进主题必须校验、回默认 ----
-     ★ 为什么单列一条：配置是"人能手改、旧版本也写过"的东西（旧版前端就写死过 `'all'`）。
-       引擎对不认得的名字是**静默**回落成「不套基准」的（`stocks.resolve_base`：
-       既不在表里就取 `BASE_NONE`）⇒ 不校验的后果是"一进这个主题，四支基准一支都不亮、
-       出图悄悄变成什么都没套"，而且**看不出哪里不对**。
-       —— 跟 ①② 是同一个坑，只是入口从"初值"换成了"存过的旧值"。 */
-  await page.addInitScript(() => {
-    window.__grades = {
-      '主题A': { stock: 'Portra400薄荷', base: 'all', params: { SPEK_PE_SHIFT: 1.1 } },
-    };
-  });
-  await page.reload();
-  await page.waitForTimeout(1800);
-  const gradeTab4 = page.locator('button', { hasText: '调色台' }).first();
-  if (await gradeTab4.count()) {
-    await gradeTab4.click();
-    await page.waitForTimeout(1500);
+    check('★ 点「恢复默认」⇒ 曝光风格回引擎默认那档（回到选中最后那一档）',
+      onIdx2.length === 1 && onIdx2[0] === nChip - 1, `选中的下标 ${JSON.stringify(onIdx2)}`,
+      '回默认没生效 ⇒ 用户以为回默认了，其实还在自己选的那一档');
+    const stockOn = await page.locator('[data-stock][data-stock-on="1"]').first()
+      .getAttribute('data-stock').catch(() => null);
+    check('★★ 「恢复默认」**不动胶片风格**（只把曝光风格回默认）',
+      stockOn === curStock13, `胶片风格 ${stockOn} / 之前 ${curStock13}`,
+      '顺手把胶片风格也抹了 ⇒ 用户莫名其妙换了个卷（那是"拍什么"，不是调出来的）');
   }
-  await openTheme3('主题A');
-  await page.waitForTimeout(800);
-  const badBase = await page.evaluate(() => {
-    const all = [...document.querySelectorAll('[data-base]')];
-    return all.filter((x) => x.getAttribute('data-base-on') === '1')
-      .map((x) => x.getAttribute('data-base'));
-  });
-  check('★ 存过的配方里 base 是引擎不认的名字 ⇒ 进主题时**回引擎默认**（不是原样照信）',
-    badBase.length === 1 && badBase[0] === 'BASE_FULL', `选中 [${badBase.join(',')}]`,
-    '原样信配置 ⇒ 界面上四支基准一支都不亮、出图静默变成"不套基准"');
-  /* ★ 界面亮不亮只是**间接证据**（状态对、请求里照样可能是错的）——
-     所以再真点一次渲染，看**发给引擎的 base**。 */
-  const rBtn4 = page.locator('button', { hasText: '渲染' }).first();
-  check('渲染条在（否则下面那条测的是空气）', (await rBtn4.count()) > 0);
-  if (await rBtn4.count()) {
-    await rBtn4.click();
-    await page.waitForTimeout(1000);
-    const a4 = await renderArgs();
-    const last4 = a4[a4.length - 1] || {};
-    check('★ 渲染请求里带的 base 是**合法名字**（不是那个存错的）',
-      last4.base === 'BASE_FULL', `base=${JSON.stringify(last4.base)}`,
-      '把引擎不认的名字原样发出去 ⇒ 引擎静默按"不套基准"出图，画面错了都不知道');
+
+  /* ★★ 「存到目录」：存了要**读回来** —— 切走再切回来，两档都得套回 */
+  const saveBtn = page.locator('button', { hasText: '存到目录' }).first();
+  check('右下角「存到目录」在', (await saveBtn.count()) > 0);
+  if (await saveBtn.count()) {
+    /* ⚠ 上一段点过「恢复默认」⇒ 它弹的那条 toast 要 2 秒才消，而 toast 会**盖住**右下角
+       那两个按钮 ⇒ 直接点会打在 toast 上（点了没反应、还找不到原因）。等它消掉再点。 */
+    await page.waitForTimeout(2200);
+    await chips.nth(otherIdx).click({ force: true });   // 先挑一个**非默认**档，才测得动
+    await page.waitForTimeout(300);
+    const beforeSave = await page.evaluate(() => window.__gradeSaves || 0);
+    await saveBtn.click({ force: true });
+    await page.waitForTimeout(700);
+    const saved = await page.evaluate(() => window.__grades || {});
+    const savedOne = Object.values(saved)[0] || {};
+    const toast13 = await page.evaluate(() => {
+      const t = document.body.innerText || '';
+      const i = t.indexOf('配方已存到');
+      return i >= 0 ? t.slice(i, i + 40).replace(/\n/g, ' ')
+        : (/还没进目录/.test(t) ? '（还没进目录，没地方存）' : '(没有提示)');
+    });
+    const afterSave = await page.evaluate(() => window.__gradeSaves || 0);
+    const diag = await page.evaluate(() => {
+      const btns = [...document.querySelectorAll('button')];
+      const b = btns.filter((x) => (x.textContent || '').trim() === '存到目录');
+      return {
+        apiSetGrade: typeof (window.api || {}).setGrade,
+        n: b.length,
+        vis: b.map((x) => x.offsetParent !== null),
+      };
+    });
+    check('★ 点「存到目录」⇒ 真落盘（走 setGrade 通道）',
+      afterSave > beforeSave,
+      `提示=${toast13}`,
+      `按钮没接上线 / 没进目录（sessionName 空）⇒ 存了个寂寞。`
+      + `saves ${beforeSave}→${afterSave}；提示=${toast13}；__grades=${JSON.stringify(saved)}；diag=${JSON.stringify(diag)}`);
+    check('★ 存的是**两个选择器**（不是一堆滑杆值）',
+      !!savedOne.stock && !!savedOne.style && !savedOne.params,
+      JSON.stringify(savedOne),
+      '还在存 params ⇒ 老滑杆那套又回来了');
+    /* 切到另一个目录再切回来：进目录时 `enterSession` 会套回配方 */
+    const goTheme13 = async (n) => {
+      const b = page.locator('button', { hasText: n }).first();
+      if (await b.count()) { await b.click(); await page.waitForTimeout(900); }
+    };
+    const homeBtn = page.locator('button', { hasText: /目录列表/ }).first();
+    if (await homeBtn.count()) { await homeBtn.click(); await page.waitForTimeout(600); }
+    await goTheme13('目录B');
+    if (await homeBtn.count()) { await homeBtn.click(); await page.waitForTimeout(600); }
+    await goTheme13('目录A');
+    const t2 = page.locator('button', { hasText: '调色台' }).first();
+    if (await t2.count()) { await t2.click(); await page.waitForTimeout(900); }
+    const onIdx3 = [];
+    for (let i = 0; i < nChip; i++) {
+      if ((await chips.nth(i).getAttribute('data-style-on')) === '1') onIdx3.push(i);
+    }
+    check('★★ 切走再回来 ⇒ 存的那一档**真套回来了**（只写不读 = 存了个寂寞）',
+      onIdx3.length === 1 && onIdx3[0] === otherIdx,
+      `回来选中的下标 ${JSON.stringify(onIdx3)} / 存的是 ${otherIdx}`,
+      '存了不读 ⇒ 每次进目录都回默认，用户以为"没存上"');
   }
 }
 
-/* ---------- 14. 大图：一律「适应」+ 视图三档 A / A|B / B（09-15 SV 定） ---------- */
-/* ★ 原文：「两图总用自适应**删除其他的** 并且加一个…类似于 LR 中的 `A` `A|B` 的小按钮，
-            **默认 A|B** 即对比原片，`B` 则为当前调色效果**铺满**」
-   ⇒ 白天做的缩放（滚轮 / 1:1 / 双击 / 百分比徽标）**全删**，换成三档"看图姿势"。
-   ★ 这一组量的是**画面里剩下几张图**（不是"有没有按钮"）：
-     ① 一进来是 `A|B` ⇒ 两栏：`img[alt=原图]` + `img[alt=调色后]` 各一张；
-     ② 点 `B` ⇒ **只剩「调色后」一张**（铺满）；点 `A` ⇒ 只剩「原图」；点回 `A|B` ⇒ 两栏回来；
-     ③ 切档**不出图**，而且那张图**当场就有内容** ——
-        `B` 用的是手上已经出好的 dataURL，不是清空等一发新渲染（否则就是"切档等 6 秒"）。
-   ⚠ 别再退回"数 `[data-zoom-pct]`"那套：缩放 09-15 晚已被删掉，探针也没了。 */
 console.log('\n[14] 视图三档（A / A|B / B）');
 {
   /* 两栏靠 `img` 的 alt 认（Pane 的 title 就是 alt，`layout_check` 一直这么认） */
@@ -1482,115 +1116,6 @@ console.log('\n[14] 视图三档（A / A|B / B）');
      ③ 中性卷下这一栏**是不是真不显示**（引擎对中性卷返回空表）
    ⚠ mock 里 `Portra400薄荷` 的配套纸**恰好是列表第一张**、`C200青蓝` 的配套却是**第三张**
      ⇒ 只有这样才区分得出「读了引擎的 isDefault」和「腿短取了 option[0]」。 */
-console.log('\n[15] 相纸（换纸真的换画面吗）');
-{
-  /* ⚠ 前面 [10] 为测"引擎没起"注入过 `__FAIL_HEALTH = true`（initScript 会一直生效），
-     [13] 关掉了 —— 但这里**再显式关一次**，别依赖前面某组的副作用（那是"假绿"的温床）。 */
-  await page.addInitScript(() => {
-    window.__FAIL_HEALTH = false;
-  });
-  await page.reload();
-  await page.waitForTimeout(1800);
-  const tab5 = page.locator('button', { hasText: '调色台' }).first();
-  if (await tab5.count()) {
-    await tab5.click();
-    await page.waitForTimeout(1500);
-  }
-
-  const paperState = () =>
-    page.evaluate(() => {
-      const all = [...document.querySelectorAll('[data-paper]')];
-      if (!all.length) return null;
-      const el = all[0];
-      return {
-        n: Number(el.getAttribute('data-paper-n')),
-        on: el.getAttribute('data-paper-on'),
-        opts: [...el.querySelectorAll('option')].map((o) => o.value),
-      };
-    });
-  const openStock5 = async (name) => {
-    const b = page.locator(`[data-stock="${name}"]`).first();
-    if (await b.count()) {
-      await b.click();
-      await page.waitForTimeout(900);
-    }
-  };
-
-  const p0 = await paperState();
-  check('★ 引擎卷下出现相纸下拉（这条不成立，下面全是空转）', !!p0,
-    p0 ? `${p0.n} 张` : '(没有 [data-paper])',
-    '相纸是成色的另一半，没有它就只能用卷表里写死的那张纸');
-  if (!p0) {
-    /* 没有下拉就别硬测 —— 报一条红收工，别让下面几条以"空气"通过 */
-  } else {
-    check('★ 相纸表照引擎来（真卷 8 张）', p0.n === 8, `${p0.n} 张`);
-    check('★ 当前用的是**这一卷的配套纸**（Portra 400 ⇒ 柯达 Portra Endura）',
-      p0.on === 'kodak_portra_endura', String(p0.on),
-      '初值不是引擎标的 isDefault ⇒ 界面显示的纸和实际印的纸不是同一张');
-
-    /* ---- ① 换卷 ⇒ 相纸要跟着换（配套纸跟着卷走） ---- */
-    await openStock5('C200青蓝');
-    const p1 = await paperState();
-    check('★★ 换卷之后相纸**自动跟到新卷的配套纸**（C200 ⇒ 富士 Crystal Archive II）',
-      !!p1 && p1.on === 'fujifilm_crystal_archive_typeii', p1 ? String(p1.on) : '(没了)',
-      '留在上一卷那张 ⇒ 出现"C200 卷 + Portra 纸"这种不存在的组合');
-    check('★ 而它**不是列表第一张**（证明确实读了引擎的 isDefault，不是腿短取 option[0]）',
-      !!p1 && p1.opts[0] !== p1.on, p1 ? `第一张是 ${p1.opts[0]}、用的是 ${p1.on}` : '',
-      '取 list[0] ⇒ 引擎换了配套纸就静默错位（mock 里故意把配套纸排在第三张）');
-
-    /* ---- ② 换纸 ⇒ 请求里要带新纸；而且**不自动出图** ---- */
-    const rBefore5 = await page.evaluate(() => window.__renders || 0);
-    await page.locator('[data-paper]').first().selectOption('kodak_supra_endura');
-    await page.waitForTimeout(400);
-    const p2 = await paperState();
-    check('★ 选了另一张纸 ⇒ 下拉显示跟着变（Supra Endura）',
-      !!p2 && p2.on === 'kodak_supra_endura', p2 ? String(p2.on) : '');
-    check('★ 换相纸**不自动出图**（沿用"只有两个触发点"：右栏「渲染」/ 切进调色台）',
-      (await page.evaluate(() => window.__renders || 0)) === rBefore5, '',
-      '换纸顺手出了一张 —— 违反"只有两个触发点"');
-
-    const rBtn5 = page.locator('button', { hasText: '渲染' }).first();
-    check('渲染按钮在（否则下面那条测的是空气）', (await rBtn5.count()) > 0);
-    if (await rBtn5.count()) {
-      await rBtn5.click();
-      await page.waitForTimeout(1000);
-      const a5 = await renderArgs();
-      const last5 = a5[a5.length - 1] || {};
-      check('★★ 渲染请求里带的相纸**就是刚选的那张**（不是配套纸、也不是空）',
-        last5.paper === 'kodak_supra_endura', `paper=${JSON.stringify(last5.paper)}`,
-        '下拉亮对了、请求却没带 ⇒ 画面不变，用户会以为"这张纸没效果"（其实是根本没发出去）');
-    }
-
-    /* ---- ③ 「恢复默认」⇒ 相纸回这一卷的配套纸（卷不动） ---- */
-    await page.locator('button', { hasText: '恢复默认' }).first().click();
-    await page.waitForTimeout(500);
-    const p3 = await paperState();
-    check('★ 「恢复默认」把相纸拉回**本卷配套纸**（C200 ⇒ 富士 Crystal Archive II）',
-      !!p3 && p3.on === 'fujifilm_crystal_archive_typeii', p3 ? String(p3.on) : '',
-      '只清滑杆、不管相纸 ⇒ 用户以为回出厂了，其实还印在上一张纸上');
-
-    /* ---- ④ 中性卷 ⇒ 这一栏整块不显示（引擎返回空表） ---- */
-    await openStock5('neutral');
-    const nNeutral = await page.locator('[data-paper]').count();
-    check('★ 中性卷下**没有相纸这一栏**（中性卷走 Lab 引擎，没有"负片 + 相纸"这回事）',
-      nNeutral === 0, `${nNeutral} 个下拉`,
-      '中性卷也列 8 张纸、一张都不亮 ⇒ 把拧不动的开关摆给用户');
-
-    await openStock5('Portra400薄荷');
-    const nBack = await page.locator('[data-paper]').count();
-    check('★ 切回真卷 ⇒ 相纸栏又出来（不是一次性渲染完就没了）', nBack === 1, `${nBack} 个`);
-  }
-}
-
-/* ---------- 16. 加入目录（原地读，不复制） ----------
-   ★ SV 原话：*"如果一张照片已经在我的电脑中，我可以通过加这个目录让这个目录[出现在]
-     图片库那一栏中"*。这是**原地读**，不是复制 —— 也是 09-15 起**唯一**那条路。
-   ★ 09-15 SV 选「B」：**「图库根」这层砍掉了**，左栏列的就是"你加过的文件夹"。
-   ★ 这一组的靶心仍然是**路径**：加进来的文件夹**没有任何能被拼出来的规律**。要是
-     `enterSession` 还自己拼一个，点进去读的是一个**不存在**的目录 ⇒ 0 张照片，
-     而且看着像"这个主题是空的"—— 本项目最像"点了没反应"的一类假象。
-   ⇒ 所以探针取「列图时用的那条路径」（`window.__listPaths`），**不是**看照片名：
-     名字对不对不足以说明路径对不对。 */
 console.log('\n[16] 加入目录（库外目录：原地读）');
 {
   await page.addInitScript(() => {
@@ -1628,7 +1153,7 @@ console.log('\n[16] 加入目录（库外目录：原地读）');
     check('★★★ 点库外条目 ⇒ 读的是**它自己的路径**（不是 `D:\\lib\\名字`）',
       used === 'D:\\拍摄素材\\厦门_外拍', `读到 ${JSON.stringify(used)}`,
       `读到 ${JSON.stringify(used)} ⇒ 拼成"库根\\名字"了：库外目录进去永远 0 张照片，` +
-        '看着像空主题，看不出是路径拼错');
+        '看着像空目录，看不出是路径拼错');
 
     /* ---- ② 「加入目录」真落盘（否则重启就没了） ---- */
     await page.evaluate(() => {
@@ -1712,7 +1237,7 @@ console.log('\n[17] 加入目录：只有 RAW 的目录 ⇒ 预览小图（看�
     `还是 ${after.replace(/\n/g, ' ')} ⇒ 重扫没发生，用户以为没建成功，又点一遍`);
 
   const listed = await page.evaluate(() => window.__listPaths || []);
-  check('★ 进这个主题去列图时读的是**源目录**（09-15 起 path 永远是源目录）',
+  check('★ 进这个目录去列图时读的是**源目录**（09-15 起 path 永远是源目录）',
     listed[listed.length - 1] === 'D:\\示例库\\纯RAW',
     JSON.stringify(listed[listed.length - 1]),
     `读的是 ${JSON.stringify(listed[listed.length - 1])} ⇒ 还指着预览缓存的话，` +
@@ -1734,11 +1259,11 @@ console.log('\n[17] 加入目录：只有 RAW 的目录 ⇒ 预览小图（看�
   const t = await page.locator('body').innerText();
   check('★★ 索引建不了 ⇒ 界面上要**说出原因**（否则那目录永远是空的，而"空"和"坏了"一样）',
     /预览小图没生成/.test(t), '',
-    '不出声的话，用户看到的就是一个空主题，无法区分"目录里本来就没片"和"建索引坏了"');
+    '不出声的话，用户看到的就是一个空目录，无法区分"目录里本来就没片"和"建索引坏了"');
 }
 
 /* ---------- 收尾：整轮跑下来有没有未捕获报错 ---------- */
-/* ★ 为什么要放在**最后**再查一次：中间那些组会翻图/切主题/切台，
+/* ★ 为什么要放在**最后**再查一次：中间那些组会翻图/切目录/切台，
    每次都会走 `saveLast()` 那条链。第一组只查了"刚打开时"有没有报错，
    那时候这条链还没跑过 —— 09-15 就是靠这个发现 mock 漏了 `setConfig`。
    （过滤掉 preload/api 相关：浏览器里跑本来就没有 Electron 那层。） */
@@ -1750,7 +1275,7 @@ console.log('\n[17] 加入目录：只有 RAW 的目录 ⇒ 预览小图（看�
   const real = pageErrors.filter(
     (e) => !/api|preload/i.test(e) && !/Failed to load resource/i.test(e)
   );
-  check('★ 整轮跑下来没有未捕获报错（翻图/切主题那条链也没炸）', real.length === 0,
+  check('★ 整轮跑下来没有未捕获报错（翻图/切目录那条链也没炸）', real.length === 0,
     real.slice(0, 2).join(' | ').slice(0, 200),
     `${real.length} 条，例如：${real.slice(0, 2).join(' | ').slice(0, 200)}`);
 }

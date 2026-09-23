@@ -27,53 +27,37 @@ declare global {
       getPathForFile: (file: File) => string;
       scanSessions: () => Promise<Session[]>;
       listPhotos: (sessionPath: string) => Promise<Photo[]>;
-      readImage: (sessionPath: string, rel: string) => Promise<string | null>;
       getThumb: (
         sessionPath: string,
         rel: string,
         width: number
       ) => Promise<Thumb | null>;
-      getThumbMeta: (
-        sessionPath: string,
-        rel: string
-      ) => Promise<ThumbMeta | null>;
       getExif: (sessionPath: string, rel: string) => Promise<ExifInfo | null>;
       saveRatings: (ratings: Record<string, number>) => Promise<boolean>;
-      importRatings: (libRoot: string) => Promise<any>;
       archivePhotos: (opts: ArchiveOpts) => Promise<ArchiveResult>;
       confirmDialog: (opts: ConfirmOpts) => Promise<boolean>;
-      resetColorGrade: (themePath: string) => Promise<any>;
+      resetColorGrade: (dirPath: string) => Promise<any>;
       /* ---- 调色台：svFilm 引擎（本机常驻 HTTP 服务） ---- */
       engineHealth: () => Promise<{ ok: boolean } & Record<string, any>>;
       engineStart: () => Promise<any>;
       engineStocks: () => Promise<{ ok?: boolean; items: Stock[]; error?: string }>;
-      engineBases: () => Promise<{ ok?: boolean; items: Base[]; error?: string }>;
-      /** ★★ 相纸表（09-15）：`stock` 必传 —— **默认相纸跟着卷走**。
-       *  返回里恰好一条 `isDefault`，前端**只认它**定初值（别自己挑一张）。 */
-      enginePapers: (
-        stock: string
-      ) => Promise<{ ok?: boolean; items: Paper[]; error?: string }>;
-      engineParams: () => Promise<{ ok?: boolean; items: ParamDef[]; error?: string }>;
-      engineScan: (
-        dir: string,
-        exts: string[],
-        limit: number
-      ) => Promise<{ ok?: boolean; files: string[]; n?: number }>;
+      /** ★★ 曝光风格（09-23）：三条档，靶值从大师真片量出来，引擎侧唯一出处。 */
+      engineStyles: () => Promise<{ ok?: boolean; items: Style[]; error?: string }>;
       engineLoad: (paths: string[]) => Promise<LoadResult>;
       engineBase: (id: string) => Promise<ImageResult>;
       engineRender: (id: string, opts: RenderOpts) => Promise<ImageResult>;
-      engineRawUrl: (
-        sessionPath: string,
-        rel: string
-      ) => Promise<ImageResult>;
-      /* ---- 调色参数按主题存 ---- */
-      getGrade: (themeName: string) => Promise<GradeState | null>;
-      setGrade: (themeName: string, grade: GradeState) => Promise<boolean>;
-      exportGrade: (payload: any) => Promise<any>;
+      /* ---- 调色参数按目录存 ---- */
+      getGrade: (dirName: string) => Promise<GradeState | null>;
+      setGrade: (dirName: string, grade: GradeState) => Promise<boolean>;
       /** ★★ 导出成片（09-15 SV 选「A」）：**引擎渲染完直接写盘** ⇒ 回来的是文件路径，
        *  不是图片数据。`{ ok, path, w, h, bytes, ms }`；取消 ⇒ `{ ok:false, canceled:true }`。
        *  ⚠ 导出尺寸由引擎定（不传 side），前端不许写死 —— 用回来的 w/h 显示。 */
       exportImage: (payload: any) => Promise<any>;
+      /** 批量出片：整个目录用同一套选择器全出，写进 `<目录>/调色待验收`。
+       *  进度走 `onExportBatchProgress` 事件（几百张要跑几十分钟，等返回值界面像死机）。 */
+      exportBatch: (payload: BatchOpts) => Promise<BatchResult>;
+      exportBatchCancel: () => Promise<boolean>;
+      onExportBatchProgress: (cb: (o: BatchProgress) => void) => () => void;
       /* ---- 库外·纯 RAW 目录的预览索引 ---- */
       /** 给一个**纯 RAW 的库外目录**建/补预览索引（幂等）。
        *  ★ 源目录只读；缓存写在应用目录下、可以整个删。
@@ -90,7 +74,7 @@ declare global {
 export interface Session {
   name: string;
   count?: number;
-  /** 目录的**真实路径**（库内主题 = `libRoot\\名字`；库外目录 = 加进来的那个目录本身）。
+  /** 目录的**真实路径**（库内目录 = `libRoot\\名字`；库外目录 = 加进来的那个目录本身）。
    *  ⚠★ `enterSession` **必须**用它 —— 不能再自己拼 `libRoot + '\\' + name`：
    *    库外目录不在 `libRoot` 底下，拼出来的路径根本不存在。
    *    （老返回里没有这个字段 ⇒ 调用点要留回落，见 `useStore.enterSession`。） */
@@ -114,7 +98,11 @@ export interface Session {
 }
 
 export interface Photo {
+  /** 显示名 = 那张 RAW 的真实文件名（`DSCF1000.RAF`） */
   name: string;
+  /** ★★ **身份键** = 文件名去掉扩展名（大写）。星级 / 桶合并 / 缩略图缓存 / 配方全按它索引。
+   *  一张片 = 一个 RAW；从它取出的机内 JPG 与它共用这个键。
+   *  ⚠ 不许当路径用 —— 磁盘上没有这个名字。 */
   rel: string;
   dir?: string;
   /** 排序键 */
@@ -123,21 +111,11 @@ export interface Photo {
   grp?: string | number;
   lo?: string;
   hi?: string;
-  hasRaw?: boolean;
-  /** ★★ 出图源（**喂引擎用的那个文件的绝对路径**）：同名 RAW 优先，没有才回落到 JPG。
-   *  main.js 的 `attachLoadPath()` 给的。⚠ 别拿 `rel` 当出图源 —— 它是身份键（星级/归档按它索引）。
-   *  为什么必须 RAW：入口那一段（零点/成形/趾部/护栏）只在 `io.load_raw` 里跑，
-   *  喂 JPG 的话「整张亮暗(总)」「暗部亮度」永远是死的。 */
+  /** ★★ 出图源：**喂引擎用的那个文件的绝对路径**（永远指向根目录里的 RAW）。
+   *  main.js 的 `attachLoadPath()` 给的。 */
   loadPath?: string;
-  /** `loadPath` 是不是一张 RAW（false = 这个主题只有 JPG，入口那两根滑杆不生效） */
-  loadIsRaw?: boolean;
   archived?: boolean;
   [k: string]: any;
-}
-
-export interface ThumbMeta {
-  ow: number;
-  oh: number;
 }
 
 /** get-thumb 的返回（★ 是对象不是字符串 —— 09-15 裂图就是把它当字符串用了） */
@@ -152,7 +130,7 @@ export interface ExifInfo {
 }
 
 export interface ArchiveOpts {
-  themePath: string;
+  dirPath: string;
   items: { rel: string; star: number }[];
 }
 
@@ -179,75 +157,22 @@ export interface Stock {
   engine?: boolean;
 }
 
-export interface Base {
-  name: string;
-  label?: string;
-  desc?: string;
-  /** ★★ 引擎当前配置的默认基准（引擎侧 `config.BASE`，`/bases` 里恰好一条为 true）。
-   *  前端**只认这个**来定初值 —— 不许自己写死基准名：
-   *  过去写死 `'all'`，而引擎的基准表里没有 `'all'` ⇒ `resolve_base` **静默**回落成
-   *  `BASE_NONE`（"不套基准"）⇒ 默认出图等于没套基准，且界面上四支**一支都选不中**。 */
-  isDefault?: boolean;
-}
-
 /**
- * ★★ 相纸（09-15 新增）：真卷的那半张"纸"。
- *
- *   一张真卷出图 = **(负片, 相纸)** 的二元组，两者可以独立换：
- *   负片决定"什么胶卷"，相纸决定"冲印在什么纸上"（肤色/冷暖/饱和/暗部厚薄）。
- *   引擎侧 `spektra.PAPERS` + `spektra.papers(stock)` 是唯一出处。
- *
- *   ★ 默认值**由引擎给**（`papers(stock)` 里恰好一条 `isDefault = true` = 这一卷的配套纸）。
- *     前端不许自己写死纸名 —— 这是本项目最阴的一类坑（名字不认得 ⇒ 静默走默认）。
- *   ★ 名字认不得时引擎的 `resolve_paper()` 会**回落到配套纸并说出来**
- *     （`/stats` 里带 `print_fallback` / `print_fallback_reason`），不会崩。
+ * ★★ 曝光风格（09-23 SV 重新划边界：调色台只剩两个选择器 —— 胶片风格 + 曝光风格）。
+ *   三条档的靶是**从大师真片量出来的**（1144 张），唯一出处是引擎的 tone.STYLES
+ *   ⇒ 前端**不许**自己写死档位名或数值。
  */
-export interface Paper {
+export interface Style {
   name: string;
-  label?: string;
   desc?: string;
-  /** ★★ 这一卷**配套**的那张纸（默认值由引擎给，前端只认它） */
+  /** ★★ 引擎当前配置的默认档（config.STYLE）⇒ 前端只认它定初值 */
   isDefault?: boolean;
+  /** 落点（整张中位亮度 L*）/ 黑位（L5）/ 亮部（L95）—— 给人话说明用 */
+  L50?: number;
+  L5?: number;
+  L95?: number;
 }
 
-export interface ParamDef {
-  k: string;
-  name: string;
-  lo: number;
-  hi: number;
-  step: number;
-  /**
-   * ★★ 引擎**此刻实际在用**的值 —— 滑杆初值必须用它。
-   * 由引擎现读 config（`service._param_defs()`），所以永远跟出厂值同步。
-   * ⚠ 历史坑：这里原本没有 dv，前端退而取「区间中点」`(lo+hi)/2`，
-   *   而引擎用的是 config 出厂值 ⇒ 13 根滑杆里 12 根**显示的数字和实际生效的对不上**
-   *   （「整张浓淡」显示 0.50 / 实际 0.00）。别再退回中点。
-   * ⚠ `inv` 的项，dv 已经翻成"人话方向"了（显示值），别自己再换算。
-   */
-  dv?: number | boolean | string;
-  /** 分组：影调 / 真卷 / 质感 / 脸（顺序就是右栏从上到下的顺序） */
-  grp?: string;
-  /**
-   * ★★ 09-15（B3）：这一行画什么控件 —— **由引擎给，前端不许自己猜**。
-   *   `num`（默认）= 滑杆；`bool` = 勾选框（整层开关）；`enum` = 下拉（选项在 `opts`）。
-   */
-  kind?: 'num' | 'bool' | 'enum';
-  /** 下拉的选项：`v` = 传给引擎的值（也是 `dv` 的取值域），`t` = 给人看的名字 */
-  opts?: { v: string; t: string }[];
-  /**
-   * ★★ 这一行**管的那个「整层开关」**（config 里 `*_ENABLE` 的名字，例如 `GRAIN_ENABLE`）。
-   *  勾选框画在参数名**前面**；勾掉 = 那一层完全不跑（**不是**把强度拧到 0）。
-   *  `gate_dv` 是它此刻的值（由引擎现读，前端不许写死）。
-   */
-  gate?: string;
-  gate_dv?: boolean;
-  /** true=只真卷下生效；false=只非真卷下生效；undefined=都生效 */
-  spek?: boolean;
-  d?: string;
-  /** 显示方向与引擎值相反（引擎侧已做换算）—— 前端只用它画个提示，不用自己换算 */
-  inv?: boolean;
-  [k: string]: any;
-}
 
 /**
  * ★★ 引擎侧返回形状的**唯一契约 = `main.js` 的 IPC 处理器**。
@@ -281,13 +206,10 @@ export interface ImageResult {
 }
 
 export interface RenderOpts {
+  /** 胶片风格 = 9 条预设之一（名字必须来自 `/stocks`） */
   stock?: string;
-  base?: string;
-  /** ★★ 相纸（真卷专用）。空串 = 用这一卷的配套纸（引擎侧 `resolve_paper()` 兜底）。
-   *  名字不认得时引擎回落并标出来，不会崩 —— 别在前端自己兜。 */
-  paper?: string;
-  /** ⚠ 除了数字，还有整层开关（boolean）和下拉型号（string）—— 见 `ParamDef.kind` */
-  params?: Record<string, number | boolean | string>;
+  /** 曝光风格 = 高长调 / 中性调 / 暗调 之一（名字必须来自 `/styles`） */
+  style?: string;
   [k: string]: any;
 }
 
@@ -298,13 +220,46 @@ export interface RenderResult {
 }
 
 export interface GradeState {
+  /** 胶片风格（9 条预设之一） */
   stock?: string;
-  base?: string;
-  /** ★★ 相纸（真卷专用，按主题存）。老配方里没有这个字段 ⇒ undefined = 用配套纸。 */
-  paper?: string;
-  /** ⚠ 除了数字，还有整层开关（boolean）和下拉型号（string）—— 见 `ParamDef.kind` */
-  params?: Record<string, number | boolean | string>;
+  /** 曝光风格（高长调 / 中性调 / 暗调） */
+  style?: string;
   [k: string]: any;
+}
+
+/** 批量出片的请求：整个目录、一套选择器、一个目标尺寸。 */
+export interface BatchOpts {
+  dirPath: string;
+  items: { rel: string }[];
+  stock?: string;
+  style?: string;
+  /** 长边像素。⚠ 不传默认 2048 —— 原图全尺寸一张 RAW 约 6 分半。 */
+  side?: number;
+}
+
+export interface BatchResult {
+  ok?: boolean;
+  /** 成片写进的目录（`<目录>/调色待验收`） */
+  dir?: string;
+  done?: number;
+  canceled?: boolean;
+  failed?: { file: string; error: string }[];
+  error?: string;
+}
+
+export interface BatchProgress {
+  /** start = 这一张开跑；one = 这一张出完；end = 整批结束 */
+  phase: 'start' | 'one' | 'end';
+  i: number;
+  n: number;
+  name?: string;
+  ok?: boolean;
+  done?: number;
+  failed?: number;
+  ms?: number;
+  out?: string;
+  canceled?: boolean;
+  error?: string;
 }
 
 /* ------------- 库外·纯 RAW 目录的预览索引（`ext-index`） ------------- */
@@ -361,20 +316,15 @@ export const API = {
   /* 照片库 */
   scanSessions: () => api().scanSessions(),
   listPhotos: (sessionPath: string) => api().listPhotos(sessionPath),
-  readImage: (sessionPath: string, rel: string) =>
-    api().readImage(sessionPath, rel),
   getThumb: (sessionPath: string, rel: string, width: number) =>
     api().getThumb(sessionPath, rel, width),
-  getThumbMeta: (sessionPath: string, rel: string) =>
-    api().getThumbMeta(sessionPath, rel),
   getExif: (sessionPath: string, rel: string) =>
     api().getExif(sessionPath, rel),
 
   /* 星级与归位 */
   saveRatings: (ratings: Record<string, number>) => api().saveRatings(ratings),
-  importRatings: (libRoot: string) => api().importRatings(libRoot),
   archivePhotos: (opts: ArchiveOpts) => api().archivePhotos(opts),
-  resetColorGrade: (themePath: string) => api().resetColorGrade(themePath),
+  resetColorGrade: (dirPath: string) => api().resetColorGrade(dirPath),
 
   /* 对话框 */
   confirmDialog: (opts: ConfirmOpts) => api().confirmDialog(opts),
@@ -383,24 +333,20 @@ export const API = {
   engineHealth: () => api().engineHealth(),
   engineStart: () => api().engineStart(),
   engineStocks: () => api().engineStocks(),
-  engineBases: () => api().engineBases(),
-  /** ★ 相纸表：`stock` 必传（默认相纸跟着卷走） */
-  enginePapers: (stock: string) => api().enginePapers(stock),
-  engineParams: () => api().engineParams(),
-  engineScan: (dir: string, exts: string[], limit: number) =>
-    api().engineScan(dir, exts, limit),
+  engineStyles: () => api().engineStyles(),
   engineLoad: (paths: string[]) => api().engineLoad(paths),
   engineBase: (id: string) => api().engineBase(id),
   engineRender: (id: string, opts: RenderOpts) => api().engineRender(id, opts),
-  engineRawUrl: (sessionPath: string, rel: string) =>
-    api().engineRawUrl(sessionPath, rel),
 
-  /* 调色参数（按主题） */
-  getGrade: (themeName: string) => api().getGrade(themeName),
-  setGrade: (themeName: string, grade: GradeState) =>
-    api().setGrade(themeName, grade),
-  exportGrade: (payload: any) => api().exportGrade(payload),
+  /* 调色参数（按目录） */
+  getGrade: (dirName: string) => api().getGrade(dirName),
+  setGrade: (dirName: string, grade: GradeState) =>
+    api().setGrade(dirName, grade),
   exportImage: (payload: any) => api().exportImage(payload),
+  exportBatch: (payload: BatchOpts) => api().exportBatch(payload),
+  exportBatchCancel: () => api().exportBatchCancel(),
+  onExportBatchProgress: (cb: (o: BatchProgress) => void) =>
+    api().onExportBatchProgress(cb),
 
   /* 库外·纯 RAW 目录的预览索引 */
   extIndex: (srcDir: string) => api().extIndex(srcDir),

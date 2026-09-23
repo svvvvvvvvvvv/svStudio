@@ -22,7 +22,6 @@ export function HoverPreview({
 }: {
   containerRef: React.RefObject<HTMLDivElement>;
 }) {
-  const hoverEnabled = useStore((s) => s.hoverEnabled);
   const sessionPath = useStore((s) => s.sessionPath);
 
   /** 需要渲染的（低频）：显示哪张 */
@@ -53,7 +52,6 @@ export function HoverPreview({
 
   const onMove = useCallback(
     (ev: MouseEvent) => {
-      if (!hoverEnabled) return;
       posRef.current = { x: ev.clientX, y: ev.clientY };
       // rAF 节流：一帧最多定位一次，且**不触发任何 React 渲染**
       if (rafRef.current == null) {
@@ -63,13 +61,13 @@ export function HoverPreview({
         });
       }
     },
-    [hoverEnabled, place]
+    [place]
   );
 
   /** 底栏每个格子在 mousemove 时调用，告诉预览"我现在指着第 i 张" */
   useEffect(() => {
     const host = containerRef.current;
-    if (!host || !hoverEnabled) return;
+    if (!host) return;
 
     const enter = (ev: Event) => {
       const el = (ev.target as HTMLElement)?.closest?.('[data-idx]');
@@ -99,9 +97,9 @@ export function HoverPreview({
       if (timerRef.current) window.clearTimeout(timerRef.current);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [containerRef, hoverEnabled, onMove]);
+  }, [containerRef, onMove]);
 
-  if (!hoverEnabled || !target) return null;
+  if (!target) return null;
 
   return (
     <Box
@@ -130,7 +128,7 @@ export function HoverPreview({
 /** 预览图：异步取大缩略图；组件卸载后回来的结果丢弃 */
 function HoverImg({ sessionPath, p }: { sessionPath: string; p: Photo }) {
   const sessionName = useStore((s) => s.sessionName);
-  const star = useStore((s) => s.ratings[ratingKey(sessionName, p.name)] || 0);
+  const star = useStore((s) => s.ratings[ratingKey(sessionName, p.rel)] || 0);
   const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {

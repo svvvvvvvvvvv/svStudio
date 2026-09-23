@@ -1,162 +1,150 @@
 # svStudio
 
-**工作台。** 只管"给人用"，不管算法。
+**摄影工作台。** 选片 + 调色，两个台子一个窗口。
 
 ```
-svFilm       纯引擎（没有界面、没有弹窗）      喂一张图 + 一组参数 → 出一张图
-   ↑ 调用（本机 HTTP，常驻）
-svStudio     工作台（这里）                    人在这儿挑图、挑卷、调参、出片
+spektrafilm   胶片感引擎（物理链：负片 → 显影 → 印相 → 扫描）   —— svFilm/_tools/ 里，不改
+    ↑
+svFilm        曝光 + 影调引擎（落点 / 黑位 / 白位 / 反差）      —— svFilm/，本仓库的一部分
+    ↑ HTTP（常驻，127.0.0.1:8765）
+svStudio      工作台（这里）：挑图、选风格、出片
 ```
 
 ## 仓库结构
 
-`svFilm` 引擎用 **git subtree** 合在本仓库的 `svFilm/` 子目录里 ⇒ **clone 一次全下来**，
-不用再单独拉一个仓库。
-
 ```
 svStudio/
-├─ main.js  preload.js   Electron 主进程 / 安全桥（preload 里的 IPC 通道是契约，别乱改）
+├─ main.js  preload.js   Electron 主进程 / 安全桥（IPC 通道名是契约，别乱改）
 ├─ src/                  React 界面（Vite lib 模式打成 IIFE）
-├─ renderer/index.html   手写的入口页（不经 Vite —— 原因见 src 里的注释）
+├─ renderer/index.html   手写入口页（不经 Vite，原因见文件里的注释）
+├─ tools/make_jpg_index.py  从 RAW 抠机内 JPG 建预览索引
 ├─ _check/               自检：静态检查 + 真浏览器布局检查
-├─ svFilm/               ← 引擎（subtree，来自独立的 svFilm 仓库）
-│    ├─ svFilm/          Python 包本体（pip 不用装，靠 cwd 里 `python -m svFilm.service`）
-│    ├─ LICENSE          MIT（+ 关于 spektrafilm 依赖的提示）
-│    └─ README.md        引擎自己的文档
+├─ svFilm/               引擎（git subtree，来自独立的 svFilm 仓库）
+│    ├─ svFilm/          Python 包本体
+│    └─ _tools/spektrafilm/   第三方胶片引擎，原样引用，**不改**
 ├─ LICENSE               MIT
-└─ 启动svStudio.bat      双击开台子
+├─ 启动svStudio.bat       双击开台子
+├─ 启动引擎.bat           单看引擎日志 / 单独重启引擎时用
+└─ 体检.bat               起不来时双击它，会把每步结果打出来
 ```
 
 ### 从零跑起来
 
 ```bash
-npm install                 # 装依赖（Electron / Vite / React ...）
-npm run ui:build            # 构建界面产物（renderer/dist/）
-双击 启动svStudio.bat        # 选片台直接能用；调色台点「渲染」会自己把引擎拉起来
+npm install
+npm run ui:build
 ```
 
-引擎需要一份装了这些的 Python（`colour` / `rawpy` / `numpy` / `Pillow` / `opencv-python`）：
+双击 `启动svStudio.bat`。选片台直接能用；调色台第一次点「渲染」时台子会自己把引擎拉起来。
+
+引擎要一份装了 `colour-science / rawpy / numpy / Pillow / opencv-python` 的 Python：
 
 ```bash
 pip install colour-science rawpy numpy Pillow opencv-python
 ```
 
-- 真卷引擎 **spektrafilm 已经随仓库带在 `svFilm/_tools/spektrafilm/`**，不用自己装；
-  想用别处的，设 `SPEKTRAFILM_ROOT=<...>/spektrafilm/src` 覆盖。
-- 有了这份 Python，**真卷**（portra400 等）才能渲；只有 `neutral` 不需要它。
-- 用哪份 Python 见下面「引擎用哪份 Python」。
+spektrafilm 已经随仓库带在 `svFilm/_tools/spektrafilm/`，不用自己装。
 
 ### 改完怎么自检
 
 ```bash
-npm run verify   # tsc 类型检查 + 构建 + 静态检查 + 真浏览器布局检查（本机 Edge）
+npm run verify   # tsc + 构建 + 静态检查 + 真浏览器布局检查
 ```
 
-## 照片怎么进来
+## 数据模型
 
-**只有一条路**（09-15 定）：照片已经在硬盘上 ⇒ 把**那个文件夹**挂进左栏 ——
-点上面的**「加入目录」**，或者**直接把文件夹拖进左栏**。
-**原地读、一个字节都不复制**；原文件夹被删 / 改名，那条就变成「找不到」（不静默消失）。
+**片 = RAW。JPG 不是一种片，只是从 RAW 里取出来的一段现成的图。**
 
-- **纯 RAW 的文件夹**（没有 JPG）：工作台会顺手给它生成一份**预览小图**，写进应用缓存
-  （`%APPDATA%\svstudio\extpreview\`），**源文件夹只读**；出图仍然用源文件夹里的 RAW。
+- 一个目录里的每一张 RAW 就是一张片；旁边有同名 JPG 也不影响，那不是另一张片。
+- 身份键 = 文件名去掉扩展名（大写），例如 `DSCF1000`。星级、桶合并、缩略图缓存、配方都按它索引。
+- **看**图 → 从 RAW 里抠相机自带的机内 JPG（缓存在 `%APPDATA%\svstudio\extpreview\`，
+  可以整个删，下次自动重做；源目录一个字节都不动）。
+- **出图** → 永远喂源目录里那个 RAW 原件。缓存里是 1600 的预览小图，拿去渲染会悄悄掉画质。
 
-> 早先还有一套「导入照片」（插卡 / U 盘 → 复制进库 → 按「日期_主题_地点」建档），**09-15 已整条删掉**。
->
-> 更早还有"先设一个**图库根**、左栏列它的一级子目录当主题"那套两层模型，**也删了**（09-15 选「B」）：
-> 它在你手上只有**一个文件夹、照片直接躺在里面**的时候是**锁死**的 —— 库根本身列不出来，
-> 而「加入目录」又因为"这就是库根自己"被挡掉，界面上连个提示都没有。
-> 现在只有一种东西：**你加过的文件夹**。老配置里的图库根会自动搬成列表里的第一条，不会丢。
+**单位是「目录」，不是「主题」。** 左栏列的就是你加过的文件夹。
 
-## 两个台（同一个窗口，顶栏切换）
+### 目录怎么进来
+
+点左栏的**「加入目录」**，或者直接把文件夹拖进左栏。**原地读、一个字节都不复制**；
+原文件夹被删或改名，那条会变成「找不到」，不静默消失。
+
+### 星级与桶
+
+每个目录里可以有四个子目录（**只有复制与删除，绝不移动**，根目录的原片永不动）：
+
+| 子目录 | 放什么 |
+|---|---|
+| 初筛1星 | ★≥1 的片：从 RAW 抠出来的**全尺寸机内 JPG** |
+| 调色待验收 | 调色输出的暂存（批量出片写这里；星级同步永不动它，只有「重置调色」会清） |
+| 调色后满意的2星 | ★≥2 的成片副本 |
+| 待发布 | ★≥3 的成片副本 |
+
+顶栏的**「同步星级」**按当前星级把成片搬进对应桶。⚠ 它会动你磁盘上的文件（只复制/删除，不移动原片）。
+
+## 两个台
 
 | 台 | 干什么 |
 |---|---|
-| **选片台** | 浏览主题、看大图、打星、按星级归位 |
-| **调色台** | 挑胶片卷 + 成色基准、调参数、**左右分屏看原图 vs 渲染**、出片 |
+| **选片台** | 看大图、`←`/`→` 翻、`1`~`5` 打星、`0` 清星、底栏缩略图 + 悬浮预览 |
+| **调色台** | 选**胶片风格** + 选**曝光风格**、左右分屏对照、单张导出、批量出片 |
 
-**两个台共用同一套布局与操作**：左栏 = 切图库（拍摄主题）｜中间 = 大图｜右栏 = 参数
-（选片台放**照片参数**，调色台放**调色参数**）｜底部 = 缩略图列 +（调色台）渲染按钮。
+调色台**只有两个选择器**：
 
-### 怎么开
-- **`启动svStudio.bat`** ← 双击这个。选片台直接就能用。
-- 调色台第一次点「渲染」时，**台子会自己把 svFilm 引擎拉起来**（后台，不弹窗），
-  起了之后这台机器上就一直常驻了。
-- 要单看引擎日志 / 单独重启引擎：双击 **`启动调色台.bat`**。
+- **胶片风格** —— 9 条预设（`Portra400薄荷` / `Pro400H马卡龙` / `Portra400淡雅` /
+  `Pro400H清风` / `C200过曝` / `Portra400空气感` / `Ektar100浓彩` / `C200青蓝` / `C200透明`），
+  决定颜色、颗粒、柔光、光晕。参数在 `svFilm/svFilm/data/presets/*.json`。
+- **曝光风格** —— 高长调 / 中性调 / 暗调，决定整张多亮、黑位到哪、白位到哪。
+  三条档的靶**是从大师真片量出来的**（1144 张，按各自中位亮度排序取 P30/P50/P70），见 `svFilm/svFilm/tone.py`。
 
-## 调色的参数存在哪
+两个互相独立，9 × 3 = 27 种组合。
 
-**按主题存**（`config.grades[主题名]`）：换主题再回来，那套卷/基准/滑杆还在原地。
-右栏底部两个按钮：**恢复默认**（回到 Portra 400 + 全对齐基准 + 出厂滑杆值）、
-**存到主题**（把当前这套钉进本主题）。
+**渲染触发点只有两个**：点右栏「渲染」、切进调色台。换风格 / 换图都不会自动出图。
+
+### 出片
+
+- **单张**：右栏「导出成片」，按原图尺寸重出一张，文件存原图旁边。
+- **批量**：右栏「批量出片」，用当前这套风格把这个目录全出一遍，写进 `调色待验收/`。
+  可选只出 ★≥N，可选长边（2048 约 30 秒/张、原图全尺寸约 6 分半/张）。进度在按钮下面，能中途停。
+
+### 调色配方存在哪
+
+**按目录存**（`config.grades[目录名]`）：换目录再回来，那套胶片风格 + 曝光风格还在。
+右栏底部两个按钮：**恢复默认**（曝光风格回引擎默认档，胶片风格不动）、**存到目录**（钉进当前目录）。
 
 ## 边界（写死，别再缠在一起）
 
-- **`svFilm` 不许有界面** —— 不许弹窗、不许读配置 UI、不许假设"用户在看"
-- **`svStudio` 不许有算法** —— 影调/颜色/颗粒**一行都不许在这里**，全走引擎
-- **`svStudio` 不许直接读 RAW 做处理** —— 解码是引擎的事（它才持有缓存）
+- **`spektrafilm`（vendor）** 只负责胶片感：负片 / 相纸 / 颗粒 / 柔光 / 光晕。**不许改它的文件。**
+- **`svFilm`** 只负责曝光 + 影调。动作全在胶片引擎**之前**（线性域）——
+  曝光是"给胶片多少光"，在之后改等于对印好的照片再翻拍调增益。
+- **`svStudio` 不许有算法** —— 影调 / 颜色 / 颗粒一行都不许在这里，全走引擎。
+- **`svStudio` 不许直接读 RAW 做处理** —— 解码是引擎的事（它才持有缓存）。
 
-★ 判断标准很简单：**"换个前端还要不要它？"** —— 要，就是引擎的；不要，就是这里的。
-
-## 实测速度（2026-09-14，暗房特效全开）
-
-| 动作 | 耗时 |
-|---|---|
-| 引擎冷启（含 import 模型） | 几秒 ~ 几十秒 |
-| 抖一张 RAW 进引擎（解码 + 入口） | **~2.3 s** |
-| 换一次卷 / 改一次参数出图 | **~6.5~7 s** |
-
-⚠ 比早先记录的 1.45 s 慢 —— 因为**暗房 6 组特效现在全开**（印相曲线变形 / 柔光 /
-高光增亮 / 黑白位校正 / 像差模糊 / 扫描锐化），换卷时要重跑卷积。
-**效果多 = 换卷慢**，这个取舍是有意的。
+判断标准：**"换个前端还要不要它？"** —— 要，就是引擎的；不要，就是这里的。
 
 ## 引擎用哪份 Python
 
-**不写死在仓库里**（每人机器不一样）。按顺序找：
+按顺序找：
 
-1. 环境变量 `SVFILM_PY`（推荐，设一次然后重开窗口）：
-   `setx SVFILM_PY "D:\Python\venvs\svfilm\Scripts\python.exe"`
-2. 配置里的 `enginePy`（在用户目录的 `config.json` 里，**不进仓库**）
+1. 环境变量 `SVFILM_PY`
+2. 配置里的 `enginePy`（`%APPDATA%\svStudio\config.json`，不进仓库）
 3. PATH 上的 `python`
 
-那份 Python 得有：`colour-science` / `rawpy` / `numpy` / `Pillow` / `opencv-python`，
-以及 `pip install -e spektrafilm`。
-**用错环境的表现**：引擎起得来、`/health` 也正常，但一 `/render` 就
+**用错环境的表现**：引擎起得来、`/health` 正常，但一 `/render` 就
 `ModuleNotFoundError: No module named 'colour'`。
-
-> 作者本机的做法：在 `%APPDATA%\svStudio\config.json` 里写
-> `"enginePy": "<venv>\Scripts\python.exe"`。
-
-## 现状
-
-- [x] 目录 + git
-- [x] svFilm 常驻服务（`/scan` `/load` `/render` `/base` `/stocks` `/bases` `/params`）
-- [x] **界面重写为 React + Radix Themes**（Vite lib 模式；旧的 `renderer/app.js`、`renderer/style.css` 已删）
-- [x] 左栏固定图库目录 / 五段布局 / 大图 / 详情右栏（全部 EXIF）/ 底栏缩略图（虚拟滚动 + 悬浮预览）
-- [x] **调色台并进同一个窗口**（顶栏 tab / 分屏 / 按主题存参数 / 渲染条 / 引擎自启）
-- [x] **svFilm 用 git subtree 合进 `svFilm/`** ⇒ clone 一次全下来
-- [x] **左栏「加入目录」**：硬盘上已有的目录**原地**挂进图库（不复制）；
-      纯 RAW 目录自动生成预览小图（写应用缓存，源目录只读）
-- [x] 自检工具（`npm run verify`：类型 + 构建 + 静态 + 真浏览器布局）
-- [ ] 出片（把调好的参数写成一条命令，交引擎批量跑全主题）
-- [ ] 打包（模型随包、依赖可复现）
 
 ## 许可证
 
-| 目录 | 许可 | 说明 |
-|---|---|---|
-| 根目录（svStudio 工作台） | **MIT** | 见 `LICENSE` |
-| `svFilm/`（引擎） | **MIT** | 见 `svFilm/LICENSE` |
-| `svFilm/_tools/spektrafilm/`（引擎的第三方依赖，随仓库带上） | **CC BY-SA 4.0** | 见它自己的 `LICENSE` / `SPEKTRAFILM_LICENSE.txt`，**原样引用、未改动** |
+| 目录 | 许可 |
+|---|---|
+| 根目录（svStudio 工作台） | **MIT**（见 `LICENSE`） |
+| `svFilm/`（引擎） | **MIT**（见 `svFilm/LICENSE`） |
+| `svFilm/_tools/spektrafilm/` | **CC BY-SA 4.0**（见它自己的 `LICENSE`，原样引用、未改动） |
 
-⇒ 单独用 svStudio 按 MIT。**一旦把 spektrafilm 和它打包在一起分发**，
+单独用 svStudio 按 MIT。**一旦把 spektrafilm 和它打包在一起分发**，
 那一份组合分发要遵守 CC BY-SA 4.0（署名 + 相同方式共享）。
 
-`svFilm/_models/` 下两个模型来自 MediaPipe（Apache-2.0）。
+## ⚠ 在终端里手动起 Electron
 
-## ⚠ 启动 svStudio 的一个坑（Electron 开发者注意）
-
-本机 shell 里如果带着 `ELECTRON_RUN_AS_NODE=1`，Electron 会**退化成普通 node**，
-`require('electron')` 拿到的是 npm shim 的字符串路径（不是 API 对象）⇒
-主进程第一行就 `Cannot read properties of undefined (reading 'whenReady')`。
-双击 `.bat` 不受影响（那是干净环境）；在终端里手动起要 `set ELECTRON_RUN_AS_NODE=` 先清掉。
+本机 shell 里如果带着 `ELECTRON_RUN_AS_NODE=1`，Electron 会退化成普通 node，
+`require('electron')` 拿到的是字符串路径 ⇒ 主进程第一行就崩。
+双击 `.bat` 不受影响；在终端里手动起要先 `set ELECTRON_RUN_AS_NODE=`。

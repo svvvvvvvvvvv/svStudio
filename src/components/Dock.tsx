@@ -23,7 +23,7 @@ const THUMB_W = 260;
 function Thumb({ p, active }: { p: Photo; active: boolean }) {
   const sessionPath = useStore((s) => s.sessionPath);
   const sessionName = useStore((s) => s.sessionName);
-  const star = useStore((s) => s.ratings[ratingKey(sessionName, p.name)] || 0);
+  const star = useStore((s) => s.ratings[ratingKey(sessionName, p.rel)] || 0);
   const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {
@@ -70,29 +70,6 @@ function Thumb({ p, active }: { p: Photo; active: boolean }) {
           />
         ) : (
           <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>…</span>
-        )}
-        {/* ★ SV 09-15：缩略图要能一眼看出「这张有没有 RAW」
-            （选片台打星时要知道哪些片后面能拿 RAW 重调） */}
-        {p.hasRaw && (
-          <span
-            data-raw="1"
-            title="有 RAW（RAF 等原始文件）"
-            style={{
-              position: 'absolute',
-              right: 3,
-              top: 3,
-              fontSize: 9,
-              lineHeight: '13px',
-              padding: '0 4px',
-              borderRadius: 3,
-              background: 'rgba(0,0,0,.62)',
-              color: '#fff',
-              letterSpacing: 0.5,
-              pointerEvents: 'none',
-            }}
-          >
-            RAW
-          </span>
         )}
       </div>
       <div
@@ -150,7 +127,7 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
       {/* ★ 悬浮大预览（高频值走 useRef，零重渲染） */}
       <HoverPreview containerRef={hostRef} />
       {/* ★★ 底栏空的时候**必须说出为什么**（09-15 SV 报「底部栏没了」）。
-          实测现场：调色台 + 一个一张星都没有的主题 ⇒ `visiblePhotos(..., forGrade=true)`
+          实测现场：调色台 + 一个一张星都没有的目录 ⇒ `visiblePhotos(..., forGrade=true)`
           返回空 ⇒ 整条底栏一片空白、一格缩略图都没有，**和"坏了"长得一模一样**
           （他不止看不到图，连"为什么没有"都无从判断）。
           ⇒ 空着不出声是本项目最忌的一类（技能 §0：「空」和「坏了」要能分清）。
@@ -172,7 +149,7 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
           }}
         >
           {mode === 'grade'
-            ? '这个主题还没有打星的片 —— 调色台底栏只列 ★≥1，先去「选片台」打星'
+            ? '这个目录还没有打星的片 —— 调色台底栏只列 ★≥1，先去「选片台」打星'
             : '当前筛选下没有照片（换一个筛选看看）'}
         </div>
       )}

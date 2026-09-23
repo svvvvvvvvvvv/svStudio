@@ -4,9 +4,7 @@ import {
   Photo,
   Session,
   Stock,
-  Base,
-  Paper,
-  ParamDef,
+  Style,
   GradeState,
 } from '../api';
 
@@ -19,7 +17,7 @@ import {
  *   界面是状态的函数，改一处状态，所有用到它的地方自动更新。
  *
  * 这里按"变化频率"分片（避免一次 setState 把整棵树重渲染）：
- *   慢的（切主题/切模式）  → 放 store
+ *   慢的（切目录/切模式）  → 放 store
  *   快的（鼠标位置、hover）→ **不要放这里**，用 useRef（见 components/Dock 的注释）
  */
 
@@ -42,9 +40,6 @@ export type Filter = 'all' | 'unrated' | '1' | '2' | '3' | '4' | '5';
 const _indexFailed = new Map<string, string>();
 
 interface AppState {
-  /* ---- 配置 ---- */
-  ready: boolean;
-
   /* ---- 会话与照片 ---- */
   sessions: Session[];
   sessionPath: string;
@@ -59,19 +54,14 @@ interface AppState {
   /* ---- 界面 ---- */
   mode: Mode;
   filter: Filter;
-  /** 悬浮预览开关（SV 09-14 要求默认关） */
-  hoverEnabled: boolean;
   busy: boolean;
   busyText: string;
   toast: string;
 
   /* ---- 调色台 ---- */
   stocks: Stock[];
-  bases: Base[];
-  /** ★★ 相纸表（09-15）：**只对当前这一卷有效** —— 换卷要重拉（默认相纸跟着卷走）。
-   *  不知道当前哪一卷时它是空的（真卷之外没有相纸可选）。 */
-  papers: Paper[];
-  paramDefs: ParamDef[];
+  /** ★★ 曝光风格（09-23）：三条档，靶值从大师真片量出来，唯一出处 = 引擎 `/styles`。 */
+  styles: Style[];
   engineOk: boolean;
   engineMsg: string;
   grade: GradeState;
@@ -82,13 +72,21 @@ interface AppState {
    *  （用「次数」而不是 boolean —— 连点两次也能各触发一次，不会被合并掉。） */
   renderTick: number;
 
-  /** 有一发"建预览索引"在跑（库外·纯 RAW 目录 ⇒ 抠内嵌机内 JPG 写缓存） */
+  /** 有一发"建预览索引"在跑（抠内嵌机内 JPG 写缓存） */
   extIndexBusy: boolean;
 
+  /* ---- 批量出片（整个目录用同一套风格全出） ---- */
+  /** 只出 ★≥N 的片（0 = 全部） */
+  batchMinStar: number;
+  /** 出片长边像素。⚠ 原图全尺寸一张 RAW 约 6 分半，所以默认 2048 */
+  batchSide: number;
+  batchRunning: boolean;
+  /** 进度文字（主进程推事件，不是等返回值） */
+  batchText: string;
+
   /* ---- actions ---- */
-  setReady: (v: boolean) => void;
   loadSessions: () => Promise<void>;
-  /** 只重扫主题列表，**不碰**"恢复上次状态"（加目录 / 建预览索引后要用它） */
+  /** 只重扫目录列表，**不碰**"恢复上次状态"（加目录 / 建预览索引后要用它） */
   refreshSessions: () => Promise<void>;
   /** ★ 「加入目录…」/ 拖拽：把一个**硬盘上已有的**照片文件夹挂进图库列表（原地读，不复制）。
    *  存 `config.extraRoots`，然后 `refreshSessions()`。
@@ -111,17 +109,14 @@ interface AppState {
   rate: (v: number) => void;
   setFilter: (f: Filter) => void;
   setMode: (m: Mode) => void;
-  setHover: (v: boolean) => void;
   setBusy: (v: boolean, text?: string) => void;
   showToast: (msg: string) => void;
   loadEngine: () => Promise<void>;
   ensureEngine: () => Promise<boolean>;
-  /** ★ 拉某一卷的**相纸表**并写进 state，返回这张表（默认相纸跟着卷走） */
-  loadPapers: (stock: string) => Promise<Paper[]>;
   setGrade: (patch: Partial<GradeState>) => void;
-  /** 右栏「恢复默认」：滑杆清空（回引擎出厂）+ 基准回引擎默认 + 相纸回配套纸；**不动卷**；不自动出图 */
+  /** 右栏「恢复默认」：曝光风格回引擎默认档；**不动胶片风格**；不自动出图 */
   resetGrade: () => void;
-  /** 右栏「存到主题」：把当前卷/相纸/基准/滑杆值写进 `config.grades[主题名]`（进主题时自动套回） */
+  /** 右栏「存到目录」：把当前胶片风格 + 曝光风格写进 `config.grades[目录名]`（进目录时自动套回） */
   saveGradeToTheme: () => Promise<void>;
   /** ★★ 导出成片（09-15 SV 选「A」第 ② 项）：引擎渲染完**直接写盘**（EXIF 走 `io.save`）。
    *  尺寸/质量由**引擎**定（前端不写死）；真实尺寸用回来的 `w/h` 显示。 */
@@ -129,13 +124,20 @@ interface AppState {
   setRenderBusy: (v: boolean) => void;
   /** 请分屏出一次图（右栏「渲染」按钮 / 切进调色台 都调它） */
   requestRender: () => void;
+  setBatchMinStar: (v: number) => void;
+  setBatchSide: (v: number) => void;
+  setBatchText: (v: string) => void;
+  /** 用当前的两个选择器，把当前目录里符合条件的片全出一遍 */
+  runBatchExport: () => Promise<void>;
+  /** 叫停批量（跑完当前这一张就停） */
+  cancelBatchExport: () => Promise<void>;
 }
 
 /** 星级键：老代码 `keyForExif` 是 `sessionName + '||' + photo.name`，保持一致 */
 export const ratingKey = (sessionName: string, photoName: string) =>
   sessionName + '||' + photoName;
 
-/** 保存「上次状态」到配置（主题/照片/台）；失败静默。
+/** 保存「上次状态」到配置（目录/照片/台）；失败静默。
  *  ⚠ 必须用**平铺键**（lastSession/lastCur/lastMode），
  *    不能存 last:{...} 整个对象 —— main.js 的 set-config 是 Object.assign(cfg, patch)，
  *    存 {last:{cur}} 会把 last 整个换掉、丢掉 session（09-15「进来不是台」的根因）。 */
@@ -147,19 +149,12 @@ function saveLast(patch: { session?: string; cur?: number; mode?: string }) {
   API.setConfig(flat).catch(() => {});
 }
 
-/** 从一张相纸表里挑「这一卷的配套纸」（引擎给了 `isDefault`；没标就退第一张）。
- *  ⚠ 前端**不许写死任何纸名** —— 跟基准那条同一个规矩：名字写死 ⇒ 引擎改配置后静默错位。 */
-function pickPaper(list: Paper[]): string {
-  return (list.find((x) => x.isDefault) || list[0])?.name ?? '';
-}
-
 /** 路径比较用：统一斜杠、去尾反斜杠、转小写（Windows 上 `D:\A\B` 和 `d:/A/b/` 是同一个目录）。
  *  ★ 只用来**判等 / 判包含**，绝不拿它去读文件（大小写敏感的系统上会读不到）。 */
 const normPath = (p: unknown): string =>
   String(p ?? '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
 
 export const useStore = create<AppState>((set, get) => ({
-  ready: false,
 
   sessions: [],
   sessionPath: '',
@@ -171,31 +166,27 @@ export const useStore = create<AppState>((set, get) => ({
 
   mode: 'pick',
   filter: 'all',
-  hoverEnabled: true,
   busy: false,
   busyText: '',
   toast: '',
 
   stocks: [],
-  bases: [],
-  papers: [],
-  paramDefs: [],
+  styles: [],
   engineOk: false,
   engineMsg: '',
-  /* ★★ 基准初值**故意留空串**：真正的默认由引擎给（`/bases` 里带 `isDefault` 的那条，
-     见下面 loadEngine）。过去这里写死 'all'，而引擎的基准表（config.BASE_TABLE）里
-     根本没有 'all' ⇒ `stocks.resolve_base` **静默**回落成 `BASE_NONE`（"不套基准"）
-     ⇒ 默认出图等于"什么都没套"，界面上四支**一支都选不中**（还看不出哪里不对）。
-     ⚠ 规矩同滑杆那条：**前端不许自己发明初值**。
-     ★ `paper` 同理**故意不写**（undefined）：进调色台时由 `loadEngine` 按当前卷问引擎要，
-       引擎标 `isDefault` 的那张就是初值。 */
-  grade: { stock: 'Portra400薄荷', base: '', params: {} },
+  /* ★★ 曝光风格的初值**故意留空**：真正的默认由引擎给（`/styles` 里带 `isDefault` 的那条，
+     见下面 loadEngine）。09-15 踩过一模一样的坑：这里写死 'all'，而引擎的基准表里
+     根本没有 'all' ⇒ 静默回落，界面上一支都选不中（还看不出哪里不对）。
+     ⚠ 规矩：**前端不许自己发明初值**。 */
+  grade: { stock: 'Portra400薄荷', style: '' },
   renderBusy: false,
   renderTick: 0,
 
   extIndexBusy: false,
-
-  setReady: (v) => set({ ready: v }),
+  batchMinStar: 0,
+  batchSide: 2048,
+  batchRunning: false,
+  batchText: '',
 
   loadSessions: async () => {
     const cfg = await API.getConfig();
@@ -203,19 +194,19 @@ export const useStore = create<AppState>((set, get) => ({
     /* ★★ 09-15 SV 选「B」：不用再读什么"库根"了 —— 左栏列的就是加过的文件夹。
        老配置里的 `libRoot` 由 main.js 的 `migrateConfig` 一次性搬进 `extraRoots`。 */
     const list: Session[] = (await API.scanSessions()) || [];
-    set({ sessions: list, ready: true });
+    set({ sessions: list });
 
-    /* ★★ 恢复上次状态（SV 09-15：进来直接就是台，别停在主题列表）：
-       上次的主题 + 选到哪张 + 在哪个台（平铺键，见 saveLast 注释） */
+    /* ★★ 恢复上次状态（SV 09-15：进来直接就是台，别停在目录列表）：
+       上次的目录 + 选到哪张 + 在哪个台（平铺键，见 saveLast 注释） */
     const lastSession = cfg?.lastSession;
     if (lastSession && list.some((s) => s.name === lastSession)) {
       await get().enterSession(lastSession, { silent: true });
       /* ⚠★ 这里夹范围是**兜底**，不是主修。
          真正的根因是「`lastSession` 和 `lastCur` 会不同步」：过去 `enterSession` 只写
-         `lastSession`、不写 `lastCur` ⇒ 落盘的 (主题, 下标) 是**两次不同操作**拼出来的。
-         踩过的场景（真能走到）：在长主题里翻到第 30 张 → 切到一个只有 12 张的主题
+         `lastSession`、不写 `lastCur` ⇒ 落盘的 (目录, 下标) 是**两次不同操作**拼出来的。
+         踩过的场景（真能走到）：在长目录里翻到第 30 张 → 切到一个只有 12 张的目录
          （`enterSession` 把 cur 归 0，但落盘的 lastCur 还是 30）→ 关掉再打开
-         ⇒ 恢复成"主题 × 第 30 张" = 不存在 ⇒ 中间显示「没有照片」，
+         ⇒ 恢复成"目录 × 第 30 张" = 不存在 ⇒ 中间显示「没有照片」，
          在用户眼里就是"打开工作台白屏了"，而且看不出为什么。
          现在 `enterSession` 里两个键一起写（见那儿），夹范围留着挡"照片本身变少了"
          （删了片 / 换了盘 / 手动挪了文件）这一类。 */
@@ -226,8 +217,8 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  /** 只重扫主题列表，**不碰**"恢复上次状态" —— 加目录 / 建完预览索引后要用它，
-   *  不能直接调 `loadSessions`（那个会顺带"恢复上次主题"，把刚进来的又换掉） */
+  /** 只重扫目录列表，**不碰**"恢复上次状态" —— 加目录 / 建完预览索引后要用它，
+   *  不能直接调 `loadSessions`（那个会顺带"恢复上次目录"，把刚进来的又换掉） */
   refreshSessions: async () => {
     const list = (await API.scanSessions()) || [];
     set({ sessions: list });
@@ -242,7 +233,7 @@ export const useStore = create<AppState>((set, get) => ({
      ★ 身份按**完整路径**：挂进来的文件夹就算跟别的条目重名，也各算各的
        （星级 / 成片归档 / 调色配方都不串味）。真重名时 `extraSessions` 给后面那条加 ` ·2`。
      ★★ 09-15 SV 选「B」：**"库根"这一层砍掉了** —— 别再引回 `libRoot` 那套
-       "先设一个大库、库底下分主题"。它在"我手上就是一个文件夹"时是锁死的。
+       "先设一个大库、库底下分目录"。它在"我手上就是一个文件夹"时是锁死的。
      ========================================================= */
 
   /** 加入一个文件夹（按钮选 / 拖拽都走这里）—— 原地读，**一个字节都不动** */
@@ -303,7 +294,7 @@ export const useStore = create<AppState>((set, get) => ({
     }
     await API.setConfig({ extraRoots: list.filter((x) => normPath(x) !== D) });
     /* 正在看的就是这个根底下的 ⇒ 回首页。
-       不回去的话会停在一个"列表里已经没有、画面却还在"的主题上（那一栏也点不动了） */
+       不回去的话会停在一个"列表里已经没有、画面却还在"的目录上（那一栏也点不动了） */
     const cur = get().sessions.find((x) => x.name === get().sessionName);
     const cp = normPath(cur?.path);
     if (cp && (cp === D || cp.startsWith(D + '\\'))) get().goHome();
@@ -378,12 +369,12 @@ export const useStore = create<AppState>((set, get) => ({
     const sessionPath = (s && s.path) || '';
     if (!sessionPath) return;
     /* ★★ 纯 RAW 的库外目录：列图读的是**预览索引**（缓存），索引还没建 / 源目录又多了新片
-       ⇒ 先补上再去列图。不补的话列表里张数看得见、点进去却是**空主题**
+       ⇒ 先补上再去列图。不补的话列表里张数看得见、点进去却是**空目录**
        —— "显示 4 张 / 里面 0 张"这种对不上，比直接报错还难查。 */
     if (s && s.needsIndex) {
       set({ busy: true, busyText: '正在生成预览小图…' });
       /* ⚠★ `true` = 这一发是**用户自己点进来的**（`silent` 那条只在开台子恢复上次的
-         主题时走，那时失败记录本来就是空的）⇒ 一定重试，不许被静默拦住。 */
+         目录时走，那时失败记录本来就是空的）⇒ 一定重试，不许被静默拦住。 */
       await get().indexExternalDir(sessionPath, true);
       await get().refreshSessions();
     }
@@ -395,66 +386,43 @@ export const useStore = create<AppState>((set, get) => ({
       set({ busy: false });
     }
     if (!opts?.silent) {
-      /* ★ 每次进主题都记下来，下次启动直接回到这。
+      /* ★ 每次进目录都记下来，下次启动直接回到这。
          ⚠★ `cur` 必须**一起**写：两个键是"一次操作的结果"，分开写就会不同步
-           （过去只写 session，于是"换了主题但 lastCur 还是老主题的下标"，
+           （过去只写 session，于是"换了目录但 lastCur 还是老目录的下标"，
             重启后恢复成不存在的第 N 张 ⇒ 打开就白屏）。 */
       saveLast({ session: name, cur: 0 });
     }
-    /* ★ 按主题**套回配方**（「存到主题」存下的那份，`config.grades[主题名]`）。
+    /* ★ 按目录**套回配方**（「存到目录」存下的那份，`config.grades[目录名]`）。
        没存过就什么都不动 —— 保持当前状态。
-       ⚠ 不加这一步「存到主题」就是**只写不读**（存了个寂寞），正是本项目最忌的
+       ⚠ 不加这一步「存到目录」就是**只写不读**（存了个寂寞），正是本项目最忌的
          "看着对、其实对不上"；也所以它没有单独一个按钮的必要 —— 存了就得用上。
        ⚠ 只改状态、**不出图**（沿用"只有两个触发点"的规矩）。 */
-    const list = get().bases;
+    const list = get().styles;
     const dfltName = (list.find((x) => x.isDefault) || list[0])?.name ?? '';
     try {
       const g = await API.getGrade(name);
       if (g && typeof g === 'object') {
         /* ★★ 存过的配方**也要校验再套**，不能原样信。
-           `base` 是**引擎基准表里的名字**，而这份配置是"人能手改、旧版本也写过"的东西
-           （旧版前端就写死过 `'all'`，那个名字引擎根本不认）。
-           引擎对不认得的名字是**静默**回落成「不套基准」的 —— 见 `stocks.resolve_base`：
-           `key = str(name or 'BASE_NONE').strip().upper()`，既不在表里就取 `'BASE_NONE'`。
-           ⇒ 不校验的话，一进这个主题就是：界面上四支基准**一支都不亮**，
-             出图悄悄变成"什么都没套"，而且**看不出哪里不对**。
-           —— 跟修「默认值」那条是同一个坑，只是入口从"初值"换成了"存过的旧值"。
-           ★ 相纸（09-15）是**同一个坑的第四个入口**，一样处理：名字不认得就回这一卷的配套纸，
-             并且**说出来**（toast），绝不静默。 */
-        const b = String((g as { base?: unknown }).base ?? '');
-        const known = !!b && list.some((x) => x.name === b);
-        const st = String((g as { stock?: unknown }).stock ?? get().grade.stock ?? '');
-        const plist = await get().loadPapers(st);
-        const p = String((g as { paper?: unknown }).paper ?? '');
-        const pKnown = !!p && plist.some((x) => x.name === p);
-        const pDflt = pickPaper(plist);
+           这份配置是"人能手改、老版本也写过"的东西（老版连 `base`/`paper`/`params` 都存过，
+           那些字段 09-23 随新边界一起删了）。名字不认得就回引擎默认档**并且说出来**，
+           绝不静默 —— 静默的代价是"界面上一支都不亮、还看不出哪里不对"。 */
+        const sy = String((g as { style?: unknown }).style ?? '');
+        const known = !!sy && list.some((x) => x.name === sy);
         set({
           grade: {
-            ...get().grade,
-            ...g,
-            base: known ? b : dfltName,
-            paper: pKnown ? p : pDflt,
+            stock: String((g as { stock?: unknown }).stock ?? get().grade.stock ?? ''),
+            style: known ? sy : dfltName,
           },
         });
-        if (!known && list.length) {
-          get().showToast(
-            `「${name}」存的基准引擎不认${b ? '（' + b + '）' : ''}，已回默认`
-          );
-        } else if (p && !pKnown) {
-          get().showToast(`「${name}」存的相纸引擎不认（${p}），已回配套纸`);
+        if (!known && list.length && sy) {
+          get().showToast(`「${name}」存的曝光风格引擎不认（${sy}），已回默认`);
         }
       } else {
-        /* 没存过 ⇒ **回出厂**（滑杆清空 + 基准回引擎默认 + 相纸回配套纸）。
-           为什么不"保持上一个主题的值"：那样主题之间会**互相串味**
-           （在 A 里拧过的滑杆跟着你进 B），正是本项目最忌的那类"看着对、其实对不上"。
-           代价照实说：在 A 里**没存**的临时改动，切走一趟回来就没了
-           —— 这恰恰是「存到主题」这个按钮存在的意义。
-           ⚠ 卷**不动**（卷是"这张要弄成什么"，不是调出来的；同 resetGrade 的规矩）。 */
-        const st = String(get().grade.stock || '');
-        const plist = await get().loadPapers(st);
-        set({
-          grade: { stock: get().grade.stock, base: dfltName, paper: pickPaper(plist), params: {} },
-        });
+        /* 没存过 ⇒ **回出厂**（曝光风格回引擎默认档）。
+           为什么不"保持上一个目录的值"：那样目录之间会**互相串味**，
+           正是本项目最忌的那类"看着对、其实对不上"。
+           ⚠ 胶片风格**不动**（它是"这张要弄成什么"，不是调出来的；同 resetGrade 的规矩）。 */
+        set({ grade: { stock: get().grade.stock, style: dfltName } });
       }
     } catch {
       /* 读不到就当没存过，不吵 */
@@ -477,7 +445,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { sessionName, photos, cur, ratings } = get();
     const p = photos[cur];
     if (!p) return;
-    const k = ratingKey(sessionName, p.name);
+    const k = ratingKey(sessionName, p.rel);
     const next = { ...ratings };
     if (v <= 0) delete next[k];
     else next[k] = v;
@@ -491,7 +459,6 @@ export const useStore = create<AppState>((set, get) => ({
     set({ mode: m });
     saveLast({ mode: m });
   },
-  setHover: (v) => set({ hoverEnabled: v }),
   setBusy: (v, text) => set({ busy: v, busyText: text || '' }),
 
   showToast: (msg) => {
@@ -501,7 +468,7 @@ export const useStore = create<AppState>((set, get) => ({
     }, 2000);
   },
 
-  /** 拉引擎元数据（卷 / 基准 / 相纸 / 参数定义）+ 探活。服务没起时 ok=false，不白屏。 */
+  /** 拉引擎元数据（胶片风格 9 条 + 曝光风格 3 档）+ 探活。服务没起时 ok=false，不白屏。 */
   loadEngine: async () => {
     try {
       const h = await API.engineHealth();
@@ -509,45 +476,29 @@ export const useStore = create<AppState>((set, get) => ({
         set({ engineOk: false, engineMsg: '引擎未启动' });
         return;
       }
-      const curStock = String(get().grade.stock || '');
-      const [s, b, p, pp] = await Promise.all([
-        API.engineStocks(),
-        API.engineBases(),
-        API.engineParams(),
-        /* ★ 相纸表**要带当前卷**（默认相纸跟着卷走）。没卷就别问（真卷之外没有相纸）。 */
-        curStock ? API.enginePapers(curStock) : Promise.resolve({ items: [] as Paper[] }),
-      ]);
-      // ★ main.js 给的键是 `items`（不是 `stocks`/`bases`/`params`）—— 09-15 名字对不上，
-      //   三个列表永远是空的，卷/基准/滑杆全不显示。
-      const baseList: Base[] = b?.items || [];
+      // ★ main.js 给的键是 items（不是 stocks/styles）—— 09-15 名字对不上过一次，
+      //   两个列表会永远是空的，风格全不显示。
+      const [s, y] = await Promise.all([API.engineStocks(), API.engineStyles()]);
+      const styleList: Style[] = y?.items || [];
       set({
         engineOk: true,
         engineMsg: '',
         stocks: s?.items || [],
-        bases: baseList,
-        papers: pp?.items || [],
-        paramDefs: p?.items || [],
+        styles: styleList,
       });
-      /* ★ 基准成色的初值**由引擎给**（同滑杆的 `dv` 规矩）：
-         当前值不在引擎列表里（首次 = 空串；或引擎改了基准表）⇒ 取引擎标了
-         `isDefault` 的那条；引擎万一没标，退到第一支。
-         ⚠ **这里不许出现任何写死的基准名** —— 写死就会在引擎改配置后静默错位。 */
-      const curBase = get().grade.base;
-      if (baseList.length && !baseList.some((x) => x.name === curBase)) {
-        const dflt = baseList.find((x) => x.isDefault) || baseList[0];
-        set({ grade: { ...get().grade, base: dflt.name } });
-      }
-      /* ★ 相纸同规矩（09-15）：引擎说这一卷配哪张就是哪张。
-         ⚠ 同样**不许写死纸名** —— 名字认不得的后果是"静默走默认"，本项目最阴的一类坑。 */
-      const paperList: Paper[] = pp?.items || [];
-      const curPaper = get().grade.paper;
-      if (paperList.length && !paperList.some((x) => x.name === curPaper)) {
-        set({ grade: { ...get().grade, paper: pickPaper(paperList) } });
+      /* ★ 曝光风格的初值**由引擎给**：当前值不在列表里（首次 = 空串；或引擎改了档）
+         => 取引擎标了 isDefault 的那条；引擎万一没标，退到第一条。
+         ⚠ **这里不许出现任何写死的档位名** —— 写死就会在引擎改配置后静默错位。 */
+      const cur = get().grade.style;
+      if (styleList.length && !styleList.some((x) => x.name === cur)) {
+        const dflt = styleList.find((x) => x.isDefault) || styleList[0];
+        set({ grade: { ...get().grade, style: dflt.name } });
       }
     } catch {
       set({ engineOk: false, engineMsg: '引擎未启动' });
     }
   },
+
 
   /** ★ 引擎没起就自己拉起来（老版：点渲染时自动 spawn），拉完再探活 */
   ensureEngine: async () => {
@@ -574,52 +525,8 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  /**
-   * ★ 拉某一卷的相纸表（唯一出处 = 引擎 `spektra.PAPERS`；默认跟着卷走）。
-   *   ⚠ 引擎对**不认得的名字**是回落 + 报告里标出来（`resolve_paper`），不会崩。
-   *     所以前端这边只管"我手里的列表是哪一卷的"，不用自己兜名字。
-   */
-  loadPapers: async (stock) => {
-    const st = String(stock || '');
-    if (!st) {
-      set({ papers: [] });
-      return [];
-    }
-    try {
-      const r = await API.enginePapers(st);
-      const items: Paper[] = r?.items || [];
-      set({ papers: items });
-      return items;
-    } catch {
-      set({ papers: [] });
-      return [];
-    }
-  },
-
   setGrade: (patch) => {
-    const before = get().grade;
-    set({ grade: { ...before, ...patch } });
-    /* ★★ 换卷要**连坐换纸**（09-15）：卷变了，配套的那张纸也变了
-       （Portra 卷配 Portra Endura、Ektar 卷配 Endura Premier…）。
-       不换的话会留下"Ektar 卷 + Portra 纸"这种不存在的组合，
-       而且下拉里高亮的那条和实际生效的那条对不上 —— 又是"看着对、其实对不上"。 */
-    if (patch.stock === undefined || patch.stock === before.stock) return;
-    const st = String(patch.stock || '');
-    get()
-      .loadPapers(st)
-      .then((items) => {
-        /* ⚠ 连着换两次卷时，**先发的请求可能后到** —— 回来先确认"还是这一卷"，
-           否则会把下拉覆盖成上一卷的纸（高亮和实际用的又对不上）。 */
-        if (String(get().grade.stock || '') !== st) return;
-        /* ★ 中性卷 / 引擎没给表 ⇒ 把相纸**清空**（别把上一卷那张名字留在状态里：
-           它虽然不生效，但会跟着下一次渲染请求飞出去，日志里看着像"用了这张纸"）。 */
-        if (!items.length) {
-          set({ grade: { ...get().grade, paper: '' } });
-          return;
-        }
-        set({ grade: { ...get().grade, paper: pickPaper(items) } });
-      })
-      .catch(() => {});
+    set({ grade: { ...get().grade, ...patch } });
   },
 
   /* ★ 右栏「恢复默认」（09-15 接上 —— 之前这个按钮**没有 onClick**，点了什么都不发生）：
@@ -629,26 +536,19 @@ export const useStore = create<AppState>((set, get) => ({
      被「恢复默认」顺手抹掉会很意外。
      ⚠ 也不自动出图 —— 沿用 SV 定的"只有两个触发点"（右栏「渲染」/ 切进调色台）。 */
   resetGrade: () => {
-    const list = get().bases;
+    const list = get().styles;
     const dflt = list.find((x) => x.isDefault) || list[0];
-    set({
-      grade: {
-        ...get().grade,
-        base: dflt?.name ?? '',
-        paper: pickPaper(get().papers),
-        params: {},
-      },
-    });
-    get().showToast('滑杆已回出厂、相纸回配套纸（卷没动）—— 点「渲染」看效果');
+    set({ grade: { ...get().grade, style: dflt?.name ?? '' } });
+    get().showToast('曝光风格已回默认（胶片风格没动）—— 点「渲染」看效果');
   },
 
-  /* ★ 右栏「存到主题」（09-15 接上）：一个主题一份配方，写进 `config.grades[主题名]`。
+  /* ★ 右栏「存到目录」（09-15 接上）：一个目录一份配方，写进 `config.grades[目录名]`。
      ⚠ 主进程的 `get-grade` / `set-grade` 早就写好了，是前端一直没调
      —— 所以这不是"缺功能"，是"接了半截"。 */
   saveGradeToTheme: async () => {
     const name = get().sessionName;
     if (!name) {
-      get().showToast('还没进主题，没地方存');
+      get().showToast('还没进目录，没地方存');
       return;
     }
     try {
@@ -691,9 +591,7 @@ export const useStore = create<AppState>((set, get) => ({
       const r = await API.exportImage({
         src: p.loadPath,
         stock: st.grade.stock,
-        base: st.grade.base,
-        paper: st.grade.paper,
-        params: st.grade.params || {},
+        style: st.grade.style,
       });
       if (r?.canceled) return;         // 用户自己取消 ⇒ 不提示（这不是错误）
       if (r?.ok) {
@@ -713,6 +611,49 @@ export const useStore = create<AppState>((set, get) => ({
 
   setRenderBusy: (v) => set({ renderBusy: v }),
   requestRender: () => set((s) => ({ renderTick: s.renderTick + 1 })),
+
+  setBatchMinStar: (v) => set({ batchMinStar: Math.max(0, Math.min(5, Number(v) || 0)) }),
+  setBatchSide: (v) => set({ batchSide: Number(v) || 0 }),
+  setBatchText: (v) => set({ batchText: v }),
+
+  runBatchExport: async () => {
+    const st = get();
+    const name = st.sessionName;
+    if (!name || !st.sessionPath) return;
+    const min = st.batchMinStar || 0;
+    const list = st.photos.filter(
+      (p) => (st.ratings[ratingKey(name, p.rel)] || 0) >= min
+    );
+    if (!list.length) {
+      st.showToast(min ? `没有 ★≥${min} 的片` : '这个目录里没有片');
+      return;
+    }
+    set({ batchRunning: true, batchText: `准备出 ${list.length} 张…` });
+    try {
+      const r = await API.exportBatch({
+        dirPath: st.sessionPath,
+        items: list.map((p) => ({ rel: p.rel })),
+        stock: st.grade.stock,
+        style: st.grade.style,
+        side: st.batchSide,
+      });
+      if (r?.ok) {
+        const nf = r.failed?.length || 0;
+        get().showToast(`批量出片完成：${r.done || 0} 张${nf ? `，${nf} 张失败` : ''} → ${r.dir}`);
+      } else {
+        get().showToast('批量出片失败：' + (r?.error || '未知'));
+      }
+    } catch (e) {
+      get().showToast('批量出片失败：' + String(e));
+    } finally {
+      set({ batchRunning: false, batchText: '' });
+    }
+  },
+
+  cancelBatchExport: async () => {
+    await API.exportBatchCancel();
+    get().showToast('正在停…跑完手上这一张就停');
+  },
 }));
 
 /**
@@ -729,7 +670,7 @@ export function visiblePhotos(
   const out: number[] = [];
   for (let i = 0; i < photos.length; i++) {
     const p = photos[i];
-    const v = ratings[ratingKey(sessionName, p.name)] || 0;
+    const v = ratings[ratingKey(sessionName, p.rel)] || 0;
     if (forGrade) {
       if (v >= 1) out.push(i);
       continue;

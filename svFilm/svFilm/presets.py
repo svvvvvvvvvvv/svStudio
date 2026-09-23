@@ -85,6 +85,29 @@ def preset_dir():
         % os.path.join(_pkg_dir(), 'data', 'presets'))
 
 
+# 一条预设 = 一个「胶片风格」。键 = JSON 文件名。
+# ⚠⚠ 名字**只写「胶卷 + 风格」**，不带作者名字（本仓库是公开的）。
+#     风格词（薄荷/清风/空气感…）沿用 public 那边的叫法，方便对上。
+# ⚠ 没在这里写说明的预设**不让上界面**（见 `names()` 下面的断言）——
+#   宁可当场炸，也不要出现「界面上一个没名字的选项」。
+_DESC = {
+    'Portra400薄荷': ('Portra400 · 薄荷', '暖侧逆光 + 青蓝背景，肤色有血色（最厚的一条）'),
+    'Pro400H马卡龙': ('Pro400H · 马卡龙', '马卡龙色系，柔和小清新'),
+    'Portra400淡雅': ('Portra400 · 淡雅', '淡雅、低饱和、通透'),
+    'Pro400H清风': ('Pro400H · 清风', '清风感，冷调淡雅'),
+    'C200过曝': ('C200 · 过曝', '过曝通透、明快'),
+    'Portra400空气感': ('Portra400 · 空气感', '空气感、留白多'),
+    'Ektar100浓彩': ('Ektar100 · 浓彩', '浓彩，饱和度最高的一条'),
+    'C200青蓝': ('C200 · 青蓝', '青蓝调'),
+    'C200透明': ('C200 · 透明', '透明感'),
+}
+
+
+def label_of(name):
+    """(中文名, 一句话人话说明)。汇报时用它，别甩英文代号。"""
+    return _DESC.get(str(name), (str(name), ''))
+
+
 def _files():
     d = preset_dir()
     return sorted(f for f in os.listdir(d) if f.endswith(_SUFFIX))
@@ -93,9 +116,6 @@ def _files():
 def names():
     """所有可用预设（文件名去掉 .json，保持原样不转小写 —— 里面有中文和间隔号）。"""
     return [f[:-len(_SUFFIX)] for f in _files()]
-
-
-NAMES = names  # 兼容旧写法（`stocks.NAMES` 是个 list，这里是函数）
 
 
 def has(name):

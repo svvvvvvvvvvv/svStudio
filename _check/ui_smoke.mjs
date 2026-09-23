@@ -158,12 +158,12 @@ const mainJsSrc = read('main.js');
 const storeSrc = read('src/store/useStore.ts');
 const viewerSrc = read('src/components/Viewer.tsx');
 const listChans = (mainJsSrc.match(/return r\.ok \? \{ ok: true, items:/g) || []).length;
-check('★ main.js 列表类通道返回 items（stocks/bases/params/load）', listChans >= 4, `${listChans} 处`);
+check('★ main.js 列表类通道返回 items（stocks/styles/load）', listChans >= 3, `${listChans} 处`);
 const imgChans = (mainJsSrc.match(/ok: true, image:/g) || []).length;
 check('★ main.js 图片类通道返回 image（base/render/raw-url）', imgChans >= 3, `${imgChans} 处`);
 check(
   '★ useStore 读的是 .items（不是自造的 .stocks/.bases/.params）',
-  /s\?\.items/.test(storeSrc) && /b\?\.items/.test(storeSrc) && /p\?\.items/.test(storeSrc),
+  /s\?\.items/.test(storeSrc) && /y\?\.items/.test(storeSrc),
   '',
   '读错 key ⇒ 卷/基准/滑杆列表永远空'
 );
@@ -203,9 +203,13 @@ const svcSrcForExport = read('svFilm/svFilm/service.py');
 check('★ main.js 有 export-image 通道，且回来的是**文件路径**（不是 image 数据）',
   /ipcMain\.handle\('export-image'[\s\S]{0,3000}?Object\.assign\(\{ ok: true \}, r\.data/.test(mainJsSrc),
   '', '导出拿不到路径 ⇒ 界面只能说"失败了"，用户不知道文件去哪了');
-check('★ 导出的请求也走 paramStr（不许前端自己 encodeURIComponent 参数对象）',
-  /export-image[\s\S]{0,3000}?'&params=' \+ encodeURIComponent\(paramStr\(p\.params\)\)/.test(mainJsSrc),
-  '', '把参数**对象**直接编码 ⇒ `[object Object]` ⇒ 引擎静默解出空对象（09-15 那 23 根滑杆的坑）');
+/* ★ 09-23：滑杆整套删了 ⇒ 主进程里那个 `paramStr`（参数串收口点）也一起删了。
+   现在导出只带 stock + style 两个**字符串**，不存在"把对象编码成 [object Object]"那条坑。
+   这条改成反向钉住：**不许**再出现 paramStr，也不许出现 `&params=`。 */
+check('★ 导出的请求只带 stock/style 两个字符串（paramStr 随滑杆一起删了）',
+  /export-image[\s\S]{0,3000}?'&style=' \+ encodeURIComponent\(p\.style \|\| ''\)/.test(mainJsSrc) &&
+    !/paramStr/.test(mainJsSrc) && !/&params=/.test(mainJsSrc),
+  '', '又出现参数对象 / paramStr ⇒ 说明有人把老滑杆那套捡回来了（09-15 那 23 根滑杆的坑）');
 check('★ preload 暴露了 exportImage',
   /exportImage: \(payload\) => ipcRenderer\.invoke\('export-image'/.test(preloadSrc),
   '', '少了它 ⇒ 右栏那个按钮点了报 undefined');
@@ -226,426 +230,83 @@ check('★★ 被夹住要说出来（`side_clamped` 一路回到提示里）',
   /side_clamped/.test(storeSrc) && /side_clamped/.test(svcSrcForExport), '',
   '静默降级 ⇒ 用户以为导出的是原尺寸');
 
-/* ---------- [8] 滑杆：引擎的 PARAMS ↔ 布局自检的 mock ↔ 前端初值 ---------- */
-/* ★★ 09-15 加这组的原因：布局自检**跑的是它自己那份假数据**。原来那份里还写着旧名字
-   （「本张落点」「提亮」）和旧区间，而检查只断言"名字在不在" ⇒ **它绿着，真界面早就不一样了**。
-   所以这里把"引擎的 PARAMS"和"mock"钉在一起，谁改歪都会被抓住。 */
-console.log('\n[8] 滑杆（引擎 PARAMS ↔ 布局自检 mock ↔ 前端初值）');
-const gradeSrc = read('src/components/GradePanel.tsx');
-const svcSrc = exists('svFilm/svFilm/service.py') ? read('svFilm/svFilm/service.py') : '';
-const pyRe = /k='([A-Z0-9_]+)',\s+name='([^']+)',\s+lo=(-?[\d.]+),\s*hi=(-?[\d.]+)/g;
-const realParams = new Map();
-for (const m of svcSrc.matchAll(pyRe)) {
-  realParams.set(m[1], { name: m[2], lo: parseFloat(m[3]), hi: parseFloat(m[4]) });
-}
-check('★ 从引擎 service.py 读到了滑杆清单', realParams.size >= 20, `${realParams.size} 根`);
-const mockSrc = read('_check/layout_check.mjs');
-const mockRe = /k: '([A-Z0-9_]+)',\s*name: '([^']+)',\s*lo: (-?[\d.]+),\s*hi: (-?[\d.]+)/g;
-const mockParams = [...mockSrc.matchAll(mockRe)].map((m) => ({
-  k: m[1], name: m[2], lo: parseFloat(m[3]), hi: parseFloat(m[4]),
-}));
-check('布局自检的 mock 里有滑杆条目', mockParams.length >= 3, `${mockParams.length} 条`);
-const drift = mockParams.filter((m) => {
-  const r = realParams.get(m.k);
-  return !r || r.name !== m.name || r.lo !== m.lo || r.hi !== m.hi;
-});
-check(
-  '★ 布局自检的 mock 与引擎 PARAMS 一致（名字 / 区间都不许漂）',
-  drift.length === 0,
-  `${mockParams.length} 条全部对齐`,
-  '漂了: ' + drift.map((m) => `${m.k}(${m.name} ${m.lo}~${m.hi})`).join(', ')
-);
-check(
-  '★ mock 里带了 dv（否则测不出"显示的数对不对"）',
-  mockParams.length > 0 && (mockSrc.match(/k: '[A-Z0-9_]+',[^}]*dv: /g) || []).length >= 3
-);
-check(
-  '★ 前端滑杆初值用的是 dv（不是区间中点）',
-  /params\[d\.k\] \?\? d\.dv/.test(gradeSrc),
-  '',
-  '又退回 (lo+hi)/2 ⇒ 显示的数跟引擎实际用的对不上'
-);
-check(
-  '前端没有把「取区间中点」当成初值',
-  !/const v = params\[d\.k\] \?\? \(d\.lo \+ d\.hi\) \/ 2/.test(gradeSrc),
-  '',
-  '老写法还在'
-);
-
-/* ---------- ★★★ 09-15（SV 报「柔光下拉框为空」）：`opts` 的形状三边必须一致 ----------
-   病理：引擎 `PARAMS` 里 `opts=(('black_pro_mist','黑柔（BPM）'), …)` 是**紧凑元组**，
-   过一遍 HTTP（JSON）就变成**数组对** `[['black_pro_mist','黑柔（BPM）'], …]`，
-   而前端读的是 `o.v` / `o.t` ⇒ 四个 `<option>` 的 value 和文字**全是 undefined**
-   ⇒ 下拉框**看着是空的**。而 `<option>` 的**个数**照样是 4 ⇒ 上面那条"四支"的断言绿着。
-   ⇒ 契约：**过 HTTP 一律是对象 `{v,t}`**（在 `_param_defs()` 里那一步翻好）。
-     三方（引擎发的 / 前端读的 / 布局自检 mock 里的）谁改歪都会被这里抓住。
-   ⚠ 引擎那两条要在**剥掉 Python 注释**的源码上查（说明注释里就写着这个形状，会被自己骗）。 */
-const svcCode = svcSrc.replace(/#[^\n]*/g, '');
-const mockCode = mockSrc.replace(/\/\*[\s\S]*?\*\//g, '');
-check('★★ 引擎发出去的 opts 是对象 {v,t}（元组过 JSON 会变成数组对 ⇒ 下拉就空了）',
-  /q\['opts'\] = \[\{'v': o\[0\], 't': o\[1\]\} for o in/.test(svcCode), '',
-  '`_param_defs()` 里少了"元组 → 对象"那一步 ⇒ 前端收到的还是数组对，下拉框空着');
-check('★ 前端读的就是 `o.v` / `o.t`（跟着对象的字段名走，不是元组下标）',
-  /o\.v/.test(gradeSrc) && /o\.t/.test(gradeSrc) &&
-    !/<option[^>]*key=\{o\[0\]\}/.test(gradeSrc), '',
-  '前端按元组下标读 ⇒ 引擎一发对象它就全 undefined（下拉空掉的另一半）');
-check('★ 布局自检 mock 里的 opts 也是对象（三方一致，谁漂了都红）',
-  /opts: \[\{ v: '[a-z_]+', t: '[^']+' \}/.test(mockCode), '',
-  'mock 和引擎不是一个形状 ⇒ 检查绿着、真界面是空的（这个 bug 就是这么溜过去的）');
-
-/* ---------- ★ 09-15 参数串：前端到底发得出去吗（"点渲染没反应"的根因守卫） ----------
-   为什么单开一段：前端 `grade.params` 是**对象** `{KEY: 数}`，而引擎那口子收的是
-   `KEY:VAL,KEY:VAL` 字符串。过去 main.js 直接 `encodeURIComponent(对象)` ⇒ 发出去变成
-   `%5Bobject%20Object%5D` ⇒ 引擎按冒号切、切不出来就**静默丢掉**（契约就是"不合法不报错"）
-   ⇒ 解出空字典 ⇒ **23 根滑杆一根都没接上**，出图永远是"出厂值"那张。
-   ⚠ 上一轮的门禁只验到"引擎收得下参数"，没验"前端发得出参数" —— 闸挡住了 ≠ 没脸。
-   ⚠ 所以这一段**真把 main.js 里那段源码取出来在 Node 里跑**，不是拿正则看"有没有写
-     paramStr"（那种检查挡不住"函数体写错"，等于没查）。                        */
-// ⚠ 必须先剥掉注释再查（那条老写法就写在上面的说明注释里，会被自己的注释误判 —— 09-15 踩过）
-const mainJsCode = mainJsSrc.replace(/\/\*[\s\S]*?\*\//g, '');
-const psM = mainJsCode.match(/function paramStr\(p\)\s*\{[\s\S]*?\n\}/);
-check('main.js 里有 paramStr（参数串的收口点）', !!psM, '', '函数没了？');
-let ps = null;
-if (psM) {
-  try {
-    ps = new Function(psM[0] + '; return paramStr;')();
-  } catch (e) {
-    ps = null;
-  }
-}
-check('paramStr 能在 Node 里独立跑起来（无依赖、可单测）', typeof ps === 'function',
-  '', '取出来的那段源码跑不了');
-if (typeof ps === 'function') {
-  const got = ps({ SPEK_PE_SHIFT: 0.91, ENTRY_SETTLE_SHIFT_EV: -0.25 });
-  check('★ paramStr 把对象转成 KEY:VAL,...',
-    got === 'SPEK_PE_SHIFT:0.91,ENTRY_SETTLE_SHIFT_EV:-0.25', got);
-  check('★ paramStr 的结果里没有 object（老 bug 不会复发）',
-    !/object/i.test(got), got, '又变成 [object Object] 了');
-  check('paramStr 对字符串原样透传（脚本风格的 A/B 调用）',
-    ps('TONE_TOE:0.5') === 'TONE_TOE:0.5', '', String(ps('TONE_TOE:0.5')));
-  check('paramStr 丢掉 NaN / 非数字（不污染引擎的 float() 解析）',
-    ps({ A: 1, B: NaN, D: 2 }) === 'A:1,D:2',
-    '', String(ps({ A: 1, B: NaN, D: 2 })));
-  /* ★★ 09-15（B3）：新放的两种控件（整层开关 / 下拉型号）走的**全是这条函数** ——
-     它不放行，勾选框和下拉就是"点了没反应、还不报错"的老 bug 复刻。 */
-  check('★ paramStr 放行**布尔**（整层开关）—— 写成 1/0',
-    ps({ GRAIN_ENABLE: false, BLOOM_ENABLE: true }) === 'GRAIN_ENABLE:0,BLOOM_ENABLE:1',
-    String(ps({ GRAIN_ENABLE: false, BLOOM_ENABLE: true })),
-    '布尔被丢掉 ⇒ 勾选框勾了画面一个像素都不动');
-  check('★ paramStr 放行**字符串**（柔光型号那种下拉值）',
-    ps({ SPEK_DIFFUSION_FAMILY: 'cinebloom' }) === 'SPEK_DIFFUSION_FAMILY:cinebloom',
-    String(ps({ SPEK_DIFFUSION_FAMILY: 'cinebloom' })),
-    '下拉值被丢掉 ⇒ 选了等于没选');
-  check('★ 值里带 `:` / `,` 的字符串仍然丢掉（那个语法靠这两个字符切段）',
-    ps({ A: 'x:y' }) === '' && ps({ A: 'x,y' }) === '',
-    `${String(ps({ A: 'x:y' }))} / ${String(ps({ A: 'x,y' }))}`,
-    '把分隔符放进值里 ⇒ 后面所有参数一起错位');
-  check('paramStr 空输入给空串', ps(null) === '' && ps({}) === '',
-    '', `${JSON.stringify(ps(null))} / ${JSON.stringify(ps({}))}`);
-}
-check('★ engine-render 真的走了 paramStr（没被绕过）',
-  /&params=' \+ encodeURIComponent\(paramStr\(o\.params\)\)/.test(mainJsCode),
-  '', '还在直接 encodeURIComponent(o.params)');
-check('engine-render 里没留下"直接编码对象"的老写法',
-  !/encodeURIComponent\(o\.params(?!Str)/.test(mainJsCode), '', '老写法还在');
-
-/* ---------- ★★ 09-15 两条链**必须分开**：看图读缓存、出图读原件 ----------
-   ① `attachLoadPath()` 算「**喂引擎**时用哪个文件」：同名 RAW 优先，没有才回落到 JPG。
-      **为什么这是硬要求**：入口那一段（零点/成形/趾部/高光护栏）**只在 `io.load_raw` 里跑**，
-      喂 JPG 的话「整张亮暗(总)」「暗部亮度」这两根滑杆永远是死的（实测同一张 DSCF0546：
-      走 RAW 能带动 −18.9 ~ +31.0 个 L*，走 JPG 是 0.00）。
-   ② `viewFileOf()` 算「**看**这张图读哪个文件」：桶里的成片读它自己，原图只有 RAW 就读
-      预览索引缓存里那份机内 JPG（1600）。
-   ★★ 两条分开是硬要求：拿 1600 去渲染＝能出图、不报错、**画质悄悄掉了**；
-      拿 RAW 当缩略图＝解不动 / 慢得离谱。
-   ⚠ 这一段**不是正则看"有没有写"**，而是把 main.js 里那段源码抽出来在 Node 里真跑。 */
-const afM = mainJsCode.match(/function attachLoadPath\(sessionPath, photos\)\s*\{[\s\S]*?\n\}/);
-check('main.js 里有 attachLoadPath（出图源的唯一出处）', !!afM, '', '函数没了？');
-const rexM = mainJsCode.match(/const RAW_EXT = (\/[^\n]*?\/i);/);
-check('从 main.js 读到了 RAW_EXT 的定义（自检里不许另写一份）', !!rexM,
-  rexM ? rexM[1] : '', '找不着 RAW_EXT');
-let af = null;
-let tmpDir = null;
-if (afM && rexM) {
-  try {
-    const RAWE = new Function('return ' + rexM[1])();
-    af = new Function('fs', 'path', 'RAW_EXT', afM[0] + '; return attachLoadPath;')(fs, path, RAWE);
-  } catch (e) {
-    af = null;
-  }
-}
-check('attachLoadPath 能在 Node 里独立跑起来（可单测）', typeof af === 'function',
-  '', '取出来那段源码跑不了');
-if (typeof af === 'function') {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'svstudio-load-'));
-  const bucket = path.join(tmpDir, '初筛1星');
-  fs.mkdirSync(bucket);
-  for (const f of ['A.JPG', 'A.RAF', 'B.JPG', 'C.JPG', 'C.RAF']) {
-    fs.writeFileSync(path.join(tmpDir, f), '');
-  }
-  fs.writeFileSync(path.join(bucket, 'D.JPG'), '');   // 桶里独有：根目录没有 D.JPG
-  const ps = [
-    { name: 'A.JPG', rel: 'A.JPG' },
-    { name: 'B.JPG', rel: 'B.JPG' },
-    { name: 'B.JPG', rel: 'B.JPG', dir: bucket },      // 桶里的 B：根目录有原图 ⇒ 该用根目录那份
-    { name: 'D.JPG', rel: 'D.JPG', dir: bucket },      // 根目录没有 ⇒ 用桶里这份
-    { name: 'C.JPG', rel: 'sub\\C.JPG' },              // rel 带分隔符也要只取文件名
-  ];
-  af(tmpDir, ps);
-  check('★ 有同名 RAW ⇒ 出图源用 RAW',
-    ps[0].loadPath === path.join(tmpDir, 'A.RAF') && ps[0].loadIsRaw === true,
-    ps[0].loadPath, String(ps[0].loadPath));
-  check('★ 没有同名 RAW ⇒ 回落 JPG（不许空栏）',
-    ps[1].loadPath === path.join(tmpDir, 'B.JPG') && ps[1].loadIsRaw === false,
-    ps[1].loadPath, String(ps[1].loadPath));
-  check('桶里的照片（根目录有同名原图）⇒ 出图源指向根目录原图',
-    ps[2].loadPath === path.join(tmpDir, 'B.JPG'), ps[2].loadPath, String(ps[2].loadPath));
-  check('桶里独有的照片（根目录没有）⇒ 出图源指向它自己',
-    ps[3].loadPath === path.join(bucket, 'D.JPG'), ps[3].loadPath, String(ps[3].loadPath));
-  check('rel 带目录分隔符也认（只取文件名配 RAW）',
-    ps[4].loadPath === path.join(tmpDir, 'C.RAF'), ps[4].loadPath, String(ps[4].loadPath));
-
-  /* ★★★ `viewFileOf`：**看**这张图读哪个文件。09-15 起 `rel` 是**身份键**（`<stem>.JPG`），
-     磁盘上**不一定有**这个文件 ⇒ 直接 `path.join(dir, rel)` 会读到一个不存在的东西。
-     五条断言：桶里的成片 / 原图只有 RAW / 孤 JPG / 小写扩展名的 RAW / 什么都没有。 */
-  const vfM = mainJsCode.match(/function viewFileOf\(dir, rel\)\s*\{[\s\S]*?\n\}/);
-  check('main.js 里有 viewFileOf（“看这张图读哪个文件”的唯一出处）', !!vfM, '',
-    '函数没了 ⇒ 缩略图/大图/EXIF 又会去拼一个不存在的 <stem>.JPG（全都悄悄变空）');
-  const idxOf = (d) => path.join(tmpDir, '_idx', path.basename(d));
-  let vf = null;
-  if (vfM && rexM) {
-    try {
-      const RAWE2 = new Function('return ' + rexM[1])();
-      vf = new Function('fs', 'path', 'RAW_EXT', 'extIndexDirFor',
-        vfM[0] + '; return viewFileOf;')(fs, path, RAWE2, idxOf);
-    } catch (e) { vf = null; }
-  }
-  check('viewFileOf 能在 Node 里独立跑起来（可单测）', typeof vf === 'function', '', '取出来那段跑不了');
-  if (typeof vf === 'function') {
-    /* tmpDir 里已经有 A.RAF / A.JPG / B.JPG / C.RAF / C.JPG，桶里有 D.JPG。再补两张。 */
-    fs.writeFileSync(path.join(tmpDir, 'Lone.JPG'), '');   // 孤 JPG：没有同名 RAW
-    fs.writeFileSync(path.join(tmpDir, 'low.raf'), '');    // 小写扩展名的 RAW
-    const vBucket = vf(bucket, 'D.JPG');
-    check('★ 桶里的成片 ⇒ 读它**自己**（不能拿原图顶替产物）',
-      vBucket && vBucket.file === path.join(bucket, 'D.JPG') && vBucket.cache === false,
-      JSON.stringify(vBucket), '');
-    const vRaw = vf(tmpDir, 'A.JPG');
-    check('★★★ 原图只有 RAW ⇒ 读**缓存里那份机内 JPG**（不是拼一个不存在的 <stem>.JPG）',
-      vRaw && vRaw.file === path.join(idxOf(tmpDir), 'A.JPG') && vRaw.cache === true &&
-        vRaw.raw === path.join(tmpDir, 'A.RAF'),
-      JSON.stringify(vRaw),
-      '读到源目录里那个不存在的 <stem>.JPG ⇒ 缩略图全空、EXIF 全空，而界面一点不报错');
-    const vLone = vf(tmpDir, 'Lone.JPG');
-    check('★ 孤 JPG（没有同名 RAW）⇒ 读它自己',
-      vLone && vLone.file === path.join(tmpDir, 'Lone.JPG') && vLone.cache === false,
-      JSON.stringify(vLone), '');
-    const vLow = vf(tmpDir, 'low.JPG');
-    check('★ 缓存文件名用 RAW 的 stem **原样大小写**（小写源的缓存别去找大写的）',
-      vLow && vLow.file === path.join(idxOf(tmpDir), 'low.JPG'), JSON.stringify(vLow),
-      '大写化之后再拼 ⇒ 永远找不到缓存 ⇒ 每一张都要重抠一遍');
-    check('★ 既没有那个文件、也没有同名 RAW ⇒ 老实返回 null（不瞎指一个路径）',
-      vf(tmpDir, 'Nope.JPG') === null, String(vf(tmpDir, 'Nope.JPG')), '');
-  }
-  try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) { /* 留着也无害 */ }
-}
-check('★ 调色台加载用的是 loadPath（RAW 优先），不是自己拼 rel',
-  /const full = p\.loadPath \|\| sessionPath/.test(viewerSrc), '',
-  '还在自己拼 rel ⇒ 又会喂 JPG');
-check('★ 出图源的标记进的是 note（没污染 img 的 alt）',
-  /note=\{p \? \(p\.loadIsRaw/.test(viewerSrc) && /title="调色后"/.test(viewerSrc), '',
-  'alt 被改掉的话，布局自检靠 alt 认栏位会一起失效');
-
+/* ---------- 共享：被后面几组用到的源码副本（剥掉注释后的） ---------- */
 const storeCode = storeSrc.replace(/\/\*[\s\S]*?\*\//g, '');
-check('★ 左栏**常显**（不挂在 sessionName 上）—— 空库/新库也得点得到「加入目录」',
-  !/\{sessionName && <SessionPane/.test(appTsx) && /<SessionPane \/>/.test(appTsx), '',
-  '左栏还在条件渲染 ⇒ 新库里所有入口都点不到（而新库最需要它）');
-/* ★★ 09-15 SV 定案：「导入照片」（插卡 / U 盘 → 复制进库）**整条删掉**，
-   照片已经在硬盘上 ⇒ 只有一条路：把它那个目录「加入目录」进来（原地读、不复制）。
-   下面这一组挡三种"半截状态"：①功能没了、按钮还在 ②按钮没了、功能还在 ③组件删了、界面还挂着。 */
+const mainJsCode = mainJsSrc.replace(/\/\*[\s\S]*?\*\//g, '');
 const sessTsx = read('src/components/SessionPane.tsx');
-check('★ 左栏顶部**只有**「加入目录」这一个按钮',
-  /data-add-dir/.test(sessTsx) && !/data-import-open/.test(sessTsx), '',
-  '两个入口并存 ⇒ 用户分不清该点哪个（这正是这轮要治的）');
-check('★★ 「换图库」和「图库根」那一层**已经删干净**（09-15 SV 选「B」）',
-  !/data-change-lib/.test(sessTsx) && !/换图库/.test(sessTsx) &&
-    !/data-lib-root/.test(sessTsx), '',
-  '留着一个「换图库」按钮 ⇒ 后台已经没有"库根"了 ⇒ 点了没反应（比没有这个按钮更坏）');
-check('★ 已删的导入对话框没有残留引用（App / api / store）',
-  !/<ImportDialog/.test(appTsx) && !/ImportDialog/.test(apiTs) && !/ImportDialog/.test(storeSrc), '',
-  '残留引用 ⇒ tsc / 构建期报错，或运行期白屏');
-check('★ 主进程 / preload 里没有导入残留（4 个通道整条清掉）',
-  !/import-detect|import-preview|import-run|import-progress/.test(mainJsSrc) &&
-    !/importDetect|importPreview|importRun|onImportProgress|pickFile/.test(preload), '',
-  '通道删一半 ⇒ preload 调一个不存在的主进程 handler（同步抛错、catch 接不到）');
-check('★ 源码里没有写死的个人路径（要开源）',
-  !/Users[\\/]+psw99|E:[\\/]+WorkBuddy[\\/]+摄影助手/.test(mainJsSrc + preload + apiTs), '',
-  '写死了本机路径 ⇒ 换台机器就跑不了、也没法开源');
-
-/* ---------- [10] 基准默认 / 右栏两个按钮 / 按主题存配方（09-15） ---------- */
-/* ★ 这一组对着三个真问题：
-   ① 「成色基准」默认值是前端写死的 `'all'`，而引擎基准表（`config.BASE_TABLE`）里
-      没有这一支 ⇒ 引擎 `stocks.resolve_base` **静默**回落成 `BASE_NONE`（"不套基准"），
-      界面上四支**一支都不亮** —— 画面错了、还看不出来。
-      ⇒ 规矩：**默认值由引擎给**（`/bases` 每条带 `isDefault`），**前端不许出现基准名**。
-   ② 右下角「恢复默认」「存到主题」**没有 onClick**（死按钮：界面在、功能不在）。
-   ③ 「存到主题」的四个接口（main.js / preload / 类型 / 封装）早就写好了，
-      前端从来没调过 —— 不是缺功能，是**接了半截**。 */
-console.log('\n[10] 基准默认 / 右栏两个按钮 / 按主题存配方');
-
-check('★ 引擎 /bases 标出了"哪一支是默认"（前端据此定初值）',
-  /isDefault=bool\(n == getattr\(C, 'BASE', None\)\)/.test(svcSrc), '',
-  '引擎不给默认标志 ⇒ 前端只能自己猜，迟早又写出一个写死的名字');
-/* ★ 取默认基准有**三处**，每一处都必须读引擎的 `isDefault`：
-     ① `loadEngine`（引擎元数据回来时定初值）
-     ② `enterSession`（进主题、而该主题没存过配方时回出厂）
-     ③ `resetGrade`（点「恢复默认」时回默认）
-   ⚠★ 为什么必须"三处一起盯"：**只改其中一处会全绿** —— 09-15 破法验证时发现的：
-        只把 ① 改成"取列表第一支"，检查竟然一条都不红，因为 ② 紧接着又把 base 设对了。
-        （同款"假绿"见过三次了：React bail-out、被 goHome 兜住的归零、这次是路径互相兜。）
-   ⇒ 所以这条用的是**计数**，不是"文件里出现过"。 */
-check('★ 三处取默认基准都读的是引擎的 isDefault（加载时 / 进主题时 / 恢复默认时）',
-  (storeCode.match(/\.find\(\(x\) => x\.isDefault\)/g) || []).length >= 3,
-  '', '有一处没读 isDefault ⇒ 那条路径会给出一个"前端猜的名字"；而且往往被别的路径兜住、看不出来');
-check('★ 前端不再写死基准名（store 里一个 BASE_* 都不许有）',
-  !/BASE_[A-Z]+/.test(storeCode), '',
-  '前端写死基准名 ⇒ 引擎改配置就静默错位（过去写死「all」就是这么错的）');
-check('★ 基准初值是空串（等引擎回来填），不是某个猜出来的名字',
-  /base: ''/.test(storeSrc), '',
-  '初值又写成某个名字 ⇒ 引擎表里没有就静默回落成"不套基准"');
-/* ⚠ 必须**剥掉注释再查**：上面那段说明注释里本来就写着 `base: 'all'`，
-   不剥注释的话这条会被**自己的注释**判红（09-15 踩过同款：注释里出现 `export const API`
-   ⇒ 锚点落到注释上、误报一整串）。 */
+const rexM = mainJsCode.match(/const RAW_EXT = (\/[^\n]*?\/i);/);
+const afM = mainJsCode.match(/function attachLoadPath\(sessionPath, photos\)\s*\{[\s\S]*?\n\}/);
+const gradeSrc = read('src/components/GradePanel.tsx');
 const gpCode = gradeSrc.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-check('★ 「恢复默认」「存到主题」两个按钮**都接上线了**（真 onClick）',
+const svcSrc = exists('svFilm/svFilm/service.py') ? read('svFilm/svFilm/service.py') : '';
+const svcCode = svcSrc.replace(/#[^\n]*/g, '');
+const resetM = storeCode.match(/resetGrade: \(\) => \{[\s\S]*?\n  \},/);
+const toneSrc = exists('svFilm/svFilm/tone.py') ? read('svFilm/svFilm/tone.py') : '';
+const presetsSrc = exists('svFilm/svFilm/presets.py') ? read('svFilm/svFilm/presets.py') : '';
+
+/* ---------- [8] 调色台：只剩「胶片风格 + 曝光风格」两个选择器（09-23 SV 定的边界） ----------
+   ★★ 新边界：svFilm = 曝光 + 影调；spektrafilm = 胶片感。
+       ⇒ 迭代期的 23 根滑杆 / 相纸下拉 / 成色基准四档**全部删掉**。
+   ★ 这里钉的是**契约**：两个列表都由引擎给、默认档由引擎给、两个都进渲染请求、都不许写死名字。
+   ⚠ 锚点一律用**剥掉注释**的源码 —— 注释里就会出现这些字，会骗过检查（踩过三次）。 */
+console.log('\n[8] 调色台：胶片风格 + 曝光风格（只有这两个选择器）');
+check('★ 引擎 /stocks 给胶片风格、/styles 给曝光风格（两个都在）',
+  /u\.path == '\/stocks'/.test(svcSrc) && /u\.path == '\/styles'/.test(svcSrc), '',
+  '少一个 ⇒ 界面上那一栏永远是空的（还不报错）');
+check('★ 滑杆 / 相纸 / 成色基准那三条路由确实删了（别留在接口上骗人）',
+  !/u\.path == '\/params'/.test(svcSrc) && !/u\.path == '\/papers'/.test(svcSrc) &&
+    !/u\.path == '\/bases'/.test(svcSrc), '',
+  '界面删了、接口还在 ⇒ 下一个人照着接口又加回来一遍');
+check('★★ 三条曝光风格的靶是**从大师真片量出来的**那三个数（40.5 / 58.8 / 69.9）',
+  /40\.5/.test(toneSrc) && /58\.8/.test(toneSrc) && /69\.9/.test(toneSrc), '',
+  '数被改过 ⇒ 要么重新量，要么连「怎么量的」那段注释一起改，别只动数');
+check('★ 胶片风格是 9 条预设（不是几个名字抄几遍）',
+  /for n in presets\.names\(\)/.test(svcSrc) && /C200过曝/.test(presetsSrc));
+check('★ 右栏**没有滑杆了**（Slider 一次都不许出现）',
+  !/Slider/.test(gpCode), '', '又出现滑杆 ⇒ 有人把老控件捡回来了');
+check('★★ 右栏只允许批量出片那两个下拉（相纸 / 成色基准不许回来）',
+  (gpCode.match(/<select/g) || []).length === (gpCode.match(/data-batch-(star|side)/g) || []).length &&
+    !/相纸|成色基准/.test(gpCode),
+  '', '多出来的下拉 ⇒ 老的那些「选了没反应」的开关又回来了');
+check('★ 两个选择器都有可断言的选中标记（不给布局自检去认颜色）',
+  /data-stock-on=/.test(gpCode) && /data-style-on=/.test(gpCode), '',
+  '没有标记 ⇒ 布局自检只能去认颜色/边框，改皮肤就废');
+check('★★ 渲染请求里**两个都带上了**（少一个 = 界面选了、画面不动）',
+  /stock: grade\.stock/.test(viewerSrc) && /style: grade\.style/.test(viewerSrc), '',
+  '少了 style ⇒ 换曝光风格画面不变，看着像「这一档没效果」');
+check('★ main.js 把 style 转发进 /render（主进程没漏转发）',
+  /&style=/.test(mainJsSrc), '', '主进程没转发 ⇒ 引擎永远收到空档');
+check('★ preload / api / store 三边都齐（不是「接了半截」）',
+  /engineStyles: \(\) =>/.test(preload) && /engineStyles: \(\) =>/.test(apiTs) &&
+    /API\.engineStyles\(\)/.test(storeSrc), '',
+  '少一边 ⇒ 调用同步抛 TypeError，.catch 接不到');
+
+console.log('\n[10] 曝光风格的默认 / 右栏两个按钮 / 按目录存配方');
+check('★ 引擎 /styles 标出了「哪一档是默认」（前端据此定初值）',
+  /isDefault=bool\(n == getattr\(C, 'STYLE', None\)\)/.test(svcSrc), '',
+  '引擎不给默认标志 ⇒ 前端只能自己猜，迟早又写出一个写死的名字');
+check('★ 三处取默认档都读引擎的 isDefault（加载时 / 进目录时 / 恢复默认时）',
+  (storeCode.match(/\.find\(\(x\) => x\.isDefault\)/g) || []).length >= 3, '',
+  '有一处没读 isDefault ⇒ 那条路径给的是「前端猜的名字」，而且常被别的路径兜住、看不出来');
+check('★ 曝光风格初值是空串（等引擎回来填），不是猜出来的名字',
+  /style: ''/.test(storeCode), '',
+  '初值写成某个名字 ⇒ 引擎档表里没有就静默回落（09-15 写死 all 那个坑的翻版）');
+check('★ 「恢复默认」「存到目录」两个按钮**都接上线了**（真 onClick）',
   /onClick=\{resetGrade\}/.test(gpCode) && /onClick=\{saveGradeToTheme\}/.test(gpCode), '',
   '没有 onClick = 死按钮（界面在、功能不在，最难自己发现）');
-check('★ 两个按钮指向 store 里真实存在的 action',
-  /resetGrade: \(\) =>/.test(storeCode) && /saveGradeToTheme: async \(\) =>/.test(storeCode),
-  '', '按钮指向一个不存在的 action ⇒ 点下去就抛错');
-check('★ 「存到主题」真的落盘（走 setGrade 通道）',
-  /API\.setGrade\(name, get\(\)\.grade\)/.test(storeCode), '',
-  '没落盘 ⇒ 重启就没了，用户以为存上了');
-check('★ 「存到主题」还**读回来**（进主题时把配方套回）',
-  /API\.getGrade\(name\)/.test(storeCode), '',
-  '只写不读 = 存了个寂寞（本项目最忌的"看着对、其实对不上"）');
-check('★ 没存过的主题回出厂（不把上一个主题的调整带过去）',
-  /* ⚠ 锚点跟着声明走：09-15 加了相纸之后那一行变成
-     `grade: { stock: …, base: dfltName, paper: pickPaper(plist), params: {} }`
-     —— 原来写死的 `base: dfltName, params: {}` 就匹配不到了（检查比代码先过时，
-     表现是"检查红了但代码是对的"，很容易顺手把对的代码改坏）。
-     这里放过中间的 `paper: …`，但**仍然要求** base 回默认 + 参数清空两件事都在。 */
-  /base: dfltName,[\s\S]{0,120}?params: \{\}/.test(storeCode), '',
-  '沿用上一个主题的值 ⇒ 主题之间串味（在 A 拧过的滑杆跟着进 B）');
-const resetM = storeCode.match(/resetGrade: \(\) => \{[\s\S]*?\n  \},/);
-check('★ 「恢复默认」**不动卷**（只清滑杆 + 基准回默认）',
-  !!resetM && /\.\.\.get\(\)\.grade/.test(resetM[0]) && !/\bstock\b/.test(resetM[0]), '',
-  '顺手把卷也抹了 ⇒ 用户会莫名其妙换了个胶片（卷是"拍什么"，不是调出来的）');
-check('★ 基准那一排有可断言的选中标记（不是靠认颜色/边框）',
-  /data-base-on=/.test(gradeSrc), '',
-  '没有标记 ⇒ 布局自检只能去认颜色，改皮肤就废');
-check('★ 布局自检的 mock 实现了 getGrade / setGrade（否则那条真浏览器检查是空转）',
-  /getGrade: async \(name\)/.test(mockSrcFlat) && /setGrade: async \(name, g\)/.test(mockSrcFlat),
-  '', 'mock 少一个 ⇒ enterSession 里那次调用静默抛错，检查看不见（漏 setConfig 那次的翻版）');
-check('★ 布局自检 mock 的基准列表照生产端带了 isDefault（形状 + 数据都要照抄）',
-  /isDefault: true/.test(mockSrcFlat), '',
-  'mock 不带这个字段 ⇒「选中的是引擎给的默认那支」这条测不到（绿着但没有意义）');
-
-/* ★★ 09-15 第二批：同一个坑的**另外两条入口** —— 这两条都不是"少了功能"，
-   是"代码看着对、实际静默降级"（本项目最忌的那类）：
-   ④ 进主题套回配方时**不校验 `base`**：配置是能手改、旧版本也写过的，
-      存过一个引擎不认的名字（旧版就写死过 `'all'`）⇒ 一进这个主题，
-      四支基准一支都不亮 + 出图悄悄变成"不套基准"。 */
-check('★ 进主题套回配方时**要校验基准名**（配置是能被手改/被旧版本写过的）',
-  /list\.some\(\(x\) => x\.name === b\)/.test(storeCode), '',
-  '原样信任配置里的 base ⇒ 存过一个引擎不认的名字就静默变"不套基准"，界面一支都不亮');
-check('★ 校验不过就回引擎默认 + 明说一句（不静默改掉用户存的值）',
-  /base: known \? b : dfltName/.test(storeCode) && /引擎不认/.test(storeSrc), '',
-  '静默改掉存过的值 ⇒ 下次打开"跟存的不一样"，还不知道为什么');
-check('★ 「取引擎默认基准」这个动作读的是 isDefault 那条（不是列表第一支）',
-  /const dfltName = \(list\.find\(\(x\) => x\.isDefault\) \|\| list\[0\]\)\?\.name \?\? ''/.test(storeCode),
-  '', '腿短取 list[0] ⇒ 引擎换了默认就静默错位（mock 里默认那支故意排在最后，所以这条测得出）');
-
-/* ⑤ `defaultConfig()` 里三个"假状态键"：`lastIdx`/`lastFilter`/`mode` —— 注释写着
-   "重启后恢复"，但**全仓库没有任何一处读它们**（真键是平铺的 lastSession/lastCur/lastMode）。
-   留着就是给下一个人下套：读 `cfg.lastIdx` 会拿到几周前的 `220`，还以为是"当前的"。 */
-check('★ main.js 的 defaultConfig 里不再声明没人读的假状态键',
-  !/lastIdx\s*:/.test(mainJsCode) && !/lastFilter\s*:/.test(mainJsCode) &&
-    !/[^A-Za-z]mode\s*:\s*'pick'/.test(mainJsCode), '',
-  '声明 + "重启后恢复"的注释，却没人读 ⇒ 下一个人真去读它，拿到的是几周前的旧值');
-check('★ 老配置里那几个孤儿键会被清掉（照 archiveRoot/lrExe 的老办法）',
-  /delete cfg\.lastIdx/.test(mainJsCode) && /delete cfg\.lastFilter/.test(mainJsCode) &&
-    /delete cfg\.mode\b/.test(mainJsCode) && /delete cfg\.last\b/.test(mainJsCode), '',
-  '不清 ⇒ 用户的 config.json 里永远留着 `last:{cur:12}` 这种孤儿，「谁在读」的问题每年重问一遍');
-check('★ 真正在用的两个状态键在 defaultConfig 里有正经初值（不是靠 ?? 兜底）',
-  /lastCur:\s*0/.test(mainJsCode) && /lastMode:\s*'pick'/.test(mainJsCode), '',
-  '不声明 ⇒ 新装的用户配置里没这两个键，看着像"状态记忆没实现"');
-
-/* ---------- 11. 大图：一律「适应」+ 视图三档 A / A|B / B（09-15 SV 定） ----------
-   ★ 原文：「两图总用自适应**删除其他的** 并且加一个…类似于 LR 中的 `A` `A|B` 的小按钮，
-            **默认 A|B** 即对比原片，`B` 则为当前调色效果**铺满**」
-   ⇒ 两件事：① 白天做的缩放（滚轮 / 1:1 / 双击 / 百分比徽标）**全删**；
-             ② 换成三档"看图姿势"：A = 只看原片 · A|B = 左右对比（默认）· B = 只看调色后。
-   ★ 机制在**源码层**钉死，行为（点下去真剩几张图）在布局自检 `[14]` 里量。
-   ⚠ 锚点一律取**代码本身**：`FitImage.tsx` 的说明注释里就写着「1:1」「滚轮」这些字，
-     拿它们当锚点会被自己的注释骗 ⇒ 下面全部在**剥掉注释**的源码上查
-     （09-15 在 api/index.ts 上因为注释栽过一次）。 */
-/* ---------- [10.5] 右栏滑杆：每根一个重置 / 参数名字号 ×1.5 / 「?」点开说明 ----------
-   ★ 三条都是 09-15 SV 直接点的名（原话）：
-     「每个滑杆给个重置按钮 参数名文本字号大1.5倍 不要悬浮文字 改成后面加个问号点击出详细说明」
-   ⚠★ 这一段**全部用剥掉注释的 `gpCode`** 查 —— 我们自己写的说明注释里就会出现这些字
-     （`data-param-reset` / `Popover` / 参数名…），不剥注释的话检查会被自己的注释骗过去。
-     同款坑踩过两次：`export const API` 当锚点、`base: 'all'` 当锚点（见本文件 [10] 那段注释）。
-   ⚠ 静态只查"结构对不对"；"点下去真发生什么"在布局自检 `[7.5]`（那个才作数）。 */
-console.log('\n[10.5] 右栏滑杆：重置 / 名字字号 / 「?」说明');
-
-check('★★ 参数名再也没有挂在"悬停提示"上（SV：不要悬浮文字）',
-  !/Tooltip/.test(gpCode), '',
-  '还留着悬停提示 ⇒ 鼠标一划过就蹦出说明挡住滑杆（他要的正是把这个去掉）');
-check('★★ 参数名字号 = **16px**（12px → ×1.5=18px → 当晚再定「缩到当前的 0.9」）',
-  /fontSize:\s*16/.test(gpCode), '',
-  '不是 16px ⇒ 对不上 SV 定的那两次数（先大 1.5 倍，再缩到 0.9）');
-check('★ 参数名那行**不再吃 `size="1"`**（否则 16px 会被 Radix 的类盖回去）',
-  !/<Text size="1">\{d\.name\}<\/Text>/.test(gpCode), '',
-  '又回到 size="1" ⇒ 字号白放大（Radix 的 size 类会把 inline 之外的写法压回去）');
-check('★★ 说明改成参数名后面的「?」，点开才出（Popover，不是悬停）',
-  /data-param-help=\{d\.k\}/.test(gpCode) && /Popover\.Content/.test(gpCode) &&
-    /data-param-help-pop=\{d\.k\}/.test(gpCode), '',
-  '没有「?」⇒ 那段详细说明就再也看不到了（悬停被去掉了、又没给新的入口）');
-check('★★ 说明的文案来自**引擎给的那段**（`d`），不是前端自己编一份',
-  /d\.d \|\|/.test(gpCode), '',
-  '前端自己编说明 ⇒ 和引擎 `PARAMS` 里的说法迟早不是一回事（改引擎忘了改这边，没人看得出来）');
-check('★ 说明里顺带给了"这个数怎么读"：范围 / 每格 / **出厂值**',
-  /范围 \{d\.lo\} ~ \{d\.hi\}/.test(gpCode) && /每格 \{d\.step\}/.test(gpCode) &&
-    /d\.dv \?\?/.test(gpCode), '',
-  '没有出厂值就看不出"现在这格离默认差多远"；出厂值必须读 `dv`（前端算的区间中点是老 bug）');
-check('★★ 每根滑杆都配了一个重置按钮（在按参数 map 出来的那一行里）',
-  /data-param-reset=\{d\.k\}/.test(gpCode) &&
-    /data-param-reset-on=\{touched \? '1' : '0'\}/.test(gpCode), '',
-  '没有"每根一个"⇒ 只能整组回默认（23 根一起回，想只退一根做不到）');
-check('★★★ 重置是**把键从参数串里删掉**，不是把默认值写回去',
-  /delete np\[d\.k\]/.test(gpCode) && !/np\[d\.k\]\s*=/.test(gpCode), '',
-  '写回 `dv` ⇒ 把出厂值也塞进了渲染请求，和引擎自己的出厂打架（这条契约由 [7] 那条钉着）');
-check('★ 点重置会顺手出一张（和"拖到哪出到哪"同一条规矩）',
-  /delete np\[d\.k\];[\s\S]{0,220}?requestRender\(\);/.test(gpCode), '',
-  '只改数字不出图 ⇒ 数字回到默认、画面还停在拧过的样子（"看着对、其实对不上"）');
-check('★ 「?」用得着的那两个东西都从 Radix 拿到了（Popover 进来了、Tooltip 出去了）',
-  /import \{[^}]*Popover[^}]*\} from '@radix-ui\/themes'/.test(gradeSrc) &&
-    !/import \{[^}]*Tooltip[^}]*\}/.test(gradeSrc), '',
-  'import 没跟着改 ⇒ tsc 直接红（`Cannot find name`），或者留着没用的 Tooltip 又被下一个人捡去用');
-
-/* ---- 底栏空的时候必须**说出为什么**（09-15 SV 报「底部栏没了」）----
-   ★ 现场：调色台 + 一个一张星都没有的主题 ⇒ 底栏一格都没有，**和"坏了"长得一模一样**。 */
-const dockCode = read('src/components/Dock.tsx').replace(/\/\*[\s\S]*?\*\//g, '');
-check('★★ 底栏**空了要出声**（不是一片空白等着用户猜）',
-  /data-dock-empty=/.test(dockCode), '',
-  '空着不出声 ⇒ 用户只看到"底下那条没了"，无从判断是坏了还是筛掉了（本项目最忌的一类）');
-check('★ 两种"空"要分开说：调色台是"只列已打星"，选片台是"筛选下没有"',
-  /grade-no-star/.test(dockCode) && /mode === 'grade'/.test(dockCode), '',
-  '一句话套两种情形 ⇒ 在选片台点了"5★"却被告知"去选片台打星"，更糊涂');
-check('★ 空态那层**不许挡住**底栏自己的滚动/点击',
-  /pointerEvents: 'none'/.test(dockCode), '',
-  '盖在上面还吃事件 ⇒ 底栏虽然空、但连滑动/点空白都失灵（比空着更难查）');
-
+check('★ 「存到目录」真的落盘 + 还**读回来**（只写不读 = 存了个寂寞）',
+  /API\.setGrade\(name, get\(\)\.grade\)/.test(storeCode) && /API\.getGrade\(name\)/.test(storeCode), '',
+  '只写不读 ⇒ 重启就没了，用户以为存上了');
+check('★ 没存过的目录回出厂（不把上一个目录的选择带过去）',
+  /stock: get\(\)\.grade\.stock, style: dfltName/.test(storeCode), '',
+  '沿用上一个目录的值 ⇒ 目录之间串味');
+check('★ 「恢复默认」**不动胶片风格**（只把曝光风格回默认）',
+  !!resetM && !/\bstock\b/.test(resetM[0]), '',
+  '顺手把胶片风格也抹了 ⇒ 用户莫名其妙换了个卷（卷是「拍什么」，不是调出来的）');
+check('★ 进目录套回配方时要**校验档位名**（配置能被手改 / 被老版本写过）',
+  /list\.some\(\(x\) => x\.name === sy\)/.test(storeCode) &&
+    /style: known \? sy : dfltName/.test(storeCode), '',
+  '原样信任配置 ⇒ 存过一个引擎不认的名字就静默变默认档，界面一支都不亮');
 
 console.log('\n[11] 大图：一律「适应」+ 视图三档（A / A|B / B）');
 const viewerCode = read('src/components/Viewer.tsx').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -800,7 +461,7 @@ console.log('\n[11.6] 出图请求的痕迹（发出去 / 回来，各一行）'
       readLog() === before, '', '多写了：' + JSON.stringify(readLog().slice(before.length)));
 
     /* ---- engineTraceQ：纯函数，直接喂 ----
-       ⚠ 这里**必须用假路径**（`X:\示例库\主题A`）——真实拍摄信息不许进仓库。 */
+       ⚠ 这里**必须用假路径**（`X:\示例库\目录A`）——真实拍摄信息不许进仓库。 */
     const q = M.engineTraceQ;
     /* ⚠ 这两条的**失败详情不许把原始路径打出来** —— 守隐私的检查自己漏路径就成了笑话，
        而且自检输出经常被整段贴进对话/记忆里。只报"文件名在不在、目录名在不在"这三个事实。
@@ -810,13 +471,13 @@ console.log('\n[11.6] 出图请求的痕迹（发出去 / 回来，各一行）'
           （破法当场逮到过：显示 `含目录名=false`，其实目录名就在里面，只是编码了）。 */
     const show = (s) => { try { return decodeURIComponent(s); } catch (e) { return s; } };
     const said = (s) => '含文件名=' + (s.indexOf('示例0001.RAF') >= 0 || s.indexOf('示例0002.RAF') >= 0) +
-      ' 含目录名=' + (s.indexOf('示例库') >= 0) + ' 含子目录=' + (s.indexOf('主题A') >= 0);
-    const red = show(q('?paths=' + encodeURIComponent('X:\\示例库\\主题A\\示例0001.RAF')));
+      ' 含目录名=' + (s.indexOf('示例库') >= 0) + ' 含子目录=' + (s.indexOf('目录A') >= 0);
+    const red = show(q('?paths=' + encodeURIComponent('X:\\示例库\\目录A\\示例0001.RAF')));
     check('★★ 路径只剩**文件名**（日志不该出现真实目录名）',
-      red.indexOf('示例0001.RAF') >= 0 && red.indexOf('示例库') < 0 && red.indexOf('主题A') < 0,
+      red.indexOf('示例0001.RAF') >= 0 && red.indexOf('示例库') < 0 && red.indexOf('目录A') < 0,
       '', said(red));
-    const red2 = show(q('?src=' + encodeURIComponent('X:\\示例库\\主题A\\示例0002.RAF') +
-      '&path=' + encodeURIComponent('X:\\示例库\\主题A\\示例0002_svfilm.jpg')));
+    const red2 = show(q('?src=' + encodeURIComponent('X:\\示例库\\目录A\\示例0002.RAF') +
+      '&path=' + encodeURIComponent('X:\\示例库\\目录A\\示例0002_svfilm.jpg')));
     check('★★ src / path 一样只留文件名（导出那条路也带真实目录）',
       red2.indexOf('示例0002.RAF') >= 0 && red2.indexOf('示例库') < 0, '', said(red2));
     check('★ 不是路径的键**原样保留**（别把真正要看的信息也脱敏掉）',
@@ -863,106 +524,6 @@ console.log('\n[11.6] 出图请求的痕迹（发出去 / 回来，各一行）'
      ③ 段缓存：键里**必须带纸**（否则换纸后出图还是上一张的缓存 —— 同样是画面不变）
    ⚠ 而"哪张是这一卷的配套纸"**由引擎给**（`papers(stock)` 里的 `isDefault`）——
      跟基准那条同一个规矩：**前端不许写死纸名**。 */
-console.log('\n[12] 相纸（印相纸要能选）');
-const spekSrc = exists('svFilm/svFilm/spektra.py') ? read('svFilm/svFilm/spektra.py') : '';
-const pipeSrc = exists('svFilm/svFilm/pipeline.py') ? read('svFilm/svFilm/pipeline.py') : '';
-
-/* 引擎的相纸名（只扫 `PAPERS = {` 到 `PAPER_ORDER` 之间，并剥掉 `#` 注释 ——
-   注释里也出现过纸名，不剥会被自己的注释骗，09-15 在 api/index.ts 上栽过一次）。 */
-const pA = spekSrc.indexOf('PAPERS = {');
-const pB = spekSrc.indexOf('PAPER_ORDER');
-const paperBlock = pA >= 0 && pB > pA ? spekSrc.slice(pA, pB).replace(/#[^\n]*/g, '') : '';
-const paperNames = [...paperBlock.matchAll(/\n\s+'([a-z0-9_]+)':/g)].map((m) => m[1]);
-check('★ 从引擎 spektra.py 读到了相纸表', paperNames.length >= 6, `${paperNames.length} 张`);
-
-check('★ 引擎有"认不得就回落、并且说出来"的相纸解析器',
-  /def resolve_paper\(stock_name, paper=None\):/.test(spekSrc) && /unknown_paper/.test(spekSrc), '',
-  '没有它 ⇒ 旧配方/手改配置里的脏名字要么直接塞给 init_params（FileNotFoundError 当场崩），' +
-    '要么被静默换一张（本项目最阴的那类坑）');
-check('★ 回落时**报告里标出来**（`print_fallback` 一路传到 /stats）',
-  /* ⚠ 锚点取**声明本身**：pipeline 写的是 `print_fallback=bool(_paper_fb)`，
-     service 是 `paper_fallback=st.get('print_fallback')` —— 别去 grep 那个光秃秃的字段名。 */
-  /print_fallback=bool\(_paper_fb\)/.test(pipeSrc) &&
-    /paper_fallback=st\.get\('print_fallback'\)/.test(svcSrc), '',
-  '静默回落 ⇒ 用户以为在用 A 纸，其实出的是 B 纸，还看不出哪里不对');
-check('★ 真卷之外没有"相纸"这回事（中性卷返回**空表**）',
-  /if pair is None:\s*\n\s*return \[\]/.test(spekSrc), '',
-  '中性卷也列 8 张纸、一张都不亮 ⇒ 把一个拧不动的开关摆给用户（看着能用、其实不生效）');
-check('★ 相纸真进了物理链（`render(print_profile=…)`）',
-  /def render\(lin, stock_name, cfg=C, print_exposure=None, print_profile=None\):/.test(spekSrc) &&
-    /print_profile=_paper/.test(pipeSrc), '',
-  '换纸没进渲染 ⇒ 下拉是个纯装饰');
-check('★★ 段缓存键**带相纸**（不带 ⇒ 换了纸还是上一张的画面，而且看不出来）',
-  /_ckey = \('film', _sample_uid\(s\), \(st or \{\}\)\.get\('name'\), _paper or '',/.test(pipeSrc), '',
-  '缓存键不带纸 ⇒ 换纸后出图命中上一张的缓存，「这张纸没效果」的假象');
-check('★ 引擎 /papers 路由按卷给默认纸',
-  /u\.path == '\/papers'/.test(svcSrc) && /spektra\.papers\(q\.get\('stock'\) or None\)/.test(svcSrc), '');
-
-/* 四边同步 */
-check('★ main.js 有 engine-papers 通道，且渲染请求真带上了 paper',
-  /ipcMain\.handle\('engine-papers'/.test(mainJsSrc) &&
-    /'&paper=' \+ encodeURIComponent\(o\.paper \|\| ''\)/.test(mainJsSrc), '',
-  '主进程没转发 ⇒ 前端问"这一卷配哪张纸"永远拿到空表');
-check('★ preload 暴露了 enginePapers（只传卷名 —— 默认纸跟着卷走）',
-  /enginePapers: \(stock\) => ipcRenderer\.invoke\('engine-papers', stock\)/.test(preload), '',
-  'preload 少一边 ⇒ 调用同步抛 TypeError，`.catch` 接不到（漏 setConfig 那次的翻版）');
-check('★ api/index.ts 三件都齐：Paper 类型 + Window.api 声明 + API 封装',
-  /* ⚠ `Window.api` 里那条声明是**换行写的**（`enginePapers: (\n stock: string\n) => …`）
-     ⇒ 锚点必须放过空白，别写死成一整行。 */
-  /export interface Paper \{/.test(apiTs) &&
-    /enginePapers:\s*\(\s*stock: string\s*\)\s*=>\s*Promise</.test(apiTs) &&
-    /enginePapers: \(stock: string\) => api\(\)\.enginePapers\(stock\)/.test(apiTs), '');
-check('★★ 渲染 opts 里必须带 `paper`（少这一行 ⇒ 界面选了纸、出图仍是旧纸）',
-  /paper: grade\.paper/.test(viewerCode), '',
-  '下拉是装饰：画面不变，用户会以为"这张纸没效果"（其实是根本没发出去）');
-check('★ 换卷要**连坐换纸**（配套纸跟着卷走，不留"Ektar 卷 + Portra 纸"这种组合）',
-  /loadPapers: async \(stock\) =>/.test(storeCode) && /get\(\)\s*\.loadPapers\(st\)/.test(storeCode), '');
-check('★ 相纸初值由引擎给（前端不许写死纸名；store 与右栏里一个 kodak_/fujifilm_ 都不许有）',
-  !/kodak_|fujifilm_/.test(storeCode) && !/kodak_|fujifilm_/.test(gpCode), '',
-  '写死纸名 ⇒ 引擎改表就静默错位（和基准那条是同一个坑）');
-check('★ 相纸下拉有可断言的"现在用的是哪张"（不去认 option 的 selected）',
-  /data-paper-on=/.test(gradeSrc) && /data-paper-n=/.test(gradeSrc), '',
-  '没有标记 ⇒ 布局自检只能数"option 有几个"，测不出默认纸对不对');
-/* ★★ 这一条和上一条（mock 对中性卷返回空表）是**一对**，必须两条都在：
-   防"中性卷不该有相纸"这件事被**两条路径互相兜住** ——
-     ① 引擎/mock 对中性卷返回空表（数据侧）
-     ② 右栏按"是不是真卷"决定这一栏画不画（表现侧）
-   只写一条的话，另一条被破坏时**检查照样绿**（本项目的老坑：破法要一起破）。
-   两条各自单边可破 ⇒ 任何一边歪掉都会当场红。 */
-check('★ 引擎物理链之外那一栏**整个不显示**（不是列一队拧不动的纸）',
-  /\{isEngine && papers\.length > 0 && \(/.test(gradeSrc), '',
-  '中性卷下也画一个相纸下拉 ⇒ 用户在那儿点半天没反应（相纸只对走引擎物理链的卷有意义）');
-
-/* ★★ 跨语言钉子：布局自检的 mock 跑的是**它自己那份假数据**，
-   必须和引擎的相纸名单一模一样。名字漂了 ⇒ 布局自检在测一份不存在的纸（绿着但没意义）。 */
-const mq = mockSrcFlat.indexOf('enginePapers: async');
-const mz = mockSrcFlat.indexOf('getGrade: async');
-const mockPaperBlock = mq >= 0 && mz > mq ? mockSrcFlat.slice(mq, mz) : '';
-const mockPaperNames = [...mockPaperBlock.matchAll(/\['([a-z0-9_]+)',\s*'/g)].map((m) => m[1]);
-check('★★ 布局自检 mock 的相纸名单照引擎 `spektra.PAPERS` 抄（张数与名字一个不差）',
-  paperNames.length >= 6 && mockPaperNames.length === paperNames.length &&
-    mockPaperNames.every((n) => paperNames.includes(n)),
-  `引擎 ${paperNames.length} 张 / mock ${mockPaperNames.length} 张`,
-  'mock 和引擎漂了 ⇒ 真浏览器那组检查在测一份不存在的纸');
-check('★ 布局自检 mock 对**中性卷**返回空表（照引擎抄）',
-  /const own = OWN\[stock\];\s*if \(!own\) return \{ ok: true, items: \[\] \};/.test(mockPaperBlock), '',
-  'mock 对中性卷也给 8 张 ⇒ 黑不了"中性卷不该有相纸"这条');
-check('★ 布局自检 mock 记下了渲染请求里的 paper（否则"换纸真发出去了吗"测不到）',
-  /paper: opts && opts\.paper/.test(mockSrcFlat), '');
-
-/* ---------- 13. 加入目录（库外目录：原地读，不复制） ----------
-   ★ 为什么单开一组：SV 原话 —— *"如果一张照片已经在我的电脑中，我可以通过加这个目录
-     让这个目录[出现在]图片库那一栏中"*。要点是**原地读**：照片已经在硬盘上，
-     不再复制一份进库。和「导入照片」（复制 + 按「日期_主题_地点」建档）是**两件事**。
-   ★ 这一组盯三件"接了半截就静默坏"的事：
-     ① **路径**：库外目录**不在** `libRoot` 底下 ⇒ `enterSession` 必须用列表给的真实路径。
-        自己拼 `库根\名字` 会拼出一个不存在的目录 ⇒ 进去 0 张照片，
-        而且看着像"这个主题是空的"（本项目最像"点了没反应"的一类假象）。
-     ② **身份**：星级 / 成片归档 / 调色配方都按**主题名**当键 ⇒ 库外条目要是和库内主题重名，
-        两边会串味。所以重名时必须给**库外**那条改名（库内的名字一个字符都不许动，
-        它是那人几周星级的身份键）。
-     ③ **不静默消失**：目录被删 / 改名 ⇒ 列一条「找不到」且点不进去，
-        **不能**从列表里悄悄没了（那是最难查的一类"看着对、其实对不上"）。 */
 console.log('\n[13] 加入目录（库外目录：原地读，不复制）');
 const paneSrc = read('src/components/SessionPane.tsx');
 /* 只取 `extraSessions` 的函数体（下一个函数名当右界）—— 判"这段有没有写盘"用 */
@@ -973,7 +534,7 @@ const exBody = exA >= 0 && exB > exA ? mainJsSrc.slice(exA, exB) : '';
 check('★ 配置里有 `extraRoots`（加过的库外目录，存绝对路径）',
   /extraRoots:\s*\[\]/.test(mainJsSrc), '',
   '没有这个键 ⇒ 加过的目录下次开台子就没了（"加了个寂寞"）');
-check('★★ 主题列表**只**从"加过的文件夹"来（`scanSessions` 除了 `extraSessions` 没有别的来源）',
+check('★★ 目录列表**只**从"加过的文件夹"来（`scanSessions` 除了 `extraSessions` 没有别的来源）',
   /function scanSessions\(\)/.test(mainJsSrc) &&
     /* ⚠ 锚点必须是**调用点**：函数定义 `function extraSessions(used) {` 里
        也含 `extraSessions(used)` ⇒ 拿它当锚点的话，删掉调用点这检查照样绿。
@@ -1063,7 +624,7 @@ if (sameSrc && migSrc) {
 check('★ 移除**不删任何文件**（store 里那段没有任何删除 API）',
   !/rmSync|unlinkSync|shutil|removeDir/.test(storeCode), '',
   '删文件是"不可逆"，而且是这个动作**明确承诺过不做**的事');
-check('★ 正在看的就是被移除的那个根 ⇒ 回首页（不留一个点不动的主题）',
+check('★ 正在看的就是被移除的那个根 ⇒ 回首页（不留一个点不动的目录）',
   /removeExtraRootDir: async \(dir\) => \{[\s\S]{0,1200}?get\(\)\.goHome\(\);/.test(storeCode), '');
 check('★ 左栏有「加入目录」入口，而且真接上了动作（不是个死按钮）',
   /data-add-dir/.test(paneSrc) && /加入目录/.test(paneSrc) &&
@@ -1095,7 +656,7 @@ check('★★ 布局自检 mock 的 `getConfig` 带 `extraRoots`、且**不再�
 check('★★ 布局自检 mock 的 `scanSessions` 把库外目录并排列出来（带 path/external/rootDir）',
   /scanSessions: async \(\) => \{/.test(mockSrcFlat) && /external: true,/.test(mockSrcFlat) &&
     /const ex = window\.__extraRoots \|\| \[\];/.test(mockSrcFlat), '',
-  'mock 只返回库内主题 ⇒ 「点库外条目用的是真实路径」这条根本测不到');
+  'mock 只返回库内目录 ⇒ 「点库外条目用的是真实路径」这条根本测不到');
 check('⚠ 布局自检 mock 必须实现 `pickDirectory`（左栏「加入目录」会调它）',
   /pickDirectory: async \(\) =>/.test(mockSrcFlat), '',
   '漏了它 ⇒ 点那一刻同步抛 TypeError（漏 setConfig 那次的翻版）');
@@ -1216,7 +777,7 @@ if (eirM && eidM) {
     /^const IMG_EXT = .*$/m, /^const RAW_EXT = .*$/m,
     /^const STAR1_DIR = .*$/m, /^const STAR2_DIR = .*$/m,
     /^const PUBLISH_DIR = .*$/m, /^const REVIEW_DIR = .*$/m,
-    /^const ARCHIVED_SUBDIRS = .*$/m, /^const THEME_SUBDIRS = .*$/m,
+    /^const ARCHIVED_SUBDIRS = .*$/m, /^const OWN_SUBDIRS = .*$/m,
   ];
   const cSrc = cRe.map((r) => (mainJsCode.match(r) || [''])[0]).join('\n');
   check('抽到了 extraSessions 那一段需要的常量（自检里不许另写一份）',
@@ -1232,64 +793,65 @@ if (eirM && eidM) {
     };
     put(path.join(theRoot, '纯RAW组'), ['A.RAF', 'B.RAF']);          // 一张 JPG 都没有
     put(path.join(theRoot, '混着的'), ['A.JPG', 'A.RAF', 'B.RAF']);  // ★ 关键：B 只有 RAW
-    put(path.join(theRoot, '混着的', '初筛1星'), ['A.JPG']);          // 星级桶：**不是**另一个主题
-    put(path.join(theRoot, '只有JPG'), ['C.JPG']);                   // 孤 JPG
+    put(path.join(theRoot, '混着的', '初筛1星'), ['A.JPG']);          // 星级桶：**不是**另一个目录
+    put(path.join(theRoot, '只有JPG'), ['C.JPG']);                   // 一张 RAW 都没有 ⇒ 不是照片目录
     put(path.join(theRoot, '壳', 'x100vi'), ['D.RAF']);              // 壳自己没有片
     put(path.join(theRoot, '壳2'), ['E.RAF']);                       // 壳2 自己有片
-    put(path.join(theRoot, '壳2', 'sub'), ['F.JPG']);                // ⇒ 也各列一条（不许丢）
+    put(path.join(theRoot, '壳2', 'sub'), ['F.RAF']);                // ⇒ 也各列一条（不许丢）
     /* ⚠ `describeSessionDir` 现在会调 `photoFilesIn`（"一层目录里有哪几张片"的唯一口径）。
        不把它一起抽出来的话，下面那段一跑就 ReferenceError —— 整个自检断在那儿
        （这是**好事**：说明这条钩子真的在跑；技能 §19.3 记的就是这个坑）。 */
-    const pfiM = mainJsCode.match(/function photoFilesIn\(files\)\s*\{[\s\S]*?\n\}/);
+    const pfiM = mainJsCode.match(/function photoFilesIn\(files, where\)\s*\{[\s\S]*?\n\}/);
     check('main.js 里有 photoFilesIn（“一层目录里有哪几张片”的唯一口径）', !!pfiM, '',
       '函数没了？它是「片 = RAW」这条口径的唯一出处');
     const pfiSrc = pfiM ? pfiM[0] : '';
-    /* ★★★ `photoFilesIn` 是「一层目录里有哪几张片」的**唯一口径**，必须**真跑**。
-       ⚠★ 为什么不能只断言目录的 `count`：`describeSessionDir` 会把四个星级桶里的键并进 `count`，
-         桶里恰好也有一张同名片时，**root 少算一张也照样等于 2** ——
-         破法脚本当场抓到过这个假绿（把这条口径改坏，自检照旧全绿）。
-         ⇒ 所以直接对函数断言，连**身份键**和 `rawOf` 一起钉死。 */
+    /* `photoFilesIn` 是「一层目录里有哪几张片」的**唯一口径**，必须真跑一遍。
+       ⚠ 不能只断言目录的 `count`：`describeSessionDir` 会把星级桶里的键并进 `count`，
+         桶里恰好有张同名片时，**根目录少算一张也照样等于 2**（假绿）。
+         ⇒ 所以直接对函数断言，连身份键一起钉死。 */
     let pfi = null;
-    /* ⚠ `photoFilesIn` 依赖 `RAW_EXT` + `IMG_EXT` 两个常量（技能 §19.3 那个坑：
-       抽一段源码出来跑，它依赖的东西要一起注进去，否则整段断在这儿）。 */
+    const stemM = mainJsCode.match(/function stemKey\(name\)\s*\{[\s\S]*?\n\}/);
+    /* ⚠ 抽出来跑的那段依赖 `RAW_EXT` / `IMG_EXT` / `stemKey`，要一起注进去。 */
     const imxM = mainJsCode.match(/const IMG_EXT = (\/[^\n]*?\/i);/);
-    if (pfiSrc && rexM && imxM) {
+    if (pfiSrc && stemM && rexM && imxM) {
       try {
         const RAWE4 = new Function('return ' + rexM[1])();
         const IMGE4 = new Function('return ' + imxM[1])();
-        pfi = new Function('RAW_EXT', 'IMG_EXT', pfiSrc + '; return photoFilesIn;')(RAWE4, IMGE4);
+        pfi = new Function('RAW_EXT', 'IMG_EXT',
+          stemM[0] + '\n' + pfiSrc + '; return photoFilesIn;')(RAWE4, IMGE4);
       } catch (e) { pfi = null; }
     }
     check('photoFilesIn 能在 Node 里独立跑起来（可单测）', typeof pfi === 'function', '',
       '取出来那段跑不了 ⇒ 下面那几条全在空转');
     if (typeof pfi === 'function') {
-      const mix = pfi(['A.JPG', 'A.RAF']);
-      check('★★★ 同一层里 RAW 和**同名 JPG** 都在 ⇒ 只算**一张**（键是 `<stem>.JPG`，RAW 才是真身）',
-        mix.count === 1 && mix.keys.length === 1 && mix.keys[0] === 'A.JPG' &&
-          mix.rawOf.get('A.JPG') === 'A.RAF' && mix.hasRaw === true,
-        JSON.stringify({ keys: mix.keys, rawOf: mix.rawOf.get('A.JPG') }),
-        '把同名 JPG 另算一张 ⇒ 同一张片在界面上出现两条；或者反过来把 RAW 当成多余的 ⇒ 那张片直接不出现');
-      check('★★★ 身份键必须是 `<stem>.JPG`（**不能**改成 `.RAF`）—— 桶里的复制件靠它跟原图合并',
-        pfi(['A.RAF']).keys[0] === 'A.JPG', JSON.stringify(pfi(['A.RAF']).keys),
-        '键变成 .RAF ⇒ 桶里的 JPG 复制件合并不上同一张片（列表出现两条），**已有星级全部落空**');
-      check('★★ 混着的目录：**没有同名 JPG** 的 RAW 也要各算一张（09-15 那个 bug 的正身）',
-        pfi(['A.JPG', 'A.RAF', 'B.RAF']).count === 2, pfi(['A.JPG', 'A.RAF', 'B.RAF']).count,
-        '只数 JPG ⇒ B.RAF 在界面上**根本不出现**，连角标都没有');
-      check('★ 一张 JPG 都没有也照样数出来（纯 RAW 目录不是"空的"）',
-        pfi(['A.RAF', 'B.RAF']).count === 2 && pfi(['A.RAF']).hasRaw === true, '',
-        '纯 RAW 目录算空 ⇒ 选片台空、调色台进不去');
-      check('★ 孤 JPG（没有同名 RAW）沿用**它自己的真实文件名**当键，`rawOf` 里查不到',
-        pfi(['Lone.JPG']).keys[0] === 'Lone.JPG' && pfi(['Lone.JPG']).rawOf.has('Lone.JPG') === false,
-        JSON.stringify(pfi(['Lone.JPG']).keys), '');
-      check('★ 同名多形态 / 大小写不同只留一条（`d.raf` + `D.RAF` + `D.JPG` ⇒ 一张）',
-        pfi(['d.raf', 'D.RAF', 'D.JPG']).count === 1 &&
-          pfi(['d.raf', 'D.RAF', 'D.JPG']).rawOf.get('D.JPG') === 'd.raf',
-        JSON.stringify(pfi(['d.raf', 'D.RAF', 'D.JPG']).keys), '');
+      const k = (m) => [...m.keys()];
+      check('★★★ 身份键 = 文件名去扩展名（大写），值 = 这一层那个文件的真实名',
+        k(pfi(['A.RAF']))[0] === 'A' && pfi(['A.RAF']).get('A') === 'A.RAF',
+        JSON.stringify(k(pfi(['A.RAF']))), '');
+      check('★★★ 片 = RAW：**只有 RAW 算片**，旁边的同名 JPG 不算另一张',
+        pfi(['A.JPG', 'A.RAF']).size === 1 && k(pfi(['A.JPG', 'A.RAF']))[0] === 'A',
+        JSON.stringify(k(pfi(['A.JPG', 'A.RAF']))),
+        '把同名 JPG 另算一张 ⇒ 同一张片在界面上出现两条');
+      check('★★★ **孤 JPG 不算片**（没有同名 RAW 就不是一张片）',
+        pfi(['Lone.JPG']).size === 0, String(pfi(['Lone.JPG']).size),
+        '孤 JPG 还算片 ⇒ "只有 RAW"这条口径破了');
+      check('★★ 一层里几张 RAW 就是几张片', pfi(['A.RAF', 'B.RAF']).size === 2,
+        String(pfi(['A.RAF', 'B.RAF']).size));
+      check('★ 桶里认的是**机内 JPG**（`where="bucket"`），值取 JPG 的真实名',
+        pfi(['A.JPG'], 'bucket').get('A') === 'A.JPG' && pfi(['A.RAF'], 'bucket').size === 0,
+        JSON.stringify(k(pfi(['A.JPG'], 'bucket'))),
+        '桶里认错文件类型 ⇒ 成片看不到 / 或把原片当产物');
+      check('★ 大小写不同只留一条（`d.raf` + `D.RAF` ⇒ 一张，留先出现那个）',
+        pfi(['d.raf', 'D.RAF']).size === 1 && pfi(['d.raf', 'D.RAF']).get('D') === 'd.raf',
+        JSON.stringify(k(pfi(['d.raf', 'D.RAF']))));
     }
     let fx = null;
     try {
+      /* ⚠ `describeSessionDir` → `photoFilesIn` → `stemKey`，三层依赖都要一起注进去，
+         少一层就是 `ReferenceError: stemKey is not defined`（整段断在这儿）。 */
       fx = new Function('fs', 'path', 'loadConfig', 'crypto', 'app',
-        cSrc + '\n' + pfiSrc + '\n' + region + '\n; return { extraSessions: extraSessions };'
+        cSrc + '\n' + (stemM ? stemM[0] : '') + '\n' + pfiSrc + '\n' + region +
+        '\n; return { extraSessions: extraSessions };'
       )(fs, path, () => ({ extraRoots: [theRoot] }), crypto, { getPath: () => idxRoot });
     } catch (e) { fx = null; }
     check('extraSessions 能在 Node 里对**真目录树**跑起来', !!fx, '', '取出来那段跑不了');
@@ -1301,25 +863,22 @@ if (eirM && eidM) {
         !names.some((n) => /^某次拍摄$/.test(n)) && !!by('x100vi'), JSON.stringify(names),
         '没片的壳也列一条 ⇒ 左栏全是点进去空的条目；底下有片的没列 ⇒ 那批照片直接看不见');
       check('★★★ 自己有片的目录**也要继续往下看**（不封顶）—— 否则"照片库→某次拍摄→子目录"会丢照片',
-        list.length === 6 && !!by('壳2') && !!by('sub'), JSON.stringify(names),
+        list.length === 5 && !!by('壳2') && !!by('sub'), JSON.stringify(names),
         `只列出 ${JSON.stringify(names)} ⇒ "壳2/sub" 那批照片从列表里凭空消失，而界面一点迹象都没有`);
-      check('★★★ 四个星级桶（初筛1星/…）**不是**主题，不许被列成独立条目',
+      check('★★★ 四个星级桶（初筛1星/…）**不是**目录，不许被列成独立条目',
         !names.some((n) => /初筛1星|调色后满意|待发布|调色待验收/.test(n)), JSON.stringify(names),
-        '桶被当成主题 ⇒ 每条主题都多出三四条，左栏彻底没法看');
-      /* ⚠ 这条只是**目录级**的粗验：`count` 会把星级桶里的键并进来，桶里正好是 `A.JPG`
-         ⇒ 就算 root 少算一张，`count` 还是 2（**掩盖**）。能真正咬住的是上面那组
-         `photoFilesIn` 直接断言 —— 破法脚本验过：那组会红，这条不会。 */
-      check('★★★ 混着 JPG 的目录：**那些没有同名 JPG 的 RAW 也要算一张**（09-15 修的那个 bug）',
+        '桶被当成目录 ⇒ 每条目录都多出三四条，左栏彻底没法看');
+      check('★★★ 混着的目录：旁边的同名 JPG 不算另一张片（只数 RAW）',
         by('混着的') && by('混着的').count === 2, by('混着的') && by('混着的').count,
-        '只数 JPG ⇒ 只有 A.JPG 那张算数，B.RAF 在界面上**根本不出现**（连角标都没有）');
-      check('★ 一张 JPG 都没有的目录也算照片目录（纯 RAW），张数按 RAW 数',
-        by('纯RAW组') && by('纯RAW组').count === 2 && by('纯RAW组').hasRaw === true,
-        by('纯RAW组') && by('纯RAW组').count, '纯 RAW 目录算"空的"⇒ 选片台空、调色台进不去');
-      check('★ 孤 JPG（没有同名 RAW）也算一张',
-        by('只有JPG') && by('只有JPG').count === 1 && by('只有JPG').hasRaw === false,
-        by('只有JPG') && by('只有JPG').count, '');
+        '把同名 JPG 也当一张 ⇒ 同一张片在界面上出现两条');
+      check('★ 纯 RAW 目录（一张 JPG 都没有）照样是照片目录',
+        by('纯RAW组') && by('纯RAW组').count === 2, by('纯RAW组') && by('纯RAW组').count,
+        '纯 RAW 目录算"空的"⇒ 选片台空、调色台进不去');
+      check('★★ 一张 RAW 都没有的目录**不是**照片目录（孤 JPG 不算片）',
+        !by('只有JPG'), names.includes('只有JPG') ? '被列进来了' : '',
+        '孤 JPG 还算目录 ⇒ "只有 RAW"这条口径破了');
       check('★ 展开只往下 2 层（再深就不是"一次拍摄"而是"目录层级"了）',
-        list.length === 6, list.length,
+        list.length === 5, list.length,
         '深度没兜住 ⇒ 万一把整个盘拖进来会把左栏打成几千条');
       check('★ `path` 是**源目录**（09-15 起不再指向预览缓存）',
         by('纯RAW组') && by('纯RAW组').path === path.join(theRoot, '纯RAW组') &&
@@ -1345,7 +904,7 @@ check('★★★ 建索引传的是**源目录**（`s.path`），而且"缓存�
   /* ⚠ 第二参（`force`）是可选的，正则别把括号写死 —— 09-15 加了 `, true` 就假红过一次。 */
   /indexExternalDir\(s\.path[,)]/.test(storeSrc) && !/indexExternalDir\(s\.srcDir/.test(storeSrc),
   '', '传缓存目录 ⇒ 那儿一张 RAW 都没有，扫出来永远是空的，而界面一点错都不报');
-check('★ 进主题时「索引还没建」就先补上，而且**带 `force` 重试**（否则列表显示 4 张、点进去 0 张）',
+check('★ 进目录时「索引还没建」就先补上，而且**带 `force` 重试**（否则列表显示 4 张、点进去 0 张）',
   /if \(s && s\.needsIndex\)/.test(storeSrc) &&
     /await get\(\)\.indexExternalDir\(sessionPath, true\);/.test(storeSrc), '',
   '不先补 ⇒ 列表和里面张数对不上，用户以为片子丢了；少了 `true` ⇒ 失败过一次以后再点那个文件夹一声不吭');
@@ -1356,7 +915,7 @@ check('★★ 建不了的时候要**说出原因**（否则那目录永远是�
        同一句 toast 至少 2 次、`_indexFailed.set(` 至少 2 次。 */
   (storeSrc.match(/预览小图没生成：/g) || []).length >= 2 &&
     (storeSrc.match(/_indexFailed\.set\(/g) || []).length >= 2, '',
-  '只 catch 不报 ⇒ 用户看到的就是一个空主题');
+  '只 catch 不报 ⇒ 用户看到的就是一个空目录');
 check('★★★ 失败过也**不许静默挡住**：自动那条路拦，用户点的那条路必须重试',
   /if \(_indexFailed\.has\(key\) && !force\) return false;/.test(storeSrc), '',
   '不带 `&& !force` ⇒ 再点那个文件夹一声不吭、什么都不发生（"点了没反应"那一类）');
@@ -1393,68 +952,66 @@ check('★★ mock 的 `scanSessions` 要能给出「只有 RAW 的目录」（p
   'mock 不给这种条目 ⇒ 真浏览器那组整段是空转；`srcDir` 又冒出来 ⇒ 两层模型偷偷回来了');
 
 /* ---------- [14.5] 归档产出的「相机直出件」 ----------
-   ★★ 归档（星 ≥ 1）会把 root 里那张**相机直出 JPG** 拷进星级桶，给 LR 精选用。
-   ⚠ 09-15 前 = 直接 `copyFileSync(path.join(themePath, rel), out)`。
-     纯 RAW 目录的 `themePath` 指向**预览缓存** ⇒ 拷进桶里的是 **1600 缩略图**
-     （拿它当"直出件"是错的，进 LR 一放大就糊）；原图只有 RAW 的更糟，直接报"root 原图不存在"。
-   ⇒ 现在 = ① root 里真有同名 JPG 就拷它（最快）② 否则从同名 RAW 抠**全尺寸**机内 JPG。
-   ⚠ 这一组**真跑函数**（只看函数名在不在挡不住"参数写错"，等于没查）：
-     抠 RAW 那条路**必须**验 `--max-side=0` —— 漏了它就是 1600，而那正是这次要修的 bug。 */
-console.log('\n[14.5] 归档 · 相机直出件');
+   归档（★≥1）往桶里放一份**全尺寸机内 JPG**，给 Lightroom 精选用的。
+   ⚠ 必须是全尺寸：桶是给 LR 精选用的，1600 的预览图一放大就糊，而且一句错都不报。
+   ⚠ 也**不许**直接拷根目录里那个同名 JPG —— 片 = RAW，图一律从 RAW 取。
+   ⚠ 这一组**真跑函数**：只看函数名在不在，挡不住"参数写错"。 */
+console.log('\n[14.5] 归档 · 从 RAW 抠全尺寸机内 JPG');
 {
-  const soM = mainJsCode.match(/async function makeStraightOut\(themePath, rel, outFile\)\s*\{[\s\S]*?\n\}/);
-  check('main.js 里有 makeStraightOut（归档"直出件"的唯一出处）', !!soM, '',
-    '函数没了 ⇒ 归档退回"直接拷 root 里那个同名文件" ⇒ 纯 RAW 目录拷进桶里的是 1600 缩略图');
+  const soM = mainJsCode.match(/async function makeStraightOut\(\w+, rel, outFile\)\s*\{[\s\S]*?\n\}/);
+  const stM2 = mainJsCode.match(/function stemKey\(name\)\s*\{[\s\S]*?\n\}/);
+  const rnM2 = mainJsCode.match(/function rawNameFor\(dir, rel\)\s*\{[\s\S]*?\n\}/);
+  check('main.js 里有 makeStraightOut（归档「直出件」的唯一出处）', !!soM, '',
+    '函数没了 ⇒ 归档会退回"直接拷根目录那个文件"（纯 RAW 目录根本拷不到）');
   let so = null;
   const pyCalls = [];
-  if (soM && rexM) {
+  if (soM && stM2 && rnM2 && rexM) {
     try {
       const RAWE3 = new Function('return ' + rexM[1])();
+      const stemFn = new Function(stM2[0] + '; return stemKey;')();
+      const rawNameFn = new Function('fs', 'path', 'RAW_EXT', 'stemKey',
+        stM2[0] + '\n' + rnM2[0] + '; return rawNameFor;')(fs, path, RAWE3, stemFn);
       const fakeSpawn = async (py, script, args) => {
         pyCalls.push(args.slice());
         const hit = args.find((a) => a.startsWith('--out-file='));
         if (hit) {
-          const f = hit.slice('--out-file='.length);
-          fs.mkdirSync(path.dirname(f), { recursive: true });
-          fs.writeFileSync(f, 'FROM-RAW');
+          const fo = hit.slice('--out-file='.length);
+          fs.mkdirSync(path.dirname(fo), { recursive: true });
+          fs.writeFileSync(fo, 'FROM-RAW');
         }
         return { text: 'ok' };
       };
-      so = new Function('fs', 'path', 'RAW_EXT', 'spawnPy', 'extIndexPy', 'extIndexScriptPath',
-        soM[0] + '; return makeStraightOut;'
-      )(fs, path, RAWE3, fakeSpawn, () => 'PY', () => 'SCRIPT');
+      so = new Function('fs', 'path', 'RAW_EXT', 'stemKey', 'rawNameFor',
+        'spawnPy', 'extIndexPy', 'extIndexScriptPath',
+        stM2[0] + '\n' + rnM2[0] + '\n' + soM[0] + '; return makeStraightOut;'
+      )(fs, path, RAWE3, stemFn, rawNameFn, fakeSpawn, () => 'PY', () => 'SCRIPT');
     } catch (e) { so = null; }
   }
-  check('makeStraightOut 能在 Node 里独立跑起来（可单测）', typeof so === 'function', '', '取出来那段跑不了');
+  check('makeStraightOut 能在 Node 里独立跑起来（可单测）', typeof so === 'function', '',
+    '取出来那段跑不了 ⇒ 下面几条全在空转');
   if (typeof so === 'function') {
     const sroot = fs.mkdtempSync(path.join(os.tmpdir(), 'svso-'));
-    const rd = (p) => { try { return fs.readFileSync(p, 'utf8'); } catch (e) { return '(读不到)'; } };
-    /* ① root 里既有 A.JPG 又有 A.RAF ⇒ 拷 JPG，**不许**去起 python。 */
-    fs.writeFileSync(path.join(sroot, 'A.JPG'), 'CAMERA-JPG');
-    fs.writeFileSync(path.join(sroot, 'A.RAF'), 'RAW');
-    const o1 = path.join(sroot, '_out', 'A.JPG');
-    const r1 = await so(sroot, 'A.JPG', o1);
-    check('★ root 里有同名 JPG ⇒ 直接拷它（不走抠 RAW 那条路）',
-      r1 && r1.ok === true && r1.from === 'jpg' && rd(o1) === 'CAMERA-JPG' && pyCalls.length === 0,
-      JSON.stringify(r1),
-      '有 JPG 还去起 python ⇒ 每张多等几秒；拷错源 ⇒ 桶里放的不是相机直出');
-    /* ② 只有 B.RAF（连 B.JPG 都没有）⇒ 从 RAW 抠，而且必须是**全尺寸**。 */
+    const rd = (pp) => { try { return fs.readFileSync(pp, 'utf8'); } catch (e) { return '(读不到)'; } };
+
+    // ① 只有 RAW ⇒ 起 python 抠一份全尺寸出来，而且**不看**旁边的同名 JPG
     fs.writeFileSync(path.join(sroot, 'B.RAF'), 'RAW');
-    const o2 = path.join(sroot, '_out', 'B.JPG');
-    const r2 = await so(sroot, 'B.JPG', o2);
+    fs.writeFileSync(path.join(sroot, 'B.JPG'), 'CAMERA-JPG');
+    const o1 = path.join(sroot, '_out', 'B.JPG');
+    const r1 = await so(sroot, 'B', o1);
+    check('★★★ 只有 RAW + 旁边躺着同名 JPG ⇒ 仍然从 RAW 抠（片 = RAW）',
+      r1 && r1.ok === true && r1.from === 'raw' && rd(o1) === 'FROM-RAW',
+      JSON.stringify(r1), '去读那个 JPG ⇒ 破了「只用 RAW」这条口径');
     const last = pyCalls.slice(-1)[0] || [];
-    check('★★★ root 只有同名 RAW ⇒ 从 RAW 抠一份出来（不再报"root 原图不存在"）',
-      r2 && r2.ok === true && r2.from === 'raw' && rd(o2) === 'FROM-RAW', JSON.stringify(r2),
-      '只有 RAW 就出不了归档 ⇒ 纯 RAW 目录的星级桶永远是空的');
-    check('★★★ 抠的是**全尺寸**（`--max-side=0`）—— 不许把 1600 缩略图当"直出件"',
+    check('★★★ 抠的是**全尺寸**（--max-side=0）—— 不许拿 1600 预览图当「直出件」',
       last.some((a) => a === '--max-side=0'), JSON.stringify(last),
-      '漏了 `--max-side=0` ⇒ 拷进桶里的是 1600 缩略图，进 LR 一放大就糊，而且一句错都不报');
-    check('★ 抠 RAW 时喂的是**同名 RAW 的原件路径**（不是 `themePath/rel` 那个不存在的文件）',
+      '漏了 --max-side=0 ⇒ 拷进桶里的是 1600 缩略图，进 LR 一放大就糊，而且一句错都不报');
+    check('★ 抠 RAW 时喂的是**那张 RAW 的原件路径**',
       last.some((a) => a === '--one=' + path.join(sroot, 'B.RAF')), JSON.stringify(last),
       '喂错源 ⇒ 抠不出图，或者抠到别的片');
-    /* ③ 既没有 JPG 也没有 RAW ⇒ 老实说失败（不许静默产出一个空件）。 */
-    const r3 = await so(sroot, 'C.JPG', path.join(sroot, '_out', 'C.JPG'));
-    check('★ root 里既没有同名 JPG、也没有同名 RAW ⇒ 报失败（不静默产出空件）',
+
+    // ② 身份键对应的 RAW 找不到 ⇒ 老实说失败（不许静默产出一个空件）
+    const r3 = await so(sroot, 'C', path.join(sroot, '_out', 'C.JPG'));
+    check('★ 根目录里没有对应 RAW ⇒ 报失败（不静默产出空件）',
       r3 && r3.ok === false && !!r3.error, JSON.stringify(r3),
       '静默拷个空文件进桶 ⇒ 精选时才发现少了片');
     try { fs.rmSync(sroot, { recursive: true, force: true }); } catch (e) { /* ok */ }

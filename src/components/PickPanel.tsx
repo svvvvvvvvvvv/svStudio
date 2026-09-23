@@ -49,7 +49,7 @@ export function PickPanel() {
     const v = exif?.[k];
     if (v !== undefined && v !== null && v !== '') rows.push([label, String(v)]);
   }
-  if (p.hasRaw) rows.push(['RAW', '有（RAF）']);
+  rows.push(['原片', p.name || '']);
   if (p.archived) rows.push(['归档', '已归档']);
 
   return (

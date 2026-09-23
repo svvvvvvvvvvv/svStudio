@@ -15,7 +15,7 @@ export function Stars({ big = false }: { big?: boolean }) {
   const rate = useStore((s) => s.rate);
 
   const p = photos[cur];
-  const v = p ? ratings[ratingKey(sessionName, p.name)] || 0 : 0;
+  const v = p ? ratings[ratingKey(sessionName, p.rel)] || 0 : 0;
 
   return (
     <Flex gap="1" align="center">

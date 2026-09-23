@@ -97,7 +97,7 @@ let win;
 function defaultConfig() {
   return {
     // ★★ 09-15 SV 选「B」：**「图库根」这一层已经砍掉**（`libRoot` 键不再写入）。
-    //   左栏列的就是「你加过的文件夹」（`extraRoots`），不再是"先设一个大库、库底下分主题"。
+    //   左栏列的就是「你加过的文件夹」（`extraRoots`），不再是"先设一个大库、库底下分目录"。
     //   老配置里的 `libRoot` 由下面的 `migrateConfig` 一次性搬进 `extraRoots`，不会凭空消失。
     //   ⚠ 也别再把某个人的绝对路径写进仓库。
     // ★ 引擎用哪份 Python（绝对路径）。留空 = 用 SVFILM_PY / PATH 上的 python
@@ -108,14 +108,14 @@ function defaultConfig() {
     //   留空 = 跟引擎共用那份（引擎本来就依赖 rawpy，正常不用配）。
     extIndexPy: '',
     // ★★ 「加入目录…」加进来的**库外目录**（硬盘上已有的照片文件夹，原地读、不复制一份）。
-    //   扫描主题列表时和库内主题并排列出（见 `scanSessions`）；存的是绝对路径。
+    //   扫描目录列表时和库内目录并排列出（见 `scanSessions`）；存的是绝对路径。
     //   ⚠ 这些目录里的照片**不会**被拷进照片库 —— 原目录被删/改名，它们就从列表里消失
     //     （那时列表里会留一条「找不到」，不静默消失）。
     extraRoots: [],
-    lastSession: null,   // 上次进入的主题（下面两个平铺键由 src/store/useStore.ts 的 saveLast 写）
-    lastCur: 0,          // 上次选到第几张（恢复时会按实际张数夹范围，防"主题变小了"）
+    lastSession: null,   // 上次进入的目录（下面两个平铺键由 src/store/useStore.ts 的 saveLast 写）
+    lastCur: 0,          // 上次选到第几张（恢复时会按实际张数夹范围，防"目录变小了"）
     lastMode: 'pick',    // 上次在哪个台：'pick' 选片台 | 'grade' 调色台
-    grades: {},          // 调色台参数：**按主题存** { 主题名: {stock, base, params:{...}} }
+    grades: {},          // 调色台参数：**按目录存** { 目录名: {stock, style} }（09-23 起只有这两个）
     ratings: {}
   };
 }
@@ -158,7 +158,7 @@ function samePath(a, b) {
 /**
  * ★★ 09-15 SV 选「B」：「图库根」这一层砍掉了。
  *
- * 老版本存过 `cfg.libRoot`（先设一个大库，左栏列它的一级子目录当"主题"）。这套模型在
+ * 老版本存过 `cfg.libRoot`（先设一个大库，左栏列它的一级子目录当"目录"）。这套模型在
  * "我手上就是一个文件夹、照片直接躺在里面"的时候**直接崩** —— 库根自己列不出来
  * （`scanSessions` 只认子目录），而「加入目录」又因为"这就是库根自己"被挡掉 ⇒ 锁死。
  * ⇒ 现在只有一种东西：**你加过的文件夹**（`extraRoots`）。
@@ -167,12 +167,32 @@ function samePath(a, b) {
  * 这里**搬完就落盘**（`delete cfg.libRoot` ⇒ 下次不再触发，幂等）。
  */
 function migrateConfig(cfg) {
-  if (!cfg || !cfg.libRoot) return cfg;
-  const lr = String(cfg.libRoot).trim();
-  if (!Array.isArray(cfg.extraRoots)) cfg.extraRoots = [];
-  if (lr && !cfg.extraRoots.some((x) => samePath(x, lr))) cfg.extraRoots.unshift(lr);
-  delete cfg.libRoot;
-  saveConfig(cfg);
+  if (!cfg) return cfg;
+  let dirty = false;
+
+  /* 老的"图库根"模型：搬成「加过的第一个目录」。搬完就落盘（幂等）。 */
+  if (cfg.libRoot) {
+    const lr = String(cfg.libRoot).trim();
+    if (!Array.isArray(cfg.extraRoots)) cfg.extraRoots = [];
+    if (lr && !cfg.extraRoots.some((x) => samePath(x, lr))) cfg.extraRoots.unshift(lr);
+    delete cfg.libRoot;
+    dirty = true;
+  }
+
+  /* 评级键的老格式：`目录名||<stem>.JPG`（身份键当年带扩展名）。
+     现在的身份键 = 文件名去扩展名 ⇒ 把尾巴上的扩展名去掉，已有星级不会落空。 */
+  if (cfg.ratings && typeof cfg.ratings === 'object') {
+    const next = {};
+    for (const [k, v] of Object.entries(cfg.ratings)) {
+      const i = k.lastIndexOf('||');
+      const nk = i < 0 ? k : k.slice(0, i + 2) + stemKey(k.slice(i + 2));
+      next[nk] = v;
+      if (nk !== k) dirty = true;
+    }
+    cfg.ratings = next;
+  }
+
+  if (dirty) saveConfig(cfg);
   return cfg;
 }
 
@@ -189,7 +209,7 @@ function saveConfig(cfg) {
 
 /* =========================================================
    星级目录规范（★累积桶模型，2026-09-06 定稿）
-   主题根          = 原图（JPG+RAF）——永不移动、永不删除
+   目录根          = 原图（JPG+RAF）——永不移动、永不删除
    初筛1星         = 所有 ★≥1 的片（root 直出 JPG 复制件，星级升高也保留）
    调色待验收       = 调色管线输出暂存（星级同步永不动它，重置调色才清）
    调色后满意的2星  = 所有 ★≥2 的片（调色成片副本，升到 3 星也保留）
@@ -205,61 +225,38 @@ const STAR2_DIR = '调色后满意的2星';
 const PUBLISH_DIR = '待发布';
 const REVIEW_DIR = '调色待验收';
 const ARCHIVED_SUBDIRS = [STAR1_DIR, STAR2_DIR, PUBLISH_DIR];  // 归档桶
-const THEME_SUBDIRS = [...ARCHIVED_SUBDIRS, REVIEW_DIR];       // 参与 merge 的全部子目录
+const OWN_SUBDIRS = [...ARCHIVED_SUBDIRS, REVIEW_DIR];       // 参与 merge 的全部子目录
 
-function starDirOf(star) {
-  if (!star || star < 1) return null;
-  if (star >= 3) return PUBLISH_DIR;
-  return star === 1 ? STAR1_DIR : STAR2_DIR;
+/** 一张片的身份键 = 文件名去掉扩展名（大写）。
+ *  一张片 = 一个 RAW；从它取出的机内 JPG（根里的直出件 / 各桶里的复制件 / 成片）
+ *  与那张 RAW **共用同一个键**，靠它合并成一条。 */
+function stemKey(name) {
+  return String(name || '').replace(/\.[^.]+$/, '').toUpperCase();
 }
 
 /**
- * ★★★ 「一层目录里有哪几张片」的**唯一口径**（09-15 SV 定：**片 = RAW**）。
+ * 一层目录里有哪几张片 → `Map<身份键, 这一层里那个文件的真实名>`。
  *
- * · **一张片 = 一个 RAW**（同名多形态只算一张）。旁边有同名 JPG 也**不影响** —— 那张 JPG
- *   不是另一张片，只是同一张片的另一个文件形态。
- * · **孤 JPG**（没有同名 RAW）**也算一张**（SV 09-15 选 ②A）：以前拍的纯 JPG 片不能凭空消失。
- * · 身份键 = `<stem>.JPG`（**故意写成 .JPG**）：它是**身份键**，磁盘上**不一定有这个文件**。
- *   星级的四个桶里放的是 JPG 复制件，要靠**同一个字符串**跟 root 原图合并成一条
- *   （`listPhotos` 的 `byRel`）⇒ 键必须保持这个形态。
- *   ⚠★ 改成 `.RAF` 会让桶合并失败（同一张片在列表里出现两条）而且**已有星级全部落空**。
- * · 孤 JPG 沿用**它自己的真实文件名**当键（和桶里的复制件对得上）。
+ * `where = 'root'`：**只认 RAW**。旁边的同名 JPG 不是另一张片，也不影响。
+ * `where = 'bucket'`：认**从 RAW 取出来的机内 JPG**（桶里放的就是它）；RAW 不算。
  *
- * @returns {{keys: string[], hasRaw: boolean, count: number, rawOf: Map<string,string>}}
- *   `rawOf`：身份键 → 这一层里那个 RAW 的**真实文件名**（孤 JPG 查不到）。
+ * @param {string[]} files 这一层的文件名
+ * @param {'root'|'bucket'} where
  */
-function photoFilesIn(files) {
-  const raws = new Map();     // UPPER(stem) -> 真实 RAW 文件名
-  const jpgs = new Map();     // UPPER(stem) -> 真实 JPG 文件名
+function photoFilesIn(files, where) {
+  const out = new Map();
   for (const f of files) {
-    const s = f.replace(/\.[^.]+$/, '').toUpperCase();
-    if (RAW_EXT.test(f)) { if (!raws.has(s)) raws.set(s, f); continue; }
-    if (IMG_EXT.test(f)) { if (!jpgs.has(s)) jpgs.set(s, f); }
+    const isRaw = RAW_EXT.test(f);
+    if (where === 'bucket' ? (isRaw || !IMG_EXT.test(f)) : !isRaw) continue;
+    const k = stemKey(f);
+    if (!out.has(k)) out.set(k, f);
   }
-  const keys = [];
-  const rawOf = new Map();
-  for (const pair of raws) {              // ① 每个 RAW 一张（哪怕旁边躺着同名 JPG）
-    const key = pair[0] + '.JPG';
-    keys.push(key);
-    rawOf.set(key, pair[1]);
-  }
-  for (const pair of jpgs) {              // ② 孤 JPG（没有同名 RAW）也各算一张
-    if (raws.has(pair[0])) continue;
-    keys.push(pair[1]);
-  }
-  keys.sort();
-  return { keys: keys, hasRaw: raws.size > 0, count: keys.length, rawOf: rawOf };
+  return out;
 }
 
 /**
- * 数一个「照片目录」里有几张片（root + 四个桶，按**身份键**去重）。
- * 返回 `{count, archivedCount, hasRaw}`；**不像照片目录就返回 null**（RAW 和 JPG 都没有）。
- *
- * ★★ 09-15 SV 定「片 = RAW」之后判定口径也换了：
- *   · **有 RAW 就算照片目录**（哪怕一张 JPG 都没有 —— 以前这种目录会被当成"空的"）；
- *   · 张数 = **片的身份键数**，不是 JPG 文件数（口径见 `photoFilesIn`）；
- *   · `opts.allowRawOnly` / `rawOnly` 两个概念**已经删掉** —— 不再有"只有纯 RAW 才走"的
- *     那条岔路，所有目录走同一条（缩略图一律从 RAW 抠，见 `viewFileOf`）。
+ * 数一个照片目录里有几张片（根 + 四个桶，按身份键去重）。
+ * 不像照片目录就返回 `null`。
  * @param {string} full 目录绝对路径
  * @param {string[]} [names] 已经 readdir 过的名字（省一次系统调用）
  */
@@ -272,25 +269,23 @@ function describeSessionDir(full, names) {
       return null;
     }
   }
-  const own = photoFilesIn(list);
-  const subNames = list.filter((f) => THEME_SUBDIRS.includes(f));
-  if (!own.count && !subNames.length) return null;   // 不是照片目录
-  // count 按**身份键**去重：桶里多是 root 同名复制件/成片，重复计数会虚高
-  const rootKeys = own.keys;
-  let count = own.count;
+  const own = photoFilesIn(list, 'root');
+  const subNames = list.filter((f) => OWN_SUBDIRS.includes(f));
+  if (!own.size && !subNames.length) return null;   // 不是照片目录
+  // 按身份键去重：桶里多是根的同名复制件/成片，重复计数会虚高
+  const rootKeys = new Set(own.keys());
+  let count = own.size;
   let archivedCount = 0;
-  let hasRaw = own.hasRaw;
-  for (const sub of THEME_SUBDIRS) {
+  for (const sub of OWN_SUBDIRS) {
     const sd = path.join(full, sub);
     if (!fs.existsSync(sd)) continue;
     let sfiles = [];
     try { sfiles = fs.readdirSync(sd); } catch (err) { sfiles = []; }
-    const sOwn = photoFilesIn(sfiles);
-    count += sOwn.keys.filter((k) => rootKeys.indexOf(k) < 0).length;
-    if (sOwn.hasRaw) hasRaw = true;
-    if (ARCHIVED_SUBDIRS.includes(sub)) archivedCount += sOwn.count;
+    const sOwn = photoFilesIn(sfiles, 'bucket');
+    count += [...sOwn.keys()].filter((k) => !rootKeys.has(k)).length;
+    if (ARCHIVED_SUBDIRS.includes(sub)) archivedCount += sOwn.size;
   }
-  return { count, archivedCount, hasRaw };
+  return { count, archivedCount };
 }
 
 /* =========================================================
@@ -407,49 +402,42 @@ function extIndexNeeds(srcDir) {
 }
 
 /**
- * ★★★ 「**看**这张片，到底读磁盘上哪个文件」的**唯一出口**（09-15 定「片 = RAW」后新增）。
+ * 「**看**这张片读磁盘上哪个文件」的唯一出口。
  *
- * 1) `dir/rel` 真的在 ⇒ 就是它。两种正当情况：
- *    · 桶里的成片（`初筛1星/DSCF0001.JPG` 那些）—— 要看的就是**产物**本身，不能拿原图顶替；
- *    · 孤 JPG（没有同名 RAW）—— 它自己就是原始素材。
- * 2) 否则 `dir` 里有同名 RAW ⇒ 原图只有 RAW ⇒ 读**预览索引缓存**里那份从 RAW 抠出来的
- *    机内 JPG（`extpreview/<目录名>@<hash8>/<stem>.JPG`）。
+ * 1) `dir` 里有身份键对应的 RAW ⇒ 读**预览索引缓存**里那份从 RAW 抠出来的机内 JPG
+ *    （`extpreview/<目录名>@<hash8>/<stem>.JPG`）。这是正常情况。
+ * 2) 没有 RAW（源目录里那张已经被删/挪走）⇒ 退回同名的那张图片文件，好歹有得看。
  *
- * ⚠ 缓存**不一定已经在**（刚加进来的目录、预建漏掉的那几张）⇒ 要图的地方用
+ * ⚠ 缓存不一定已经在（刚加进来的目录、预建漏掉的那几张）⇒ 要图的地方用
  *   `ensureViewFile()`；只想知道"读哪个文件"的地方用本函数。
- * ⚠ **出图（喂引擎）不走这里** —— 那条走 `attachLoadPath`，要的是 RAW **原件**；
+ * ⚠ **出图（喂引擎）不走这里** —— 那条走 `attachLoadPath`，要的是 RAW 原件；
  *   拿 1600 的预览小图去渲染 = 能出图、不报错、画质悄悄掉了。
  *
+ * @param {string} dir 目录（正常是那张片的源目录）
+ * @param {string} rel 身份键（文件名去扩展名），也容忍带扩展名的老写法
  * @returns {{file: string, cache: boolean, raw: string}|null}
  *   `raw` = 同名 RAW 的绝对路径（没有就空串）。`cache:true` 表示 `file` 是索引缓存里那份。
  */
 function viewFileOf(dir, rel) {
-  const base = String(rel || '').split(/[\\/]/).pop();
-  if (!base) return null;
-  const stem = base.replace(/\.[^.]+$/, '').toUpperCase();
+  const key = stemKey(String(rel || '').split(/[\\/]/).pop());
+  if (!key) return null;
   let files = [];
   try { files = fs.readdirSync(dir); } catch (e) { return null; }
-  let rawName = '';
-  for (const f of files) {
-    if (RAW_EXT.test(f) && f.replace(/\.[^.]+$/, '').toUpperCase() === stem) { rawName = f; break; }
-  }
-  const rawFull = rawName ? path.join(dir, rawName) : '';
-  /* ★ 顺序是 **RAW 优先**（和 `attachLoadPath` 同一条规矩）：
-     目录里既有同名 JPG 又有 RAW ⇒ 缩略图也从 RAW 抠 ⇒ **一张片永远只有一种缩略图来源**，
-     不会出现"有的目录用 JPG、有的用缓存"两副面孔 —— 那正是 09-15 要清掉的东西。
-     桶里的成片没有同名 RAW ⇒ 自然落到"读它自己"，要的就是产物本身。 */
+  const rawName = rawNameFor(dir, key);
   if (rawName) {
     /* ⚠ 缓存文件名用的是 RAW 的 stem **原样大小写**（脚本 `splitext(n)[0] + '.JPG'`）
-       ⇒ 这里**不能**用大写化的 stem 去拼，否则小写扩展名的源会永远找不到缓存。 */
+       ⇒ 这里不能用大写化的键去拼，否则小写扩展名的源永远找不到缓存。 */
     return {
       file: path.join(extIndexDirFor(dir), rawName.replace(/\.[^.]+$/, '') + '.JPG'),
-      cache: true, raw: rawFull,
+      cache: true,
+      raw: path.join(dir, rawName),
     };
   }
-  const direct = path.join(dir, base);
-  try {
-    if (fs.existsSync(direct) && fs.statSync(direct).isFile()) return { file: direct, cache: false, raw: '' };
-  } catch (e) { /* 文件不在了 ⇒ 当没有 */ }
+  for (const f of files) {
+    if (IMG_EXT.test(f) && stemKey(f) === key) {
+      return { file: path.join(dir, f), cache: false, raw: '' };
+    }
+  }
   return null;
 }
 
@@ -495,8 +483,8 @@ function uniqueName(used, base) {
  * ⚠ 为什么不能封顶：真实结构是 `照片库（自己没片）→ 爆光修复（4 张 RAW）→ x100vi（6 张 JPG）`。
  *   只展开一层 ⇒ `x100vi` 那 6 张**从列表里凭空消失**，而界面上一点迹象都没有。
  *   ⇒ **这条规则永远不让照片消失** —— 这是唯一不能妥协的一点。
- * ⚠ 跳过四个**星级桶目录**：那是主题**内部**的产物（`初筛1星/…`），不是另一个主题；
- *   往下钻会把每条主题的每个桶都列成一条。
+ * ⚠ 跳过四个**星级桶目录**：那是目录**内部**的产物（`初筛1星/…`），不是另一个目录；
+ *   往下钻会把每条目录的每个桶都列成一条。
  * ⚠ 深度 2 是权衡：再深就不是"一次拍摄"而是"目录层级"了，列出来只会把左栏淹掉。
  *   条数再兜一道 400 —— 万一把整个盘拖进来，也不至于把界面打死。
  * ⚠ 纯只读：只 `statSync` / `readdirSync`，不动任何文件。
@@ -509,13 +497,13 @@ function collectPhotoDirs(dir, depth, used, rootDir, out) {
   let entries = [];
   try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (e) { return; }
   for (const e of entries) {
-    if (!e.isDirectory() || e.name.startsWith('.') || THEME_SUBDIRS.includes(e.name)) continue;
+    if (!e.isDirectory() || e.name.startsWith('.') || OWN_SUBDIRS.includes(e.name)) continue;
     collectPhotoDirs(path.join(dir, e.name), depth - 1, used, rootDir, out);
   }
 }
 
 /**
- * 「加入目录…」加进来的目录 → 主题列表条目（原地读，**没有**复制进库）。
+ * 「加入目录…」加进来的目录 → 目录列表条目（原地读，**没有**复制进库）。
  *
  * ★ 一个根可能列成**好几条**（规则见 `collectPhotoDirs`）：
  *   自己就是照片目录 ⇒ 一条；底下还有"有片"的子目录 ⇒ 也各一条（最多 2 层）。
@@ -552,7 +540,7 @@ function extraSessions(used) {
 }
 
 /**
- * 加进来的目录 → 一条主题条目（`extraSessions` 的零件）。
+ * 加进来的目录 → 一条目录条目（`extraSessions` 的零件）。
  *
  * ★★ `path` **永远是源目录**（09-15 改）：以前"纯 RAW 目录"把 `path` 指向预览缓存，
  *    于是列图/缩略图/打星走缓存、出图源另开 `srcDir` + `_src.txt` 指回去 ——
@@ -575,16 +563,16 @@ function externalSessionEntry(full, name, used, rootDir, info) {
 }
 
 /**
- * 主题列表 = ① 库内主题（`libRoot` 的直接子目录）＋ ② 库外目录（「加入目录…」）。
+ * 目录列表 = ① 库内目录（`libRoot` 的直接子目录）＋ ② 库外目录（「加入目录…」）。
  *
  * ⚠★ 每条都带 `path`（真实路径）。前端 `enterSession` **必须**用它 —— 库外目录不在
  *   `libRoot` 底下，靠"库根 + 名字"拼出来的路径根本不存在（进去就是 0 张）。
- * ⚠ 库内主题的名字**原样保留**：它是星级 / 成片归档 / 配方的身份键，改一个字符
+ * ⚠ 库内目录的名字**原样保留**：它是星级 / 成片归档 / 配方的身份键，改一个字符
  *   = 那个人几周的星级全丢。只有库外条目才会为了**不撞名**加 ` ·2`。
- * ⚠ 库内主题先入 `used` ⇒ 库外条目跟库内重名时，被改名的一定是**库外**那条。
+ * ⚠ 库内目录先入 `used` ⇒ 库外条目跟库内重名时，被改名的一定是**库外**那条。
  */
 /**
- * 主题列表 = **你加过的所有文件夹**（`config.extraRoots`，规则见 `extraSessions`）。
+ * 目录列表 = **你加过的所有文件夹**（`config.extraRoots`，规则见 `extraSessions`）。
  *
  * ★★ 09-15 SV 选「B」：**「图库根」那条路已经删掉**（原来是 `libRoot` 的直接子目录）。
  *    那套模型在"我手上就是一个文件夹、照片直接躺在里面"的时候直接崩 —— 库根自己列不出来、
@@ -606,28 +594,29 @@ function scanSessions() {
 }
 
 /**
- * 列出主题内所有照片（★★ **一张片 = 一个 RAW**；`rel` 是**身份键**，不是文件名）。
- * **看**这张图读哪个文件 → `viewFileOf`；**出图**喂哪个文件 → `attachLoadPath`（同名 RAW 优先）。
- * ★ 同名多形态合并：root 原图 / 初筛1星复制件 / 调色待验收输出 / 2星成片 / 待发布成片
- *   共用同一评分 key（主题名||文件名），dock 只显示「最新工作形态」一条：
- *   优先级 调色待验收 > 待发布 > 调色后满意的2星 > 初筛1星 > root。
- *   每张照片带 `dir`（显示形态的真实目录）与 `archived`（形态是否在星级桶内）。
+ * 列出目录内所有片（**一张片 = 一个 RAW**；`rel` 是身份键）。
+ * **看**这张读哪个文件 → `viewFileOf`；**出图**喂哪个文件 → `attachLoadPath`。
+ *
+ * 同一个身份键在好几处都有产物：根的原片 / 初筛1星复制件 / 调色待验收输出 /
+ * 2星成片 / 待发布成片。它们合并成一条，只留优先级最高的那种形态：
+ * 调色待验收 > 待发布 > 调色后满意的2星 > 初筛1星 > 根。
+ * 每张带 `dir`（这一形态的真实目录）与 `archived`（是否在桶里）。
  */
 function listPhotos(sessionPath) {
   const PRIO = {};
   PRIO[REVIEW_DIR] = 4; PRIO[PUBLISH_DIR] = 3; PRIO[STAR2_DIR] = 2; PRIO[STAR1_DIR] = 1;
-  const byRel = new Map();   // rel -> {p, prio}
+  const byRel = new Map();   // 身份键 -> {p, prio}
   const put = (p, prio) => {
     const cur = byRel.get(p.rel);
     if (cur && cur.prio >= prio) return;
     p.archived = prio > 0;
     byRel.set(p.rel, { p, prio });
   };
-  for (const p of photosInDir(sessionPath)) put(p, 0);
-  for (const sub of THEME_SUBDIRS) {
+  for (const p of photosInDir(sessionPath, 'root')) put(p, 0);
+  for (const sub of OWN_SUBDIRS) {
     const sd = path.join(sessionPath, sub);
     if (!fs.existsSync(sd)) continue;
-    for (const p of photosInDir(sd)) put(p, PRIO[sub]);
+    for (const p of photosInDir(sd, 'bucket')) put(p, PRIO[sub]);
   }
   const photos = [...byRel.values()].map((x) => x.p);
   attachLoadPath(sessionPath, photos);          // ★ 出图源：同名 RAW 优先
@@ -635,63 +624,49 @@ function listPhotos(sessionPath) {
   return photos;
 }
 
-/** 给每张照片补一个 `loadPath` = **出图时真正喂给引擎的那个文件**：同名 RAW 优先，没有才用 JPG。
- *  ★ 09-15 起 `rel` 是身份键（`<stem>.JPG`）而**不是**，所以这里必须靠**目录 + stem** 去找
- *    （以前纯 RAW 目录的 `path` 指向缓存，要读 `_src.txt` 才知道源目录在哪 —— 那条没了）。
+/** 给每张片补 `loadPath` = **出图时真正喂给引擎的那个文件**（永远找根目录里的同名 RAW）。
+ *  `name` 也在这里定成**那张 RAW 的真实文件名** —— 桶里的机内 JPG 只是产物，
+ *  显示名应该跟着原片走（同一个身份键在不同桶里名字会不一样，不钉住就会跳）。
  *
- *  ★★ 为什么必须优先 RAW（SV 09-15 原话：「工作台本来就要优先用 raw 啊」）：
- *    入口那一段（零点 `entry_zero_ev` + 成形 `ENTRY_GAMMA/KNEE/CEIL` + 趾部 `ENTRY_TOE` +
- *    高光护栏 `clip_guard`）**只写在 `io.load_raw` 里**，`io.load_std`（JPG 那条）根本不跑。
- *    而 `photosInDir` 只按 JPG 列图、RAW 只当"有 RAF"的角标 ⇒ 工作台一直喂 JPG ⇒
- *    「整张亮暗(总)」「暗部亮度」这两根滑杆**永远是死的**（实测同一张 DSCF0546：
- *     走 RAW 能带动 −18.9 ~ +31.0 个 L*，走 JPG 是 0.00），而且看到的画面也不是引擎真正出图那条路。
- *
- *  ⚠ `name` / `rel` **不许改** —— 它们是身份键（星级、成片归档、缩略图、EXIF、TopBar 同步
- *    全按 `主题名||文件名` 索引），改成 RAF 名字会把这些整条链打歪。所以**另开一个字段**，
- *    只在"喂引擎"这一处用它（Viewer 的 `/load`）。
- *  ⚠ 原图放主题根目录 ⇒ 先按**根目录**的同名 RAW 找；纯 JPG 的主题（"效果测试"那几个）
- *    没有 RAW，自然回落到 JPG（此时入口那两根滑杆仍然是死的，面板上会标 `JPG 出图`）。
+ *  为什么必须是 RAW：入口那一段（零点 / 成形 / 趾部 / 高光护栏）只写在 `io.load_raw` 里，
+ *  喂 JPG 那条路根本不跑（实测同一张 DSCF0546：走 RAW 能带动 −18.9 ~ +31.0 个 L*，
+ *  走 JPG 是 0.00），而且画面也不是引擎真正的出图路线。
  */
 function attachLoadPath(sessionPath, photos) {
-  /* ★ 所有照片的原始文件都在 `sessionPath`（= 主题的源目录，09-15 起永远如此）。
-     桶里的成片也在它下面的子目录里 ⇒ 先在**根**找同名 RAW，找不到再用文件自己。 */
-  const rawByName = new Map();          // UPPER(stem) -> 真实文件名
+  const rawByStem = new Map();          // 身份键 -> 真实 RAW 文件名
   try {
-    for (const f of fs.readdirSync(sessionPath)) {
-      if (RAW_EXT.test(f)) rawByName.set(f.replace(/\.[^.]+$/, '').toUpperCase(), f);
-    }
-  } catch (err) { /* 目录读不到就当没有 RAW */ }
+    for (const [k, f] of photoFilesIn(fs.readdirSync(sessionPath), 'root')) rawByStem.set(k, f);
+  } catch (err) { /* 目录读不到就当作没有 RAW */ }
   for (const p of photos) {
-    const base = String(p.rel || p.name || '').split(/[\\/]/).pop();
-    const stem = base.replace(/\.[^.]+$/, '').toUpperCase();
-    const raw = rawByName.get(stem);
+    const raw = rawByStem.get(p.rel);
     if (raw) {
       p.loadPath = path.join(sessionPath, raw);
-      p.loadIsRaw = true;
+      p.name = raw;
     } else {
+      // 根里找不到同名的 RAW（只有桶里的产物）⇒ 用这一层那个文件自己
+      const base = String(p.name || '');
       const inRoot = path.join(sessionPath, base);
       p.loadPath = fs.existsSync(inRoot) ? inRoot : path.join(p.dir || sessionPath, base);
-      p.loadIsRaw = false;
     }
   }
 }
 
-/** 扫单个目录里的**片**（口径见 `photoFilesIn`：一张片 = 一个 RAW；孤 JPG 也算）。
-    返回未排序数组，调用方负责排序与打标记。
-    ⚠ `rel` 是**身份键**（`<stem>.JPG`），磁盘上**不一定有**这个名字 —— 它只用来索引
-      （星级 / 桶合并 / 缩略图缓存 / 配方），**不许**拿去当路径，更不许当出图源。 */
-function photosInDir(dir) {
+/** 扫单个目录里的**片**（口径见 `photoFilesIn`），返回未排序数组。
+ *  `where='root'` 只认 RAW；`where='bucket'` 认桶里的机内 JPG。
+ *  ⚠ `rel` 是**身份键**（文件名去扩展名，大写），磁盘上不一定有同名的东西 ——
+ *    它只用来索引（星级 / 桶合并 / 缩略图缓存 / 配方），不许当路径、更不许当出图源。 */
+function photosInDir(dir, where) {
   let files = [];
   try {
     files = fs.readdirSync(dir);
   } catch (e) {
     return [];
   }
-  const own = photoFilesIn(files);
-  return own.keys.map((key) => {
-    const rawName = own.rawOf.get(key) || null;
-    return { name: key, rel: key, hasRaw: !!rawName, rawName, dir };
-  });
+  return [...photoFilesIn(files, where)].map(([key, real]) => ({
+    rel: key,
+    name: real,
+    dir,
+  }));
 }
 
 /* ★★ 界面代码改过、却没有重建 ⇒ 台子画的是「上一次构建的那一套」
@@ -978,17 +953,6 @@ ipcMain.handle('get-thumb', async (e, sessionPath, rel, width) => {
   return enqueueThumb(() => makeThumb(full, width || 260));
 });
 
-/** 仅取原图尺寸（用于悬浮预览按比例自适应，无图，比 get-thumb 快）。
-    内部缓存，命中即同步返回。 */
-ipcMain.handle('get-thumb-meta', (e, sessionPath, rel) => {
-  const v = viewFileOf(sessionPath, rel);
-  if (!v) return { ow: 0, oh: 0 };
-  try {
-    if (!fs.existsSync(v.file)) return { ow: 0, oh: 0 };
-  } catch (err) { return { ow: 0, oh: 0 }; }
-  return getOriDim(v.file);
-});
-
 ipcMain.handle('save-ratings', (e, ratings) => {
   const cfg = loadConfig();
   cfg.ratings = ratings || {};
@@ -996,128 +960,33 @@ ipcMain.handle('save-ratings', (e, ratings) => {
   return true;
 });
 
-/**
- * 从 _选片.html 迁移已有评级。
- * 旧工具把评级存在浏览器 localStorage，结构 rated = { 场次名: { "图.jpg": star } }
- * （star≥1 中选、0 略过、无 key 未评）。SV 导出成 libRoot/_ratings_import.json 后，
- * 这里读取并把中选(≥1)记录合并进选片台 ratings（扁平 key：场次名||文件名）。
- * 略过(0)无归档价值，不迁移，等同重新未评。
- */
-ipcMain.handle('import-ratings', (e, libRoot) => {
-  // 兼容旧工具导出/约定两种文件名
-  const cands = ['_选片评级.json', '_ratings_import.json'];
-  let file = null, filePath = null;
-  for (const c of cands) {
-    const p = path.join(libRoot || '', c);
-    if (fs.existsSync(p)) { file = c; filePath = p; break; }
-  }
-  if (!filePath) {
-    return { ok: false, error: '照片库根未找到评级文件(_选片评级.json)\n请在旧 _选片.html 页面点右上角“导出”按钮，把下载的 json 放到这里。' };
-  }
-  let data;
-  try {
-    data = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-  } catch (err) {
-    return { ok: false, error: '评级文件(' + file + ')解析失败: ' + err.message };
-  }
-  // 兼容两种壳：直接 rated 对象，或 {app, rated}
-  const rated = (data && typeof data === 'object' && data.rated && typeof data.rated === 'object')
-    ? data.rated : data;
-  if (!rated || typeof rated !== 'object') {
-    return { ok: false, error: '评级文件里没有 rated 数据' };
-  }
-
-  // 真实场次：用于场次名解析。旧工具的 JSON 场次 key 常是“照片库”之类(选根时把图放根下)，
-  // 与磁盘“场次=一级子目录名”对不上。这里按【文件名实际所在目录】归到真实场次，
-  // 保证星标正确挂到图：key = 真实场次名||文件名。
-  const realSess = scanSessions(libRoot);      // [{name,path}]
-  const byFile = {};                            // 文件名(全大写目录内容) -> 真实场次名
-  for (const s of realSess) {
-    let names = [];
-    try { names = fs.readdirSync(s.path); } catch (e) { continue; }
-    for (const n of names) if (!(n in byFile)) byFile[n] = s.name;
-  }
-  const nameIsReal = (n) => realSess.some((s) => s.name === n);
-
-  const cfg = loadConfig();
-  const cur = cfg.ratings || {};
-  let imported = 0, skipped = 0, unmapped = 0;
-  for (const sess of Object.keys(rated)) {
-    const rm = rated[sess];
-    if (!rm || typeof rm !== 'object') continue;
-    for (const fname of Object.keys(rm)) {
-      const star = rm[fname];
-      if (typeof star !== 'number' || isNaN(star)) continue;
-      if (star < 1) { skipped++; continue; }      // 0/略过 不迁移
-      // 决定真实场次名：JSON 场次名是真实场次则直接用；否则按文件归属；找不到则跳过
-      const realName = nameIsReal(sess) ? sess : (byFile[fname] || null);
-      if (!realName) { unmapped++; continue; }
-      const k = realName + '||' + fname;
-      if (!(k in cur) || (cur[k] || 0) < star) cur[k] = star;  // 不覆盖已有更高/相同分
-      imported++;
-    }
-  }
-  const before = Object.keys(cfg.ratings || {}).length;
-  cfg.ratings = cur;
-  saveConfig(cfg);
-  const after = Object.keys(cur).length;
-  return { ok: true, imported, skipped, unmapped, before, after };
-});
-
-/**
- * 读取图片文件，转成 file 协议 URL 给前端显示。
- * 大图直接读原图（Electron 无 file:// 限制）。
- */
-ipcMain.handle('read-image', (e, sessionPath, rel) => {
-  const v = viewFileOf(sessionPath, rel);
-  if (!v) return null;
-  try {
-    if (!fs.existsSync(v.file)) return null;
-  } catch (err) { return null; }
-  return 'file:///' + v.file.replace(/\\/g, '/');
-});
-
-/**
- * 星级目录同步（归位）：让每张片在主题内的物理形态与当前星级一致。
- * ★ root 原图（JPG+RAF）永不移动/删除；星级桶里只放 JPG（RAF 留 root 供 LR 精选）。
- *   star=1    ：作废三个成片桶同名文件（旧成片重调）+ 确保 初筛1星 有直出 JPG 复制件
- *               （root 复制，RAF 不复制）
- *   star=2..5 ：成片在 待发布/2星/调色待验收 间移动到星级对应桶（≥3 → 待发布）；
- *               无成片可移时从 root 兑底复制直出 JPG；并清理 初筛1星 复制件（升级清阶）
- *   star<1    ：删除各星级桶同名文件（清星=不要了；root 原图不动）
- * items: [{ rel, star }]
- */
-/**
- * 造一份「相机直出 JPG」到 `outFile`（★ 09-15 SV 选 ③A）。
- *   ① `themePath/rel` 真在（同名 JPG）⇒ 直接复制；
- *   ② 否则从 `themePath` 里的同名 RAW 抠**全尺寸**机内 JPG（脚本 `--one --max-side 0`）。
- * ⚠ 为什么非改不可：原图只有 RAW 时那儿**什么都没有** —— 以前会直接报"root 原图不存在"；
- *   而纯 RAW 目录更糟：那时 `path` 指向预览缓存，拷进桶里的是 **1600 的缩略图**，
- *   拿它当"直出件"是错的（桶是要给 LR 精选用的）。
- * ⚠ 机内 JPG **就是相机直出** ⇒ 语义天然对得上，不用另找素材。
- */
-async function makeStraightOut(themePath, rel, outFile) {
-  const base = String(rel || '').split(/[\\/]/).pop();
-  const direct = path.join(themePath, base);
-  try {
-    if (fs.existsSync(direct) && fs.statSync(direct).isFile()) {
-      fs.mkdirSync(path.dirname(outFile), { recursive: true });
-      fs.copyFileSync(direct, outFile);
-      return { ok: true, from: 'jpg' };
-    }
-  } catch (e) { /* 往下走：当它没有同名 JPG */ }
+/** 根目录里和身份键对应的那个 RAW 的真实文件名（没有就 `null`）。 */
+function rawNameFor(dir, rel) {
   let files = [];
-  try { files = fs.readdirSync(themePath); } catch (e) { files = []; }
-  const stem = base.replace(/\.[^.]+$/, '').toUpperCase();
-  let rawName = '';
-  for (const f of files) {
-    if (RAW_EXT.test(f) && f.replace(/\.[^.]+$/, '').toUpperCase() === stem) { rawName = f; break; }
-  }
-  if (!rawName) return { ok: false, error: 'root 里既没有同名 JPG、也没有同名 RAW' };
+  try { files = fs.readdirSync(dir); } catch (e) { return null; }
+  for (const f of files) if (RAW_EXT.test(f) && stemKey(f) === rel) return f;
+  return null;
+}
+
+/** 桶里那份机内 JPG 的文件名：跟着那张 RAW 的名字走（保持它原来的大小写）。 */
+function bucketNameFor(dir, rel) {
+  const raw = rawNameFor(dir, rel);
+  return raw ? raw.replace(/\.[^.]+$/, '') + '.JPG' : String(rel) + '.JPG';
+}
+
+/**
+ * 造一份「相机直出 JPG」到 `outFile`：从根目录里那张 RAW 抠**全尺寸**机内 JPG
+ * （脚本 `--one --max-side 0`）。机内 JPG 就是相机直出，语义天然对得上。
+ *
+ * 桶是要给 Lightroom 精选用的 ⇒ 必须是全尺寸，不能拿 1600 的预览小图冒充。
+ */
+async function makeStraightOut(dirPath, rel, outFile) {
+  const rawName = rawNameFor(dirPath, rel);
+  if (!rawName) return { ok: false, error: '根目录里找不到这张片的 RAW' };
   try {
     fs.mkdirSync(path.dirname(outFile), { recursive: true });
     const r = await spawnPy(extIndexPy(), extIndexScriptPath(),
-      ['--one=' + path.join(themePath, rawName), '--out-file=' + outFile, '--max-side=0'], () => { });
+      ['--one=' + path.join(dirPath, rawName), '--out-file=' + outFile, '--max-side=0'], () => { });
     if (fs.existsSync(outFile)) return { ok: true, from: 'raw' };
     const tail = String((r && r.text) || '').trim().split('\n').pop() || (r && r.error) || '原因没返回';
     return { ok: false, error: '从 RAW 抠机内 JPG 失败：' + tail };
@@ -1127,52 +996,51 @@ async function makeStraightOut(themePath, rel, outFile) {
 }
 
 ipcMain.handle('archive-photos', async (e, opts) => {
-  const { themePath, items } = opts;
-  const dirOf = (sub) => path.join(themePath, sub);
+  const { dirPath, items } = opts;
+  const dirOf = (sub) => path.join(dirPath, sub);
   const done = [];
   const failed = [];
   for (const it of items) {
-    const rel = it.rel;
+    const rel = it.rel;                       // 身份键（不带扩展名）
     const star = it.star || 0;
+    /* 桶里的文件都叫「那张 RAW 的名字 + .JPG」——身份键不带扩展名，落盘得把名字拼出来。 */
+    const jpgName = bucketNameFor(dirPath, rel);
     try {
-      /* ★累积桶模型（2026-09-06 定稿）：
-         星级决定哪些桶非空——★≥1 → 初筛1星(直出复制件)；★≥2 → 2星桶(成片)；★≥3 → 待发布(成片)。
-         升级=往高桶复制新增（低桶保留）；降级=删掉高桶里的（低桶产物无损保留）。
-         全程只有复制与删除，绝不移动；root 直出与 RAF 永不动。
-         调色待验收 = 调色管线输出暂存，星级同步永不动它（重置调色才清）。 */
+      /* 累积桶模型：星级决定哪些桶非空 ——
+         ★≥1 → 初筛1星（机内 JPG 全尺寸复制件）；★≥2 → 2星桶（成片）；★≥3 → 待发布（成片）。
+         升级 = 往高桶复制新增（低桶保留）；降级 = 删掉高桶里的（低桶产物无损保留）。
+         全程只有复制与删除，绝不移动；根目录的原片永不动。
+         调色待验收 = 调色输出暂存，星级同步永远不动它（只有「重置调色」会清）。 */
       // 1) 应在的桶 → 补齐
       if (star >= 1) {
-        const s1 = path.join(dirOf(STAR1_DIR), rel);
+        const s1 = path.join(dirOf(STAR1_DIR), jpgName);
         if (!fs.existsSync(s1)) {
-          /* ★ 直出件（09-15 SV 选 ③A）：有同名 JPG 就复制，否则从同名 RAW 抠**全尺寸**机内 JPG。
-             ⚠ 以前是 `root/rel` —— 原图只有 RAW 时会报"root 原图不存在"，
-             纯 RAW 目录更糟（拷进去的是 1600 缩略图）。见 `makeStraightOut`。 */
-          const made = await makeStraightOut(themePath, rel, s1);
-          if (!made.ok) { failed.push({ file: rel, error: made.error }); continue; }
+          const made = await makeStraightOut(dirPath, rel, s1);
+          if (!made.ok) { failed.push({ file: jpgName, error: made.error }); continue; }
         }
       }
       if (star >= 2) {
-        // 成片来源优先级：待发布 > 2星桶 > 调色待验收（已有的优先，无则必须有调色输出）
+        // 成片来源优先级：待发布 > 2星桶 > 调色待验收（已有的优先，没有就报错）
         let gradedSrc = null;
         for (const sub of [PUBLISH_DIR, STAR2_DIR, REVIEW_DIR]) {
-          const f = path.join(dirOf(sub), rel);
+          const f = path.join(dirOf(sub), jpgName);
           if (fs.existsSync(f)) { gradedSrc = f; break; }
         }
         if (!gradedSrc) {
-          // ★无成片绝不拿 root 直出兜底——直出冒充成片会污染整个验收链
-          failed.push({ file: rel, error: '无调色成片（先跑调色，成片进 调色待验收 后再打 ≥2 星）' });
+          // 没有成片绝不拿直出兜底 —— 直出冒充成片会污染整个验收链
+          failed.push({ file: jpgName, error: '无调色成片（先跑调色，成片进 调色待验收 后再打 ≥2 星）' });
           continue;
         }
         const wantSubs = star >= 3 ? [STAR2_DIR, PUBLISH_DIR] : [STAR2_DIR];
         for (const sub of wantSubs) {
-          const f = path.join(dirOf(sub), rel);
+          const f = path.join(dirOf(sub), jpgName);
           if (!fs.existsSync(f)) {
             fs.mkdirSync(dirOf(sub), { recursive: true });
             fs.copyFileSync(gradedSrc, f);
           }
         }
       }
-      // 2) 不应在的桶 → 删除（REVIEW 不在 ARCHIVED_SUBDIRS，永不被星级清理）
+      // 2) 不应在的桶 → 删除（REVIEW 不在 ARCHIVED_SUBDIRS，永远不被星级清理）
       const should = {
         [STAR1_DIR]: star >= 1,
         [STAR2_DIR]: star >= 2,
@@ -1180,12 +1048,12 @@ ipcMain.handle('archive-photos', async (e, opts) => {
       };
       for (const sub of ARCHIVED_SUBDIRS) {
         if (should[sub]) continue;
-        const f = path.join(dirOf(sub), rel);
+        const f = path.join(dirOf(sub), jpgName);
         if (fs.existsSync(f)) fs.unlinkSync(f);
       }
-      done.push(rel);
+      done.push(jpgName);
     } catch (err) {
-      failed.push({ file: rel, error: err.message });
+      failed.push({ file: jpgName, error: err.message });
     }
   }
   return { ok: true, done: done.length, failed };
@@ -1207,13 +1075,13 @@ ipcMain.handle('confirm-dialog', (e, opts) => {
 });
 
 /* 重置调色：清空调色待验收 / 调色后满意的2星 / 待发布 三个目录里的全部 JPG。
-   ★只删 IMG_EXT 匹配的 JPG——RAF/xmp/其他文件一律不碰；主题根原图与 初筛1星 不动。
+   ★只删 IMG_EXT 匹配的 JPG——RAF/xmp/其他文件一律不碰；目录根原图与 初筛1星 不动。
    （换调色思路重跑调色管线前用；评分重置由 renderer 侧完成） */
-ipcMain.handle('reset-color-grade', (e, themePath) => {
+ipcMain.handle('reset-color-grade', (e, dirPath) => {
   let removed = 0;
   const errors = [];
   for (const sub of [REVIEW_DIR, STAR2_DIR, PUBLISH_DIR]) {
-    const d = path.join(themePath, sub);
+    const d = path.join(dirPath, sub);
     if (!fs.existsSync(d)) continue;
     let files = [];
     try { files = fs.readdirSync(d); } catch (err) { continue; }
@@ -1575,28 +1443,12 @@ ipcMain.handle('engine-stocks', async () => {
   const r = await engineGet('/stocks', 4000);
   return r.ok ? { ok: true, items: r.data } : r;
 });
-ipcMain.handle('engine-bases', async () => {
-  const r = await engineGet('/bases', 4000);
+/** ★ 曝光风格（09-23）：高长调 / 中性调 / 暗调，靶值从大师真片量出来。
+ *  ⚠ 唯一出处 = 引擎的 `tone.STYLES` ⇒ 主进程这边只做代理，不许自己写死档位名。
+ *    默认哪一档由引擎在 `isDefault` 上标出来，前端只认它（同「初值由引擎给」那条规矩）。 */
+ipcMain.handle('engine-styles', async () => {
+  const r = await engineGet('/styles', 4000);
   return r.ok ? { ok: true, items: r.data } : r;
-});
-ipcMain.handle('engine-params', async () => {
-  const r = await engineGet('/params', 4000);
-  return r.ok ? { ok: true, items: r.data } : r;
-});
-/** ★ 相纸清单（09-15 SV 选「C」：印相纸要能选，别写死）。
- *  ⚠ **必须带 `stock`** —— 默认相纸是**跟着卷走的**，引擎会在"这一卷配套的那张"上
- *    标 `isDefault`；前端**只认这个**来定初值，不许自己挑一个
- *    （同「基准成色」那条规矩：默认值一律由引擎给）。 */
-ipcMain.handle('engine-papers', async (e, stock) => {
-  const r = await engineGet('/papers?stock=' + encodeURIComponent(stock || ''), 4000);
-  return r.ok ? { ok: true, items: r.data } : r;
-});
-ipcMain.handle('engine-scan', async (e, dir, exts, limit) => {
-  const qs = '?dir=' + encodeURIComponent(dir || '') +
-    '&ext=' + encodeURIComponent(exts || 'raf,jpg') +
-    '&limit=' + encodeURIComponent(String(limit || 400));
-  const r = await engineGet('/scan' + qs, 20000);
-  return r.ok ? { ok: true, files: r.data.files, n: r.data.n } : r;
 });
 ipcMain.handle('engine-load', async (e, paths) => {
   const qs = '?paths=' + encodeURIComponent((paths || []).join(','));
@@ -1611,110 +1463,33 @@ ipcMain.handle('engine-base', async (e, id) => {
   return r.ok ? { ok: true, image: r.image } : r;
 });
 
-/** 把滑杆参数转成引擎认的那一串：`KEY:VAL,KEY:VAL`。
- *
- *  ★★ 09-15 修一个**静默到极点**的 bug（SV 报「调滑杆点渲染没反应」的根因）：
- *    前端 `grade.params` 是**对象** `{ SPEK_PE_SHIFT: 0.91 }`（见 GradePanel 的 setGrade），
- *    而这里原来直接 `encodeURIComponent(o.params || '')` —— 对对象做 encodeURIComponent
- *    会先 ToString，结果是 `%5Bobject%20Object%5D`；引擎那边 `_parse_params` 按 `KEY:VAL`
- *    切分、切不出冒号就**静默丢掉**（契约就是"不合法不报错"）⇒ 解出空字典 `{}`。
- *    实测（`_probe_wire_e2e.py`，真起服务发真 HTTP）：
- *        params=[object Object]  → 中位亮度 41.76（与"不传参数"**逐位一样**）
- *        params=SPEK_PE_SHIFT:0.91,ENTERYSETTLE...,→ 36.70（−5.06 L*）
- *    ⇒ 也就是说：**23 根滑杆一根都没接上**，出图永远是"出厂值"那一张。
- *      ⚠ 上一轮的自检只验到"引擎收得下参数"，没验到"前端发得出参数" —— 闸挡住了 ≠ 没脸。
- *
- *  收口在这里（IPC 边界）而不是前端：这样以后不管谁调 `engine-render` 都不会再踩。
- *  布尔写成 1/0（整层开关）、字符串照原样透传（脚本风格的 A/B 调用 + 柔光型号那种下拉值），
- *  其余非数字/NaN 一律丢掉（别污染引擎的 float() 解析）。
- *  ★★ 09-15（B3）：不放行这两类的话，"勾选框 / 下拉"会跟老 bug 一样**静默发不出去**
- *    （界面上有控件、画面不动），而且**不报错** —— 那正是本项目最阴的一类坑。
- */
-function paramStr(p) {
-  if (!p) return '';
-  if (typeof p === 'string') return p;
-  if (typeof p !== 'object') return '';
-  const out = [];
-  for (const k of Object.keys(p)) {
-    const v = p[k];
-    if (typeof v === 'boolean') {
-      out.push(k + ':' + (v ? '1' : '0'));
-      continue;
-    }
-    if (typeof v === 'string') {
-      // ⚠ 分隔符不许出现在值里（`KEY:VAL,KEY:VAL` 的语法靠它切段）⇒ 含 ':' / ',' 的直接丢
-      if (v && v.indexOf(':') < 0 && v.indexOf(',') < 0) out.push(k + ':' + v);
-      continue;
-    }
-    if (typeof v !== 'number' || !isFinite(v)) continue;
-    out.push(k + ':' + v);
-  }
-  return out.join(',');
-}
-
 ipcMain.handle('engine-render', async (e, id, opts) => {
   const o = opts || {};
   const qs = '?id=' + encodeURIComponent(String(id)) +
     '&stock=' + encodeURIComponent(o.stock || '') +
-    '&base=' + encodeURIComponent(o.base || '') +
-    /* ★ 相纸（09-15 SV 选「C」）：空串 = 这一卷的配套纸（引擎给默认）。
-       ⚠ 名字不认得时引擎会回落并在 /stats 里标出来，不会崩 —— 别在前端自己兜。 */
-    '&paper=' + encodeURIComponent(o.paper || '') +
+    /* ★ 曝光风格（09-23）：高长调 / 中性调 / 暗调，空串 = 引擎默认档。 */
+    '&style=' + encodeURIComponent(o.style || '') +
     '&side=' + encodeURIComponent(String(o.side || 700)) +
-    '&fmt=jpg&q=' + encodeURIComponent(String(o.q || 92)) +
-    '&params=' + encodeURIComponent(paramStr(o.params));
+    '&fmt=jpg&q=' + encodeURIComponent(String(o.q || 92));
   // 换卷 6~7 秒，首次含模型加载更久
   const r = await engineGet('/render' + qs, 300000);
   return r.ok ? { ok: true, image: r.image } : r;
 });
-
-/** 原图的「已按方向转正」预览（给调色台左栏做 before 用）。
-    走引擎的 /load 拿 Sample.disp —— 和渲染结果同一把尺子、同一分辨率，
-    比直接开原图更公平（原图可读但方向/尺寸口径不一致，会误导 A/B）。 */
-ipcMain.handle('engine-raw-url', async (e, sessionPath, rel) => {
-  /* ★ 这条是"和渲染同一把尺子的原图"⇒ 要给引擎**原件**：有同名 RAW 就给 RAW
-     （引擎认得 RAW），没有才回落到那个 JPG / 缓存里的机内 JPG。 */
-  const v = viewFileOf(sessionPath, rel);
-  const full = v ? (v.raw || v.file) : '';
-  if (!full || !fs.existsSync(full)) {
-    return { ok: false, error: '文件不存在' };
-  }
-  const r = await engineGet('/load?paths=' + encodeURIComponent(full), 180000);
-  return r.ok ? { ok: true, image: r.image } : r;
-});
-
-/* ---- 调色参数「按主题存」：一个主题一份，存进 config.grades[主题名] ---- */
-ipcMain.handle('get-grade', (e, themeName) => {
+/* ---- 调色参数「按目录存」：一个目录一份，存进 config.grades[目录名] ---- */
+ipcMain.handle('get-grade', (e, dirName) => {
   const cfg = loadConfig();
-  const g = (cfg.grades || {})[themeName];
+  const g = (cfg.grades || {})[dirName];
   return g || null;
 });
 
-ipcMain.handle('set-grade', (e, themeName, grade) => {
-  if (!themeName) return false;
+ipcMain.handle('set-grade', (e, dirName, grade) => {
+  if (!dirName) return false;
   const cfg = loadConfig();
   cfg.grades = cfg.grades || {};
-  cfg.grades[themeName] = grade || {};
+  cfg.grades[dirName] = grade || {};
   saveConfig(cfg);
   return true;
 });
-
-/** 导出「选片台 + 调色台」的全部设置成一份 json（换机器/备份用）。 */
-ipcMain.handle('export-grade', async (e, payload) => {
-  const res = await dialog.showSaveDialog(win, {
-    title: '导出工作台设置',
-    defaultPath: 'svStudio_设置.json',
-    filters: [{ name: 'JSON', extensions: ['json'] }]
-  });
-  if (res.canceled || !res.filePath) return { ok: false, canceled: true };
-  try {
-    fs.writeFileSync(res.filePath, JSON.stringify(payload, null, 2), 'utf8');
-    return { ok: true, path: res.filePath };
-  } catch (err) {
-    return { ok: false, error: err.message };
-  }
-});
-
 
 /** ★★ 导出**成片**（09-15 SV 选「A」第 ② 项）：把**渲染结果**写成真照片文件。
     为什么要引擎来写：`io.save` 已经处理好 EXIF / 4:4:4（无色度抽样）/ 质量；
@@ -1743,13 +1518,79 @@ ipcMain.handle('export-image', async (e, payload) => {
   const qs = '?src=' + encodeURIComponent(src) +
     '&path=' + encodeURIComponent(res.filePath) +
     '&stock=' + encodeURIComponent(p.stock || '') +
-    '&base=' + encodeURIComponent(p.base || '') +
-    '&paper=' + encodeURIComponent(p.paper || '') +
-    /* ⚠⚠ `paramStr` 是**唯一**允许把参数对象变成字符串的地方 ——
-       09-15 那次「23 根滑杆一根都没接上」就是把对象直接 encodeURIComponent 成 `[object Object]`。 */
-    '&params=' + encodeURIComponent(paramStr(p.params));
+    '&style=' + encodeURIComponent(p.style || '');
   const r = await engineGet('/export' + qs, 900000);
   return r.ok ? Object.assign({ ok: true }, r.data || {}) : r;
+});
+
+/* =========================================================
+   批量出片：整个目录用同一套选择器全出，写进 `<目录>/调色待验收`
+   ---------------------------------------------------------
+   为什么写进「调色待验收」：它就是"成片暂存"那个桶 —— 打星的同步会把成片从这儿
+   搬进 2星/待发布，`archive-photos` 的成片来源优先级里也有它。整条链本来就接得上。
+
+   ⚠ **尺寸必须显式给**：引擎不传 `side` 就是原图全尺寸，一张 RAW 约 6 分半
+     ⇒ 100 张要十几个小时。批量默认走 2048（约 29 秒/张），要原图尺寸得自己选。
+   ⚠ 进度**推成事件**（`export-batch-progress`），不是等返回值 ——
+     几百张要跑几十分钟，等返回的话界面全程像死机。
+   ========================================================= */
+let _batchCancel = false;
+
+ipcMain.handle('export-batch-cancel', () => { _batchCancel = true; return true; });
+
+function sendBatchProgress(o) {
+  try {
+    if (win && !win.isDestroyed()) win.webContents.send('export-batch-progress', o);
+  } catch (e) { /* 窗口没了就算了 */ }
+}
+
+ipcMain.handle('export-batch', async (e, payload) => {
+  const p = payload || {};
+  const dirPath = String(p.dirPath || '');
+  const items = Array.isArray(p.items) ? p.items : [];
+  if (!dirPath || !fs.existsSync(dirPath)) return { ok: false, error: '目录不存在' };
+  if (!items.length) return { ok: false, error: '没有要出的片' };
+  const outDir = path.join(dirPath, REVIEW_DIR);
+  try {
+    fs.mkdirSync(outDir, { recursive: true });
+  } catch (err) {
+    return { ok: false, error: '建不了输出目录：' + err.message };
+  }
+  /* `side = 0`（界面上选「原图全尺寸」）⇒ 不给引擎这个参数，它按原图尺寸出。
+     其余情况缺省 2048 —— 原图全尺寸一张 RAW 约 6 分半，不能拿它当默认。 */
+  const px = p.side === 0 || p.side === '0' ? null
+    : (Number(p.side) > 0 ? Number(p.side) : 2048);
+
+  _batchCancel = false;
+  const done = [];
+  const failed = [];
+  const t0 = Date.now();
+  for (let i = 0; i < items.length; i++) {
+    if (_batchCancel) break;
+    const rel = String(items[i].rel || '');
+    const rawName = rawNameFor(dirPath, rel);
+    sendBatchProgress({ phase: 'start', i: i + 1, n: items.length, name: rawName || rel });
+    if (!rawName) { failed.push({ file: rel, error: '根目录里找不到这张的 RAW' }); continue; }
+    const outPath = path.join(outDir, rawName.replace(/\.[^.]+$/, '') + '.jpg');
+    const qs = '?src=' + encodeURIComponent(path.join(dirPath, rawName)) +
+      '&path=' + encodeURIComponent(outPath) +
+      '&stock=' + encodeURIComponent(p.stock || '') +
+      '&style=' + encodeURIComponent(p.style || '') +
+      (px ? '&side=' + encodeURIComponent(String(px)) : '');
+    const r = await engineGet('/export' + qs, 3600000);
+    const okOne = !!(r && r.ok && r.data && r.data.ok !== false);
+    if (okOne) done.push(rawName);
+    else failed.push({ file: rawName, error: (r && (r.error || (r.data && r.data.error))) || '引擎没回' });
+    sendBatchProgress({
+      phase: 'one', i: i + 1, n: items.length, name: rawName, ok: okOne,
+      done: done.length, failed: failed.length,
+      ms: Date.now() - t0,
+      error: okOne ? '' : (failed[failed.length - 1] || {}).error || '',
+    });
+  }
+  sendBatchProgress({ phase: 'end', i: done.length, n: items.length, done: done.length,
+                      failed: failed.length, canceled: _batchCancel, out: outDir });
+  return { ok: true, dir: outDir, done: done.length, failed, canceled: _batchCancel };
 });
 
 

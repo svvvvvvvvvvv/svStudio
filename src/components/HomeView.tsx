@@ -2,7 +2,7 @@ import { Button, Callout, Flex, Text } from '@radix-ui/themes';
 import { useStore } from '../store/useStore';
 
 /**
- * 主题（会话）列表页 —— 老代码的 homeView。
+ * 目录（会话）列表页 —— 老代码的 homeView。
  * 数据全部来自 store，点一下 enterSession 即可，不用再手写 renderSessions() 拼 DOM。
  */
 export function HomeView() {

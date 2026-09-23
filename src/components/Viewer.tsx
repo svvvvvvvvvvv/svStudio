@@ -75,19 +75,15 @@ export function Viewer() {
  * ⚠★ 两栏必须同口径才公平：左边用引擎 /base（缓存的 Sample.disp，恒等不调色），
  *    右边用 /render。**别让左栏去读原始 JPG** —— 尺寸和方向跟渲染结果不是一把尺子。
  *
- * ★★ 出图时机（SV 09-15 定）：**只有两个触发点**
- *   ① 右栏「胶片卷」下面的「渲染」按钮  ② 切进/进入调色台
- *   换图 / 换卷 / 换基准 / 拉滑杆 —— **一律只改参数，不动画面**。
- *   （以前是"任何改动都自动出图"，拖一次滑杆能瞬间打出几十发 6~15 s / 2~3 GB 的渲染
- *    互相抢占，最后那张反而迟迟不出来，看着就像"点了没反应"。）
+ * ★ 出图时机：**只有两个触发点** —— ① 右栏「渲染」按钮 ② 切进调色台。
+ *   换图 / 换风格一律只改参数，不动画面。
  *
- * ★★ 视图三档（09-15 SV 定，照 Lightroom 的 `A` / `A|B` / `B`）：默认 `A|B`。
- *   `A` = 只看原图 · `A|B` = 左右对比（原图 | 调色后）· `B` = 只看调色后（单张占满）。
+ * ★ 视图三档（照 Lightroom 的 `A` / `A|B` / `B`）：默认 `A|B`。
+ *   `A` = 只看原图 · `A|B` = 左右对比 · `B` = 只看调色后。
  *   ❗**只换"怎么看"，不碰渲染**：切档不出图、不改参数、不清已出的那一张
- *     （两栏共用同一个 `after` dataURL ⇒ 从 `A|B` 切到 `B` 是**立刻**看到的，
- *      不会因为"少了左栏"而重新渲染一发）。这条别改 —— 改了就变成"切个视图等 6 秒"。
- *   ⚠ 用 `useState` 局部状态（**不进 store**）：这是临时的看图姿势，
- *     不该跟着主题/配方落盘；每次进调色台都回到默认的 `A|B`。
+ *     （两栏共用同一个 `after` dataURL ⇒ 从 `A|B` 切到 `B` 立刻就能看到，
+ *      不会因为"少了左栏"重新渲染一发）。改了就变成"切个视图等半分钟"。
+ *   ⚠ 用 `useState` 局部状态（不进 store）：这是临时的看图姿势，不该跟着配方落盘。
  */
 function SplitView() {
   const sessionPath = useStore((s) => s.sessionPath);
@@ -120,12 +116,14 @@ function SplitView() {
     (async () => {
       try {
         if (!(await ensureEngine())) return;
-        /* ★★ 出图源 = **同名 RAW 优先**（SV 09-15：「工作台本来就要优先用 raw」）。
-           main.js 的 `attachLoadPath()` 已经把该用哪个文件算好了（没有 RAW 才回落到 JPG）。
-           ⚠ 这里**不要**自己拼 `rel` —— 那是身份键，不是出图源。
-           ⚠ 必须走 RAW：入口那一段（零点/成形/趾部/护栏）只在 `io.load_raw` 里跑，
-             喂 JPG 的话「整张亮暗(总)」「暗部亮度」永远是死的。 */
-        const full = p.loadPath || sessionPath + '\\' + p.rel;
+        /* 出图源 = `p.loadPath`（main.js 的 `attachLoadPath()` 算好的，永远指向根里的 RAW）。
+           ⚠ 不许自己拼 `rel` —— 它是身份键（不带扩展名），不是路径。 */
+        const full = p.loadPath || '';
+        if (!full) {
+          showToast('这张没有出图源（根目录里找不到对应的 RAW）');
+          setLoading(false);
+          return;
+        }
         const r = await API.engineLoad([full]);
         // ★ main.js 给的是 { ok, items:[{id,path,ms}|{path,error}] } —— 不是 { id }。
         const item = r?.items?.[0];
@@ -150,31 +148,23 @@ function SplitView() {
     };
   }, [p, sessionPath, engineOk, ensureEngine, showToast]);
 
-  /* ---- 渲染：只在 renderTick 变化时出图 ----
-     ★★ 09-15 SV 选「A」把契约从「两个触发点」扩成三个：
-       ① 进 / 切进调色台  ② 右栏「渲染」按钮  ③ **拖右栏滑杆**（实时预览）。
-       换卷 / 换基准 / 换相纸 / 换图 / 恢复默认 **仍然不自动出图**（参数先攒着）。
+  /* ---- 渲染：盯 `renderTick` ----
      四条护栏：
        ① 同时只跑一发（手快连点 / 反复切台子会连发两三次）；
-       ② 60ms 防抖（拖一格发一发会把队列塞满）；
-       ③ **跑完补发最新那一发** —— 忙的时候发来的不许丢（丢了 = 松手后画面停在中间格）；
-       ④ 出图中有明显反馈（旧图原地不动 + 没有转圈 ⇒ 看着就像"没反应"）。 */
+       ② 60ms 防抖；
+       ③ **跑完补发最新那一发** —— 忙的时候发来的不许丢（丢了画面就停在上一次）；
+       ④ 出图中有可见反馈（旧图原地不动、也没有转圈 ⇒ 看着就像"没反应"）。 */
   const opts: RenderOpts = {
+    /* 两个选择器都在这里进请求。少一个 ⇒ 界面选了、画面不动。 */
     stock: grade.stock,
-    base: grade.base,
-    /* ★★ 相纸（09-15 SV 选「C」）：**必须带上** —— 少了这一行，界面选了纸、出图还是旧纸，
-       而且画面不变 ⇒ 用户以为"这张纸没效果"（真因是根本没发出去）。
-       空串/undefined 时引擎按"这一卷的配套纸"处理（`spektra.resolve_paper` 兜底）。 */
-    paper: grade.paper,
-    params: grade.params || {},
+    style: grade.style,
   };
   const wantOptsRef = useRef<RenderOpts>({});
   const doneTickRef = useRef(-1);
   const busyRef = useRef(false);
   const pumpRef = useRef<() => void>(() => {});
-  /* ★★ 09-15 SV 选「A」补的一个 ref：**最新一发是谁**。
-     异步回调里读不到新的 `renderTick`（闭包过期）⇒ 只能靠 ref 记住它，
-     跑完拿它跟"我刚跑的是哪一发"比 —— 不相等说明参数又动过，得补发。 */
+  /* **最新一发是谁**：异步回调里读不到新的 `renderTick`（闭包过期）⇒ 只能靠 ref 记住，
+     跑完跟"我刚跑的是哪一发"比 —— 不相等说明参数又动过，得补发。 */
   const tickRef = useRef(renderTick);
 
   // 每次渲染记下「最新想要的参数」—— 异步回调里读 ref，避免闭包过期
@@ -205,10 +195,8 @@ function SplitView() {
       busyRef.current = false;
       setBusy(false);
       setRenderBusy(false);
-      /* ★★ 忙的时候发来的那一发**不许丢**（老代码在这里直接 return 掉，是"拖了没反应"的根因）：
-         拖着滑杆时参数一直在变，而这一发在跑的过程中 tick 早就又涨了
-         ⇒ 跑完必须补发"最新那一发"，否则松手后画面停在中间某一格
-         （参数是新的、画面是旧的 —— 看起来就像没反应）。
+      /* 忙的时候发来的那一发**不许丢**：这一发在跑的过程中 tick 可能又涨了
+         ⇒ 跑完补发"最新那一发"，否则画面停在上一次（参数是新的、画面是旧的）。
          ⚠ 失败的那一发不重试（`doneTickRef` 没更新、tick 也没变 ⇒ 不会自激）。 */
       if (tickRef.current !== tick) pumpRef.current();
     }
@@ -219,8 +207,7 @@ function SplitView() {
     // ⚠ 请求常常比装载先到（切台子那一刻图还没 load 完）⇒ 不能只认「变化」，
     //   要认「这一发还没出过」：imgId 到位后 effect 会再跑一次，那时才真正出图。
     if (doneTickRef.current === renderTick) return;
-    /* ★★ 防抖 60ms（09-15 SV 选「A」）：拖着滑杆时 `onValueChange` 每动一小格就 +1，
-       不防抖一秒能发几十发，而每发 1~4 秒 ⇒ 全是废活。
+    /* 防抖 60ms：连点「渲染」/ 反复切台子会连发好几发，而每发 1 到几十秒。
        ⚠ 只防抖「发起」，不丢「结果」：合并交给上面的 pump（跑完补发最新那一发）。 */
     const t = window.setTimeout(() => pumpRef.current(), 60);
     return () => window.clearTimeout(t);
@@ -269,14 +256,13 @@ function SplitView() {
         }}
       >
         {view !== 'b' && <Pane title="原图" src={before} loading={loading} busy={false} />}
-        {/* ★ 标题栏标出「这张是用什么出的图」—— 只有 JPG 的主题（没有 RAF）入口那两根
-            滑杆（整张亮暗(总)／暗部亮度）是不生效的，以前界面上完全看不出来。
+        {/* 右边标题栏带上出图源的文件名，一眼看出喂的是哪张 RAW。
             ⚠ 这个标记放在 `note` 里，**不能塞进 title** —— title 同时是 img 的 alt，
               布局自检靠 alt === '调色后' 认这两栏。 */}
         {view !== 'a' && (
           <Pane
             title="调色后"
-            note={p ? (p.loadIsRaw ? 'RAW 出图' : 'JPG 出图（无 RAW）') : undefined}
+            note={p ? p.loadPath || undefined : undefined}
             src={after}
             loading={loading}
             busy={busy}
