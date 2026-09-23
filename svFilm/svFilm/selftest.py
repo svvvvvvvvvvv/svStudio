@@ -533,6 +533,17 @@ def t_stocks():
           abs(float(_p.enlarger.y_filter_neutral) - float(C.PRESET_NEUTRAL_Y)) < 1e-9
           and abs(float(_p.enlarger.m_filter_neutral) - float(C.PRESET_NEUTRAL_M)) < 1e-9,
           'y %.3f m %.3f' % (_p.enlarger.y_filter_neutral, _p.enlarger.m_filter_neutral))
+    # ★★ 上面那条是**自证**（拿 params 比 config），把 config 里两个数对调它照样绿。
+    #    09-23 真踩过一次「Y/M 写反」⇒ 这里再钉**绝对数值**，来源可查：
+    #      `neutral_print_filters.json` 里 `fujifilm_pro_400h` = [C, M, Y]（读的顺序见
+    #      vendor `params_builder.apply_database_neutral_print_filters`：`c, m, y = ...`）
+    #      · public 0.3.2 ⇒ [0.0, **50.71268**, **51.42340**]  ← 预设是在这版标定的，我们采用
+    #      · 我们 vendor 0.3.4 ⇒ [0.0, 48.15366, 50.73525]    ← 换过去整张偏色，所以关 DB 钉死
+    check('★★ 而且 Y/M **不许对调**（绝对数值，来源＝public 0.3.2 的滤片库：M 小、Y 大）',
+          abs(float(C.PRESET_NEUTRAL_Y) - 51.423) < 5e-4
+          and abs(float(C.PRESET_NEUTRAL_M) - 50.713) < 5e-4,
+          'Y %.3f / M %.3f（应为 Y 51.423 / M 50.713）'
+          % (C.PRESET_NEUTRAL_Y, C.PRESET_NEUTRAL_M))
 
 
 def t_spatial_off():

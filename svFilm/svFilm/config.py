@@ -702,7 +702,8 @@ PRESET_APPLY_STOCK_SPECIFICS = False
 # ⚠ `PRESET_NEUTRAL_FROM_DB`：vendor 0.3.4 会**去数据库查**「中性滤片」，而 public GUI（0.3.2）
 #    用的是它自己那份数据库 —— **两版查出来的不是同一对数**，等于换了一套配平基准（整张偏色）。
 #    我们那 9 条预设是在 0.3.2 上标定的 ⇒ 关掉 DB、改用下面钉死的 0.3.2 实测值，做到**版本无关**。
-#    实测对照：0.3.2 ⇒ y 50.713 / m 51.423（我们采用）；0.3.4 ⇒ y 50.735 / m 48.154（差 m 3.3 CC，肉眼可见）；
+#    实测对照（⚠ 读 DB 的顺序是 `c_filter, m_filter, y_filter`，**别按 y/m 猜**）：
+#              0.3.2 ⇒ m 50.713 / y 51.423（我们采用）；0.3.4 ⇒ m 48.154 / y 50.735（差 m 3.3 CC，肉眼可见）；
 #              schema 默认 ⇒ y 55 / m 65（差得更多）。
 PRESET_NEUTRAL_FROM_DB = False
 PRESET_NEUTRAL_Y = 51.423

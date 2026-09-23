@@ -273,14 +273,16 @@ def _apply(p, d, cfg):
     p.settings.preview_max_size = int(d['display']['preview_max_size'])
     p.settings.preview_mode = False        # 要的是成片，不是预览
     # ⚠ 配平基准必须钉死：两版 vendor 的「中性滤片数据库」查出来的不是同一对数
-    #   （0.3.2 ⇒ y50.713/m51.423；0.3.4 ⇒ y50.735/m48.154；schema 默认 ⇒ 55/65）。
+    #   （读 DB 的顺序是 `c_filter, m_filter, y_filter` ⇒ **别按 y/m 猜**：
+    #    0.3.2 ⇒ m 50.713 / y 51.423（本预设在这版标定）；0.3.4 ⇒ m 48.154 / y 50.735；
+    #    schema 默认 ⇒ y 55 / m 65）。
     #   预设是在 0.3.2 上标定的 ⇒ 关掉 DB、填 0.3.2 的实测值，做到版本无关。
     if bool(getattr(cfg, 'PRESET_NEUTRAL_FROM_DB', False)):
         p.settings.neutral_print_filters_from_database = True
     else:
         p.settings.neutral_print_filters_from_database = False
-        p.enlarger.y_filter_neutral = float(getattr(cfg, 'PRESET_NEUTRAL_Y', 50.713))
-        p.enlarger.m_filter_neutral = float(getattr(cfg, 'PRESET_NEUTRAL_M', 51.423))
+        p.enlarger.y_filter_neutral = float(getattr(cfg, 'PRESET_NEUTRAL_Y', 51.423))
+        p.enlarger.m_filter_neutral = float(getattr(cfg, 'PRESET_NEUTRAL_M', 50.713))
     p.settings.use_enlarger_lut = bool(getattr(cfg, 'SPEK_USE_LUT', True))
     p.settings.use_scanner_lut = bool(getattr(cfg, 'SPEK_USE_LUT', True))
     p.settings.use_fast_stats = bool(getattr(cfg, 'SPEK_FAST_STATS', False))
