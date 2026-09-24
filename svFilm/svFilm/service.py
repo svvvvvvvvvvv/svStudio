@@ -446,7 +446,7 @@ class _H(BaseHTTPRequestHandler):
                              isDefault=bool(n == getattr(C, 'STYLE', None)),
                              evDown=tone.rel_of(n)['ev_down'],
                              hiDown=tone.rel_of(n)['hi_down'],
-                             shUp=tone.rel_of(n)['sh_up'])
+                             blDown=tone.rel_of(n)['bl_down'])
                         for n in tone.names()])
                 return self._json([dict(name=n, desc=tone.get(n)['desc'],
                                         isDefault=bool(n == getattr(C, 'STYLE', None)),

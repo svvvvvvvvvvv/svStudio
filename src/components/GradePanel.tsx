@@ -200,8 +200,8 @@ export function GradePanel() {
                 )}
                 {typeof b.evDown === 'number' && (
                   <span style={{ fontSize: 10, opacity: 0.7 }}>
-                    压 {b.evDown.toFixed(2)} 档 · 高光 −{b.hiDown?.toFixed(0)} · 阴影 +
-                    {b.shUp?.toFixed(0)}
+                    中位 ↓{b.evDown.toFixed(2)} 档 · 亮部 ↓{b.hiDown?.toFixed(0)} · 黑位 ↓
+                    {b.blDown?.toFixed(0)}
                   </span>
                 )}
               </button>

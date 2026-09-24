@@ -173,19 +173,21 @@ def t_styles():
           tone.rel_of('不存在的一档') == tone.rel_of(C.STYLE))
 
     if _AFTER:
-        # ---- 作用在成片上：三条档 = 三套力度（压曝光 / 压高光 / 提阴影）----
+        # ---- 作用在成片上：三条档 = 三套力度（中位 / 亮部 / 黑位各自往下搬多少）----
         rl = {n: tone.rel_of(n) for n in tone.names()}
-        check('★★ 三档 = 三套力度，且都满足「压曝光 + 压高光 + **提**阴影」',
-              all(v['ev_down'] > 0 and v['hi_down'] > 0 and v['sh_up'] > 0 for v in rl.values()),
-              ' / '.join('%s 压%.2f 高光−%.0f 阴影+%.0f'
-                         % (n, rl[n]['ev_down'], rl[n]['hi_down'], rl[n]['sh_up'])
+        check('★★ 三档都是"往下搬"的量，且黑位真的往下（不是往上提）',
+              all(v['bl_down'] > 0 and v['ev_down'] >= 0 and v['hi_down'] >= 0 for v in rl.values()),
+              ' / '.join('%s 中位↓%.2f档 亮部↓%.0f 黑位↓%.0f'
+                         % (n, rl[n]['ev_down'], rl[n]['hi_down'], rl[n]['bl_down'])
                          for n in tone.names()),
-              '方向搞反了（阴影要**提**）或某一档压得为零')
-        check('★ 「暗调」压得比「高长调」多（档名与实际效果对得上）',
-              rl['暗调']['ev_down'] > rl['中性调']['ev_down'] > rl['高长调']['ev_down'],
-              ' / '.join('%.3f' % rl[n]['ev_down'] for n in tone.names()))
-        check('★ 「高长调」阴影提得比「暗调」多（亮而长 / 暗而厚）',
-              rl['高长调']['sh_up'] > rl['暗调']['sh_up'])
+              '黑位那项是**往下压**（对齐鹿井/大师带）；写反了就是"提阴影"，会发灰')
+        check('★ 「暗调」黑位压得比「高长调」多（档名与实际效果对得上）',
+              rl['暗调']['bl_down'] > rl['中性调']['bl_down'] > rl['高长调']['bl_down'],
+              ' / '.join('%.0f' % rl[n]['bl_down'] for n in tone.names()))
+        check('★ 中性调对齐鹿井 32 张量出来的那个数（黑位 −11）',
+              abs(rl['中性调']['bl_down'] - 11.0) < 3.0,
+              '%.1f' % rl['中性调']['bl_down'],
+              '数值来自 `master_resurvey.json` 里鹿井 32 张的内容归一形状，改之前先回去量一遍')
     else:
         st = {n: tone.get(n) for n in tone.names()}
         check('★★ 落点是**从大师真片量出来的**那三个数（P70/P50/P30 = 69.9/58.8/40.5）',
@@ -204,24 +206,28 @@ def t_tone_hits():
     """同一张图，三档分别按各自的契约落地。"""
     if _AFTER:
         disp = _gray_img(seed=3)
-        got = {}
+        got, got5 = {}, {}
         for n in tone.names():
             out, i = tone.settle_finished(disp, n, C)
             rl = tone.rel_of(n)
-            # 相对量：中位按档数往下、亮部至少压到 hi_down 附近、暗部**抬起来**
-            check('%s：中位按档数往下搬（不是"算出来了但没做"）' % n,
-                  i['L50_in'] - i['L50_out'] > 0.3,
-                  '中位 %.1f → %.1f' % (i['L50_in'], i['L50_out']))
-            check('%s：亮部往下压、暗部往上**提**' % n,
-                  i['L95_out'] < i['L95_in'] - rl['hi_down'] * 0.6
-                  and i['L5_out'] > i['L5_in'] + rl['sh_up'] * 0.6,
-                  '暗 %.1f→%.1f  亮 %.1f→%.1f'
-                  % (i['L5_in'], i['L5_out'], i['L95_in'], i['L95_out']),
-                  '方向反了：高光要压、阴影要提')
+            # 相对量：黑位按自己的量往下搬；中位只在 ev_down>0 时才动
+            check('%s：黑位按自己的量往下搬（不是"算出来了但没做"）' % n,
+                  i['L5_out'] < i['L5_in'] - rl['bl_down'] * 0.6 + 1e-6,
+                  '黑位 %.1f → %.1f（要往下 %.0f）' % (i['L5_in'], i['L5_out'], rl['bl_down']))
+            check('%s：亮部/中位按自己的量走（不动就是真的不动）' % n,
+                  i['L95_out'] < i['L95_in'] - rl['hi_down'] * 0.6 + 1e-6
+                  and (rl['ev_down'] > 0.02 or abs(i['L50_out'] - i['L50_in']) < 1.0),
+                  '中 %.1f→%.1f  亮 %.1f→%.1f'
+                  % (i['L50_in'], i['L50_out'], i['L95_in'], i['L95_out']),
+                  '方向反了：这三项都是"往下搬"')
             got[n] = i['L50_out']
-        check('三档出来的画面亮度真的拉开了（暗调最暗）',
-              got['高长调'] > got['中性调'] > got['暗调'],
-              '%.1f / %.1f / %.1f' % (got['高长调'], got['中性调'], got['暗调']))
+            got5[n] = i['L5_out']
+        check('三档真的拉得开：暗调最暗、黑位最深',
+              got['高长调'] >= got['中性调'] > got['暗调']
+              and got5['暗调'] < got5['中性调'] <= got5['高长调'],
+              '中位 %.1f / %.1f / %.1f   黑位 %.1f / %.1f / %.1f'
+              % (got['高长调'], got['中性调'], got['暗调'],
+                 got5['高长调'], got5['中性调'], got5['暗调']))
         return
     lin = _lin_from_disp(_gray_img(seed=3))
     for n in tone.names():
@@ -370,14 +376,14 @@ def t_contract():
     t = r.report['tone']
     if _AFTER:
         check('报告里带着"进去多少 / 出来多少"（能自查，不用读图）',
-              abs(t['L50_in'] - t['L50_out']) > 0.3
-              and r.report['style_target']['ev_down'] == 0.35
+              t['L5_out'] < t['L5_in'] - 1.0
+              and r.report['style_target']['bl_down'] == 14.0
               and r.report['style'] == '暗调',
-              '中位 %.1f → %.1f' % (t['L50_in'], t['L50_out']))
-        check('★ 报告里带上了三个力度，且阴影是**提**的（`sh_up` > 0）',
-              t['sh_up'] > 0 and t['ev_down'] > 0 and t['hi_down'] > 0,
-              '压%.2f 高光−%.0f 阴影+%.0f' % (t['ev_down'], t['hi_down'], t['sh_up']),
-              '方向搞反了：高光要压、阴影要提')
+              '黑位 %.1f → %.1f' % (t['L5_in'], t['L5_out']))
+        check('★ 报告里带上了三个力度，且黑位是**往下搬**的（`bl_down` > 0）',
+              t['bl_down'] > 0 and t['ev_down'] >= 0 and t['hi_down'] >= 0,
+              '中位↓%.2f档 亮部↓%.0f 黑位↓%.0f' % (t['ev_down'], t['hi_down'], t['bl_down']),
+              '方向搞反了：黑位要往下压（对齐鹿井），不是往上提')
         # ⚠ 这里**不量** L5 的升降：喂进去的是合成小图、又过了一遍胶片引擎，
         #   分布已经很窄（L5≈L50≈L95），三点曲线会退化。真正的方向判据在
         #   `t_tone_hits`（直接喂 `_gray_img`，分布是正常的）。

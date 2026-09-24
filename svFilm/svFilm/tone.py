@@ -230,16 +230,43 @@ def fit_gamut(lin_rgb, Y=None):
 # ---------------------------------------------------------------------------
 # 和上面 `STYLES` 的区别：`STYLES` 打的是**绝对靶**（大师真片量出来的 L5/L50/L95），
 # 只在"动作在引擎之前"时说得通；动作挪到引擎之后，改的都是**相对量** ——
-#   压一点曝光 + 压很多高光 + **提**一点阴影。
-# ⚠ 方向别搞反：高光**往下**压、阴影**往上**提。
+# 把成片的 L5 / L50 / L95 各自往下搬多少。
+#
+# ★★ 数值是**量出来的**，不是拍的：拿 `_debug/analysis/master_resurvey.json` 里
+#    **鹿井 32 张**（SV 的主参考）做**内容归一**对比 —— 比较"分位 − 中位"的形状：
+#
+#      | 形状 | L5−L50（黑位） | L95−L50（亮部） | L75−L25（中段） |
+#      | 鹿井 32 张 | **−53.1** | **+31.8** | 51.9 |
+#      | 我们（919 十张的底） | **−42.1** | **+31.1** | 50.4 |
+#      | 差 | **−11.0** | **+0.7** | +1.5 |
+#
+#    ⇒ **亮部已经在位（差 0.7），不需要压高光；黑位浅了 11，要往下压。**
+#      （5 位大师 708 张合起来是 −46.6 / +29.3，我们的亮部同样在带内、黑位同样偏浅。）
+#    ⚠ 之前"压高光 + 提阴影"那套方向是**反的** —— 会把亮部压离鹿井、
+#      同时把黑位抬得比鹿井更浅（就是"发灰发糊"的来源）。
+#    ⚠ 为什么用**内容归一**（分位减中位）而不是绝对亮度：绝对亮度绑内容 + 绑曝光
+#      （大师的 L50 61.4 是他自己的场景和他自己的曝光），直接对齐会"把所有片拽成同一灰"。
 REL = {
-    '高长调': dict(ev_down=0.06, hi_down=6.0, sh_up=14.0,
-                 desc='压得最少、阴影提得最多 ⇒ 亮而长'),
-    '中性调': dict(ev_down=0.125, hi_down=12.0, sh_up=12.0,
-                 desc='中间的力度'),
-    '暗调': dict(ev_down=0.35, hi_down=18.0, sh_up=8.0,
-               desc='压得最多、阴影提得最少 ⇒ 暗而厚'),
+    '高长调': dict(ev_down=0.00, hi_down=0.0, bl_down=6.0,
+                 desc='黑位往鹿井带的下沿收（最多 6），中位/亮部不动'),
+    '中性调': dict(ev_down=0.00, hi_down=0.0, bl_down=11.0,
+                 desc='黑位收到鹿井 32 张的中位形状（最多 11）'),
+    '暗调': dict(ev_down=0.20, hi_down=3.0, bl_down=14.0,
+               desc='中位压下来、黑位再深一点'),
 }
+
+# 鹿井 32 张的**内容归一**黑位形状（L5 − L50 的中位）。黑位只往它收，**只压不提**。
+# ⚠ 为什么不直接压一个全局常数：我们片子的形状散得很开（实测同一批 10 张从 −31.9 到 −58.7），
+#   鹿井集中在 −46 ~ −57 ⇒ 全局压 11 会把本来就深的那两张压到 −69（死黑）。
+#   ⇒ 只补"离带还差的那一段"，已经在带内/更深的**一个像素都不动**。
+TARGET_BLACK_SHAPE = -53.1
+
+# ★ 绝对黑位下限（L*）。为什么光有"形状"不够：形状 = L5 − L50，而**中位低的片子**
+#   （实测那批里中位 47.7 的），按形状收到 −53 会算到 L* 为**负** ⇒ 死黑一片、细节全丢。
+#   鹿井那 32 张的中位普遍在 61 上下，他 L5 的绝对中位是 **7.5**（P25 5.6）
+#   ⇒ 下限取 4（略低于他的 P25，留一点余地）。
+#   ⚠ 中位低于 ~57 的片会被这道下限拦住 —— 那时形状对不满是**物理上到不了**，不是 bug。
+TARGET_BLACK_FLOOR_L = 4.0
 
 
 def rel_of(name, cfg=C):
@@ -261,8 +288,17 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
     Y, p = measure(lin)
     y5, y50, y95 = (max(p[5.0], _EPS), max(p[50.0], _EPS), max(p[95.0], _EPS))
 
-    # 暗部往**上**提、高光往**下**压、整张按档数往下搬
-    Tb = float(np.clip(color.lin_of_L(float(color.L_of_lin(y5)) + float(st['sh_up'])), _EPS, None))
+    # 三个分位各自往下搬：黑位 / 中位 / 亮部（`*_down` 都是"往下搬多少"，
+    # ⚠ 黑位**负值 = 往上提** —— 别再用"提阴影"那种说法，方向容易搞反）
+    # ★ 黑位**只往鹿井的形状收、只压不提**：离带还差多少就补多少（最多补 `bl_down`），
+    #   已经在带内或更深的**一个像素都不动**。理由见 `TARGET_BLACK_SHAPE`。
+    _L5, _L50 = float(color.L_of_lin(y5)), float(color.L_of_lin(y50))
+    _need = max(0.0, (_L5 - _L50) - TARGET_BLACK_SHAPE)      # >0 = 离带还差这么多
+    _bl = float(np.clip(min(float(st['bl_down']), _need), -30.0, 30.0))
+    # 绝对黑位下限：别压穿（中位低的片子按形状算会到负数 ⇒ 死黑）
+    _bl = min(_bl, _L5 - float(getattr(cfg, 'TARGET_BLACK_FLOOR_L', 4.0)))
+    _bl = max(_bl, -30.0)
+    Tb = float(np.clip(color.lin_of_L(_L5 - _bl), _EPS, None))
     Tm = float(np.clip(color.lin_of_L(float(color.L_of_lin(y50))) * (2.0 ** -float(st['ev_down'])),
                        _EPS, None))
     Tw = float(np.clip(color.lin_of_L(float(color.L_of_lin(y95)) - float(st['hi_down'])), _EPS, None))
@@ -275,7 +311,9 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
 
     info = dict(
         style=str(style),
-        ev_down=float(st['ev_down']), hi_down=float(st['hi_down']), sh_up=float(st['sh_up']),
+        ev_down=float(st['ev_down']), hi_down=float(st['hi_down']),
+        bl_down=float(st['bl_down']), bl_applied=float(_bl),
+        bl_need=float(_need), bl_shape_in=float(_L5 - _L50),
         L5_in=float(color.L_of_lin(y5)), L50_in=float(color.L_of_lin(y50)),
         L95_in=float(color.L_of_lin(y95)),
         L5_out=float(color.L_of_lin(Tb)), L50_out=float(color.L_of_lin(Tm)),

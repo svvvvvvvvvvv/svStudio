@@ -172,11 +172,12 @@ export interface Style {
   L50?: number;
   L5?: number;
   L95?: number;
-  /** ★★ 「曝光风格作用在**引擎之后**」那套配置下的三个力度（相对量）：
-   *  压曝光几档 / 压高光几个 L* / 提阴影几个 L*。 */
+  /** ★★ 「曝光风格作用在**引擎之后**」那套配置下的三个力度（相对量）——
+   *  **都是"往下搬多少"**：中位几档 / 亮部几个 L* / 黑位几个 L*。
+   *  数值来自鹿井 32 张成片的内容归一形状（见 svFilm/svFilm/tone.py 的 REL）。 */
   evDown?: number;
   hiDown?: number;
-  shUp?: number;
+  blDown?: number;
 }
 
 
