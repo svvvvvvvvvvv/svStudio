@@ -171,7 +171,7 @@
   "auto_exposure_method": "center_weighted",
   "print_paper": "fujifilm_crystal_archive_typeii",
   "print_illuminant": "TH-KG3",
-  "print_exposure": 0.4,
+  "print_exposure": 0.36,
   "print_exposure_compensation": true,
   "print_y_filter_shift": 7.0,
   "print_m_filter_shift": 1.0,
@@ -190,7 +190,7 @@
   "scan_white_correction": true,
   "scan_white_level": 0.96,
   "scan_black_correction": true,
-  "scan_black_level": 0.065,
+  "scan_black_level": 0.22,
   "scan_unsharp_mask": [
    0.3,
    0.3
