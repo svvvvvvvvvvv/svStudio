@@ -185,10 +185,22 @@ def apply(disp, cfg=C, stock=None):
     live = _ramp(Cc, cmin * 0.6, cmin * 1.4)
     kc = np.zeros_like(Cc)
     dl = np.zeros_like(Cc)
+    # ★★ 09-24：色相带的增益**按语义区域加权** —— 环境增益不落到人身上。
+    #   原来自查出来的病根：按**色相带**分区 ≈ 用"能算的量（色相）"代替
+    #   "需要判断的量（这是什么）"，跟 L4 那次"用色相窗当人脸"是同一类错。
+    #   ⇒ "绿色的都降饱和"会误伤人的衣服；现在环境增益乘 `env_scale`（= 1 − 人）。
+    _resc = np.ones(L.shape, np.float64)
+    try:
+        if str(getattr(cfg, 'GRADE_REGION_SCOPE', 'env')).lower() == 'env':
+            from . import region as _R
+            _rm = _R.weights(np.clip(disp, 0.0, 1.0), cfg)
+            _resc = _rm['env_scale']
+    except Exception:                                          # noqa: BLE001
+        _resc = np.ones(L.shape, np.float64)
     for bi, (center, half, k, dL) in enumerate(BANDS):
         # ★ 色相带增益 = 预设自带的那份（按大师量出来的），没有专属靶就是 0
         k = k + float(_bg[bi]) if bi < len(_bg) else k
-        w = _band_weight(H, center, half) * live
+        w = _band_weight(H, center, half) * live * _resc
         kc += w * k
         dl += w * dL
     # 软归一：多个带重叠时不把增益叠爆
@@ -280,7 +292,21 @@ def apply(disp, cfg=C, stock=None):
                     L = np.clip(L * (1.0 - _w) + _Lf * _w, 0.0, 100.0)
                 except Exception:                                # noqa: BLE001
                     pass
-    out = np.clip(color.from_lab(np.stack([L, a, b], -1)), 0.0, 1.0)
+    # ★★ 09-24 加**显式色域映射**：直接 `clip` 会按通道砍，把**色相也一起改掉**
+    #   —— 实测"色相转 −6°"在高彩度亮色上只有 **1/4** 有效（转到一半就出 sRGB 界被砍）。
+    #   标准做法：出界的颜色**保住亮度、往中性轴（a=b=0）收**，收到进界为止。
+    #   ⚠ 注意 `color.from_lab` **内部自己就 clip**（所以"看输出有没有出界"检测不到）。
+    #     改用**往返检测**：转出去再转回来，a*/b* 对不上 ⇒ 说明这个颜色被砍过。
+    _lab = np.stack([L, a, b], -1)
+    for _ in range(5):
+        _back = color.to_lab(np.clip(color.from_lab(_lab), 0.0, 1.0))
+        _bad = (np.abs(_back[..., 1] - _lab[..., 1]) > 0.5) | \
+               (np.abs(_back[..., 2] - _lab[..., 2]) > 0.5)
+        if not bool(_bad.any()):
+            break
+        _lab[..., 1] = np.where(_bad, _lab[..., 1] * 0.80, _lab[..., 1])
+        _lab[..., 2] = np.where(_bad, _lab[..., 2] * 0.80, _lab[..., 2])
+    out = np.clip(color.from_lab(_lab), 0.0, 1.0)
     info = dict(applied=True,
                 L50_in=Lm, L50_out=float(np.median(color.to_lab(out)[..., 0])),
                 a_med_in=am, b_med_in=bm,
