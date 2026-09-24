@@ -172,8 +172,22 @@ def apply(disp, cfg=C, stock=None):
         sha, shb = float(getattr(cfg, 'GRADE_SH_A', 0.0)), float(getattr(cfg, 'GRADE_SH_B', 0.0))
         hia, hib = float(getattr(cfg, 'GRADE_HI_A', 0.0)), float(getattr(cfg, 'GRADE_HI_B', 0.0))
     dpa, dpb = float(getattr(cfg, 'GRADE_DEEP_A', 0.0)), float(getattr(cfg, 'GRADE_DEEP_B', 0.0))
-    da2 = sha * w_sh + hia * w_hi + dpa * w_deep
-    db2 = shb * w_sh + hib * w_hi + dpb * w_deep
+    # ★ 09-24 新增：**中间调**那一段也能收（原来只有暗部 w_sh / 高光 w_hi 两段，
+    #   L 的 25%~75% 这一段**没人管**）。量鹿井 32 张时发现：问题恰恰出在中间调 ——
+    #   他的中间调 Δa*/Δb* = -0.37/+0.45（几乎中性），而我们中调 b* 比整张中位高 10 格以上
+    #   ⇒ 肤色落在这一段，观感就是"发黄发暖"。
+    #   靶字段 = `mid_abs`（相对整张中位的 a*/b*），没这个字段就恒等于 0（对别的预设零影响）。
+    _mid = (_tg or {}).get('mid_abs')
+    mma = mmb = 0.0
+    if _mid:
+        _p25m, _p75m = np.percentile(L, 25.0), np.percentile(L, 75.0)
+        _mm = (L >= _p25m) & (L <= _p75m)
+        if bool(_mm.any()):
+            mma = float(np.clip(float(_mid[0]) - (float(a[_mm].mean()) - am), -_lim, _lim))
+            mmb = float(np.clip(float(_mid[1]) - (float(b[_mm].mean()) - bm), -_lim, _lim))
+    w_mid = np.clip(1.0 - w_sh - w_hi, 0.0, 1.0)
+    da2 = sha * w_sh + hia * w_hi + dpa * w_deep + mma * w_mid
+    db2 = shb * w_sh + hib * w_hi + dpb * w_deep + mmb * w_mid
     a = a + da2
     b = b + db2
 
@@ -222,7 +236,9 @@ def apply(disp, cfg=C, stock=None):
     #   但乘的时候乘到了**所有**像素上 ⇒ 灰像素被多乘一次 ⇒ 整张彩度**虚涨 46%**、
     #   画面发飘发白（SV 一眼看出"脸崩了"）。
     #   ⇒ 改成**整张中位**归一 —— 这也正好跟靶的口径一致（靶 = 带内 C ÷ **整张** C 中位）。
-    _sat = float(getattr(cfg, 'GRADE_SAT', 1.0))
+    # ★ 09-24：**靶里可以带 `sat` 覆盖 config** —— 每条预设的"整体浓淡"不同
+    #   （鹿井那条要比其余 9 条素一档），一个全局 config 装不下这件事。
+    _sat = float((_tg or {}).get('sat') or getattr(cfg, 'GRADE_SAT', 1.0))
     _m0 = float(np.median(Cc))
     _m1 = float(np.median(newC))
     newC = newC * (_sat * _m0 / max(_m1, 1e-6)) if _m1 > 1e-6 else newC
