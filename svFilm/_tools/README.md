@@ -19,6 +19,10 @@ svFilm 的**卷**（`data/presets/*.json` 那 9 条，09-23 起）就是靠它�
 > ⚠ 换版本时 **`svFilm/svFilm/presets.py::_apply` 里的颗粒字段名要跟着换**
 > （0.3.2 = `agx_particle_*`、0.3.4 = `particle_*`）；写错**不报错**，颗粒会静默失效。
 > `selftest.t_presets` 有一条专门盯这个。
+>
+> ⚠ 0.3.2 的 `src/spektrafilm/data/license/` 下**没有** `SPEKTRAFILM_LICENSE.txt`（0.3.4 才加的）
+> ⇒ 换版本时那一条被删了。**许可是好的**：本目录根下的 `LICENSE`（GPL-3）、
+> `SPEKTRAFILM_LICENSE.txt`（profiles / LUT 的 CC BY-SA 4.0）与 `CITATION.cff` 都还在。
 
 **为什么直接带进仓库**：目标就是"拉一个仓库全下来"。少了它，真卷直接
 `ModuleNotFoundError`；让每个人自己去 clone 一遍上游并不省事。
