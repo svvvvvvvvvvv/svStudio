@@ -216,11 +216,36 @@ def apply(disp, cfg=C, stock=None):
     # 亮度偏移：只作用在有颜色的地方（灰区不动）
     L = np.clip(L + dl * live, 0.0, 100.0)
 
+    # ---------- L4 肤色保护（09-24 加：SV 说「増田的成片肤色很黄橙、观感不好」）----------
+    # 量出来真凶：**肤色相对亮度**（肤色中位 L − 整张中位 L）
+    #   増田真片 −4.5 · 滨田真片 −13.5 · 鹿井真片 −4.6
+    #   而我们跑 Portra400薄荷 时掉到 **−32**（那条预先把画面整体提亮到中位 58~75，
+    #   但**肤色没跟着提** ⇒ 画面亮、脸暗 ⇒ 看着"闷、土黄橙"）。
+    # ★ 这正是那几篇教程的头号原则：**肤色优先于环境**。
+    #   做法跟别处一致：量这张图当前值 → 往靶收 → 带上限。
+    _dl = _dc = 0.0        # ★ 先给默认值：**画面里没有肤色时**（`_w.max()` 太小）下面不会赋值，
+                           #   不初始化的话报告字典引用 `_dl` 直接 UnboundLocalError（自检抓到的）
+    if _tg and _tg.get('skin_l') is not None:
+        _lim_l = float(getattr(cfg, 'GRADE_SKIN_LIMIT_L', 12.0))
+        _lim_c = float(getattr(cfg, 'GRADE_SKIN_LIMIT_C', 0.35))
+        _w = _band_weight(H, 35.0, 26.0) * live        # 肤色软窗：约 9°~61°
+        if float(_w.max()) > 0.05:
+            _sel = _w > 0.5
+            _cur_l = float(np.median(L[_sel])) - float(np.median(L)) if _sel.any() else 0.0
+            _cur_c = float(np.median(np.sqrt(a[_sel] ** 2 + b[_sel] ** 2))) / max(
+                float(np.median(np.sqrt(a ** 2 + b ** 2))), 1e-6) if _sel.any() else 1.0
+            _dl = float(np.clip(float(_tg['skin_l']) - _cur_l, -_lim_l, _lim_l))
+            _dc = float(np.clip(float(_tg['skin_c']) / max(_cur_c, 1e-6) - 1.0, -_lim_c, _lim_c))
+            L = np.clip(L + _dl * _w, 0.0, 100.0)
+            _k = 1.0 + _dc * _w
+            a = a * _k
+            b = b * _k
+
     out = np.clip(color.from_lab(np.stack([L, a, b], -1)), 0.0, 1.0)
     info = dict(applied=True,
                 L50_in=Lm, L50_out=float(np.median(color.to_lab(out)[..., 0])),
                 a_med_in=am, b_med_in=bm,
                 d_sh=(float(sha), float(shb)), d_hi=(float(hia), float(hib)),
                 c_gain=[(c, (k + (_bg[i] if i < len(_bg) else 0.0))) for i, (c, _, k, _) in enumerate(BANDS)],
-                target=(sha, shb, hia, hib), stock=stock)
+                target=(sha, shb, hia, hib), stock=stock, skin_dL=_dl, skin_dC=_dc)
     return out, info
