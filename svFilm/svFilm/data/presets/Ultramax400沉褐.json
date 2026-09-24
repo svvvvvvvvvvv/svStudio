@@ -171,7 +171,7 @@
   "auto_exposure_method": "center_weighted",
   "print_paper": "kodak_portra_endura",
   "print_illuminant": "TH-KG3",
-  "print_exposure": 0.58,
+  "print_exposure": 0.55,
   "print_exposure_compensation": true,
   "print_y_filter_shift": 6,
   "print_m_filter_shift": -1.0,
