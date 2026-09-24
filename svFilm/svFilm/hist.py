@@ -227,10 +227,15 @@ def draw(disp=None, w=760, h=240, title=None, marks=None, curves=None, sat=None,
 
 
 def thumb(disp, w):
+    """缩略图 —— ★ **宽度撑满 w**（跟直方图同宽，SV 09-24 要求的），高度按原比例。
+
+    ⚠ 不要用 `thumbnail((w, w))` —— 那是"长边不超过 w"，竖图变窄、横图也变窄，
+      结果缩略图比直方图窄一圈，页面上左右不齐。
+    """
     a = (np.clip(np.asarray(disp, np.float64), 0.0, 1.0) * 255).astype(np.uint8)
     im = Image.fromarray(a)
-    im.thumbnail((w, w), Image.LANCZOS)
-    return im
+    h = max(1, int(round(im.height * w / max(im.width, 1))))
+    return im.resize((w, h), Image.LANCZOS)
 
 
 def panel(disp, w=760, title='', thumb_side=260, marks=None, bg=BG, curves=None, sat=None):
@@ -238,12 +243,12 @@ def panel(disp, w=760, title='', thumb_side=260, marks=None, bg=BG, curves=None,
 
     `curves` 给了就画它（不画缩略图），用来画"一组片的平均直方图"当参照。
     """
-    t = thumb(disp, thumb_side) if disp is not None else Image.new('RGB', (1, 0), bg)
+    t = thumb(disp, w) if disp is not None else Image.new('RGB', (1, 0), bg)
     hist = draw(disp, w=w, h=240, title=title, marks=marks, curves=curves, sat=sat)
     H = t.height + (10 if t.height else 0) + hist.height
     out = Image.new('RGB', (w, H), bg)
     if t.height:
-        out.paste(t, ((w - t.width) // 2, 0))
+        out.paste(t, (0, 0))                      # ★ 左对齐（宽已 = w，跟直方图同宽）
     out.paste(hist, (0, t.height + (10 if t.height else 0)))
     return out
 

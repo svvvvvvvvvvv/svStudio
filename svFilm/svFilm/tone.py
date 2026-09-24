@@ -274,7 +274,41 @@ TARGET_BLACK_FLOOR_L = 4.0
 #     那种片子得回**引擎**那一步（线性域、有高光余量）。
 TARGET_HI_SHAPE = 31.8
 HI_MAX_DOWN = 8.0          # 单张最多压多少（护栏）
-TARGET_HI_FLOOR_L = 78.0   # 亮部绝对下限：别把"白"压没了
+TARGET_HI_FLOOR_L = 78.0
+
+# ===========================================================================
+# 技术层体检（09-24 研究「直方图能不能驱动逐图处理」时加的）
+# ===========================================================================
+# ⚠⚠ **横轴是显示域 Y（0~255），不是 Lab 的 L\*** —— 这两个别混（我自己混过一次：
+#    在直方图上看到 Blacks 处的"峰"，以为是裁切/堆积，其实那在 Y≈20~40，离边还远）。
+# ★ 我们 919 那十张实测：**贴边占了 0.00%、堆积 0.00%** ⇒ 引擎的测光把两端控得很好。
+#   所以这套东西在我们这批**不触发**，它是**保险**（夜景 / 逆光 / 大光比会用到）。
+CLIP_LO_Y = 3        # 显示域 Y ≤ 这个值算"贴黑"（信息已经丢了）
+CLIP_HI_Y = 252
+PILE_LO_Y = 10       # 堆积：挤在这一头、离边还有一点但已经"糊住"
+PILE_HI_Y = 245
+PILE_TOL = 0.03      # 堆积超过画面的 3% 就算"这一头糊了"，要少压
+CLIP_TOL = 1e-4      # 贴边超过万分之一 ⇒ 这一头已经在丢信息
+
+
+def health(disp):
+    """技术层体检：两端**贴边（裁切）**与**堆积**的占比。
+
+    @returns {dict} dict(clip_lo, clip_hi, pile_lo, pile_hi, squeeze)
+      `squeeze` = 0~1 的"允许压缩系数"：哪一头已经在丢信息/糊住，就往 0 收，
+      影调层压黑位/压亮部时**要乘它** —— 别把已经到极限的那头继续推。
+    """
+    import numpy as _np
+    a = _np.clip(_np.asarray(disp, _np.float64), 0.0, 1.0)
+    y = (a[..., 0] * 0.2126 + a[..., 1] * 0.7152 + a[..., 2] * 0.0722) * 255.0
+    h = dict(clip_lo=float((y <= CLIP_LO_Y).mean()), clip_hi=float((y >= CLIP_HI_Y).mean()),
+             pile_lo=float((y <= PILE_LO_Y).mean()), pile_hi=float((y >= PILE_HI_Y).mean()))
+    k_lo = 1.0 if (h['clip_lo'] <= CLIP_TOL and h['pile_lo'] <= PILE_TOL) else max(
+        0.0, 1.0 - h['pile_lo'] / PILE_TOL * 0.6)
+    k_hi = 1.0 if (h['clip_hi'] <= CLIP_TOL and h['pile_hi'] <= PILE_TOL) else max(
+        0.0, 1.0 - h['pile_hi'] / PILE_TOL * 0.6)
+    h['squeeze'] = (k_lo, k_hi)
+    return h   # 亮部绝对下限：别把"白"压没了
 
 
 def rel_of(name, cfg=C):
@@ -292,7 +326,10 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
     @returns {(numpy.ndarray, dict)} 出图 + 报告（进去多少、出来多少，能自查）
     """
     st = rel_of(style, cfg)
-    lin = color.s2l(np.clip(np.asarray(disp, np.float64), 0.0, 1.0))
+    disp = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
+    hh = health(disp)                       # ★ 技术层体检：哪一头已经在丢信息
+    k_lo, k_hi = hh['squeeze']
+    lin = color.s2l(disp)
     Y, p = measure(lin)
     y5, y50, y95 = (max(p[5.0], _EPS), max(p[50.0], _EPS), max(p[95.0], _EPS))
 
@@ -306,7 +343,7 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
     _bl = float(np.clip(min(float(st['bl_down']), _need), -30.0, 30.0))
     # 绝对黑位下限：别压穿（中位低的片子按形状算会到负数 ⇒ 死黑）
     _bl = min(_bl, _L5 - float(getattr(cfg, 'TARGET_BLACK_FLOOR_L', 4.0)))
-    _bl = max(_bl, -30.0)
+    _bl = max(_bl * k_lo, -30.0)          # ★ 乘挤压系数：暗部糊住了就别再压
     Tb = float(np.clip(color.lin_of_L(_L5 - _bl), _EPS, None))
     Tm = float(np.clip(color.lin_of_L(float(color.L_of_lin(y50))) * (2.0 ** -float(st['ev_down'])),
                        _EPS, None))
@@ -314,7 +351,7 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
     _need_hi = max(0.0, (_L95 - _L50) - TARGET_HI_SHAPE)
     _hi = float(np.clip(min(float(st['hi_down']) + _need_hi, HI_MAX_DOWN), 0.0, 30.0))
     _hi = min(_hi, _L95 - float(getattr(cfg, 'TARGET_HI_FLOOR_L', 78.0)))
-    _hi = max(_hi, 0.0)
+    _hi = max(_hi * k_hi, 0.0)             # ★ 同理：亮部糊住了就别再压
     Tw = float(np.clip(color.lin_of_L(_L95 - _hi), _EPS, None))
     # 单调钳：靶必须 黑 < 中 < 白（留 2% 余量）
     Tb = min(Tb, Tm * 0.98)
@@ -329,6 +366,9 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
         bl_down=float(st['bl_down']), bl_applied=float(_bl),
         bl_need=float(_need), bl_shape_in=float(_L5 - _L50),
         hi_applied=float(_hi), hi_need=float(_need_hi), hi_shape_in=float(_L95 - _L50),
+        clip_lo=hh['clip_lo'], clip_hi=hh['clip_hi'],
+        pile_lo=hh['pile_lo'], pile_hi=hh['pile_hi'],
+        squeeze=(float(k_lo), float(k_hi)),
         L5_in=float(color.L_of_lin(y5)), L50_in=float(color.L_of_lin(y50)),
         L95_in=float(color.L_of_lin(y95)),
         L5_out=float(color.L_of_lin(Tb)), L50_out=float(color.L_of_lin(Tm)),

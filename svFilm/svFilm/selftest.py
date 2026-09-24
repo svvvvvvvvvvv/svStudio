@@ -71,6 +71,7 @@ def _main():
         ('曝光风格：脸锚点只做有限幅修正', t_tone_bias),
         ('二次调色：分色 + 混色（L2/L3）', t_grade),
         ('直方图（LR 画法：亮度 + RGB 叠加 + 5 个区）', t_hist),
+        ('技术层：贴边 / 堆积 / 挤压系数', t_tech),
         ('契约：曝光在胶片之前 + 名字不认得要报错', t_contract),
         ('段缓存：同参数命中、换风格不命中', t_cache),
         ('服务：路由只剩该有的那几条', t_routes),
@@ -373,6 +374,48 @@ def t_hist():
 
     # ④ 命令行入口别断（`python -m svFilm.hist` 以后要常用）
     check('命令行入口在（`python -m svFilm.hist`）', callable(hist._main))
+
+
+def t_tech():
+    """技术层体检（`tone.health`）：贴边 / 堆积 / 挤压系数。
+
+    ⚠⚠ 横轴是**显示域 Y（0~255）**，不是 Lab 的 L\* —— 我自己混过一次：
+      在直方图上看到 Blacks 处的"峰"以为是裁切，其实那在 Y≈20~40。
+    """
+    from . import tone
+
+    # ① 正常片：三样都 0、挤压系数 1（不干预）
+    ok = np.random.RandomState(0).rand(64, 64, 3) * 0.7 + 0.15
+    h = tone.health(ok)
+    check('正常片 ⇒ 贴边/堆积都是 0、挤压系数 1.0（不干预）',
+          h['clip_lo'] == 0 and h['clip_hi'] == 0 and h['pile_lo'] < 0.01
+          and h['squeeze'] == (1.0, 1.0),
+          '贴 %.4f/%.4f 堆 %.4f/%.4f' % (h['clip_lo'], h['clip_hi'], h['pile_lo'], h['pile_hi']))
+
+    # ② 暗部全黑 ⇒ 暗侧挤压系数掉到 0（**停止继续压黑位**）
+    dark = ok.copy(); dark[:20] = 0.0
+    h = tone.health(dark)
+    check('★ 暗部全黑 31% ⇒ 暗侧挤压系数掉到 0（停止再压黑位）',
+          h['clip_lo'] > 0.3 and h['squeeze'][0] == 0.0,
+          '贴黑 %.1f%%  系数 %.2f' % (h['clip_lo'] * 100, h['squeeze'][0]))
+
+    # ③ 高光全白 ⇒ 亮侧挤压系数掉到 0
+    bright = ok.copy(); bright[:13] = 1.0
+    h = tone.health(bright)
+    check('★ 高光全白 20% ⇒ 亮侧挤压系数掉到 0（停止再压亮部）',
+          h['clip_hi'] > 0.15 and h['squeeze'][1] == 0.0,
+          '贴白 %.1f%%  系数 %.2f' % (h['clip_hi'] * 100, h['squeeze'][1]))
+
+    # ④ 体检真的**接到了**影调层（挤到 0 ⇒ 这一侧一个像素都不动）
+    d1 = _gray_img(seed=41)
+    r1 = tone.settle_finished(d1, '中性调', C)[1]
+    d2 = d1.copy(); d2[: d2.shape[0] // 3] = 0.0          # 上面 1/3 涂黑
+    r2 = tone.settle_finished(d2, '中性调', C)[1]
+    check('★★ 挤到 0 ⇒ 黑位这一侧真的不动了（护栏真的接上了）',
+          r2['clip_lo'] > 0.2 and abs(r2['bl_applied']) < 1e-9,
+          '贴黑 %.1f%%  实际压黑位 %.3f（正常片是 %.3f）'
+          % (r2['clip_lo'] * 100, r2['bl_applied'], r1['bl_applied']),
+          '体检没接到影调层 ⇒ 暗部已经糊住的片子会被继续压')
 
 
 def t_grade():
