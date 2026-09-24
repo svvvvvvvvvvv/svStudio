@@ -206,9 +206,13 @@ def apply(disp, cfg=C, stock=None):
     #   （分母被压小了）⇒ 看数会得出完全反的结论。
     #   归一之后，"哪几个带变艳/变素"才是真的。
     #   `GRADE_SAT` 是**另一个**旋钮：整体更素/更艳（默认 1.0 = 总量不动）。
+    # ⚠⚠ 09-24 修了一个我自己引入的 bug：原来 `_m0/_m1` 取的是**彩色像素（live>0.5）的中位**，
+    #   但乘的时候乘到了**所有**像素上 ⇒ 灰像素被多乘一次 ⇒ 整张彩度**虚涨 46%**、
+    #   画面发飘发白（SV 一眼看出"脸崩了"）。
+    #   ⇒ 改成**整张中位**归一 —— 这也正好跟靶的口径一致（靶 = 带内 C ÷ **整张** C 中位）。
     _sat = float(getattr(cfg, 'GRADE_SAT', 1.0))
-    _m0 = float(np.median(Cc[live > 0.5])) if (live > 0.5).any() else float(np.median(Cc))
-    _m1 = float(np.median(newC[live > 0.5])) if (live > 0.5).any() else float(np.median(newC))
+    _m0 = float(np.median(Cc))
+    _m1 = float(np.median(newC))
     newC = newC * (_sat * _m0 / max(_m1, 1e-6)) if _m1 > 1e-6 else newC
     a = a * (newC / nz)
     b = b * (newC / nz)

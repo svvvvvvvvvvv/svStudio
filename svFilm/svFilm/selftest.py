@@ -493,6 +493,24 @@ def t_grade():
           '离靶 %.2f → %.2f   （当前 a* %+.2f→%+.2f  b* %+.2f→%+.2f）'
           % (_d0, _d1, a0, a1, b0, b1),
           '越来越远 ⇒ 补的符号反了，或者 target 取错了')
+    # ★★★ 彩度守恒（09-24 这个 bug 的回归护栏）：`GRADE_SAT = 1.0` 时
+    #   分色混色**不许改变整张的彩度中位** —— 它只该"重新分配"。
+    #   ⚠ 原来归一系数取的是**彩色像素**的中位、却乘到**所有**像素上 ⇒ 灰像素被多乘一次
+    #     ⇒ 整张彩度虚涨 46%、画面发飘（SV 一眼看出脸崩了）。
+    #   ⚠ 不能用灰图测（灰图 C=0，比值没意义）⇒ 造一张**有颜色**的确定性测试图
+    _rng = np.random.RandomState(51)
+    _c = np.stack([_rng.rand(96, 96) * 0.55 + 0.22 for _ in range(3)], -1)
+    _c[..., 1] = np.clip(_c[..., 1] * 1.05, 0, 1)      # 偏彩（不是灰）
+    _lab0 = color.to_lab(_c)
+    _c1, _ = grade.apply(_c, C)
+    _lab1 = color.to_lab(np.ascontiguousarray(_c1))
+    _m0 = float(np.median(np.sqrt(_lab0[..., 1] ** 2 + _lab0[..., 2] ** 2)))
+    _m1 = float(np.median(np.sqrt(_lab1[..., 1] ** 2 + _lab1[..., 2] ** 2)))
+    check('★★★ 分色混色**不许改整张彩度中位**（GRADE_SAT=1 ⇒ 只重新分配）',
+          abs(_m1 / max(_m0, 1e-6) - 1.0) < 0.08,
+          '整张彩度中位 %.2f → %.2f（%+.1f%%）' % (_m0, _m1, 100 * (_m1 / max(_m0, 1e-6) - 1)),
+          '涨太多 ⇒ 归一的系数算错了基准（别拿彩色子集的中位去乘所有像素）')
+
     check('报告里带着"动了多少"（能自查，不用读图）',
           bool(info.get('applied')) and 'd_sh' in info and 'c_gain' in info)
 
