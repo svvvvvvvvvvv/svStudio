@@ -333,8 +333,6 @@ def settle_finished(disp, style=DEFAULT, cfg=C, stock=None):
         _tg = _T.for_stock(stock)
     except Exception:                                          # noqa: BLE001
         _tg = None
-    _blk_t = float(_tg['black_shape']) if _tg else TARGET_BLACK_SHAPE
-    _hi_t = float(_tg['hi_shape']) if _tg else TARGET_HI_SHAPE
     disp = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
     hh = health(disp)                       # ★ 技术层体检：哪一头已经在丢信息
     k_lo, k_hi = hh['squeeze']
@@ -348,6 +346,27 @@ def settle_finished(disp, style=DEFAULT, cfg=C, stock=None):
     #   已经在带内或更深的**一个像素都不动**。理由见 `TARGET_BLACK_SHAPE`。
     _L5, _L50, _L95 = (float(color.L_of_lin(y5)), float(color.L_of_lin(y50)),
                        float(color.L_of_lin(y95)))
+    # ★★ 形状靶的口径（09-24）：
+    #   旧口径 `black_shape` / `hi_shape` 是**相对中位**的两个数 ⇒ 跟落点绑死，
+    #   落点一动它们就反向跑（暗调片亮形状 55、亮调片 26，同一个靶 ⇒ 一端压死一端不动），
+    #   这就是"修一个冒一个"的数学原因。
+    #   新口径 = **跨度（L95−L5）**：对同一个作者**恒定**（鹿井 514 张三组都是 82.6）。
+    #   靶只给跨度，两端的形状按**这张片子自己的落点位置** `m` 推出来：
+    #       m        = (L50−L5)/跨度        （中位落在跨度的哪个位置）
+    #       黑形状靶 = −m       × 跨度靶
+    #       亮形状靶 = (1−m)    × 跨度靶      （两者相减正好 = 跨度 ✔）
+    #   ⇒ 落点（曝光）归曝光，曲线形状归跨度，两件事不再互相打架。
+    _span_t = _tg.get('span') if _tg else None
+    _span_used = None
+    if _span_t is not None and _tg.get('black_shape') is not None:
+        _span_in = _L95 - _L5
+        _m = float(np.clip((_L50 - _L5) / max(_span_in, 1e-6), 0.05, 0.95))
+        _blk_t = -_m * float(_span_t)
+        _hi_t = (1.0 - _m) * float(_span_t)
+        _span_used = float(_span_t)
+    else:
+        _blk_t = float(_tg['black_shape']) if _tg else TARGET_BLACK_SHAPE
+        _hi_t = float(_tg['hi_shape']) if _tg else TARGET_HI_SHAPE
     _need = max(0.0, (_L5 - _L50) - _blk_t)                 # >0 = 离靶还差这么多
     _bl = float(np.clip(min(float(st['bl_down']), _need), -30.0, 30.0))
     # 绝对黑位下限：别压穿（中位低的片子按形状算会到负数 ⇒ 死黑）
@@ -375,6 +394,8 @@ def settle_finished(disp, style=DEFAULT, cfg=C, stock=None):
         bl_down=float(st['bl_down']), bl_applied=float(_bl),
         bl_need=float(_need), bl_shape_in=float(_L5 - _L50),
         hi_applied=float(_hi), hi_need=float(_need_hi), hi_shape_in=float(_L95 - _L50),
+        span_t=(None if _span_used is None else float(_span_used)),
+        span_in=float(_L95 - _L5),
         clip_lo=hh['clip_lo'], clip_hi=hh['clip_hi'],
         pile_lo=hh['pile_lo'], pile_hi=hh['pile_hi'],
         squeeze=(float(k_lo), float(k_hi)), target=(_blk_t, _hi_t), stock=stock,

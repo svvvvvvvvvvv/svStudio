@@ -102,7 +102,17 @@ def _main():
 
 def t_presets():
     ns = presets.names()
-    check('9 条胶片风格都在（不是只写了几个名字）', len(ns) == 9, '、'.join(ns))
+    # ⚠ 别写死条数 —— 加一条预设就要改一次，那是「拿 A 比 A」的假检查。
+    #   改成钉**外部真值**：原来那 9 条的名字必须都还在（一条都不能被改名/弄丢），
+    #   外加鹿井那条（Ultramax400沉褐）也必须在。条数只当信息，不当断言。
+    _BASE = ('C200过曝', 'C200透明', 'C200青蓝', 'Ektar100浓彩', 'Portra400淡雅',
+             'Portra400空气感', 'Portra400薄荷', 'Pro400H清风', 'Pro400H马卡龙')
+    _gone = [n for n in _BASE if n not in ns]
+    check('原来那 9 条一条都不少（不是只写了几个名字）', not _gone,
+          '共 %d 条；丢了的: %s' % (len(ns), _gone or '无'),
+          '这条钉的是名字，不是条数 ⇒ 以后加预设不用改它')
+    check('鹿井那条预设在（Ultramax400沉褐）', 'Ultramax400沉褐' in ns, '、'.join(ns),
+          '这条是照他主页 514 张对齐的那条')
 
     miss = [n for n in ns if not presets.has(n)]
     check('每条的 JSON 都真在磁盘上', not miss, '缺: %s' % miss,
