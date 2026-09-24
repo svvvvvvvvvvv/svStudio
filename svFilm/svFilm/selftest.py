@@ -70,6 +70,7 @@ def _main():
         ('曝光风格：曲线单调 + 极端图不崩', t_tone_sane),
         ('曝光风格：脸锚点只做有限幅修正', t_tone_bias),
         ('二次调色：分色 + 混色（L2/L3）', t_grade),
+        ('直方图（LR 画法：亮度 + RGB 叠加 + 5 个区）', t_hist),
         ('契约：曝光在胶片之前 + 名字不认得要报错', t_contract),
         ('段缓存：同参数命中、换风格不命中', t_cache),
         ('服务：路由只剩该有的那几条', t_routes),
@@ -321,6 +322,45 @@ def t_tone_bias():
 # ---------------------------------------------------------------------------
 # 3. 契约
 # ---------------------------------------------------------------------------
+
+
+
+def t_hist():
+    """直方图工具（`hist.py`）：LR 那四条曲线 + 5 个区 + 裁切三角。
+
+    ⚠ 这一组是给"以后**看直方图不看数字**"兜底的 —— 图要是画错了，
+      SV 会照着一张错的图做判断，比数字错还危险。
+    """
+    from . import hist
+
+    # ① 四条曲线：长度 256、0~1、无 NaN
+    c, sh_c, hi_c = hist.channels(_gray_img(seed=31))
+    check('★ 四条直方图曲线（亮度 + R/G/B）：各 256 bin、落在 0~1、无 NaN',
+          len(c) == 4 and all(len(x) == 256 for x in c)
+          and all(np.all(np.isfinite(x)) and x.min() >= 0.0 and x.max() <= 1.0 + 1e-9 for x in c),
+          '亮度最大 %.2f' % float(np.max(c[0])))
+    check('亮度那条跟 RGB 三条不是同一条（真算了，不是复制）',
+          float(np.max(np.abs(c[0] - c[1]))) > 0.01)
+
+    # ② 裁切：全黑 ⇒ 阴影裁切亮；全白 ⇒ 高光裁切亮；中间灰 ⇒ 都不亮
+    _, a_bk, b_bk = hist.channels(np.zeros((32, 32, 3)))
+    _, a_wh, b_wh = hist.channels(np.ones((32, 32, 3)))
+    _, a_gy, b_gy = hist.channels(np.full((32, 32, 3), 0.5))
+    check('★ 全黑 ⇒ 阴影裁切三角要亮（LR 里那个左上的蓝三角）', a_bk > 0.9, '%.3f' % a_bk)
+    check('★ 全白 ⇒ 高光裁切三角要亮（右上的红三角）', b_wh > 0.9, '%.3f' % b_wh)
+    check('中间灰 ⇒ 两个三角都不亮', a_gy < 5e-4 and b_gy < 5e-4,
+          '%.4f / %.4f' % (a_gy, b_gy))
+
+    # ③ 出图：尺寸对、别炸
+    im = hist.draw(_gray_img(seed=33), w=400, h=160, title='自检')
+    check('画得出来、尺寸对', im.size == (400, 160), str(im.size))
+    pn = hist.panel(_gray_img(seed=35), w=400, title='自检')
+    check('缩略图 + 直方图 一体也画得出来', pn.size[0] == 400 and pn.size[1] > 160, str(pn.size))
+    st = hist.stack([(None, '参照', c, (sh_c, hi_c))], w=400)
+    check('★ 只喂曲线（画"一组片的平均直方图"）也画得出来', st.size == (400, 240), str(st.size))
+
+    # ④ 命令行入口别断（`python -m svFilm.hist` 以后要常用）
+    check('命令行入口在（`python -m svFilm.hist`）', callable(hist._main))
 
 
 def t_grade():
