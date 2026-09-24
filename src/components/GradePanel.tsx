@@ -10,12 +10,14 @@ const STOCK_COLORS: Record<string, { a: string; b: string; t: string }> = {
   Portra400薄荷: { a: '#e8a87c', b: '#c9764a', t: 'P400 薄荷' },
   Pro400H马卡龙: { a: '#a8c8b8', b: '#5f8f7a', t: '400H 马卡龙' },
   Portra400淡雅: { a: '#e6c39a', b: '#c09a6a', t: 'P400 淡雅' },
+  Portra400沉褐: { a: '#c9a284', b: '#8a5f3f', t: 'P400 沉褐' },
   Pro400H清风: { a: '#9ec9c0', b: '#5d9a90', t: '400H 清风' },
   C200过曝: { a: '#8fc9a8', b: '#4f9c74', t: 'C200 过曝' },
   Portra400空气感: { a: '#dfc3a8', b: '#b8946f', t: 'P400 空气感' },
   Ektar100浓彩: { a: '#d98878', b: '#b04a42', t: 'Ektar 浓彩' },
   C200青蓝: { a: '#8fb4c9', b: '#4f7a9c', t: 'C200 青蓝' },
   C200透明: { a: '#a8cfc9', b: '#6a9a94', t: 'C200 透明' },
+  C200沉褐: { a: '#c9a88f', b: '#8a6244', t: 'C200 沉褐' },
 };
 
 /* 胶卷图形的三条路径（SV 提供的 jiaopian.svg） */
