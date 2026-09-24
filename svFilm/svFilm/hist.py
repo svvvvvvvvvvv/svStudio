@@ -45,13 +45,23 @@ ZONES = (
     ('Whites', 0.80, 1.00),
 )
 
-BG = (26, 26, 28)          # 面板底色（深）
-GRID = (58, 58, 62)        # 分区虚线
-TXT = (196, 196, 204)      # 轴标签
-TXT_HI = (215, 215, 222)   # 高亮标签
-TRI_OFF = (70, 70, 74)     # 裁切三角（未触发）
+# ---- 配色：**照 SV 09-23 发来的那几张 Apple「照片」/ LR 直方图采样出来的** ----
+# （09-24 他明确要求"对齐那个效果"，所以默认画法改成：浅灰实心填充＝亮度，
+#   R/G/B 三条**彩色描边线**叠在上面 —— 不是加色填充。加色那版留成 `style='add'`。）
+BG_OUT = (41, 41, 41)      # 最外面
+BG = (56, 56, 56)          # 直方图面板底（= `bg`）
+LUMA = (190, 190, 190)     # 亮度层：**浅灰实心填充**（参照图里它就是最亮的那块）
+CH_R = (188, 58, 58)       # 采样自参照图 (184,37,37) ~ (178,47,47)
+CH_G = (78, 122, 66)       # 采样自 (81,123,68)
+CH_B = (32, 92, 168)       # 采样自 (26,88,164)
+GRID = (74, 74, 74)        # 分区线（极淡，别抢戏）
+TXT = (170, 170, 176)      # 轴标签
+TXT_HI = (222, 222, 228)
+TRI_OFF = (86, 86, 90)     # 裁切三角（未触发）
 TRI_SH = (90, 165, 255)    # 阴影裁切 = 蓝
 TRI_HI = (255, 90, 80)     # 高光裁切 = 红
+LINE_W = 3                 # 彩色描边线宽（参照图按比例约这么多）
+SMOOTH = 5                 # 彩色描边线的平滑窗口（只为好看，灰填充不动）
 
 _FONT_PATHS = (r'C:\Windows\Fonts\msyh.ttc', r'C:\Windows\Fonts\msyhbd.ttc',
                r'C:\Windows\Fonts\simhei.ttf', r'C:\Windows\Fonts\arial.ttf')
@@ -96,64 +106,85 @@ def channels(disp):
     return hs, sh_c, hi_c
 
 
-def draw(disp=None, w=760, h=240, title=None, marks=None, curves=None, sat=None):
-    """画一张 LR 风格直方图。
+def draw(disp=None, w=760, h=240, title=None, marks=None, curves=None, sat=None,
+         style='lr', line_w=None, zones=True):
+    """画一张直方图。
 
-    `marks` = [(x01, 标签)] 可选，用来标出"某个分位落在哪"（比如黑位/中位/亮部）。
+    `style`：`'lr'`（默认，对齐 SV 参照图：浅灰实心亮度 + R/G/B 描边线）
+             `'add'`（加色填充那版：三通道各自填充后相加，LR 老版那种）
+    `marks` = [(x01, 标签)] 可选，标出"某个分位落在哪"。
+    `zones` = 要不要画 5 个区的刻度与名字。
     """
     if curves is not None:
         hs = list(curves)
         sh_c, hi_c = (sat or (0.0, 0.0))
     else:
         hs, sh_c, hi_c = channels(disp)
-    PAD_L, PAD_R, PAD_T, PAD_B = 8, 8, 30 if title else 10, 30
+    PAD_L, PAD_R = 14, 14
+    PAD_T = 30 if title else 10
+    PAD_B = 30 if zones else 12
     gw, gh = w - PAD_L - PAD_R, h - PAD_T - PAD_B
+    lw = int(line_w or LINE_W)
 
-    # ---- 四条直方图：逐通道填充后**相加**（加色混合，跟 LR 一样）----
-    acc = np.zeros((gh, gw, 3), np.float64)
-    xs = np.clip((np.arange(gw) / max(gw - 1, 1) * 255.0).round().astype(np.int32), 0, 255)
-    for ci, c in enumerate(hs):                     # 0=亮度 1=R 2=G 3=B
-        col = c[xs] * gh
-        band = (np.arange(gh)[:, None] < col[None, :]).astype(np.float64)
-        if ci == 0:
-            # 亮度那层画成灰（LR 里它是最底下那层灰）
-            acc += band[..., None] * np.array([0.34, 0.34, 0.36])
-        else:
-            tint = np.zeros(3); tint[ci - 1] = 1.0
-            acc += band[..., None] * tint
-    img = np.zeros((h, w, 3), np.float64)
-    img[:] = BG
-    img[PAD_T:PAD_T + gh, PAD_L:PAD_L + gw] = np.clip(acc, 0.0, 1.0) * 255.0
-
-    im = Image.fromarray(img.astype(np.uint8))
-    dr = ImageDraw.Draw(im)
+    img = np.zeros((h, w, 3), np.float64); img[:] = BG
+    im = Image.fromarray(img.astype(np.uint8)); dr = ImageDraw.Draw(im)
     f9, f10 = _font(13), _font(14)
 
-    # ---- 分区虚线（5 个区的边界）----
-    for _nm, a0, _a1 in ZONES[1:]:
-        x = PAD_L + a0 * gw
-        for yy in range(PAD_T, PAD_T + gh, 6):
-            dr.line([(x, yy), (x, yy + 3)], fill=GRID, width=1)
-    dr.rectangle([PAD_L, PAD_T, PAD_L + gw - 1, PAD_T + gh - 1], outline=(70, 70, 74))
+    xs = np.clip((np.arange(gw) / max(gw - 1, 1) * 255.0).round().astype(np.int32), 0, 255)
 
-    # ---- 底部 5 个区的标签（LR 是把区名显示在下面）----
-    for nm, a0, a1 in ZONES:
-        cx = PAD_L + (a0 + a1) / 2 * gw
-        dr.text((cx, PAD_T + gh + 8), nm, font=f9, fill=TXT, anchor='mm')
+    # ---- 外框（参照图里直方图有一圈更深的底）----
+    dr.rectangle([PAD_L - 2, PAD_T - 2, PAD_L + gw + 1, PAD_T + gh + 1], fill=BG_OUT)
 
-    # ---- 两端裁切三角（画在直方图区**内部**的左上/右上，跟 LR 一个位置）----
+    if style == 'add':
+        acc = np.zeros((gh, gw, 3), np.float64)
+        for ci, c in enumerate(hs):
+            band = (np.arange(gh)[:, None] < (c[xs] * gh)[None, :]).astype(np.float64)
+            if ci == 0:
+                acc += band[..., None] * np.array([0.34, 0.34, 0.36])
+            else:
+                tint = np.zeros(3); tint[ci - 1] = 1.0
+                acc += band[..., None] * tint
+        img[PAD_T:PAD_T + gh, PAD_L:PAD_L + gw] = np.clip(acc, 0.0, 1.0) * 255.0
+        im = Image.fromarray(img.astype(np.uint8)); dr = ImageDraw.Draw(im)
+    else:
+        # ★ 对齐参照图：亮度层 = **浅灰实心填充**（在最底下、最亮）
+        y0 = PAD_T + gh - 1
+        for x in range(gw):
+            top = PAD_T + gh - int(round(float(hs[0][xs[x]]) * gh))
+            dr.line([(PAD_L + x, top), (PAD_L + x, y0)], fill=LUMA)
+        # ★ R/G/B = **三条彩色描边线**（叠在灰填充之上，不填充）
+        #   ⚠ 彩色线**要平滑**：只有 256 个 bin 而画布 ~740px ⇒ 不平滑就是满屏台阶。
+        #     参照图里那三条线也是平滑的（灰填充反而保留尖刺）—— 所以只平滑彩色线。
+        for ci, col in ((1, CH_R), (2, CH_G), (3, CH_B)):
+            v = np.asarray(hs[ci], np.float64)[xs]
+            if SMOOTH > 1:
+                k = np.ones(SMOOTH) / SMOOTH
+                v = np.convolve(np.pad(v, SMOOTH // 2, mode='edge'), k, mode='valid')[:gw]
+            pts = [(PAD_L + x, PAD_T + gh - float(v[x]) * gh) for x in range(gw)]
+            dr.line(pts, fill=col, width=lw, joint='curve')
+
+    # ---- 5 个区的刻度 + 名字（参照图没有，但 SV 要"黑色阴影高光白色"这套；做淡）----
+    if zones:
+        for _nm, a0, _a1 in ZONES[1:]:
+            x = PAD_L + a0 * gw
+            for yy in range(PAD_T + gh - 5, PAD_T + gh):
+                dr.line([(x, yy), (x, yy)], fill=GRID, width=1)
+        for nm, a0, a1 in ZONES:
+            cx = PAD_L + (a0 + a1) / 2 * gw
+            dr.text((cx, PAD_T + gh + 8), nm, font=f9, fill=TXT, anchor='mm')
+
+    # ---- 两端裁切三角（放在**直方图区的左上 / 右上**，跟 LR 一个位置）----
     for left, cnt, col, nm in ((True, sh_c, TRI_SH, '阴影裁'), (False, hi_c, TRI_HI, '高光裁')):
-        k = 16
-        x0 = PAD_L + 1 if left else PAD_L + gw - 1
+        k = 18
+        x0 = PAD_L if left else PAD_L + gw - 1
         dx = k if left else -k
-        tri = col if cnt > 5e-4 else TRI_OFF
-        dr.polygon([(x0, PAD_T + 1), (x0 + dx, PAD_T + 1), (x0, PAD_T + 1 + k)], fill=tri)
+        dr.polygon([(x0, PAD_T), (x0 + dx, PAD_T), (x0, PAD_T + k)],
+                   fill=(col if cnt > 5e-4 else TRI_OFF))
         if cnt > 5e-4:
-            dr.text((x0 + (k + 4 if left else -(k + 4)), PAD_T + 5),
+            dr.text((x0 + (k + 5 if left else -(k + 5)), PAD_T + 3),
                     '%s%.2f%%' % (nm, cnt * 100), font=f9, fill=col,
                     anchor='la' if left else 'ra')
 
-    # ---- 标题 + 可选标记 ----
     if title:
         dr.text((PAD_L + 2, 6), title, font=f10, fill=TXT_HI, anchor='la')
     for x01, lab in (marks or []):
