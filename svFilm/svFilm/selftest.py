@@ -73,6 +73,7 @@ def _main():
         ('直方图（LR 画法：亮度 + RGB 叠加 + 5 个区）', t_hist),
         ('技术层：贴边 / 堆积 / 挤压系数', t_tech),
         ('靶按预设分组', t_targets),
+        ('肤色层：真脸掩膜 / 空窗口 / 三件事', t_skin),
         ('契约：曝光在胶片之前 + 名字不认得要报错', t_contract),
         ('段缓存：同参数命中、换风格不命中', t_cache),
         ('服务：路由只剩该有的那几条', t_routes),
@@ -375,6 +376,39 @@ def t_hist():
 
     # ④ 命令行入口别断（`python -m svFilm.hist` 以后要常用）
     check('命令行入口在（`python -m svFilm.hist`）', callable(hist._main))
+
+
+def t_skin():
+    """L4 肤色层（09-24 重做）：真脸掩膜 · 空窗口不写 nan · 三件事都认靶。
+
+    ⚠⚠ 教训：原来用**色相窗**定位肤色 —— 实测那个窗里**只有 10.5% 是真皮肤**
+      （其余是墙/木头/黄叶）⇒ 提亮的是背景。现在用 `face.py` 的人脸皮肤掩膜。
+    """
+    from . import targets
+    from . import grade
+
+    # ① 模板里三个肤色靶都在（相对亮度 / 相对彩度 / **色相角**）
+    for nm in ('Pro400H清风', 'Portra400薄荷'):
+        t = targets.for_stock(nm)
+        check('%s 的肤色靶齐三件（亮度/彩度/色相角）' % nm,
+              t.get('skin_l') is not None and t.get('skin_c') is not None
+              and t.get('skin_hue') is not None,
+              '亮度 %+.1f · 彩度 %.2f · 色相角 %.1f°'
+              % (t['skin_l'], t['skin_c'], t['skin_hue']))
+
+    # ② 关键：**没有脸 / 空窗口**时不许写出 nan（空 median 会算出 nan 污染整张）
+    for tag, img in (('纯灰图（检不出脸）', np.full((64, 64, 3), 0.5)),
+                     ('纯色块', np.zeros((48, 48, 3)))):
+        o, gi = grade.apply(np.asarray(img, np.float64), C)
+        check('★ 没有脸的图：输出无 nan / Inf（空窗口不许污染整张）[%s]' % tag,
+              bool(np.all(np.isfinite(o))),
+              '补 亮度%s 色相%s' % (gi.get('skin_dL'), gi.get('skin_dH')),
+              '空窗口时 np.median([]) = nan ⇒ 整张变 nan。必须先判 `_sel.any()`')
+
+    # ③ 报告里带上"用的哪种掩膜"（自查不用猜）
+    o, gi = grade.apply(np.asarray(_gray_img(seed=61), np.float64), C)
+    check('报告里带 skin_mask（真脸 / 色相窗回退）',
+          gi.get('skin_mask') in ('face', 'hue', 'none'), str(gi.get('skin_mask')))
 
 
 def t_targets():

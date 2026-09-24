@@ -220,36 +220,72 @@ def apply(disp, cfg=C, stock=None):
     # 亮度偏移：只作用在有颜色的地方（灰区不动）
     L = np.clip(L + dl * live, 0.0, 100.0)
 
-    # ---------- L4 肤色保护（09-24 加：SV 说「増田的成片肤色很黄橙、观感不好」）----------
-    # 量出来真凶：**肤色相对亮度**（肤色中位 L − 整张中位 L）
-    #   増田真片 −4.5 · 滨田真片 −13.5 · 鹿井真片 −4.6
-    #   而我们跑 Portra400薄荷 时掉到 **−32**（那条预先把画面整体提亮到中位 58~75，
-    #   但**肤色没跟着提** ⇒ 画面亮、脸暗 ⇒ 看着"闷、土黄橙"）。
-    # ★ 这正是那几篇教程的头号原则：**肤色优先于环境**。
-    #   做法跟别处一致：量这张图当前值 → 往靶收 → 带上限。
-    _dl = _dc = 0.0        # ★ 先给默认值：**画面里没有肤色时**（`_w.max()` 太小）下面不会赋值，
-                           #   不初始化的话报告字典引用 `_dl` 直接 UnboundLocalError（自检抓到的）
+    # ===================== L4 肤色（09-24 重做） =====================
+    # ★★★ 为什么重做：原来用**色相窗（9~61°）**定位肤色 —— 实测它覆盖的像素里
+    #   **只有 10.5% 是真皮肤**，其余 89.5% 是墙/木头/黄叶
+    #   ⇒ 调的不是脸、是把背景提亮了（"脸崩了"就是这个来的）。
+    #   ⇒ 现在用**人脸皮肤掩膜**（`face.py`，MediaPipe，跟 Sony / rodrigorcz 两家同源）。
+    # ★ 三件事都往靶收（不是只调亮度）：相对亮度 · 相对彩度 · **色相角**
+    #   （量出来我们跟増田的差是「色相角偏黄 5.7°」+「彩度偏素 0.96」，光调亮度救不了）
+    # ★ 脸 / 身体分开：脸严格、身体宽一点（都有掩膜）
+    # ★ 提亮量大的时候对肤色区做一次**双边滤波**（rodrigorcz 那篇的做法，治提亮后的色阶断裂）
+    _dl = _dc = _dh = 0.0
+    _mask_src = 'none'
     if _tg and _tg.get('skin_l') is not None:
-        _lim_l = float(getattr(cfg, 'GRADE_SKIN_LIMIT_L', 12.0))
-        _lim_c = float(getattr(cfg, 'GRADE_SKIN_LIMIT_C', 0.35))
-        _w = _band_weight(H, 35.0, 26.0) * live        # 肤色软窗：约 9°~61°
-        if float(_w.max()) > 0.05:
-            _sel = _w > 0.5
-            _cur_l = float(np.median(L[_sel])) - float(np.median(L)) if _sel.any() else 0.0
-            _cur_c = float(np.median(np.sqrt(a[_sel] ** 2 + b[_sel] ** 2))) / max(
-                float(np.median(np.sqrt(a ** 2 + b ** 2))), 1e-6) if _sel.any() else 1.0
-            _dl = float(np.clip(float(_tg['skin_l']) - _cur_l, -_lim_l, _lim_l))
-            _dc = float(np.clip(float(_tg['skin_c']) / max(_cur_c, 1e-6) - 1.0, -_lim_c, _lim_c))
+        _lim_l = float(getattr(cfg, 'GRADE_SKIN_LIMIT_L', 6.0))
+        _lim_c = float(getattr(cfg, 'GRADE_SKIN_LIMIT_C', 0.0))
+        _lim_h = float(getattr(cfg, 'GRADE_SKIN_LIMIT_H', 8.0))
+        _w = None
+        try:                                        # ① 先试真脸掩膜
+            from . import face as _F
+            _r = _F.parse(np.clip(disp, 0.0, 1.0))
+            _mk = (_r or {}).get('masks') or {}
+            if _mk.get('face_skin') is not None:
+                _w = np.clip(_mk['face_skin'] * 1.6, 0.0, 1.0)          # 脸：严格
+                if _mk.get('skin') is not None:
+                    _w = np.maximum(_w, np.clip(_mk['skin'], 0.0, 1.0)
+                                    * float(getattr(cfg, 'GRADE_SKIN_BODY_W', 0.5)))
+                _mask_src = 'face'
+        except Exception:                                            # noqa: BLE001
+            _w = None
+        if _w is None or float(_w.max()) < 0.05:    # ② 没检出脸 ⇒ 退回色相窗（有总比没有好）
+            _w = _band_weight(H, 35.0, 26.0) * live * 0.6
+            _mask_src = 'hue'
+        _sel = _w > 0.5
+        if float(_w.max()) > 0.05 and bool(_sel.any()):      # ★ 必须检查非空：空窗口时
+            _Cc2 = np.sqrt(a * a + b * b)                   #   np.median([]) = nan ⇒ 整张被写成 nan
+
+            _cL = float(np.median(L[_sel]) - np.median(L))
+            _cC = float(np.median(_Cc2[_sel])) / max(float(np.median(_Cc2)), 1e-6)
+            _cH = float(np.degrees(np.arctan2(float(np.median(b[_sel])),
+                                              float(np.median(a[_sel])))) % 360.0)
+            _dl = float(np.clip(float(_tg['skin_l']) - _cL, -_lim_l, _lim_l))
+            _dc = float(np.clip(float(_tg['skin_c']) / max(_cC, 1e-6) - 1.0, -_lim_c, _lim_c))
+            _dh = float(np.clip(((float(_tg['skin_hue']) - _cH + 180.0) % 360.0) - 180.0,
+                                -_lim_h, _lim_h))
             L = np.clip(L + _dl * _w, 0.0, 100.0)
             _k = 1.0 + _dc * _w
             a = a * _k
             b = b * _k
-
+            _th = np.radians(_dh) * _w                    # 色相绕原点转（往靶的色相角）
+            _ca, _sa = np.cos(_th), np.sin(_th)
+            a, b = a * _ca - b * _sa, a * _sa + b * _ca
+            # ★ 提亮量大 ⇒ 对肤色区的 L 做一次弱双边滤波（保边去噪，别把脸磨平）
+            if abs(_dl) >= float(getattr(cfg, 'GRADE_SKIN_BILATERAL_EV', 4.0)):
+                try:
+                    import cv2 as _cv
+                    _L8 = np.clip(L * 2.55, 0, 255).astype(np.uint8)
+                    _L8 = _cv.bilateralFilter(_L8, 5, 8.0, 5.0)
+                    _Lf = _L8.astype(np.float64) / 2.55
+                    L = np.clip(L * (1.0 - _w) + _Lf * _w, 0.0, 100.0)
+                except Exception:                                # noqa: BLE001
+                    pass
     out = np.clip(color.from_lab(np.stack([L, a, b], -1)), 0.0, 1.0)
     info = dict(applied=True,
                 L50_in=Lm, L50_out=float(np.median(color.to_lab(out)[..., 0])),
                 a_med_in=am, b_med_in=bm,
                 d_sh=(float(sha), float(shb)), d_hi=(float(hia), float(hib)),
                 c_gain=[(c, (k + (_bg[i] if i < len(_bg) else 0.0))) for i, (c, _, k, _) in enumerate(BANDS)],
-                target=(sha, shb, hia, hib), stock=stock, skin_dL=_dl, skin_dC=_dc)
+                target=(sha, shb, hia, hib), stock=stock,
+                skin_dL=_dl, skin_dC=_dc, skin_dH=_dh, skin_mask=_mask_src)
     return out, info
