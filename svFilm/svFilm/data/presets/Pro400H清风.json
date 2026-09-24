@@ -36,7 +36,7 @@
   "grain": {
     "active": true,
     "sublayers_active": false,
-    "particle_area_um2": 0.3,
+    "particle_area_um2": 0.4,
     "particle_scale": [
       0.8,
       1.0,
@@ -171,7 +171,7 @@
     "auto_exposure_method": "center_weighted",
     "print_paper": "fujifilm_crystal_archive_typeii",
     "print_illuminant": "TH-KG3",
-    "print_exposure": 0.42,
+    "print_exposure": 0.46,
     "print_exposure_compensation": true,
     "print_y_filter_shift": 7.0,
     "print_m_filter_shift": 1.0,
