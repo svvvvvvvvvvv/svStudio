@@ -171,7 +171,7 @@
   "auto_exposure_method": "center_weighted",
   "print_paper": "kodak_portra_endura",
   "print_illuminant": "TH-KG3",
-  "print_exposure": 0.48,
+  "print_exposure": 0.505,
   "print_exposure_compensation": true,
   "print_y_filter_shift": 6,
   "print_m_filter_shift": -1.0,
@@ -188,7 +188,7 @@
   "diffusion_filter_bloom_size": 1.0,
   "scan_lens_blur": 0.25,
   "scan_white_correction": true,
-  "scan_white_level": 1.0,
+  "scan_white_level": 1.04,
   "scan_black_correction": true,
   "scan_black_level": 0.065,
   "scan_unsharp_mask": [

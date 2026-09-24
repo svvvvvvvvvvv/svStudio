@@ -71,11 +71,21 @@ def for_stock(name):
     """
     d = load()
     t = dict(d.get('_default') or {})
-    t.update(d.get(name) or {})
+    own = d.get(name) or {}
+    t.update(own)
     sk = dict(d.get('_skin_shared') or {})
+    # ★ 09-24：**预设自己的肤色靶优先**。原来这里无条件用 `_skin_shared` 覆盖，
+    #   于是每条预设的肤色只能共用一份共识值。但量他主页 514 张之后发现：
+    #   那份共识值（skin_hue 54.8 / skin_l +4.0）是从**32 张单次拍摄**的小样本凑的，
+    #   真实值差很远（52.3 / −1.3）⇒ 「脸偏橘黄 + 偏亮」的根就在这儿。
+    #   现在：**预设条目里写了就用它自己的，没写才落回 `_skin_shared`** ⇒ 动一条不影响其余 9 条。
     for k in ('skin_l', 'skin_c', 'skin_hue', 'skin_n'):
-        if k in sk:
+        # ⚠ 必须**显式**用 `skin_own: true` 才让预设自己的值生效 ——
+        #   否则 `Pro400H清风`/`Portra400薄荷` 条目里那些遗留的 skin_*（以前被共享值覆盖、从没生效过）
+        #   会突然激活，连带改到别的预设。
+        if k in sk and not own.get('skin_own'):
             t[k] = sk[k]
+    t['skin_own'] = bool(own.get('skin_own'))
     t['skin_shared'] = bool(sk)
     t['stock'] = name
     t['own'] = bool(d.get(name))
