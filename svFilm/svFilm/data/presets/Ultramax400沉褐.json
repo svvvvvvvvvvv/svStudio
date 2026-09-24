@@ -152,7 +152,7 @@
   "print_gamma_factor": 0.97
  },
  "simulation": {
-  "film_stock": "kodak_portra_400",
+  "film_stock": "kodak_ultramax_400",
   "film_format_mm": 36.0,
   "camera_lens_blur_um": 0.0,
   "camera_diffusion_filter_active": false,
@@ -171,7 +171,7 @@
   "auto_exposure_method": "center_weighted",
   "print_paper": "kodak_portra_endura",
   "print_illuminant": "TH-KG3",
-  "print_exposure": 0.44,
+  "print_exposure": 0.52,
   "print_exposure_compensation": true,
   "print_y_filter_shift": 6,
   "print_m_filter_shift": -1.0,
@@ -189,7 +189,7 @@
   "scan_lens_blur": 0.25,
   "scan_white_correction": false,
   "scan_white_level": 0.98,
-  "scan_black_correction": false,
+  "scan_black_correction": true,
   "scan_black_level": 0.065,
   "scan_unsharp_mask": [
    0.3,
