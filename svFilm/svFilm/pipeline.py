@@ -159,10 +159,10 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         #   新路（public 的加载）不做入口提亮 ⇒ 两道都无事可做。
         disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg)
         # ---- L1 影调（明度分布）----
-        disp, t_info = tone.settle_finished(disp, style, cfg)
+        disp, t_info = tone.settle_finished(disp, style, cfg, stock=name)
         # ---- L2 分色 + L3 混色（颜色）----
         # ⚠ 这一层**不做曝光**（显示域乘增益 = 拉噪声 + 高光切白），只按亮度/色相加权染色。
-        disp, g_info = grade.apply(disp, cfg)
+        disp, g_info = grade.apply(disp, cfg, stock=name)
         t_info['grade'] = g_info
         gk = 1.0
         anc = dict(applied=False, note='曝光风格在引擎之后 ⇒ 不做脸锚点')

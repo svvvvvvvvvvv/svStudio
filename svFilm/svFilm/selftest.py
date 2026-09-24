@@ -72,6 +72,7 @@ def _main():
         ('二次调色：分色 + 混色（L2/L3）', t_grade),
         ('直方图（LR 画法：亮度 + RGB 叠加 + 5 个区）', t_hist),
         ('技术层：贴边 / 堆积 / 挤压系数', t_tech),
+        ('靶按预设分组', t_targets),
         ('契约：曝光在胶片之前 + 名字不认得要报错', t_contract),
         ('段缓存：同参数命中、换风格不命中', t_cache),
         ('服务：路由只剩该有的那几条', t_routes),
@@ -376,6 +377,27 @@ def t_hist():
     check('命令行入口在（`python -m svFilm.hist`）', callable(hist._main))
 
 
+def t_targets():
+    """靶按预设分组（`targets.py`）：换预设必须换靶。"""
+    from . import targets
+
+    check('★ 滨田 / 増田 两条预设各自有专属靶（不是落回 _default）',
+          targets.for_stock('Pro400H清风')['own'] and targets.for_stock('Portra400薄荷')['own'])
+    check('★ 没有专属靶的预设落回 _default（不报错、有靶）',
+          targets.for_stock('C200过曝')['own'] is False
+          and targets.for_stock('C200过曝')['black_shape'] is not None)
+    b, z = targets.for_stock('Pro400H清风'), targets.for_stock('Portra400薄荷')
+    check('★★ 两条预设的靶**真的不一样**（一个文件一个靶，不是复制）',
+          abs(b['black_shape'] - z['black_shape']) > 1.0
+          and abs(b['sh_abs'][0] - z['sh_abs'][0]) > 1.0,
+          '黑位 %.1f vs %.1f · 暗Δa %+.2f vs %+.2f'
+          % (b['black_shape'], z['black_shape'], b['sh_abs'][0], z['sh_abs'][0]))
+    check('★★ tone / grade 都接受 stock 参数（靶能传下去）',
+          'stock' in __import__('inspect').signature(tone.settle_finished).parameters
+          and 'stock' in __import__('inspect').signature(__import__('svFilm.grade', fromlist=['x']).apply).parameters)
+
+
+
 def t_tech():
     """技术层体检（`tone.health`）：贴边 / 堆积 / 挤压系数。
 
@@ -459,12 +481,18 @@ def t_grade():
         return float(a[m].mean() - am), float(b[m].mean() - bm)
     a0, b0 = _split(disp)
     a1, b1 = _split(on)
-    # 靶（09-24 迭代后）= **小红书胶片人像话题**那批，不是鹿井：
-    #   我们最深的阴影偏蓝 ⇒ 要往**中性/暖**拉（a* 与 b* 都抬高）。
-    check('★ 最深阴影往小红书的方向走：a* 抬高、b* 抬高（量出来要 +1.9 / +1.0）',
-          a1 > a0 + 0.02 and b1 > b0 + 0.05,
-          'Δa* %+.2f→%+.2f   Δb* %+.2f→%+.2f' % (a0, a1, b0, b1),
-          '方向反了 ⇒ 去 `grade.py` 顶部那张表重新对一遍')
+    # ★ 分色现在是**逐图往靶收**（靶按预设取，见 `targets.py`）。
+    #   判据不是"往哪个方向"，而是**离靶是不是更近了** —— 这条跟靶换谁都不冲突。
+    from . import targets as _T
+    _t = _T.for_stock(None)
+    _sh_a, _sh_b = float(_t['sh_abs'][0]), float(_t['sh_abs'][1])
+    _d0 = abs(a0 - _sh_a) + abs(b0 - _sh_b)
+    _d1 = abs(a1 - _sh_a) + abs(b1 - _sh_b)
+    check('★★ 暗部分色**离靶更近了**（逐图往靶收；靶 %+.2f/%+.2f）' % (_sh_a, _sh_b),
+          _d1 < _d0 - 1e-6,
+          '离靶 %.2f → %.2f   （当前 a* %+.2f→%+.2f  b* %+.2f→%+.2f）'
+          % (_d0, _d1, a0, a1, b0, b1),
+          '越来越远 ⇒ 补的符号反了，或者 target 取错了')
     check('报告里带着"动了多少"（能自查，不用读图）',
           bool(info.get('applied')) and 'd_sh' in info and 'c_gain' in info)
 

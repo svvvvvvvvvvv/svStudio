@@ -131,7 +131,7 @@ def _band_weight(H, center, half):
 # 主入口
 # ---------------------------------------------------------------------------
 
-def apply(disp, cfg=C):
+def apply(disp, cfg=C, stock=None):
     """在**成片**（显示域）上做分色 + 混色。
 
     @returns {(numpy.ndarray, dict)} 出图 + 报告（能自查动了多少）
@@ -139,6 +139,12 @@ def apply(disp, cfg=C):
     if not bool(getattr(cfg, 'GRADE_ENABLE', False)):
         return np.clip(np.asarray(disp, np.float64), 0.0, 1.0), dict(applied=False)
 
+    # ★★ 靶按**预设**取（同 tone）
+    try:
+        from . import targets as _T
+        _tg = _T.for_stock(stock)
+    except Exception:                                          # noqa: BLE001
+        _tg = None
     d = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
     lab = color.to_lab(d)
     L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
@@ -146,8 +152,25 @@ def apply(disp, cfg=C):
 
     # ---------- L2 色彩分级 ----------
     w_sh, w_hi, w_deep = _sh_hi_weights(L, cfg)
-    sha, shb = float(getattr(cfg, 'GRADE_SH_A', 0.0)), float(getattr(cfg, 'GRADE_SH_B', 0.0))
-    hia, hib = float(getattr(cfg, 'GRADE_HI_A', 0.0)), float(getattr(cfg, 'GRADE_HI_B', 0.0))
+    # ★★ 分色：**逐图往靶收**（跟影调层一个哲学）——
+    #   先量"这张图当前的分色"，再补到大师的绝对值。**不是**加一个固定偏移：
+    #   ① 固定偏移跟"分色测值"不是 1:1（加 a 会同时动整体中位）
+    #   ② 换条预设引擎出来的底就不一样，"固定偏移"立刻失准
+    #   ⚠ 分色是**相对量**，不像影调那样"往上没数据" ⇒ 这里**可以双向**补，但要有上限。
+    _bg = (_tg or {}).get('band_gain') or [0.0] * 12
+    _lim = float(getattr(cfg, 'GRADE_SPLIT_LIMIT', 2.5))
+    if _tg and _tg.get('sh_abs'):
+        _p25, _p90 = np.percentile(L, 25.0), np.percentile(L, 90.0)
+        _msh, _mhi = L <= _p25, L >= _p90
+        cur = (float(a[_msh].mean() - am), float(b[_msh].mean() - bm),
+               float(a[_mhi].mean() - am), float(b[_mhi].mean() - bm))
+        tgt = (float(_tg['sh_abs'][0]), float(_tg['sh_abs'][1]),
+               float(_tg['hi_abs'][0]), float(_tg['hi_abs'][1]))
+        d4 = [float(np.clip(tgt[i] - cur[i], -_lim, _lim)) for i in range(4)]
+        sha, shb, hia, hib = d4
+    else:
+        sha, shb = float(getattr(cfg, 'GRADE_SH_A', 0.0)), float(getattr(cfg, 'GRADE_SH_B', 0.0))
+        hia, hib = float(getattr(cfg, 'GRADE_HI_A', 0.0)), float(getattr(cfg, 'GRADE_HI_B', 0.0))
     dpa, dpb = float(getattr(cfg, 'GRADE_DEEP_A', 0.0)), float(getattr(cfg, 'GRADE_DEEP_B', 0.0))
     da2 = sha * w_sh + hia * w_hi + dpa * w_deep
     db2 = shb * w_sh + hib * w_hi + dpb * w_deep
@@ -162,7 +185,9 @@ def apply(disp, cfg=C):
     live = _ramp(Cc, cmin * 0.6, cmin * 1.4)
     kc = np.zeros_like(Cc)
     dl = np.zeros_like(Cc)
-    for center, half, k, dL in BANDS:
+    for bi, (center, half, k, dL) in enumerate(BANDS):
+        # ★ 色相带增益 = 预设自带的那份（按大师量出来的），没有专属靶就是 0
+        k = k + float(_bg[bi]) if bi < len(_bg) else k
         w = _band_weight(H, center, half) * live
         kc += w * k
         dl += w * dL
@@ -196,5 +221,6 @@ def apply(disp, cfg=C):
                 L50_in=Lm, L50_out=float(np.median(color.to_lab(out)[..., 0])),
                 a_med_in=am, b_med_in=bm,
                 d_sh=(float(sha), float(shb)), d_hi=(float(hia), float(hib)),
-                c_gain=[(c, k) for c, _, k, _ in BANDS])
+                c_gain=[(c, (k + (_bg[i] if i < len(_bg) else 0.0))) for i, (c, _, k, _) in enumerate(BANDS)],
+                target=(sha, shb, hia, hib), stock=stock)
     return out, info

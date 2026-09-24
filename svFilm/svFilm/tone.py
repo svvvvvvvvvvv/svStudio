@@ -317,7 +317,7 @@ def rel_of(name, cfg=C):
     return tbl.get(str(name)) or tbl.get(DEFAULT) or REL[DEFAULT]
 
 
-def settle_finished(disp, style=DEFAULT, cfg=C):
+def settle_finished(disp, style=DEFAULT, cfg=C, stock=None):
     """在**成片**（显示域）上做曝光风格：压曝光 / 压高光 / 提阴影。
 
     三点（L5 / L50 / L95）在 log2 亮度域插值 —— 和 `solve()` 同一个曲线机器，
@@ -326,6 +326,15 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
     @returns {(numpy.ndarray, dict)} 出图 + 报告（进去多少、出来多少，能自查）
     """
     st = rel_of(style, cfg)
+    # ★★ 靶按**预设**取（SV 09-24：「胶片用了谁的，影调和颜色就依据谁」）
+    _tg = None
+    try:
+        from . import targets as _T
+        _tg = _T.for_stock(stock)
+    except Exception:                                          # noqa: BLE001
+        _tg = None
+    _blk_t = float(_tg['black_shape']) if _tg else TARGET_BLACK_SHAPE
+    _hi_t = float(_tg['hi_shape']) if _tg else TARGET_HI_SHAPE
     disp = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
     hh = health(disp)                       # ★ 技术层体检：哪一头已经在丢信息
     k_lo, k_hi = hh['squeeze']
@@ -339,7 +348,7 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
     #   已经在带内或更深的**一个像素都不动**。理由见 `TARGET_BLACK_SHAPE`。
     _L5, _L50, _L95 = (float(color.L_of_lin(y5)), float(color.L_of_lin(y50)),
                        float(color.L_of_lin(y95)))
-    _need = max(0.0, (_L5 - _L50) - TARGET_BLACK_SHAPE)      # >0 = 离带还差这么多
+    _need = max(0.0, (_L5 - _L50) - _blk_t)                 # >0 = 离靶还差这么多
     _bl = float(np.clip(min(float(st['bl_down']), _need), -30.0, 30.0))
     # 绝对黑位下限：别压穿（中位低的片子按形状算会到负数 ⇒ 死黑）
     _bl = min(_bl, _L5 - float(getattr(cfg, 'TARGET_BLACK_FLOOR_L', 4.0)))
@@ -348,7 +357,7 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
     Tm = float(np.clip(color.lin_of_L(float(color.L_of_lin(y50))) * (2.0 ** -float(st['ev_down'])),
                        _EPS, None))
     # 亮部同理：只往靶收、只压不提；已经在靶内/更低的**不动**（想提得回引擎）
-    _need_hi = max(0.0, (_L95 - _L50) - TARGET_HI_SHAPE)
+    _need_hi = max(0.0, (_L95 - _L50) - _hi_t)
     _hi = float(np.clip(min(float(st['hi_down']) + _need_hi, HI_MAX_DOWN), 0.0, 30.0))
     _hi = min(_hi, _L95 - float(getattr(cfg, 'TARGET_HI_FLOOR_L', 78.0)))
     _hi = max(_hi * k_hi, 0.0)             # ★ 同理：亮部糊住了就别再压
@@ -368,7 +377,7 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
         hi_applied=float(_hi), hi_need=float(_need_hi), hi_shape_in=float(_L95 - _L50),
         clip_lo=hh['clip_lo'], clip_hi=hh['clip_hi'],
         pile_lo=hh['pile_lo'], pile_hi=hh['pile_hi'],
-        squeeze=(float(k_lo), float(k_hi)),
+        squeeze=(float(k_lo), float(k_hi)), target=(_blk_t, _hi_t), stock=stock,
         L5_in=float(color.L_of_lin(y5)), L50_in=float(color.L_of_lin(y50)),
         L95_in=float(color.L_of_lin(y95)),
         L5_out=float(color.L_of_lin(Tb)), L50_out=float(color.L_of_lin(Tm)),
