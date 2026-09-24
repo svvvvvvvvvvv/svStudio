@@ -3,11 +3,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from spektrafilm.profiles.io import Profile
-from spektrafilm.utils.gamut_compression import (
-    InputGamutCompressSpec,
-    OutputGamutCompressSpec,
-)
-from spektrafilm.utils.morph_curves import PrintCurvesMorphParams
 
 
 
@@ -87,13 +82,13 @@ class ScannerParams:
 
 @dataclass
 class GrainParams:
-    active: bool = True
+    active: bool = False
     sublayers_active: bool = True
-    particle_area_um2: float = 0.2
-    particle_scale: tuple[float, float, float] = (1.6, 1.6, 3.2)
-    particle_scale_layers: tuple[float, float, float] = (2.0, 1.0, 0.5)
-    density_min: tuple[float, float, float] = (0.03, 0.03, 0.03)
-    uniformity: tuple[float, float, float] = (0.97, 0.99, 0.97)
+    agx_particle_area_um2: float = 0.2
+    agx_particle_scale: tuple[float, float, float] = (0.8, 1.0, 2.0)
+    agx_particle_scale_layers: tuple[float, float, float] = (2.5, 1.0, 0.5)
+    density_min: tuple[float, float, float] = (0.07, 0.08, 0.12)
+    uniformity: tuple[float, float, float] = (0.97, 0.97, 0.99)
     blur: float = 0.65
     blur_dye_clouds_um: float = 1.0
     micro_structure: tuple[float, float] = (0.2, 30)
@@ -159,10 +154,8 @@ class FilmRenderingParams:
 
 @dataclass
 class PrintRenderingParams:
+    density_curve_gamma: float = 1.0
     glare: GlareParams = field(default_factory=GlareParams)
-    density_curves_morph: PrintCurvesMorphParams = field(
-        default_factory=lambda: PrintCurvesMorphParams(active=False)
-    )
 
 
 @dataclass
@@ -171,21 +164,6 @@ class IOParams:
     input_cctf_decoding: bool = False
     output_color_space: str = "sRGB"
     output_cctf_encoding: bool = True
-    # Input gamut compression: smoothly pulls input chromaticities that
-    # fall outside the visible spectral locus back inside (where Hanatos
-    # 2025's spectral upsampling is well-defined). Baked into the
-    # per-film tc_lut at build time so the per-pixel hot path is
-    # untouched. See spektrafilm-research/studies/a00/a40_lut_system/n100
-    # for the design.
-    input_gamut_compress: InputGamutCompressSpec = field(default_factory=InputGamutCompressSpec)
-    # Output gamut compression: smoothly compresses out-of-output-gamut
-    # chromaticities (via the chroma knee) and above-white lightnesses
-    # (via lightness_compression, a one-sided soft roll-off that leaves
-    # black at 0) into the output primaries cube. With both engaged the
-    # simulation output is guaranteed in [0, 1] and no downstream clip
-    # is needed. See spektrafilm-research/studies/a00/a40_lut_system/n110
-    # for the design and b40 for the smoothness analysis.
-    output_gamut_compress: OutputGamutCompressSpec = field(default_factory=OutputGamutCompressSpec)
     crop: bool = False
     crop_center: tuple[float, float] = (0.5, 0.5)
     crop_size: tuple[float, float] = (0.1, 0.1)
@@ -198,23 +176,11 @@ class DebugParams:
     deactivate_spatial_effects: bool = False
     deactivate_stochastic_effects: bool = False
     print_timings: bool = False
-    # When True, the pipeline behaves as a deterministic per-pixel transform
-    # suitable for LUT sampling: spatial effects, stochastic effects,
-    # auto-exposure, and scanner white/black/unsharp corrections are all
-    # forced off, regardless of the underlying settings.
-    lut_mode: bool = False
-
-
-@dataclass
-class TapsParams:
-    """Pipeline tap configuration.
-
-    ``inject`` and ``collect`` name the entry and exit points in the
-    pipeline topology. Defaults of None mean "normal end-to-end run"
-    (inject at rgb_in, collect at rgb_out).
-    """
-    inject: str | None = None
-    collect: str | None = None
+    debug_mode: str = 'off' # options: 'output', 'inject', 'off', switch only one of the following at a time
+    output_film_log_raw: bool = False
+    output_film_density_cmy: bool = False
+    output_print_density_cmy: bool = False
+    inject_film_density_cmy: bool = False
 
 
 @dataclass
@@ -223,11 +189,11 @@ class SettingsParams:
     apply_hanatos2025_adaptation_window: bool = True
     apply_hanatos2025_adaptation_surface: bool = False
     spectral_gaussian_blur: float = 0.0
-    use_enlarger_lut: bool = False
-    use_scanner_lut: bool = False
+    use_enlarger_lut: bool = True
+    use_scanner_lut: bool = True
     lut_resolution: int = 17
     use_fast_stats: bool = False
-    preview_max_size: int = 640
+    preview_max_size: int = 1200
     preview_mode: bool = False
     neutral_print_filters_from_database: bool = True
     
@@ -244,7 +210,6 @@ class RuntimePhotoParams:
     io: IOParams = field(default_factory=IOParams)
     debug: DebugParams = field(default_factory=DebugParams)
     settings: SettingsParams = field(default_factory=SettingsParams)
-    taps: TapsParams = field(default_factory=TapsParams)
 
     def __post_init__(self):
         if not isinstance(self.film, Profile):

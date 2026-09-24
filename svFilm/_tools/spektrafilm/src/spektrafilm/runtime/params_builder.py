@@ -1,37 +1,10 @@
 from __future__ import annotations
 
-import copy
-from dataclasses import fields
 from functools import lru_cache
 
 from spektrafilm.profiles.io import load_profile
 from spektrafilm.runtime.params_schema import RuntimePhotoParams
 from spektrafilm.utils.io import read_neutral_print_filters
-
-
-# Heavy fields shared by reference when cloning: the two Profiles carry the
-# spectral arrays and density-curve models. They are swapped at selection
-# time, never mutated during ordinary parameter edits, so a snapshot can
-# share them safely.
-_SHARED_PROFILE_FIELDS = ("film", "print")
-
-
-def clone_runtime_params(params: RuntimePhotoParams) -> RuntimePhotoParams:
-    """Cheap snapshot of runtime params for GUI undo / preview.
-
-    Deep-copies the whole parameter subtree so edits to the clone never
-    leak into the original, but shares the two ``Profile`` objects
-    (``film``, ``print``) by reference. This keeps a snapshot O(params)
-    instead of O(spectral data), the same property that made the GUI's
-    old ``clone_gui_state`` cheap — without maintaining a mirror state.
-    """
-    kwargs = {
-        f.name: getattr(params, f.name)
-        if f.name in _SHARED_PROFILE_FIELDS
-        else copy.deepcopy(getattr(params, f.name))
-        for f in fields(params)
-    }
-    return RuntimePhotoParams(**kwargs)
 
 
 @lru_cache(maxsize=1)
@@ -83,7 +56,7 @@ def digest_params(params: RuntimePhotoParams, apply_stocks_specifics=True) -> Ru
         params.enlarger.lens_blur = 0.0
         params.film_render.dir_couplers.diffusion_size_um = 0.0
         params.film_render.grain.active = False
-        params.film_render.grain.particle_area_um2 = 0.0
+        params.film_render.grain.agx_particle_area_um2 = 0.0
         params.film_render.grain.blur = 0.0
         # scatter/halation kernel sigmas are preserved in preview mode
         params.print_render.glare.blur = 0.0
@@ -96,33 +69,7 @@ def digest_params(params: RuntimePhotoParams, apply_stocks_specifics=True) -> Ru
         params = _apply_print_specifics(params)
     
     # debug switches
-    if params.debug.lut_mode:
-        # LUT-sampling regime: force the pipeline into a deterministic
-        # per-pixel transform. Enabling lut_mode promotes spatial and
-        # stochastic deactivation and disables image-aware adjustments.
-        params.debug.deactivate_spatial_effects = True
-        params.debug.deactivate_stochastic_effects = True
-        # exposure control
-        params.camera.auto_exposure = False
-        params.camera.exposure_compensation_ev = 0.0
-        params.enlarger.print_exposure_compensation = False
-        params.enlarger.print_exposure = 1.0
-        # Highlight boost normalizes by the image-wide max (np.max(x)), so it is
-        # an image-global transform — the same input value maps to different
-        # outputs depending on the rest of the frame. That cannot be represented
-        # by a static 3D LUT (a bake would freeze in the cube grid's max), so it
-        # must be off in lut_mode, exactly like auto_exposure above.
-        params.film_render.halation.boost_ev = 0.0
-        params.scanner.white_correction = False
-        params.scanner.black_correction = False
-        params.scanner.unsharp_mask = (0.0, 0.0)
-
     if params.debug.deactivate_spatial_effects:
-        # Halation is fully spatial (scatter + back-reflection blurs); kill it
-        # at the active flag as well as zeroing the kernel sigmas, so it stays
-        # a no-op even if a future sigma-independent term is added inside
-        # apply_halation_um.
-        params.film_render.halation.active = False
         params.film_render.halation.scatter_core_um = (0.0, 0.0, 0.0)
         params.film_render.halation.scatter_tail_um = (0.0, 0.0, 0.0)
         params.film_render.halation.halation_first_sigma_um = (0.0, 0.0, 0.0)
@@ -259,7 +206,6 @@ def _apply_print_specifics(params: RuntimePhotoParams) -> RuntimePhotoParams:
 
 __all__ = [
     "apply_database_neutral_print_filters",
-    "clone_runtime_params",
     "digest_params",
     "init_params",
 ]

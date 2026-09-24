@@ -246,11 +246,12 @@ def _apply(p, d, cfg):
     h.halation_renormalize = bool(ha['halation_renormalize'])
 
     # ---- grain ----
-    # ⚠⚠ 字段名是 vendor **0.3.4** 的：`particle_area_um2` / `particle_scale` /
-    #    `particle_scale_layers`。public GUI（0.3.2）那边叫 `agx_particle_*` ——
+    # ⚠⚠ 字段名必须跟 vendor 版本对得上：**0.3.2 叫 `agx_particle_area_um2` / `agx_particle_scale` /
+    #    `agx_particle_scale_layers`**（0.3.4 把 `agx_` 前缀去掉了）。
     #    名字写错**不会报错**（`GrainParams` 是普通 dataclass、没有 `__slots__`），
-    #    只会静默多出三个没人读的属性 ⇒ 颗粒参数一点没生效、画面照旧。
+    #    只会静默多出几个没人读的属性 ⇒ 颗粒参数一点没生效、画面照旧。
     #    `selftest.t_presets` 拿 JSON 的值逐条回读钉着这一条。
+    #    ⚠ 换 vendor 版本时**这里必须跟着换**，否则颗粒静默失效。
     g = p.film_render.grain
     if float(gr['particle_area_um2']) <= 0:
         # 粒子面积为 0 物理上无意义（grain.py 里会除以零）⇒ 等同关掉
@@ -258,9 +259,9 @@ def _apply(p, d, cfg):
     else:
         g.active = bool(gr['active'])
         g.sublayers_active = bool(gr['sublayers_active'])
-        g.particle_area_um2 = float(gr['particle_area_um2'])
-        g.particle_scale = tuple(gr['particle_scale'])
-        g.particle_scale_layers = tuple(gr['particle_scale_layers'])
+        g.agx_particle_area_um2 = float(gr['particle_area_um2'])
+        g.agx_particle_scale = tuple(gr['particle_scale'])
+        g.agx_particle_scale_layers = tuple(gr['particle_scale_layers'])
         g.density_min = tuple(gr['density_min'])
         g.uniformity = tuple(gr['uniformity'])
         g.blur = float(gr['blur'])
@@ -403,9 +404,16 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None):
             if bool(getattr(cfg, 'PRESET_PE_SHIFT_FROM_SPEK', True)):
                 _sh = float(getattr(cfg, 'SPEK_PE_SHIFT', 1.0) or 1.0)
             p.enlarger.print_exposure = pe_of(name) * _sh
-        # 落点由我们定 ⇒ 引擎自己那套测光必须关（跟 spektra.render 一个道理）
-        p.camera.auto_exposure = False
-        p.enlarger.normalize_print_exposure = False
+        # ★★ 引擎自己那套测光要不要留 —— **跟着"曝光风格作用在哪一段"走**：
+        #   · `TONE_AFTER_ENGINE = True`（当前）：曝光风格作用在**成片**上，引擎之前一个像素
+        #     不动 ⇒ **必须保留预设自己的测光**（`auto_exposure` / `normalize_print_exposure`）。
+        #     实测：逼着关掉，中位会比验收版低 **5.1** 个 L*（64.4 vs 69.3），
+        #     而且亮部也低（88.6 vs 89.8）；恢复预设原样 ⇒ 11.7/69.5/89.8，**三个数全中**。
+        #   · `TONE_AFTER_ENGINE = False`（老路）：落点由 `tone` 在引擎**之前**定
+        #     ⇒ 引擎那套测光会把它的活抵消掉，**必须关**（跟 `spektra.render` 一个道理）。
+        if not bool(getattr(cfg, 'TONE_AFTER_ENGINE', False)):
+            p.camera.auto_exposure = False
+            p.enlarger.normalize_print_exposure = False
 
         out = _simulate_once(p, np.clip(np.asarray(lin, np.float64), 0.0, None),
                              bool(getattr(cfg, 'PRESET_APPLY_STOCK_SPECIFICS', False)))

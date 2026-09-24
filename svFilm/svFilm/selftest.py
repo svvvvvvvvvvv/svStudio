@@ -106,14 +106,17 @@ def t_presets():
     # ★★ 关键字段必须**真的落到 params 上**，不是被引擎冲回出厂
     #   （`GrainParams`/`HalationParams` 都是普通 dataclass、没有 `__slots__`
     #    ⇒ 字段名写错**不报错**，只会静默多出一个没人读的属性）
+    #    ⚠ 字段名跟 vendor 版本绑死：**0.3.2 = `agx_particle_*`**、0.3.4 = `particle_*`。
+    #      这条**必须**跟着 `_apply` 一起改 —— 它就是防"换版本忘了换字段名"的。
     p = presets.digested(_PRESET)
     d = presets.load_raw(_PRESET)
     check('颗粒真落到 params（防字段改名后静默吞掉）',
-          abs(float(p.film_render.grain.particle_area_um2)
+          abs(float(p.film_render.grain.agx_particle_area_um2)
               - float(d['grain']['particle_area_um2'])) < 1e-9,
-          '%.3f vs %.3f' % (p.film_render.grain.particle_area_um2,
+          '%.3f vs %.3f' % (p.film_render.grain.agx_particle_area_um2,
                             d['grain']['particle_area_um2']),
-          '颗粒字段对不上 ⇒ 有人改了 vendor 的字段名（0.3.2 叫 agx_particle_*、0.3.4 叫 particle_*）')
+          '颗粒字段对不上 ⇒ 有人改了 vendor 的字段名（0.3.2 叫 agx_particle_*、0.3.4 叫 particle_*）'
+          ' —— 换 vendor 版本时 `presets._apply` 和这里要一起改')
     check('光晕强度真落到 params（不被卷的抗晕层标签冲掉）',
           abs(float(p.film_render.halation.halation_strength[0]) * 100.0
               - float(d['halation']['halation_strength'][0])) < 1e-6,

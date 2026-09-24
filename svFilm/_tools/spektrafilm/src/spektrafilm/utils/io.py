@@ -97,7 +97,31 @@ def write_image_metadata(
     destination.readMetadata()
 
     if source_metadata is not None:
-        destination.setExifData(source_metadata.exif)
+        # 过滤掉 RAW/DNG 专有的 tag，防止污染标准图像格式：
+        # - SubImage*：RAW 子图像 IFD，含传感器数据偏移量，写进 TIF 会让 PS 崩溃
+        # - BitsPerSample：DNG 缩略图的值（如 [8,8,8]）会覆盖 TIFF IFD 里的正确值
+        # - StripOffsets / StripByteCounts：RAW 数据偏移，绝对不能复制
+        _SKIP_KEY_PREFIXES = ('Exif.SubImage',)
+        _SKIP_KEYS = {
+            'Exif.Image.BitsPerSample',
+            'Exif.Image.StripOffsets',
+            'Exif.Image.StripByteCounts',
+            'Exif.Image.RowsPerStrip',
+            'Exif.Image.Compression',
+            'Exif.Image.SubIFDs',
+        }
+        src_exif = source_metadata.exif
+        dst_exif = destination.exifData()
+        for item in src_exif:
+            key = str(item.key())
+            if key in _SKIP_KEYS:
+                continue
+            if any(key.startswith(p) for p in _SKIP_KEY_PREFIXES):
+                continue
+            try:
+                dst_exif[key] = item.value()
+            except Exception:
+                pass
         destination.setIptcData(source_metadata.iptc)
         destination.setXmpData(source_metadata.xmp)
 
@@ -108,6 +132,16 @@ def write_image_metadata(
     destination_exif["Exif.Image.Software"] = "spektrafilm"
     destination_exif["Exif.Photo.PixelXDimension"] = spec.width
     destination_exif["Exif.Photo.PixelYDimension"] = spec.height
+
+    # 强制覆盖 BitsPerSample 为实际值，防止从 DNG/RAW 复制的非法值（如 482）
+    # 污染 TIF/JPEG 等标准格式，导致 Photoshop 等软件无法解析。
+    _format_to_bps = {
+        "uint8": 8, "uint16": 16, "uint32": 32,
+        "half": 16, "float": 32, "double": 64,
+    }
+    actual_bps = _format_to_bps.get(str(spec.format), None)
+    if actual_bps is not None:
+        destination_exif["Exif.Image.BitsPerSample"] = actual_bps
 
     if saving_color_space is not None:
         _set_color_space_tags(
@@ -230,6 +264,7 @@ def save_image_oiio(
     *,
     color_space: str | None = None,
     cctf_encoding: bool = True,
+    jpeg_quality: int = 95,
 ):
     """Save a 3-channel image to disk via OpenImageIO.
 
@@ -293,6 +328,7 @@ def save_image_oiio(
         img_uint8 = np.clip(image_data, 0, 1) * 255.0
         img_uint8 = img_uint8.astype(np.uint8)
         spec = oiio.ImageSpec(width, height, nchannels, oiio.TypeDesc("uint8"))
+        spec.attribute("CompressionQuality", jpeg_quality)
         data_to_write = img_uint8
     elif ext=="exr" and bit_depth==16:
         # Convert the image data to 16-bit half precision.

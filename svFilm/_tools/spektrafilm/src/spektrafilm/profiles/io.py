@@ -9,10 +9,6 @@ from typing import Any, Mapping
 import numpy as np
 
 
-_PROJECT_URL = 'https://github.com/andreavolpato/spektrafilm'
-_PROFILE_LICENSE_URL = f'{_PROJECT_URL}/blob/main/SPEKTRAFILM_LICENSE.txt'
-
-
 PROFILE_TYPES = frozenset({'negative', 'positive'})
 PROFILE_SUPPORTS = frozenset({'film', 'paper'})
 PROFILE_STAGES = frozenset({'filming', 'printing'})
@@ -35,7 +31,7 @@ def _created_date() -> str:
     return date.today().isoformat()
 
 def _copyright_statement() -> str:
-    return f"Copyright (c) {date.today().year} Andrea Volpato. Licensed under CC BY-SA 4.0."
+    return f"Copyright (c) {date.today().year} Andrea Volpato. All rights reserved."
 
 def _empty_vector() -> np.ndarray:
     return np.empty((0,), dtype=float)
@@ -47,53 +43,13 @@ def _empty_tensor() -> np.ndarray:
     return np.empty((0, 3, 3), dtype=float)
 
 
-def _empty_layer_matrix() -> np.ndarray:
-    return np.empty((3, 0), dtype=float)
-
-
-@dataclass
-class DensityCurvesModel:
-    """Parametric model of the density curves.
-
-    `centers`, `amplitudes`, `sigmas` are 2D arrays shaped (n_channels, n_layers).
-    n_layers can be 2, 3, ... — set by the array shape.
-    """
-    model_type: str = 'cdfs'
-    centers: np.ndarray = field(default_factory=_empty_layer_matrix)
-    amplitudes: np.ndarray = field(default_factory=_empty_layer_matrix)
-    sigmas: np.ndarray = field(default_factory=_empty_layer_matrix)
-
-    def __post_init__(self):
-        self.centers = np.asarray(self.centers, dtype=float)
-        self.amplitudes = np.asarray(self.amplitudes, dtype=float)
-        self.sigmas = np.asarray(self.sigmas, dtype=float)
-
-    @property
-    def n_channels(self) -> int:
-        return self.centers.shape[0] if self.centers.ndim == 2 else 0
-
-    @property
-    def n_layers(self) -> int:
-        return self.centers.shape[1] if self.centers.ndim == 2 else 0
-
-
 @dataclass
 class ProfileMetadata:
     version: str = field(default_factory=_package_version)
     copyright: str = field(default_factory=_copyright_statement)
     created: str = field(default_factory=_created_date)
-    license: str = (
-        "spektrafilm profile by Andrea Volpato, licensed under CC BY-SA 4.0. "
-        "Redistribution and derivatives must credit the author, link the "
-        f"project ({_PROJECT_URL}),"
-        "preserve this license, and remain CC BY-SA 4.0."
-        "Modifications must be noted. Full text of the license and "
-        f"attribution requirements: {_PROFILE_LICENSE_URL}."
-    )
-    citation: str = (
-        "If you use this profile in your work, please cite the spektrafilm "
-        f"project: {_PROJECT_URL}, see CITATION.cff for details."
-    )
+    license: str = "This profile is part of spektrafilm, licensed under GNU GPL v3.0. See https://github.com/andreavolpato/spektrafilm/blob/main/LICENSE for details."
+    citation: str = "If you use this profile in your work, please cite the spektrafilm project: https://github.com/andreavolpato/spektrafilm, see CITATION.cff for details."
     datasource: str = """
     This profile was created by processing raw measurement data from data-sheets and/or scientific papers. Original data are property of the respective holders.
     Film/photo-paper: Kodak and Fujifilm data-sheets, scientific publications, and technical material.
@@ -139,7 +95,6 @@ class ProfileData:
     log_exposure: np.ndarray = field(default_factory=_empty_vector)
     density_curves: np.ndarray = field(default_factory=_empty_matrix)
     density_curves_layers: np.ndarray = field(default_factory=_empty_tensor)
-    density_curves_model: DensityCurvesModel = field(default_factory=DensityCurvesModel)
 
     def __post_init__(self):
         self.wavelengths = np.asarray(self.wavelengths, dtype=float)
@@ -156,11 +111,6 @@ class ProfileData:
         self.log_exposure = np.asarray(self.log_exposure, dtype=float)
         self.density_curves = np.asarray(self.density_curves, dtype=float)
         self.density_curves_layers = np.asarray(self.density_curves_layers, dtype=float)
-        if not isinstance(self.density_curves_model, DensityCurvesModel):
-            if isinstance(self.density_curves_model, Mapping):
-                self.density_curves_model = DensityCurvesModel(**dict(self.density_curves_model))
-            else:
-                raise TypeError('density_curves_model must be a DensityCurvesModel or Mapping')
 
 
 @dataclass
@@ -348,17 +298,6 @@ def save_profile(profile, suffix=''):
     with resource.open("w") as file:
         json.dump(_json_safe(profile_to_dict(profile)), file, indent=4, allow_nan=False)
 
-def list_profiles():
-    """Return the sorted slugs of all bundled profiles (the JSON file
-    stems under ``spektrafilm.data.profiles``)."""
-    package = pkg_resources.files('spektrafilm.data.profiles')
-    return sorted(
-        entry.name[:-len('.json')]
-        for entry in package.iterdir()
-        if entry.name.endswith('.json')
-    )
-
-
 def load_profile(stock):
     package = pkg_resources.files('spektrafilm.data.profiles')
     filename = stock + '.json'
@@ -374,7 +313,6 @@ load_processed_profile = load_profile
 save_processed_profile = save_profile
 
 __all__ = [
-    "DensityCurvesModel",
     "Profile",
     "ProfileData",
     "ProfileInfo",
@@ -386,7 +324,6 @@ __all__ = [
     "PROFILE_USES",
     "profile_from_dict",
     "profile_to_dict",
-    "list_profiles",
     "load_profile",
     "save_profile",
     "load_processed_profile",

@@ -8,9 +8,17 @@ svFilm 的**卷**（`data/presets/*.json` 那 9 条，09-23 起）就是靠它�
 | | |
 |---|---|
 | 上游 | https://github.com/andreavolpato/spektrafilm |
-| 版本 | commit `3bb2c2d2801ff68b92019cf1dbcbb133d60832bc`（2026-09-14 取） |
+| 版本 | **0.3.2**（`src/spektrafilm/` 逐字取自 `E:\spektrafilm-public`） |
 | 许可 | **CC BY-SA 4.0** —— 见 `spektrafilm/LICENSE` 与 `spektrafilm/SPEKTRAFILM_LICENSE.txt` |
-| 改动 | **无。原样拷的**（上游 tracked 文件 428 个，`git archive` 出来的），只为"clone 完就能跑" |
+| 改动 | **无。原样拷的**，只为"clone 完就能跑" |
+
+> ★★ **版本必须和"预设是从哪一版标出来的"一致。** 那 9 条预设是在 **0.3.2** 上标定的
+> （`%LOCALAPPDATA%\napari\napari\presets\` 里那份，同一版）。
+> 09-24 实测换到 0.3.4 之后：**肤色色相角从 63° 偏到 82°（发黄发绿）**，
+> 中位低 2.8、亮部低 3.3、彩度 P90 高 20%。换回 0.3.2 后 11.7/69.5/89.8，与验收版 11.6/69.3/89.8 一致。
+> ⚠ 换版本时 **`svFilm/svFilm/presets.py::_apply` 里的颗粒字段名要跟着换**
+> （0.3.2 = `agx_particle_*`、0.3.4 = `particle_*`）；写错**不报错**，颗粒会静默失效。
+> `selftest.t_presets` 有一条专门盯这个。
 
 **为什么直接带进仓库**：目标就是"拉一个仓库全下来"。少了它，真卷直接
 `ModuleNotFoundError`；让每个人自己去 clone 一遍上游并不省事。
