@@ -69,6 +69,7 @@ def _main():
         ('曝光风格：真的把画面搬到靶', t_tone_hits),
         ('曝光风格：曲线单调 + 极端图不崩', t_tone_sane),
         ('曝光风格：脸锚点只做有限幅修正', t_tone_bias),
+        ('二次调色：分色 + 混色（L2/L3）', t_grade),
         ('契约：曝光在胶片之前 + 名字不认得要报错', t_contract),
         ('段缓存：同参数命中、换风格不命中', t_cache),
         ('服务：路由只剩该有的那几条', t_routes),
@@ -320,6 +321,67 @@ def t_tone_bias():
 # ---------------------------------------------------------------------------
 # 3. 契约
 # ---------------------------------------------------------------------------
+
+
+def t_grade():
+    """二次调色（`grade.py`）：关掉必须逐位恒等；开着必须按量到的方向动。"""
+    from . import grade
+
+    disp = _gray_img(seed=23)
+    # ① 关掉 ⇒ 逐位不变（不能"说关还偷偷动一点"）
+    C.GRADE_ENABLE = False
+    try:
+        off, info = grade.apply(disp, C)
+    finally:
+        C.GRADE_ENABLE = True
+    check('★ 关掉二次调色 ⇒ 逐位不动（不许"说关还偷偷动"）',
+          float(np.max(np.abs(off - disp))) < 1e-12,
+          '最大差 %.2e' % float(np.max(np.abs(off - disp))))
+
+    on, info = grade.apply(disp, C)
+    check('开着 ⇒ 画面真的变了', float(np.max(np.abs(on - disp))) > 0.005,
+          '最大差 %.4f' % float(np.max(np.abs(on - disp))))
+    check('输出没有 NaN / Inf 且在 [0,1]',
+          bool(np.all(np.isfinite(on))) and float(on.min()) >= 0.0 and float(on.max()) <= 1.0)
+
+    # ② 极端图不崩
+    for tag, img in (('全黑', np.zeros((8, 8, 3))), ('全白', np.ones((8, 8, 3))),
+                     ('全灰', np.full((8, 8, 3), 0.5))):
+        try:
+            o, _ = grade.apply(img, C)
+            ok = bool(np.all(np.isfinite(o)))
+        except Exception:                                          # noqa: BLE001
+            ok = False
+        check('极端图不崩：%s' % tag, ok, '',
+              '分位全相等时除零 —— 彩度归一那段必须有 _EPS 兜着')
+
+    # ③ 暗部真的往鹿井的方向动了（a* 更绿、b* 更黄）
+    def _split(d):
+        lab = color.to_lab(np.ascontiguousarray(d))
+        L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
+        am, bm = np.median(a), np.median(b)
+        m = L <= np.percentile(L, 25.0)
+        return float(a[m].mean() - am), float(b[m].mean() - bm)
+    a0, b0 = _split(disp)
+    a1, b1 = _split(on)
+    check('★ 暗部往鹿井的方向走：a* 更绿、b* 更黄（量出来的 −1.26 / +1.35）',
+          a1 < a0 - 0.05 and b1 > b0 + 0.05,
+          'Δa* %+.2f→%+.2f   Δb* %+.2f→%+.2f' % (a0, a1, b0, b1),
+          '方向反了 ⇒ 去 `grade.py` 顶部那张表重新对一遍')
+    check('报告里带着"动了多少"（能自查，不用读图）',
+          bool(info.get('applied')) and 'd_sh' in info and 'c_gain' in info)
+
+    # ④ 灰像素不被动（加饱和不许把中性轴一起推偏 —— digitalFilm 那条教训）
+    # ⚠ 必须三通道**相等**才是真灰（`dstack` 三个不同常数 = 一个浅蓝，不是灰）
+    cmax = 0.0
+    for gv in (0.2, 0.35, 0.5, 0.65, 0.8):
+        g, _ = grade.apply(np.full((64, 64, 3), float(gv), np.float64), C)
+        lab = color.to_lab(np.ascontiguousarray(g))
+        cmax = max(cmax, float(np.max(np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2))))
+    check('★ 中性灰不被推彩度（彩度闸兜着；留 3 的余量给分级那一点点）',
+          cmax < 3.0, '五档灰最大彩度 %.2f' % cmax,
+          '中性轴被推偏 ⇒ 灰像素没被彩度闸挡掉（加饱和把中性轴一起推偏是 digitalFilm 的老毛病）')
+
 
 def t_contract():
     # ① 曝光风格与胶片引擎的先后
