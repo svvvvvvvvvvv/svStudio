@@ -62,10 +62,21 @@ def load():
 
 
 def for_stock(name):
-    """取某条预设的靶；没有专属靶的预设落回 `_default`。"""
+    """取某条预设的靶；没有专属靶的预设落回 `_default`。
+
+    ★★ **肤色三项（skin_l / skin_c / skin_hue）不按预设分组** ——
+      统一用 `_skin_shared`（「鹿井 + 小红书」的共识值）。理由见那个键的 `why`：
+      鹿井 54.7° / 小红书 54.8° 两个独立来源几乎同一个数，而増田 58.5°、石田 57.2°
+      各自偏黄 ⇒ 按预设分组会跟着偏。肤色是**审美**问题不是胶片风格问题。
+    """
     d = load()
     t = dict(d.get('_default') or {})
     t.update(d.get(name) or {})
+    sk = dict(d.get('_skin_shared') or {})
+    for k in ('skin_l', 'skin_c', 'skin_hue', 'skin_n'):
+        if k in sk:
+            t[k] = sk[k]
+    t['skin_shared'] = bool(sk)
     t['stock'] = name
     t['own'] = bool(d.get(name))
     return t
