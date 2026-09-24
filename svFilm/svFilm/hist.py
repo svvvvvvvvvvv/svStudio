@@ -57,11 +57,28 @@ CH_B = (32, 92, 168)       # 采样自 (26,88,164)
 GRID = (74, 74, 74)        # 分区线（极淡，别抢戏）
 TXT = (170, 170, 176)      # 轴标签
 TXT_HI = (222, 222, 228)
+GUIDE = (78, 78, 82)       # 纵轴参考线
+GUIDE_TXT = (140, 140, 146)
 TRI_OFF = (86, 86, 90)     # 裁切三角（未触发）
 TRI_SH = (90, 165, 255)    # 阴影裁切 = 蓝
 TRI_HI = (255, 90, 80)     # 高光裁切 = 红
 LINE_W = 3                 # 彩色描边线宽（参照图按比例约这么多）
 SMOOTH = 5                 # 彩色描边线的平滑窗口（只为好看，灰填充不动）
+# ★★ 纵轴上限：**满格 = 某一档占全画面这么多像素**（固定值 ⇒ **跨图可比**）。
+#   为什么必须固定：按每张图自己的最大值归一的话，每张的纵轴刻度都不一样，
+#   "我的 vs 机内 vs 大师"根本没法比 —— 每张都有个峰顶满，看不出高矮。
+#   08-24 量了 1079 张（我们 10 + 机内 957 + 鹿井 32 + 小红书 80）的单档占比：
+#     P50 1.9% · P75 3.7% · P90 8.4% · P95 12.3% · P99 24.8%
+#   取 **8%** ⇒ **88.7% 的照片不会被削平**（5% 只有 82%、2% 只有一半）。
+#   超出的削平 —— 削平本身就是"这一档堆了很多"的信号（LR 也削）。
+YMAX_RATIO = 0.08
+# ★ 幂压缩（**所有图用同一个指数** ⇒ 仍然完全可比）：满格 8% 对普通片子太宽松 ——
+#   大部分片子单档只占 2%，线性画出来只有 1/4 高、全挤在底下没法看形状。
+#   开 0.45 次方之后：8% → 满格、2% → 约半高、0.5% → 约三成，形状和可比性都保住。
+#   （相机 / LR 内部也是某种压缩；关键是**口径统一**。）
+Y_GAMMA = 0.45
+# 纵轴上画几条横向参考线（标出"这个高度 = 占画面百分之几"）——⚠ 要按压缩后的高度画
+Y_GUIDES = (0.02, 0.05, 0.08)
 
 _FONT_PATHS = (r'C:\Windows\Fonts\msyh.ttc', r'C:\Windows\Fonts\msyhbd.ttc',
                r'C:\Windows\Fonts\simhei.ttf', r'C:\Windows\Fonts\arial.ttf')
@@ -83,8 +100,11 @@ def _luma(rgb):
     return (a[..., 0] * 0.2126 + a[..., 1] * 0.7152 + a[..., 2] * 0.0722) * 255.0
 
 
-def channels(disp):
-    """算出亮度 / R / G / B 四条直方图（各 256 bin，已按 99.5 分位归一 + 开方压缩）。
+def channels(disp, ymax=None):
+    """算出亮度 / R / G / B 四条直方图（各 256 bin）。
+
+    ★ 纵轴归一用的是**固定上限** `YMAX_RATIO`（满格 = 某档占全画面 8%），
+      **不是**按每张图自己的最大值 —— 那样每张刻度都不一样、跨图不可比。
 
     @returns {(list[np.ndarray], float, float)} 四条 0~1 的高度曲线 + 阴影/高光裁切比例
     """
@@ -94,11 +114,8 @@ def channels(disp):
     for i in range(3):
         v = (a[..., i] * 255.0).round().astype(np.int32).ravel()
         chans.append(np.bincount(v, minlength=256).astype(np.float64))
-    hs = []
-    for c in chans:
-        ref = float(np.percentile(c[c > 0], 99.5)) if (c > 0).any() else 1.0
-        ref = max(ref, 1.0)
-        hs.append(np.clip(c / ref, 0.0, 1.0) ** 0.85)
+    ref = max(float(ymax if ymax is not None else YMAX_RATIO), 1e-6)
+    hs = [np.clip(c / (float(c.sum()) * ref), 0.0, 1.0) ** Y_GAMMA for c in chans]
     # 裁切：最暗/最亮那一档的占比（超过 0.05% 才亮三角）
     n = float(ys.size)
     sh_c = float((ys == 0).sum()) / n
@@ -107,7 +124,7 @@ def channels(disp):
 
 
 def draw(disp=None, w=760, h=240, title=None, marks=None, curves=None, sat=None,
-         style='lr', line_w=None, zones=True):
+         style='lr', line_w=None, zones=True, guides=True):
     """画一张直方图。
 
     `style`：`'lr'`（默认，对齐 SV 参照图：浅灰实心亮度 + R/G/B 描边线）
@@ -163,6 +180,17 @@ def draw(disp=None, w=760, h=240, title=None, marks=None, curves=None, sat=None,
             pts = [(PAD_L + x, PAD_T + gh - float(v[x]) * gh) for x in range(gw)]
             dr.line(pts, fill=col, width=lw, joint='curve')
 
+    # ---- 纵向参考线（标出"这个高度 = 占画面百分之几"，配合固定上限用）----
+    if guides:
+        for gy in Y_GUIDES:
+            yy = PAD_T + gh - (min(gy / YMAX_RATIO, 1.0) ** Y_GAMMA) * gh
+            if not (PAD_T < yy < PAD_T + gh):
+                continue
+            for xx in range(PAD_L, PAD_L + gw, 7):
+                dr.line([(xx, yy), (xx + 3, yy)], fill=GUIDE, width=1)
+            dr.text((PAD_L + gw - 3, yy - 2), '%.0f%%' % (gy * 100), font=f9,
+                    fill=GUIDE_TXT, anchor='rs')
+
     # ---- 5 个区的刻度 + 名字（参照图没有，但 SV 要"黑色阴影高光白色"这套；做淡）----
     if zones:
         for _nm, a0, _a1 in ZONES[1:]:
@@ -187,6 +215,8 @@ def draw(disp=None, w=760, h=240, title=None, marks=None, curves=None, sat=None,
 
     if title:
         dr.text((PAD_L + 2, 6), title, font=f10, fill=TXT_HI, anchor='la')
+        dr.text((PAD_L + gw, 7), '纵轴满格 ＝ 单档占画面 %.0f%%' % (YMAX_RATIO * 100),
+                font=f9, fill=GUIDE_TXT, anchor='ra')
     for x01, lab in (marks or []):
         x = PAD_L + float(x01) * gw
         dr.line([(x, PAD_T), (x, PAD_T + gh)], fill=(255, 212, 120), width=1)
