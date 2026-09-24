@@ -341,6 +341,18 @@ def t_hist():
           '亮度最大 %.2f' % float(np.max(c[0])))
     check('亮度那条跟 RGB 三条不是同一条（真算了，不是复制）',
           float(np.max(np.abs(c[0] - c[1]))) > 0.01)
+    # ★ 纵轴必须是**固定口径**（满格 = 单档占画面 YMAX_RATIO），不是按每张图自己的最大值
+    g = np.asarray(_gray_img(seed=31), np.float64)
+    ys = hist._luma(g).astype(np.int32).ravel()
+    cnt = np.bincount(ys, minlength=256).astype(np.float64)
+    want = (cnt.max() / (cnt.sum() * hist.YMAX_RATIO)) ** hist.Y_GAMMA
+    got = float(np.max(hist.channels(g)[0][0]))      # [0]=四条曲线, [0][0]=亮度那条
+    check('★★ 纵轴是**固定口径**（满格 = 单档占画面 %.0f%%），不是每张自己归一'
+          % (hist.YMAX_RATIO * 100),
+          abs(got - min(want, 1.0)) < 1e-6, '实到 %.4f  应到 %.4f' % (got, min(want, 1.0)),
+          '改成"按每张图自己的最大值归一"的话每张刻度都不一样 ⇒ 跨图不可比')
+    check('★ 同一张图喂两次峰值完全一样（口径稳定）',
+          abs(float(np.max(hist.channels(g)[0][0])) - got) < 1e-12)
 
     # ② 裁切：全黑 ⇒ 阴影裁切亮；全白 ⇒ 高光裁切亮；中间灰 ⇒ 都不亮
     _, a_bk, b_bk = hist.channels(np.zeros((32, 32, 3)))
