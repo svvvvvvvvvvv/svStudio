@@ -268,6 +268,14 @@ TARGET_BLACK_SHAPE = -53.1
 #   ⚠ 中位低于 ~57 的片会被这道下限拦住 —— 那时形状对不满是**物理上到不了**，不是 bug。
 TARGET_BLACK_FLOOR_L = 4.0
 
+# ★★ 亮部也一样：**往靶收、只压不提**（09-24 研究 "直方图能不能驱动逐图处理" 时加的）。
+#   量出来逐图的亮部形状离靶 **−10.7 ~ +15.8** ⇒ 固定不动的话，超靶的那几张白得发灰。
+#   ⚠ 往上的方向（亮部不够、想提）**做不了** —— 显示域没有数据，提就是拉噪声。
+#     那种片子得回**引擎**那一步（线性域、有高光余量）。
+TARGET_HI_SHAPE = 31.8
+HI_MAX_DOWN = 8.0          # 单张最多压多少（护栏）
+TARGET_HI_FLOOR_L = 78.0   # 亮部绝对下限：别把"白"压没了
+
 
 def rel_of(name, cfg=C):
     """取这一档的三个力度（名字不认得 ⇒ 回默认档，不静默乱走）。"""
@@ -292,7 +300,8 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
     # ⚠ 黑位**负值 = 往上提** —— 别再用"提阴影"那种说法，方向容易搞反）
     # ★ 黑位**只往鹿井的形状收、只压不提**：离带还差多少就补多少（最多补 `bl_down`），
     #   已经在带内或更深的**一个像素都不动**。理由见 `TARGET_BLACK_SHAPE`。
-    _L5, _L50 = float(color.L_of_lin(y5)), float(color.L_of_lin(y50))
+    _L5, _L50, _L95 = (float(color.L_of_lin(y5)), float(color.L_of_lin(y50)),
+                       float(color.L_of_lin(y95)))
     _need = max(0.0, (_L5 - _L50) - TARGET_BLACK_SHAPE)      # >0 = 离带还差这么多
     _bl = float(np.clip(min(float(st['bl_down']), _need), -30.0, 30.0))
     # 绝对黑位下限：别压穿（中位低的片子按形状算会到负数 ⇒ 死黑）
@@ -301,7 +310,12 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
     Tb = float(np.clip(color.lin_of_L(_L5 - _bl), _EPS, None))
     Tm = float(np.clip(color.lin_of_L(float(color.L_of_lin(y50))) * (2.0 ** -float(st['ev_down'])),
                        _EPS, None))
-    Tw = float(np.clip(color.lin_of_L(float(color.L_of_lin(y95)) - float(st['hi_down'])), _EPS, None))
+    # 亮部同理：只往靶收、只压不提；已经在靶内/更低的**不动**（想提得回引擎）
+    _need_hi = max(0.0, (_L95 - _L50) - TARGET_HI_SHAPE)
+    _hi = float(np.clip(min(float(st['hi_down']) + _need_hi, HI_MAX_DOWN), 0.0, 30.0))
+    _hi = min(_hi, _L95 - float(getattr(cfg, 'TARGET_HI_FLOOR_L', 78.0)))
+    _hi = max(_hi, 0.0)
+    Tw = float(np.clip(color.lin_of_L(_L95 - _hi), _EPS, None))
     # 单调钳：靶必须 黑 < 中 < 白（留 2% 余量）
     Tb = min(Tb, Tm * 0.98)
     Tw = max(Tw, Tm * 1.02)
@@ -314,6 +328,7 @@ def settle_finished(disp, style=DEFAULT, cfg=C):
         ev_down=float(st['ev_down']), hi_down=float(st['hi_down']),
         bl_down=float(st['bl_down']), bl_applied=float(_bl),
         bl_need=float(_need), bl_shape_in=float(_L5 - _L50),
+        hi_applied=float(_hi), hi_need=float(_need_hi), hi_shape_in=float(_L95 - _L50),
         L5_in=float(color.L_of_lin(y5)), L50_in=float(color.L_of_lin(y50)),
         L95_in=float(color.L_of_lin(y95)),
         L5_out=float(color.L_of_lin(Tb)), L50_out=float(color.L_of_lin(Tm)),
