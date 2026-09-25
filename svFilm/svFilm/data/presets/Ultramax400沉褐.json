@@ -129,7 +129,8 @@
    0.17,
    0.23
   ],
-  "diffusion_size_um": 20.0
+  "diffusion_size_um": 10.0,
+  "diffusion_tail_um": 20.0
  },
  "glare": {
   "active": true,
