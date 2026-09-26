@@ -266,6 +266,9 @@ TARGET_BLACK_SHAPE = -53.1
 #   鹿井那 32 张的中位普遍在 61 上下，他 L5 的绝对中位是 **7.5**（P25 5.6）
 #   ⇒ 下限取 4（略低于他的 P25，留一点余地）。
 #   ⚠ 中位低于 ~57 的片会被这道下限拦住 —— 那时形状对不满是**物理上到不了**，不是 bug。
+# ★★★ 09-26：这个常量现在只是**兜底默认**（可调的那份在 `config.TARGET_BLACK_FLOOR_L`）。
+#   原来函数里写的是 `getattr(cfg, 'TARGET_BLACK_FLOOR_L', 4.0)`，而 config 里**没有这个键**
+#   ⇒ 改下面这行**没有任何反应**（"假旋钮"）。现在两边同名同值，但**改 config 才生效**。
 TARGET_BLACK_FLOOR_L = 4.0
 
 # ★★ 亮部也一样：**往靶收、只压不提**（09-24 研究 "直方图能不能驱动逐图处理" 时加的）。
@@ -274,7 +277,7 @@ TARGET_BLACK_FLOOR_L = 4.0
 #     那种片子得回**引擎**那一步（线性域、有高光余量）。
 TARGET_HI_SHAPE = 31.8
 HI_MAX_DOWN = 8.0          # 单张最多压多少（护栏）
-TARGET_HI_FLOOR_L = 78.0
+TARGET_HI_FLOOR_L = 78.0   # ★ 同 TARGET_BLACK_FLOOR_L：兜底默认，可调的那份在 config
 
 # ===========================================================================
 # 技术层体检（09-24 研究「直方图能不能驱动逐图处理」时加的）
@@ -312,7 +315,10 @@ def health(disp):
 
 
 def rel_of(name, cfg=C):
-    """取这一档的三个力度（名字不认得 ⇒ 回默认档，不静默乱走）。"""
+    """取这一档的三个力度（名字不认得 ⇒ 回默认档，不静默乱走）。
+
+    ★ 09-26：`config.TONE_REL` 也可以是这份表的整体覆盖（默认 `None` = 用下面 `REL` 那份）。
+    """
     tbl = getattr(cfg, 'TONE_REL', None) or REL
     return tbl.get(str(name)) or tbl.get(DEFAULT) or REL[DEFAULT]
 
@@ -370,7 +376,7 @@ def settle_finished(disp, style=DEFAULT, cfg=C, stock=None):
     _need = max(0.0, (_L5 - _L50) - _blk_t)                 # >0 = 离靶还差这么多
     _bl = float(np.clip(min(float(st['bl_down']), _need), -30.0, 30.0))
     # 绝对黑位下限：别压穿（中位低的片子按形状算会到负数 ⇒ 死黑）
-    _bl = min(_bl, _L5 - float(getattr(cfg, 'TARGET_BLACK_FLOOR_L', 4.0)))
+    _bl = min(_bl, _L5 - float(getattr(cfg, 'TARGET_BLACK_FLOOR_L', TARGET_BLACK_FLOOR_L)))
     _bl = max(_bl * k_lo, -30.0)          # ★ 乘挤压系数：暗部糊住了就别再压
     Tb = float(np.clip(color.lin_of_L(_L5 - _bl), _EPS, None))
     Tm = float(np.clip(color.lin_of_L(float(color.L_of_lin(y50))) * (2.0 ** -float(st['ev_down'])),
@@ -378,7 +384,7 @@ def settle_finished(disp, style=DEFAULT, cfg=C, stock=None):
     # 亮部同理：只往靶收、只压不提；已经在靶内/更低的**不动**（想提得回引擎）
     _need_hi = max(0.0, (_L95 - _L50) - _hi_t)
     _hi = float(np.clip(min(float(st['hi_down']) + _need_hi, HI_MAX_DOWN), 0.0, 30.0))
-    _hi = min(_hi, _L95 - float(getattr(cfg, 'TARGET_HI_FLOOR_L', 78.0)))
+    _hi = min(_hi, _L95 - float(getattr(cfg, 'TARGET_HI_FLOOR_L', TARGET_HI_FLOOR_L)))
     _hi = max(_hi * k_hi, 0.0)             # ★ 同理：亮部糊住了就别再压
     Tw = float(np.clip(color.lin_of_L(_L95 - _hi), _EPS, None))
     # 单调钳：靶必须 黑 < 中 < 白（留 2% 余量）

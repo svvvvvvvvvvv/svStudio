@@ -45,9 +45,22 @@ import numpy as np
 
 from . import config as C
 
-# 预设按名字缓存：9 条，每条只建一次；建完不再改 ⇒ 多线程下只读，安全。
+# 预设按名字缓存：每条只建一次。
+# ⚠⚠ 09-26 纠正一句原来写错的话：这里原来写着「建完不再改 ⇒ 多线程下只读，安全」——
+#   **不对**。`render()` 每次都会**临时改写**这个对象上的几个字段（印相曝光 / 测光开关 / 相纸）
+#   再还原，所以它是**共享可变的**。同预设并发时必须串行 ⇒ 见下面的 `_LOCKS`。
 _PARAMS: dict[str, object] = {}
 _LOCK = threading.Lock()
+# 渲染用的**按预设名**的一把锁（粒度 = 预设，不同预设仍可并行）
+_LOCKS: dict = {}
+
+
+def _lock_of(name):
+    with _LOCK:
+        lk = _LOCKS.get(name)
+        if lk is None:
+            lk = _LOCKS[name] = threading.Lock()
+    return lk
 
 _SUFFIX = '.json'
 # 这几个 NOT 字段名在 JSON 里没有、但 svFilm 要自己定（引擎的加速开关）
@@ -371,12 +384,18 @@ def pe_of(name):
     return float(load_raw(name)['simulation']['print_exposure'])
 
 
-def render(lin, name, cfg=C, print_exposure=None, print_profile=None):
+def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=None):
     r"""喂**场景线性**，出**显示域**（与 `spektra.render()` 同契约，可互换）。
 
     `print_exposure`：不传 = 用「预设自带的 pe × `SPEK_PE_SHIFT`」（与真卷那条路的结构一致）；
       显式传 = 直接覆盖（给二分找落点用）。
     `print_profile`：不传 = 用预设配套的那张纸；传了 = 覆盖（相纸下拉）。
+    `overrides`：{「字段路径」: 值}，例 `{'enlarger.print_y_filter_shift': 13.0,
+      'film_render.grain.blur': 0.5}`。跑完**一定还原**（取值不对当场报错，不静默）。
+      ★★★ 09-26 加这个参数 = **「按场景分参数」的地基**：
+      同一个预设名在不同场景要用不同数值时，不能去改 `_PARAMS` 里那份共享对象
+      （两个场景并发就互相踩），而是**每张图临时覆盖一次字段、跑完还原**。
+      ⚠ 现在还没有"场景判据"去产出这份 dict —— 那是下一步；这里先把**通道**打通、并用自检钉住。
 
     ⚠ 这里**不做** `digest_params(apply_stocks_specifics=True)` —— 那会把预设里的
       `halation_strength` 冲回卷的出厂值（我们调的「光晕 40」就这么没的）。
@@ -386,10 +405,21 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None):
     """
     p = _params_for(name, cfg)
 
+    # ★★★ 09-26：**按预设名加锁**。下面这一整段是「临时改写共享的 `p` → 跑 → 还原」，
+    #   而常驻服务是多线程的（`ThreadingHTTPServer`）⇒ 同一预设的两个请求并发时，
+    #   一个的改写会被另一个的还原抹掉（现在写的值恰好相同所以侥幸没事，
+    #   但只要 `overrides` 一上就立刻变成真竞态）。
+    #   ★ 粒度为**每个预设一把锁**：不同预设仍可并行，只有同名预设串行（本来就该串行，它们共用一个对象）。
+    with _lock_of(name):
+        return _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides)
+
+
+def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
     _p0 = p.enlarger.print_exposure
     _ae0 = p.camera.auto_exposure
     _np0 = p.enlarger.normalize_print_exposure
     _pp0 = p.print
+    _ovs = []                       # [(对象, 属性名, 原值)] —— 还原用
     try:
         if print_profile:
             spektra = __import__(__name__.rsplit('.', 1)[0] + '.spektra', fromlist=['x'])
@@ -416,14 +446,37 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None):
             p.camera.auto_exposure = False
             p.enlarger.normalize_print_exposure = False
 
+        # ★ 场景覆盖放**最后**（能盖住上面两项）。字段路径写错 **当场报错**，不静默吞掉。
+        for _dotted, _val in (dict(overrides) if overrides else {}).items():
+            _obj, _attr = _walk(p, _dotted)
+            if not hasattr(_obj, _attr):
+                raise KeyError('overrides 里这个字段不存在: %s（预设 %s）' % (_dotted, name))
+            _ovs.append((_obj, _attr, getattr(_obj, _attr)))
+            setattr(_obj, _attr, _val)
+
         out = _simulate_once(p, np.clip(np.asarray(lin, np.float64), 0.0, None),
                              bool(getattr(cfg, 'PRESET_APPLY_STOCK_SPECIFICS', False)))
     finally:
+        for _obj, _attr, _old in _ovs:          # ★ 覆盖先还，再还上面那三项
+            setattr(_obj, _attr, _old)
         p.enlarger.print_exposure = _p0
         p.camera.auto_exposure = _ae0
         p.enlarger.normalize_print_exposure = _np0
         p.print = _pp0
     return np.clip(np.asarray(out, np.float64), 0.0, 1.0)
+
+
+def _walk(root, dotted):
+    """把 `'enlarger.print_y_filter_shift'` 解成 (倒数第二层的对象, 最后的属性名)。"""
+    parts = [s for s in str(dotted).split('.') if s]
+    if not parts:
+        raise KeyError('overrides 的字段路径是空的')
+    obj = root
+    for k in parts[:-1]:
+        if not hasattr(obj, k):
+            raise KeyError('overrides 的字段路径走不通: %s（在 %r 处断了）' % (dotted, k))
+        obj = getattr(obj, k)
+    return obj, parts[-1]
 
 
 _SIM = [None]

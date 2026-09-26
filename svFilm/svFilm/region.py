@@ -39,8 +39,15 @@ def _ramp(x, lo, hi):
     return t * t * (3.0 - 2.0 * t)
 
 
-def masks(disp, cfg=None):
+def masks(disp, cfg=None, parsed=None):
     """算出四个**软**掩膜（0~1，和 disp 同尺寸）。
+
+    `parsed`：**已经**由调用方算好的一次 `face.parse(...)` 的结果。给了就直接拿它的
+      `person`，**不再调一遍分割模型**。
+      ★★★ 为什么要这个参数（09-26）：① `grade.apply` 里 `region.weights` 和 L4 各要一份掩膜，
+      同一份像素调两遍 = 白付一次分割（实测 273 ms/次）；② 更要紧的是**喂哪张图** ——
+      `pipeline` 老路专门在**解码后**算掩膜（链尾发白 ⇒ 模型认不出脸），新路若在这里现算，
+      拿到的是**引擎出图之后**的成片 ⇒ 又撞上那个病。所以掩膜由 pipeline 在解码后算一次、传下来。
 
     @returns {dict} dict(person=…, sky=…, veg=…, rest=…, src='…')
     """
@@ -48,15 +55,23 @@ def masks(disp, cfg=None):
     H, W = d.shape[:2]
     person = None
     src = 'heuristic'
-    try:                                              # ① 人：模型给的（可信）
-        from . import face as _F
-        r = _F.parse(d)
-        mk = (r or {}).get('masks') or {}
-        if mk.get('person') is not None:
-            person = np.clip(np.asarray(mk['person'], np.float64), 0.0, 1.0)
-            src = 'face'
-    except Exception:                                                  # noqa: BLE001
-        person = None
+    if parsed is not None:                            # ① 调用方给的（解码后那张图算的）
+        mk = (parsed or {}).get('masks') or {}
+        _pp = mk.get('person')
+        # ⚠ 尺寸必须对得上才认（掩膜是在另一张同尺寸的图上算的；换过渲染尺寸就不认）
+        if _pp is not None and tuple(np.shape(_pp)[:2]) == (H, W):
+            person = np.clip(np.asarray(_pp, np.float64), 0.0, 1.0)
+            src = 'given'
+    if person is None:                                # ② 没有就直接算（单独调本函数时）
+        try:
+            from . import face as _F
+            r = _F.parse(d)
+            mk = (r or {}).get('masks') or {}
+            if mk.get('person') is not None:
+                person = np.clip(np.asarray(mk['person'], np.float64), 0.0, 1.0)
+                src = 'face'
+        except Exception:                                              # noqa: BLE001
+            person = None
     if person is None:
         person = np.zeros((H, W), np.float64)
 
@@ -83,15 +98,18 @@ def masks(disp, cfg=None):
     return dict(person=person, sky=sky, veg=veg, rest=rest, src=src)
 
 
-def weights(disp, cfg=None, grow_person=None):
+def weights(disp, cfg=None, grow_person=None, parsed=None):
     """区域 → **加权系数**：把"色相带增益"按区域缩放。
 
     默认（`config.GRADE_REGION_SCOPE`）：
       · `'env'`（当前）：**环境增益只作用在"非人"区域** ——
         人像区不套用环境的色相带增益（人像归 L4 肤色管）；
       · `'all'`：不分区（老行为）。
+
+    `parsed`：调用方已经算好的 `face.parse(...)` 结果（见 `masks` 的说明）—— 传了就复用，
+      不再多跑一遍分割模型。
     """
-    m = masks(disp, cfg)
+    m = masks(disp, cfg, parsed=parsed)
     w_person = m['person']
     if grow_person is None:
         grow_person = 1.0

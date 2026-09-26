@@ -157,12 +157,26 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         # ⚠ 既然动作在之后，脸锚点 / 高光护栏这两道"引擎之前"的工序就不参与：
         #   一个是给"自己标的真卷"校落点用的，另一个是给入口曲线兜高光用的。
         #   新路（public 的加载）不做入口提亮 ⇒ 两道都无事可做。
+        #
+        # ★★★ 09-26 修一个漏：**人脸掩膜在「解码后」那张图上算一次**（同 `else` 分支的理由）。
+        #   链尾（胶片出图后）画面已经发白 ⇒ 分割模型认不出脸 ⇒ 掩膜空 ⇒ 后续静默失效。
+        #   老路 (`else`) 早就把这件事挪到解码后了，新路当时漏掉 ⇒ `grade` 是在**成片**上现算的。
+        #   实测同一批 12 张：解码后检出 12/12、引擎出图后只有 11/12（`DSCF1141` 就是丢在那一步）。
+        #   算一次、传下去，`grade` 里 region 与 L4 共用 ⇒ 顺带把重复的那次分割也省掉。
+        #   ⚠ 拿不到（模型缺失）⇒ `None`，下游自己降级，**不崩**。
+        _pz = None
+        try:
+            from . import face as _face
+            _pz = _face.parse(np.clip(s.disp, 0.0, 1.0))
+        except Exception:                                        # noqa: BLE001
+            _pz = None
+
         disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg)
         # ---- L1 影调（明度分布）----
         disp, t_info = tone.settle_finished(disp, style, cfg, stock=name)
-        # ---- L2 分色 + L3 混色（颜色）----
+        # ---- L2 分色 + L3 混色 + L4 肤色（颜色）----
         # ⚠ 这一层**不做曝光**（显示域乘增益 = 拉噪声 + 高光切白），只按亮度/色相加权染色。
-        disp, g_info = grade.apply(disp, cfg, stock=name)
+        disp, g_info = grade.apply(disp, cfg, stock=name, parsed=_pz)
         t_info['grade'] = g_info
         gk = 1.0
         anc = dict(applied=False, note='曝光风格在引擎之后 ⇒ 不做脸锚点')

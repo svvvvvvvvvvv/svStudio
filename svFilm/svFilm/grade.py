@@ -131,8 +131,17 @@ def _band_weight(H, center, half):
 # 主入口
 # ---------------------------------------------------------------------------
 
-def apply(disp, cfg=C, stock=None):
+def apply(disp, cfg=C, stock=None, parsed=None):
     """在**成片**（显示域）上做分色 + 混色。
+
+    `parsed`：**调用方已经算好的一次** `face.parse(...)`（`pipeline` 在**解码后**那张图上算的）。
+      ★★★ 09-26 为什么要传下来（两件事一起解决）：
+      ① **喂哪张图**：链尾（胶片出图后）画面发白 ⇒ 分割模型认不出脸。`pipeline` 老路专门
+         把掩膜挪到"解码后算一次"，新链路（`TONE_AFTER_ENGINE`）又在这里现算 ⇒ 撞回同一个病
+         （实测同一批 12 张：解码后检出 12/12、引擎出图后 11/12）。
+      ② **白付两次**：本函数里 `region.weights` 和 L4 各要一份掩膜，同一份像素调两遍分割
+         （实测 273 ms/次）。传进来就只算一次。
+      `None` ⇒ 本函数自己算（单独调用时的老行为，逐位不变）。
 
     @returns {(numpy.ndarray, dict)} 出图 + 报告（能自查动了多少）
     """
@@ -149,6 +158,15 @@ def apply(disp, cfg=C, stock=None):
     lab = color.to_lab(d)
     L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
     Lm, am, bm = float(np.median(L)), float(np.median(a)), float(np.median(b))
+
+    # ★★★ 09-26：传进来的那次解析，**只在这一层用一次**（region 与 L4 共用）。
+    #   ⚠ 尺寸对不上就不认（掩膜是在另一张同尺寸图上算的；换了渲染尺寸必须现算）。
+    _pz = parsed
+    if _pz is not None:
+        _mk0 = (_pz or {}).get('masks') or {}
+        _fs0 = _mk0.get('face_skin')
+        if _fs0 is None or tuple(np.shape(_fs0)[:2]) != tuple(L.shape):
+            _pz = None
 
     # ---------- L2 色彩分级 ----------
     w_sh, w_hi, w_deep = _sh_hi_weights(L, cfg)
@@ -207,7 +225,7 @@ def apply(disp, cfg=C, stock=None):
     try:
         if str(getattr(cfg, 'GRADE_REGION_SCOPE', 'env')).lower() == 'env':
             from . import region as _R
-            _rm = _R.weights(np.clip(disp, 0.0, 1.0), cfg)
+            _rm = _R.weights(np.clip(disp, 0.0, 1.0), cfg, parsed=_pz)   # ★ 复用同一次解析
             _resc = _rm['env_scale']
     except Exception:                                          # noqa: BLE001
         _resc = np.ones(L.shape, np.float64)
@@ -282,6 +300,8 @@ def apply(disp, cfg=C, stock=None):
     # ★ 提亮量大的时候对肤色区做一次**双边滤波**（rodrigorcz 那篇的做法，治提亮后的色阶断裂）
     _dl = _dc = _dh = 0.0
     _mask_src = 'none'
+    _face_seen = False          # ★ 09-26：报告里要说清「检测器认没认出脸」，先给默认值
+    _model_ok = False           # ★ 09-26：分割模型跑起来了没有（决定能不能退回色相窗）
     if _tg and _tg.get('skin_l') is not None:
         _lim_l = float(getattr(cfg, 'GRADE_SKIN_LIMIT_L', 6.0))
         # ★★ 09-26 修一个 bug：这三行原来只有 `_lim_h` 支持按靶覆盖，`_lim_c` **只读 config**
@@ -297,21 +317,49 @@ def apply(disp, cfg=C, stock=None):
                        if (_tg or {}).get('skin_limit_h') is not None
                        else getattr(cfg, 'GRADE_SKIN_LIMIT_H', 8.0))
         _w = None
-        try:                                        # ① 先试真脸掩膜
-            from . import face as _F
-            _r = _F.parse(np.clip(disp, 0.0, 1.0))
-            _mk = (_r or {}).get('masks') or {}
-            if _mk.get('face_skin') is not None:
-                _w = np.clip(_mk['face_skin'] * 1.6, 0.0, 1.0)          # 脸：严格
-                if _mk.get('skin') is not None:
-                    _w = np.maximum(_w, np.clip(_mk['skin'], 0.0, 1.0)
-                                    * float(getattr(cfg, 'GRADE_SKIN_BODY_W', 0.5)))
-                _mask_src = 'face'
-        except Exception:                                            # noqa: BLE001
-            _w = None
-        if _w is None or float(_w.max()) < 0.05:    # ② 没检出脸 ⇒ 退回色相窗（有总比没有好）
-            _w = _band_weight(H, 35.0, 26.0) * live * 0.6
-            _mask_src = 'hue'
+        _face_seen = False                          # ★ 检测器（YuNet）到底认没认出脸
+        _model_ok = False                           # ★ 分割模型跑起来了没有
+        _pzr = _pz
+        if _pzr is None:
+            try:                                    # ① 没传进来就自己算一遍（老行为）
+                from . import face as _F
+                _pzr = _F.parse(np.clip(disp, 0.0, 1.0))
+            except Exception:                                        # noqa: BLE001
+                _pzr = None
+        if _pzr is not None:
+            _model_ok = True
+            _mk = (_pzr or {}).get('masks') or {}
+            _fs = _mk.get('face_skin')
+            if _fs is not None and float(np.max(_fs)) > 0.05:
+                _w = np.clip(np.asarray(_fs, np.float64) * 1.6, 0.0, 1.0)   # 脸：严格
+                # ★★★ 09-26 修的正是这里：**"有没有脸"以前根本没查**。
+                #   `face_skin` 是**分割**出来的"脸皮肤"类，**检不到脸时它照样有值**
+                #   （实测 12 张：引擎出图后检测器只认出 11 张，但 12 张的 face_skin 都非空）
+                #   ⇒ 只看"它非空"就动手 = 假装有脸，报告里还写 'face'。
+                #   现在按**检测器的结论**分两条：
+                #     · 认到脸（过了那三道防假脸闸）⇒ 脸严格 + 身体皮肤松一点（老行为）
+                #     · 没认到脸（侧脸 / 背影 / 被挡 —— SV 明确说这些片子也该管）
+                #       ⇒ **只用 face_skin**，并如实标 `seg`，别冒充 `face`
+                if (_pzr or {}).get('face') is not None:
+                    _face_seen = True
+                    _mask_src = 'face'
+                    if _mk.get('skin') is not None:
+                        _w = np.maximum(_w, np.clip(np.asarray(_mk['skin'], np.float64), 0.0, 1.0)
+                                        * float(getattr(cfg, 'GRADE_SKIN_BODY_W', 0.5)))
+                else:
+                    _mask_src = 'seg'
+        if _w is None:
+            if _model_ok:
+                # ★★★ 09-26：模型**能跑**、但整张没有皮肤 ⇒ **什么都别做**。
+                #   原来这里退回色相窗，而那个窗正是这次重做要废掉的东西
+                #   （实测窗内只有 10.5% 是真皮肤，剩下是墙/木头/黄叶）。没人的风景里
+                #   "按色相窗当成皮肤"会把木头/黄墙提亮 —— 那就是当年"脸崩"的来源。
+                _w = np.zeros(L.shape, np.float64)
+                _mask_src = 'none'
+            else:
+                # 模型**不可用**（缺依赖/模型文件）⇒ 退回色相窗，有总比没有好
+                _w = _band_weight(H, 35.0, 26.0) * live * 0.6
+                _mask_src = 'hue'
         _sel = _w > 0.5
         if float(_w.max()) > 0.05 and bool(_sel.any()):      # ★ 必须检查非空：空窗口时
             _Cc2 = np.sqrt(a * a + b * b)                   #   np.median([]) = nan ⇒ 整张被写成 nan
@@ -388,5 +436,14 @@ def apply(disp, cfg=C, stock=None):
                 d_sh=(float(sha), float(shb)), d_hi=(float(hia), float(hib)),
                 c_gain=[(c, (k + (_bg[i] if i < len(_bg) else 0.0))) for i, (c, _, k, _) in enumerate(BANDS)],
                 target=(sha, shb, hia, hib), stock=stock,
-                skin_dL=_dl, skin_dC=_dc, skin_dH=_dh, skin_mask=_mask_src)
+                skin_dL=_dl, skin_dC=_dc, skin_dH=_dh, skin_mask=_mask_src,
+                # ★★★ 09-26：`skin_mask` 的四个取值，语义**互斥**、别混：
+                #   'face' = 检测器(过三道防假脸闸)**认到脸** + 分割；脸严格、身体松一点
+                #   'seg'  = 检测器**没认到**（侧脸/背影/被挡），只用分割的 face_skin
+                #   'hue'  = 模型**不可用**，退回色相窗（可信度最低）
+                #   'none' = 模型能跑但整张没皮肤 ⇒ **没动手**
+                #   ⚠ 以前只有 'face'/'hue' 两个值，而 'face' 在检不到脸时也会出现 ⇒ 报告会骗人。
+                skin_mask_src=('given' if parsed is not None else 'self'),
+                skin_face_seen=bool(_face_seen),
+                skin_model_ok=bool(_model_ok))
     return out, info

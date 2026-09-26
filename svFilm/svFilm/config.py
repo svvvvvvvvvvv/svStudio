@@ -125,6 +125,16 @@ PRESET_MID_SHIFT = {}
 #   两个都在定落点，直接相加会互相抵消 ⇒ 以风格为准、脸只做有限幅的修正。
 ANCHOR_LIMIT_EV = 0.6
 
+# ★★★ 09-26 补：**这两个下限与 `TONE_REL` 原来是"假旋钮"**。
+#   `tone.py` 里同时存在「模块常量 `TARGET_BLACK_FLOOR_L = 4.0`」和「`getattr(cfg, 'TARGET_BLACK_FLOOR_L', 4.0)`」
+#   两份，而 `config.py` 里**没有这个键** ⇒ 函数永远取那个字面默认，**改 `tone.py` 里的常量毫无反应**。
+#   现在键落在 config（唯一可调处），`tone.py` 的模块常量降级成"cfg 里没有时的兜底"，两边数值保持一致。
+TARGET_BLACK_FLOOR_L = 4.0      # 黑位（L5）的绝对下限：别把暗部压穿（中位低于 ~57 的片会被它拦住，那是物理上到不了）
+TARGET_HI_FLOOR_L = 78.0        # 亮部（L95）的绝对下限：别把"白"压没了
+#   曝光三条档的力度表。`None` = 用 `tone.py` 的 `REL` 那一份（默认）。
+#   要给某台机器/某个项目整体换一套力度，就在这里给一个与 `tone.REL` 同构的 dict。
+TONE_REL = None
+
 # ========== 输入 ==========
 MAX_SIDE = 2048                 # 工作分辨率（长边）
 
@@ -376,6 +386,11 @@ PRESET_NEUTRAL_M = 50.713
 #
 # 预设自带 pe 是否再乘 `SPEK_PE_SHIFT`（落点逐张微调那根）。True = 乘。
 PRESET_PE_SHIFT_FROM_SPEK = True
+# ★★★ 09-26 补：那根被乘上去的系数。**原来 config 里没有这个键**
+#   （`presets.render` 写的是 `getattr(cfg, 'SPEK_PE_SHIFT', 1.0)`）⇒ 恒等于 1.0，
+#   想从 config 调它调不到，只有改代码里那个字面量才有反应 —— 又一处"假旋钮"。
+#   1.0 = 照用预设自带的印相曝光。改它 = 全部预设的落点一起平移（不是逐条的靶）。
+SPEK_PE_SHIFT = 1.0
 
 # ---- ★★ spektrafilm 的加速开关（09-16 SV 选「A+B」）----
 #   这三项 vendor 出厂是关的；开了之后画面差比胶片自身不可复现噪声还小，

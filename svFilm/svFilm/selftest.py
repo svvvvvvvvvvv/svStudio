@@ -74,6 +74,8 @@ def _main():
         ('技术层：贴边 / 堆积 / 挤压系数', t_tech),
         ('靶按预设分组', t_targets),
         ('肤色层：真脸掩膜 / 空窗口 / 三件事', t_skin),
+        ('可调键：config 里真的接上了（防"假旋钮"）', t_config_keys),
+        ('人脸掩膜：算在解码后 / 只算一次 / 报告不说谎', t_mask_contract),
         ('契约：曝光在胶片之前 + 名字不认得要报错', t_contract),
         ('段缓存：同参数命中、换风格不命中', t_cache),
         ('服务：路由只剩该有的那几条', t_routes),
@@ -416,9 +418,23 @@ def t_skin():
               '空窗口时 np.median([]) = nan ⇒ 整张变 nan。必须先判 `_sel.any()`')
 
     # ③ 报告里带上"用的哪种掩膜"（自查不用猜）
+    #   ★★★ 09-26 这里**新增 'seg'**：`skin_mask` 原来只有 'face'/'hue' 两个值，
+    #     而 'face' 在**检测器根本没认出脸**的时候也会出现（只看分割的 face_skin 非空就动手）
+    #     ⇒ 报告会骗人。现在四个取值互斥：face / seg / hue / none，见 `grade.apply` 的注释。
     o, gi = grade.apply(np.asarray(_gray_img(seed=61), np.float64), C)
-    check('报告里带 skin_mask（真脸 / 色相窗回退）',
-          gi.get('skin_mask') in ('face', 'hue', 'none'), str(gi.get('skin_mask')))
+    check('报告里带 skin_mask（face / seg / hue / none 四态，不许说谎）',
+          gi.get('skin_mask') in ('face', 'seg', 'hue', 'none'),
+          str(gi.get('skin_mask')),
+          '取值不在四态里 ⇒ 后来人改了这个字段却忘了它是有语义的')
+    check('★ 报告里还带「检测器到底认没认出脸」（`skin_face_seen`）',
+          'skin_face_seen' in gi and gi.get('skin_face_seen') is False,
+          'face_seen=%s model_ok=%s' % (gi.get('skin_face_seen'), gi.get('skin_model_ok')),
+          '灰图检不出脸 ⇒ 必须是 False。原来这条信息根本不在报告里，'
+          '所以"没检到脸却写着 face"藏了很久')
+    check('★ 有脸才写 face（没认出脸时不许写 face）',
+          (gi.get('skin_mask') != 'face') or bool(gi.get('skin_face_seen')),
+          'skin_mask=%s face_seen=%s' % (gi.get('skin_mask'), gi.get('skin_face_seen')),
+          'skin_mask=face 但检测器没认出脸 ⇒ 又回到"只看分割就动手"的老毛病')
 
 
 def t_targets():
@@ -443,7 +459,7 @@ def t_targets():
 
 
 def t_tech():
-    """技术层体检（`tone.health`）：贴边 / 堆积 / 挤压系数。
+    r"""技术层体检（`tone.health`）：贴边 / 堆积 / 挤压系数。
 
     ⚠⚠ 横轴是**显示域 Y（0~255）**，不是 Lab 的 L\* —— 我自己混过一次：
       在直方图上看到 Blacks 处的"峰"以为是裁切，其实那在 Y≈20~40。
@@ -568,6 +584,105 @@ def t_grade():
     check('★ 中性灰不被推彩度（彩度闸兜着；留 3 的余量给分级那一点点）',
           cmax < 3.0, '五档灰最大彩度 %.2f' % cmax,
           '中性轴被推偏 ⇒ 灰像素没被彩度闸挡掉（加饱和把中性轴一起推偏是 digitalFilm 的老毛病）')
+
+
+def t_config_keys():
+    """★★ 09-26：**可调参数只在 `config.py`** —— 这四个键以前是"假旋钮"。
+
+    症状：代码里写的是 `getattr(cfg, 'X', 字面默认)`，而 `config.py` 里**没有 X 这个键**
+    ⇒ 永远取那个字面默认，**改源码里那个常量毫无反应**。
+    （`TARGET_BLACK_FLOOR_L` / `TARGET_HI_FLOOR_L` 当时各写了两份 —— 一份模块常量、一份
+     getattr 默认值，函数读的恰好是**另一份**。）
+    """
+    from . import tone
+
+    for k in ('TARGET_BLACK_FLOOR_L', 'TARGET_HI_FLOOR_L', 'SPEK_PE_SHIFT', 'TONE_REL'):
+        check('config.%s 这个键真的在（不是 getattr 的裸默认）' % k,
+              hasattr(C, k), '当前 %r' % getattr(C, k, None),
+              '缺它 ⇒ 代码里 `getattr(cfg, …)` 永远取那个字面默认，'
+              '改源码里同名常量**不会有任何反应**')
+    check('tone 里的兜底常量与 config 同值（两边不许各说各的）',
+          abs(tone.TARGET_BLACK_FLOOR_L - C.TARGET_BLACK_FLOOR_L) < 1e-9
+          and abs(tone.TARGET_HI_FLOOR_L - C.TARGET_HI_FLOOR_L) < 1e-9,
+          'tone %.1f/%.1f  config %.1f/%.1f' % (tone.TARGET_BLACK_FLOOR_L,
+                                                tone.TARGET_HI_FLOOR_L,
+                                                C.TARGET_BLACK_FLOOR_L, C.TARGET_HI_FLOOR_L))
+
+    # ★★ 光"键在"不够 —— 必须**真的读它**（键在但没人读 = 换了个人继续摆着看）
+    img = _gray_img(seed=71)
+    _f0 = C.TARGET_BLACK_FLOOR_L
+    try:
+        C.TARGET_BLACK_FLOOR_L = 4.0
+        a = float(tone.settle_finished(img, '中性调', C)[1]['bl_applied'])
+        C.TARGET_BLACK_FLOOR_L = 60.0          # 明显绑住（这张图的 L5 远低于 60）
+        b = float(tone.settle_finished(img, '中性调', C)[1]['bl_applied'])
+    finally:
+        C.TARGET_BLACK_FLOOR_L = _f0
+    check('★★ 改 config.TARGET_BLACK_FLOOR_L **真的**改变压黑位的量（键在、且被读到）',
+          abs(a - b) > 0.5, 'floor 4 ⇒ 压 %.2f ；floor 60 ⇒ 压 %.2f' % (a, b),
+          '改了没反应 ⇒ 这个键还是"摆着看的"')
+
+    _r0 = C.TONE_REL
+    try:
+        C.TONE_REL = {'中性调': dict(ev_down=0.0, hi_down=0.0, bl_down=0.0, desc='自检')}
+        z = float(tone.settle_finished(img, '中性调', C)[1]['bl_applied'])
+    finally:
+        C.TONE_REL = _r0
+    check('★ 改 config.TONE_REL 能给整套力度换一份（bl_down=0 ⇒ 黑位一个像素不动）',
+          abs(z) < 1e-9, '压黑位 %.3f' % z,
+          'TONE_REL 没被读到 ⇒ 三套力度只能改源码')
+
+
+def t_mask_contract():
+    """★★★ 09-26 人脸掩膜的三条契约（都是拿真图实测出来的坑）。
+
+    ① 掩膜必须算在**解码后**那张图上 —— 链尾（胶片出图后）发白 ⇒ 分割认不出脸。
+       实测同一批 12 张：解码后检出 12/12、引擎出图后只有 11/12。
+    ② 一次出图**只算一遍** —— `region` 和 L4 原来各算一遍，同一份像素白付两次（273 ms/次）。
+    ③ 报告**不许说谎** —— 原来只写 `'face'`/`'hue'`，而检测器没认出脸时也会写 `'face'`。
+    """
+    from . import face as _face, grade
+
+    calls = []
+    _orig = _face.parse
+
+    def _spy(d):
+        a = np.asarray(d)
+        calls.append((tuple(a.shape), float(np.median(a))))
+        return _orig(d)
+
+    _face.parse = _spy
+    try:
+        # ① 传进来的 `parsed` 必须被**复用**（不许再调一遍分割）
+        _pz = _orig(_gray_img(seed=3, h=24, w=24))
+        calls.clear()
+        _o, gi = grade.apply(np.asarray(_gray_img(seed=3, h=24, w=24), np.float64), C,
+                             stock=_PRESET, parsed=_pz)
+        check('★ 传了 parsed ⇒ grade 里**不再**调 face.parse（去掉重复的那一次）',
+              len(calls) == 0, '调了 %d 次' % len(calls),
+              '还在调 ⇒ region 与 L4 各算一遍，白付一次分割（实测 273 ms/次）')
+        check('报告里标明掩膜来自外部（skin_mask_src = given）',
+              gi.get('skin_mask_src') == 'given', str(gi.get('skin_mask_src')))
+
+        # ② 跑整条链：只算一次，而且喂的是**解码后**那张图
+        s = _mk_sample(_gray_img(seed=77))
+        calls.clear()
+        r = pipeline.run_from(s, stock=_PRESET, style='中性调')
+        got = list(calls)
+        check('★★ 整条链只算**一次**人脸掩膜（修复前是两次）',
+              len(got) == 1, '算了 %d 次' % len(got),
+              '>1 ⇒ 还在重复算；0 ⇒ 这道工序整个没跑，掩膜会退回色相窗')
+        check('★★★ 掩膜喂的是**解码后**那张图，不是胶片引擎的成片',
+              bool(got) and abs(got[0][1] - float(np.median(s.disp))) < 1e-9,
+              '喂进去那张的中位 %.4f ；解码后那张 %.4f' % (
+                  (got[0][1] if got else float('nan')), float(np.median(s.disp))),
+              '喂成片 ⇒ 链尾发白、分割认不出脸（老路专门避开这件事，'
+              '新路 09-26 之前又撞上了）')
+        _gi2 = ((r.report.get('tone') or {}).get('grade') or {})
+        check('★ 整条链的报告里 skin_mask_src = given（掩膜走的是解码后那一份）',
+              _gi2.get('skin_mask_src') == 'given', str(_gi2.get('skin_mask_src')))
+    finally:
+        _face.parse = _orig
 
 
 def t_contract():
