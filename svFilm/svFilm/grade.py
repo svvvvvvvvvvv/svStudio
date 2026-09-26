@@ -326,6 +326,18 @@ def apply(disp, cfg=C, stock=None):
             else:
                 _dl = float(np.clip(float(_tg['skin_l']) - _cL, -_lim_l, _lim_l))
             _dc = float(np.clip(float(_tg['skin_c']) / max(_cC, 1e-6) - 1.0, -_lim_c, _lim_c))
+            # ★★ 09-26 新增**绝对语义** `skin_C_abs`：脸的绝对彩度（a*/b* 的模）。
+            #   为什么：原来只有相对语义 `skin_c`（= 脸彩度 ÷ 整张彩度）。代码里原本就注释警告过
+            #   「靶子是比值 ⇒ 分母一动、所有比值都跟着动」。实测就撞上了：`sat` 把整张彩度
+            #   从 11.3 压到 7.1（分母变小）之后，这个比值靶就不再代表大师了 ——
+            #   结果脸被顺带做素（23.3→14.4，而大师是 22.4）。
+            #   大师 730 块实测：脸的**绝对**彩度在各曝光组是 22.93 / 22.96 / 21.89 / 21.30
+            #   （±4%），跟「脸的绝对 L*」一样是个**不变量** ⇒ 该锁绝对值。
+            #   靶里有 `skin_C_abs` 就优先用它；没有则退回老语义（其余预设零影响）。
+            _C_abs = (_tg or {}).get('skin_C_abs')
+            if _C_abs is not None:
+                _dc = float(np.clip(float(_C_abs) / max(float(np.median(_Cc2[_sel])), 1e-6) - 1.0,
+                                    -_lim_c, _lim_c))
             _dh = float(np.clip(((float(_tg['skin_hue']) - _cH + 180.0) % 360.0) - 180.0,
                                 -_lim_h, _lim_h))
             L = np.clip(L + _dl * _w, 0.0, 100.0)
