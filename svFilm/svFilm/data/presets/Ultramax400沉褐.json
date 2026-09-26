@@ -1,5 +1,6 @@
 {
- "input_image": {
+ "_note_scan_white": "★ 09-26 改：冲扫设白 1.04 → 1.00。1.04 是全 10 条预设里的**离群值**（其余 6 条 0.98、薄荷 1.00、滨田 0.96），它导致约两成片子有 4~14% 的画面被顶成纯白（三通道≥254）。实测同一批片子：1.04 糊死 4.01%，1.00/0.98/0.92 全部 0.00%，而 1.00 对已校准的六项指标改动最小（跨度 85.9→83.2，更靠靶 82.6；彩P90 25.5→24.6；脸彩度 19.2→18.3）。0.92 会走过头（跨度压到 80.5、彩P90 22.8，都穿过靶）。历史值保留在此备查。",
+  "input_image": {
   "upscale_factor": 1.0,
   "crop": false,
   "crop_center": [
@@ -189,7 +190,7 @@
   "diffusion_filter_bloom_size": 1.0,
   "scan_lens_blur": 0.32,
   "scan_white_correction": true,
-  "scan_white_level": 1.04,
+  "scan_white_level": 1.0,
   "scan_black_correction": true,
   "scan_black_level": 0.065,
   "scan_unsharp_mask": [
