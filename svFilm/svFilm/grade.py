@@ -284,10 +284,24 @@ def apply(disp, cfg=C, stock=None):
             _Cc2 = np.sqrt(a * a + b * b)                   #   np.median([]) = nan ⇒ 整张被写成 nan
 
             _cL = float(np.median(L[_sel]) - np.median(L))
+            _aL = float(np.median(L[_sel]))          # ★ 脸自己的绝对 L*（见下面 skin_L_abs）
             _cC = float(np.median(_Cc2[_sel])) / max(float(np.median(_Cc2)), 1e-6)
             _cH = float(np.degrees(np.arctan2(float(np.median(b[_sel])),
                                               float(np.median(a[_sel])))) % 360.0)
-            _dl = float(np.clip(float(_tg['skin_l']) - _cL, -_lim_l, _lim_l))
+            # ★★ 09-26 新增**绝对语义** `skin_L_abs`：脸的绝对 L*。
+            #   为什么：原来只有相对语义 `skin_l`（= 脸L − 整张L50）。但实测大师 728 张 ——
+            #     **他的脸 L* 恒定在 67（各组 65.7~68.3，波动 ±1.3）**，
+            #     而 **「脸−整张」在他的不同场景里从 −4.4 漂到 +34.9（差 39）**，
+            #     即那个相对量**测的是"整张多暗"、不是"脸的风格"**。
+            #   ⇒ 拿一个随场景漂 39 格的相对量当靶，会把**已经正确的脸**（我们实测 66.3 vs 他 67.5）
+            #     硬往下压（限幅 −6），症状就是"脸浮不起来"。跟"跨度才是不变量"同一个道理：
+            #     **脸的绝对 L* 才是不变量。**
+            #   靶里有 `skin_L_abs` 就**优先用它**（只有鹿井那条有），没有则退回老语义 ⇒ 别的预设零影响。
+            _sl_abs = (_tg or {}).get('skin_L_abs')
+            if _sl_abs is not None:
+                _dl = float(np.clip(float(_sl_abs) - _aL, -_lim_l, _lim_l))
+            else:
+                _dl = float(np.clip(float(_tg['skin_l']) - _cL, -_lim_l, _lim_l))
             _dc = float(np.clip(float(_tg['skin_c']) / max(_cC, 1e-6) - 1.0, -_lim_c, _lim_c))
             _dh = float(np.clip(((float(_tg['skin_hue']) - _cH + 180.0) % 360.0) - 180.0,
                                 -_lim_h, _lim_h))
