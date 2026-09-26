@@ -174,7 +174,7 @@
   "print_illuminant": "TH-KG3",
   "print_exposure": 0.505,
   "print_exposure_compensation": true,
-  "print_y_filter_shift": 11,
+  "print_y_filter_shift": 13,
   "print_m_filter_shift": -1.0,
   "diffusion_filter_active": true,
   "diffusion_filter_family": "pro_mist",
