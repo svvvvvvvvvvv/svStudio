@@ -239,7 +239,13 @@ def apply(disp, cfg=C, stock=None):
         _Chi = float((_tg or {}).get('c_hi', 35.0))
         _t = np.clip((Cc - _Clo) / max(_Chi - _Clo, 1e-6), 0.0, 1.0)
         _t = _t * _t * (3.0 - 2.0 * _t)                       # smoothstep
-        newC = newC * (float(_klo) + (float(_khi) - float(_klo)) * _t)
+        _k = float(_klo) + (float(_khi) - float(_klo)) * _t
+        # ★★ 09-26：**曲线上的人（脸/身体）豁免** —— 跟 L3 色相带增益的约定一致
+        #   （`_resc` = env_scale = 1 − 人；"环境增益不落到人身上"）。
+        #   为什么必须豁免：曲线本来就是"压中低彩度"，而**脸的彩度本来就低**（~16），
+        #   一起压等于把脸也做素了 —— 52 张全量实测脸彩度 23.3→14.4（靶 22.4）就是这个来的。
+        _k = 1.0 - _resc * (1.0 - _k)
+        newC = newC * _k
     nz = np.maximum(Cc, 1e-6)
     # ★★ 归一：**把整张彩度中位拉回原值**（只重新分配、不改总量）。
     #   为什么必须有这一步：靶子是「某色相带的 C ÷ 整张 C 中位」——
