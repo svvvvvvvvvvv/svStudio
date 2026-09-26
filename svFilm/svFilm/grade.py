@@ -224,6 +224,22 @@ def apply(disp, cfg=C, stock=None):
     dl = np.clip(dl * scale, -6.0, 8.0)
 
     newC = np.maximum(Cc * (1.0 + kc), 0.0)
+    # ★★ 09-26 新增：**彩度压缩曲线**（压中低彩度、保住高彩度）。
+    #   为什么需要它：`sat` 是**整体等比缩**，只能同时把中位和 P90 一起拉 —— 而实测
+    #   大师的彩度分布比我们**更开**（鹿井 747 块 C90/C50 = 3.21，我们 2.70）。
+    #   用 sat 单独去对中位，P90 就会掉过头（52 张全量实测：中位 11.3→7.1 对上了，
+    #   但 P90 30.5→19.1、脸彩度 23.3→14.4 都掉过头）。
+    #   ⇒ 形状归曲线、总量归 sat，两个自由度分开。
+    #   曲线：k(C) = k_lo + (k_hi - k_lo) * smoothstep(C; C_lo, C_hi)
+    #   `k_lo < k_hi` ⇒ 低彩度压得多、高彩度压得少 = 把分布拉开。
+    _klo = (_tg or {}).get('c_k_lo')
+    _khi = (_tg or {}).get('c_k_hi')
+    if _klo is not None and _khi is not None:
+        _Clo = float((_tg or {}).get('c_lo', 8.0))
+        _Chi = float((_tg or {}).get('c_hi', 35.0))
+        _t = np.clip((Cc - _Clo) / max(_Chi - _Clo, 1e-6), 0.0, 1.0)
+        _t = _t * _t * (3.0 - 2.0 * _t)                       # smoothstep
+        newC = newC * (float(_klo) + (float(_khi) - float(_klo)) * _t)
     nz = np.maximum(Cc, 1e-6)
     # ★★ 归一：**把整张彩度中位拉回原值**（只重新分配、不改总量）。
     #   为什么必须有这一步：靶子是「某色相带的 C ÷ 整张 C 中位」——
@@ -262,7 +278,8 @@ def apply(disp, cfg=C, stock=None):
     if _tg and _tg.get('skin_l') is not None:
         _lim_l = float(getattr(cfg, 'GRADE_SKIN_LIMIT_L', 6.0))
         _lim_c = float(getattr(cfg, 'GRADE_SKIN_LIMIT_C', 0.0))
-        _lim_h = float(getattr(cfg, 'GRADE_SKIN_LIMIT_H', 8.0))
+        _lim_h = float((_tg or {}).get('skin_limit_h')
+                       or getattr(cfg, 'GRADE_SKIN_LIMIT_H', 8.0))
         _w = None
         try:                                        # ① 先试真脸掩膜
             from . import face as _F
