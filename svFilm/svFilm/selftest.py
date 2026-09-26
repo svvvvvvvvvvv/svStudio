@@ -68,7 +68,7 @@ def _main():
         ('曝光风格：三条档', t_styles),
         ('曝光风格：真的把画面搬到靶', t_tone_hits),
         ('曝光风格：曲线单调 + 极端图不崩', t_tone_sane),
-        ('曝光风格：脸锚点只做有限幅修正', t_tone_bias),
+        ('和脸有关的机制：只许有一个（防死机制复活）', t_tone_bias),
         ('二次调色：分色 + 混色（L2/L3）', t_grade),
         ('直方图（LR 画法：亮度 + RGB 叠加 + 5 个区）', t_hist),
         ('技术层：贴边 / 堆积 / 挤压系数', t_tech),
@@ -315,24 +315,31 @@ def t_tone_sane():
 
 
 def t_tone_bias():
-    """脸锚点的偏移（`ev_bias`）必须真的动落点。
+    """★★★ 09-26：**「和脸有关的机制只许有一个」** —— 这条钉子防死机制复活。
 
-    ⚠ 只有"曝光风格在引擎**之前**"那条路有脸锚点；动作挪到引擎之后就不做了
-    （脸锚点是为"自己标的真卷"校落点用的，见 `pipeline.run_from`）。
+    背景：原来有**两套**和脸有关的东西 —— 老路的脸锚点（`io.anchor_ev` / `io.finish_anchor`，
+    量一次脸、把它提到 68）和新路的 L4 肤色层。前者只在 `TONE_AFTER_ENGINE=False` 时跑，
+    而 config 里 `ANCHOR_ENABLE=True` / `ANCHOR_FACE_L=68.0` 还摆着 ⇒ 看起来"救暗脸有机制"，
+    实际上**没有任何一环能提亮暗片的脸**（引擎给 47、L4 限幅 ±6 只能到 53，而大师是 67~70）
+    —— 这就是 09-26「酱油脸」的根因。⇒ 已整体删除（见 `io.py` / `pipeline.py` 的说明）。
     """
-    if _AFTER:
-        check('★ 动作在引擎之后 ⇒ 不做脸锚点（报告里写明）',
-              True, '已跳过（当前配置不走这条路）')
-        return
-    lin = _lin_from_disp(_gray_img(seed=7))
-    a = tone.apply(lin, '中性调', C)[1]['L50_out']
-    b = tone.apply(lin, '中性调', C, ev_bias=0.5)[1]['L50_out']
-    c = tone.apply(lin, '中性调', C, ev_bias=-0.5)[1]['L50_out']
-    check('脸锚点给的偏移真的动落点（+0.5 档更亮、-0.5 档更暗）', b > a > c,
-          '%.1f / %.1f / %.1f' % (b, a, c))
-    check('★ 偏移是**有限幅**的（`pipeline` 里夹 ANCHOR_LIMIT_EV）',
-          0.0 < float(C.ANCHOR_LIMIT_EV) <= 1.5, '%.2f 档' % C.ANCHOR_LIMIT_EV,
-          '不限幅的话脸锚点会整个盖掉曝光风格 ⇒ 三档就没区别了')
+    from . import io
+    gone = [n for n in ('anchor_ev', 'finish_anchor', 'refocus', '_shoulder_inv')
+            if hasattr(io, n)]
+    check('★★★ 老的脸锚点**确实删掉了**（不许留死机制冒充"有机制"）', not gone,
+          '还在: %s' % (gone or '无'),
+          '又冒出来了 ⇒ 会有两套机制管同一件事（脸），行为互相打架且难查')
+    check('★★ config 里不许再有 ANCHOR_* 这种"没人读的开关"',
+          not [k for k in dir(C) if k.startswith('ANCHOR_')],
+          '还剩: %s' % ([k for k in dir(C) if k.startswith('ANCHOR_')] or '无'))
+    import inspect
+    # ⚠ 必须**剥掉注释**再查：源码里那些"已删除"的说明文字本身就带着 anchor_ev / finish_anchor
+    #   这两个词，不剥就会永远红（"查源码断言用剥掉注释的版本"—— 踩过一次了）。
+    _src = '\n'.join(l.split('#')[0] for l in inspect.getsource(pipeline.run_from).splitlines())
+    _hit = [n for n in ('anchor_ev', 'finish_anchor', 'ANCHOR_') if n in _src]
+    check('★★ pipeline 的**代码里**不许再调 anchor（两套机制不许并存）',
+          not _hit, '命中: %s' % (_hit or '无'),
+          '又冒出来了 ⇒ 会有两套机制管同一件事（脸），行为互相打架且难查')
 
 
 # ---------------------------------------------------------------------------

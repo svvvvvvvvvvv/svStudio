@@ -209,142 +209,15 @@ def entry_tone(lin, ev, cfg=C, level=None):
     return lin * (y / Y)[..., np.newaxis]
 
 
-# ========== 「脸的锚点决定位置」＝ 把入口那条曲线**重打一个曝光偏移**（09-14 SV 选「乙」） ==========
-# 为什么能这么做：入口曲线上任意像素的输出**只依赖 `Y·2^ev`** ⇒ 想换一个 `ev`，
-# 不需要回到原始线性、更不需要重新解码 —— 把当前输出**反解回"过肩之前"**、乘上
-# `2^(γ·Δev)`、再正向过一次即可。**全程一条 1D 曲线、不分区域、不用掩膜。**
-
-def _shoulder(t, knee, ceil):
-    """入口的软肩（`entry_tone` 里那一段；**不含趾部**）。"""
-    d = max(float(ceil) - float(knee), 1e-6)
-    return np.where(t > knee, knee + d * (1.0 - np.exp(-(t - knee) / d)), t)
-
-
-def _shoulder_inv(y, knee, ceil):
-    """上面那条肩的**逆**（单调 ⇒ 可逆）。"""
-    d = max(float(ceil) - float(knee), 1e-6)
-    r = np.clip(1.0 - (np.asarray(y, np.float64) - knee) / d, 1e-9, None)
-    return np.where(y > knee, knee - d * np.log(r), y)
-
-
-def refocus(lin, d_ev, cfg=C):
-    r"""把入口那条曲线**整体重打 `d_ev` 档** —— 等价于"一开始就用 `ev + d_ev` 过入口"。
-
-    只动亮度、三通道乘同一个倍率（与 `entry_tone` 同契约）。
-    ⚠ 近似：反解时**忽略趾部**（趾部只作用于 `y < 0.84×中位` 的暗部；而锚点是按脸算的，
-    脸 / 背景 / 高光都在趾部之上）⇒ 暗部会有一点偏差，实测要报出来。
-    """
-    if abs(float(d_ev)) < 1e-6:
-        return lin
-    g = float(getattr(cfg, 'ENTRY_GAMMA', 1.0))
-    knee = float(getattr(cfg, 'ENTRY_KNEE', 1.0))
-    ceil = float(getattr(cfg, 'ENTRY_CEIL', 1.0))
-    Y = np.maximum(color.luma(np.clip(lin, 0.0, None)), 1e-9)
-    # 反解回"过肩之前" ⇒ 换 ev 等价于 t × 2^(γ·Δev) ⇒ 再正向过一次（肩部）
-    t = _shoulder_inv(Y, knee, ceil) * (2.0 ** (g * float(d_ev)))
-    t2 = _shoulder(np.maximum(t, 1e-9), knee, ceil)
-    return lin * (t2 / Y)[..., np.newaxis]
-
-
-def anchor_ev(disp, cfg=C, masks=None):
-    r"""由**脸**算出"位置"要补多少档 —— 让脸中位落到 `ANCHOR_FACE_L`。
-
-    闭式解（不拟合、不迭代）：入口曲线肩部以下 `显示线性 ∝ u^γ`（u = Y·2^ev），
-    而 `L*+16 ∝ Y^(1/3)` ⇒ `u ∝ (L*+16)^(3/γ)` ⇒
-
-        d_ev = (3/γ) · log2( (L_靶 + 16) / (L_脸 + 16) )
-
-    返回 `(d_ev, info)`。**拿不到脸 ⇒ 返回 0（逐位不变）。**
-    """
-    info = dict(applied=False)
-    if not bool(getattr(cfg, 'ANCHOR_ENABLE', True)):
-        info['reason'] = 'off'
-        return 0.0, info
-    if masks is None:
-        try:
-            from . import face
-            masks = face.parse(np.clip(disp, 0.0, 1.0))['masks']
-        except Exception as e:                              # noqa: BLE001
-            info.update(reason='no_mask', err='%s: %s' % (type(e).__name__, e))
-            return 0.0, info
-    sel = np.asarray(masks.get('face_skin', 0.0)) > 0.5
-    n = int(sel.sum())
-    if n < int(getattr(cfg, 'ANCHOR_MIN_FACE_PX', 300)):
-        info.update(reason='no_face', n=n)
-        return 0.0, info
-    lin = color.s2l(np.clip(disp, 0.0, 1.0))
-    L = color.L_of_lin(color.Y_of(lin))
-    Lf = float(np.median(L[sel]))
-    tgt = float(getattr(cfg, 'ANCHOR_FACE_L', 68.0))
-    g = max(float(getattr(cfg, 'ENTRY_GAMMA', 1.0)), 1e-6)
-    raw = (3.0 / g) * float(np.log2(max(tgt + 16.0, 1e-6) / max(Lf + 16.0, 1e-6)))
-    # ★ 只提不压（09-14 SV 选「甲」）：脸已经够亮 ⇒ 一个像素都不动。
-    # ★★ 09-15 SV 选「D」的**最终落点**：这根"脸太亮收回"**不走这里**。
-    #   实测（DSCF2328）：在**入口**把曲线重打 −0.96 档，脸只从 89.4 掉到 84.2
-    #   （真卷的 H&D 会把它拉回来）；而**胶片之后**那个闭环（`finish_anchor`）
-    #   能一步把脸送到靶 68。⇒ 一个机制就够，别在这里再开第二个口子（见 `finish_anchor`）。
-    if bool(getattr(cfg, 'ANCHOR_ONLY_UP', True)) and raw <= 0.0:
-        info.update(reason='already_bright', face_L_before=Lf, face_L_target=tgt, n_face=n)
-        return 0.0, info
-    cap = float(getattr(cfg, 'ANCHOR_EV_MAX', 2.0))
-    d_ev = float(np.clip(raw, -cap, cap))
-    info.update(applied=True, face_L_before=Lf, face_L_target=tgt,
-                d_ev=d_ev, capped=bool(abs(raw) > cap), n_face=n)
-    return d_ev, info
-
-
-def finish_anchor(disp, cfg=C, masks=None, strength=1.0, down_only=False):
-    r"""锚点**收尾**：把**当前**画面里的脸挪到 `ANCHOR_FACE_L`（线性域乘一个**全局**增益）。
-
-    为什么需要：`anchor_ev` 那一步是在 **L1** 把脸放到靶上，但后面的 **L2 影调曲线会再把它抬上去**
-    （实测 +8.4 L\*）。这一步在 L2 之后量一次脸、把它挪回靶 ⇒ **最终脸真的落在靶上**。
-
-    仍然是"一条曲线"：**整张乘同一个增益**，不分区、不用掩膜决定力道（掩膜只用来**量**脸）。
-
-    ★★ 09-15 SV 选「D」新增两个参数（**默认值一律 ⇒ 逐位等于老行为**）：
-      · `strength` 0~1 ＝「**收多少**」。1.0 = 完全挪到靶（老行为）；0.5 = 只走一半。
-        ⚠ **1.0 时绝不做乘方** —— `k ** 1.0` 在浮点上不保证逐位相等，会让"老行为不变"失守。
-      · `down_only` ＝「**只许往下压**」。真卷走这条路：真卷自己把脸放到 L\*78~86
-        （比我们靶 68 还亮），若连"提亮"也放开 = 把脸再推亮一次（实测中位 61 → 83）。
-
-    ⚠ 为什么"压脸"这件事落在**这里**而不是入口（实测 DSCF2328）：
-      在**入口**把曲线重打 −0.96 档，脸只从 89.4 掉到 **84.2**（真卷的 H&D 又把它拉回来）；
-      而**这里**（胶片之后、直接乘增益）一步就送到 **68**。⇒ 只留这一个口子。
-    """
-    info = dict(applied=False)
-    if masks is None:
-        try:
-            from . import face
-            masks = face.parse(np.clip(disp, 0.0, 1.0))['masks']
-        except Exception as e:                              # noqa: BLE001
-            info.update(reason='no_mask', err='%s: %s' % (type(e).__name__, e))
-            return disp, info
-    sel = np.asarray(masks.get('face_skin', 0.0)) > 0.5
-    n = int(sel.sum())
-    if n < int(getattr(cfg, 'ANCHOR_MIN_FACE_PX', 300)):
-        info.update(reason='no_face', n=n)
-        return disp, info
-    lin = color.s2l(np.clip(disp, 0.0, 1.0))
-    Y = color.Y_of(lin)
-    L = color.L_of_lin(Y)
-    Lf = float(np.median(L[sel]))
-    tgt = float(getattr(cfg, 'ANCHOR_FACE_L', 68.0))
-    tol = float(getattr(cfg, 'ANCHOR_FINISH_TOL_L', 0.6))
-    if abs(Lf - tgt) < tol:
-        info.update(reason='on_target', face_L=Lf)
-        return disp, info
-    k = float(color.lin_of_L(tgt)) / max(float(np.median(Y[sel])), 1e-9)
-    # ★ only-down：脸已经比靶暗 ⇒ 这一步不许动（真卷靠它保证"只收不回"）
-    if down_only and k > 1.0:
-        info.update(reason='face_below_target', face_L=Lf, face_L_target=tgt)
-        return disp, info
-    if float(strength) < 1.0:
-        k = k ** max(float(strength), 0.0)
-    out = np.clip(color.l2s(np.clip(lin * k, 0.0, None)), 0.0, 1.0)
-    info.update(applied=True, face_L_before=Lf, face_L_target=tgt, gain=k,
-                strength=float(strength), down_only=bool(down_only),
-                n_face=n, clip_frac=float(np.mean(color.luma(np.clip(lin * k, 0, None)) > 1.0)))
-    return out, info
+# ★★★ 09-26：这里原来有一整块「**脸的锚点**」—— `refocus` / `_shoulder` / `_shoulder_inv`
+#   / `anchor_ev` / `finish_anchor`，作用是"量一次脸、把它提到 68"。
+#   **已整体删除**，理由只有一条：**和脸有关的机制只许有一个**。
+#   · 它只在 `pipeline` 的**老路**分支被调用，而 `TONE_AFTER_ENGINE=True` 时那条分支根本不跑
+#     ⇒ 是死代码；而 `config.ANCHOR_ENABLE=True` / `ANCHOR_FACE_L=68.0` 还摆着 ⇒ 最容易被误读成"有机制"。
+#   · 实锤的后果：暗片的脸**没有任何一环能提亮**（引擎给 47，色彩层 L4 限幅 ±6 ⇒ 最多 53，
+#     而大师的脸在 67~70）⇒ 这就是 09-26「酱油脸」的根因（详见技能 `svfilm-pipeline-iterate` §90）。
+#   ⚠ 要重新做「救暗脸」**必须按当前架构在新层做**（曝光作用在引擎之后）——
+#     老实现是"在引擎之前重打入口曲线"，跟现在的架构冲突，不能照搬。
 
 
 def clip_guard(lin, cfg=C):

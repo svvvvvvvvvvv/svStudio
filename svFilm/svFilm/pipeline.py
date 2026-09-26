@@ -199,43 +199,20 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
             cache.put(_ckey, disp=disp, t_info=t_info, gk=gk, anc=anc)
     else:
         # ========== 老路：曝光风格作用在引擎**之前**的线性图上 ==========
-        # ---- ★★ 脸掩膜：**解码后算一次**（09-15 修的那个洞）----
-        #   链尾（胶片出图后）画面已经发白 ⇒ 分割模型认不出脸 ⇒ 掩膜空 ⇒ 两层一起静默失效。
-        #   解码后那张脸还是正常曝光 ⇒ 稳。拿不到（模型缺失）⇒ 空掩膜，下游报 no_face，**不崩**。
-        try:
-            from . import face as _face
-            _msk = _face.parse(np.clip(s.disp, 0.0, 1.0))['masks']
-        except Exception as e:                                   # noqa: BLE001
-            _msk = {}
-
-        # ---- ★★ 曝光谁定：**曝光风格定基准，脸做有限幅的修正** ----
-        #   两个都能算出一个"要补几档"——风格看**整张中位**、锚点看**脸**。
-        #   直接相加/先后施加都会互相抵消（都是全局增益），所以合成：
-        #     以风格为准，允许脸把它拉偏最多 `ANCHOR_LIMIT_EV` 档。
-        #   脸偏暗 ⇒ bias > 0（多提一点救脸）；脸已经够亮而整张偏暗 ⇒ bias < 0（少提，护脸）。
-        ev_style = tone.ev_needed(s.lin, style, cfg, preset=name)
-        d_face, anc = io.anchor_ev(s.disp, cfg, masks=_msk)
-        lim = float(getattr(cfg, 'ANCHOR_LIMIT_EV', 0.6))
-        bias = 0.0
-        if anc.get('applied'):
-            bias = float(np.clip(float(d_face) - ev_style, -lim, lim))
-        anc['ev_style'] = float(ev_style)
-        anc['ev_bias'] = float(bias)
-
+        # ========== 老路：曝光风格作用在引擎**之前**的线性图上 ==========
+        # ⚠⚠ 09-26：这条路里原来有**两处和脸有关的动作** —— 解码后算一次脸掩膜 `_msk`、
+        #   再用 `io.anchor_ev` / `io.finish_anchor` 按脸改曝光。**已整体删除**，
+        #   理由：`TONE_AFTER_ENGINE=True` 时这条路根本不跑 ⇒ 那是死代码，而
+        #   `config.ANCHOR_ENABLE=True` 还摆着 ⇒ 会被误读成"救暗脸有机制"（实际没有）。
+        #   **和脸有关的机制只许有一个** ⇒ 现在只剩新路里 `grade` 的 L4。
         # ---------- svFilm：曝光风格（线性域）----------
-        lin_out, t_info = tone.apply(s.lin, style, cfg, preset=name, ev_bias=bias)
+        lin_out, t_info = tone.apply(s.lin, style, cfg, preset=name)
         # ---------- 高光护栏（只往下）----------
         lin_out, gk = io.clip_guard(lin_out, cfg)
         t_info['clip_guard_k'] = float(gk)
         # ---------- spektrafilm：胶片风格 ----------
         disp = presets.render(lin_out, name, cfg)
-        # ---------- 脸收尾（默认关：`ANCHOR_DOWN_GAIN=0`）----------
-        # ⚠ 这是**唯一留在胶片之后**的曝光动作，理由有实测：胶片之前压不动脸
-        #   （入口重打 −0.96 档，脸只从 89.4 掉到 84.2，真卷的 H&D 又把它拉回来）。
-        #   默认一个像素都不动 ⇒ 边界仍然是"曝光归 svFilm、胶片归 spektrafilm"。
-        if float(getattr(cfg, 'ANCHOR_DOWN_GAIN', 0.0) or 0.0) > 0.0:
-            disp, _fin = io.finish_anchor(disp, cfg, masks=_msk, down_only=True)
-            anc['finish'] = _fin
+        anc = dict(applied=False, note='脸锚点已删除（09-26）：和脸有关的东西只留新路那一处')
         if _ckey is not None:
             cache.put(_ckey, disp=disp, t_info=t_info, gk=gk, anc=anc)
 
