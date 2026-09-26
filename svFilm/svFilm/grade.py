@@ -260,7 +260,8 @@ def apply(disp, cfg=C, stock=None):
     #   ⇒ 改成**整张中位**归一 —— 这也正好跟靶的口径一致（靶 = 带内 C ÷ **整张** C 中位）。
     # ★ 09-24：**靶里可以带 `sat` 覆盖 config** —— 每条预设的"整体浓淡"不同
     #   （鹿井那条要比其余 9 条素一档），一个全局 config 装不下这件事。
-    _sat = float((_tg or {}).get('sat') or getattr(cfg, 'GRADE_SAT', 1.0))
+    _sat = float((_tg or {}).get('sat') if (_tg or {}).get('sat') is not None
+                 else getattr(cfg, 'GRADE_SAT', 1.0))
     _m0 = float(np.median(Cc))
     _m1 = float(np.median(newC))
     newC = newC * (_sat * _m0 / max(_m1, 1e-6)) if _m1 > 1e-6 else newC
@@ -283,9 +284,18 @@ def apply(disp, cfg=C, stock=None):
     _mask_src = 'none'
     if _tg and _tg.get('skin_l') is not None:
         _lim_l = float(getattr(cfg, 'GRADE_SKIN_LIMIT_L', 6.0))
-        _lim_c = float(getattr(cfg, 'GRADE_SKIN_LIMIT_C', 0.0))
+        # ★★ 09-26 修一个 bug：这三行原来只有 `_lim_h` 支持按靶覆盖，`_lim_c` **只读 config**
+        #   ⇒ targets 里写的 `skin_limit_c`（0.35→0.5→0.6）**从来没生效过**，
+        #     那两次改动是空转，而且当时把脸彩度的变化**错误归因**给了它。
+        #   三行现在写法统一：**靶里有就用靶、没有才退回 config**。
+        #   ⚠ 用 `if ... is not None` 而不是 `or`：`or` 会把**合法的 0**（= 关掉这一路修正）
+        #     当成"没设"而退回 config —— `sat` / `skin_limit_h` 那两处也有同样的坑。
+        _lim_c = float((_tg or {}).get('skin_limit_c')
+                       if (_tg or {}).get('skin_limit_c') is not None
+                       else getattr(cfg, 'GRADE_SKIN_LIMIT_C', 0.0))
         _lim_h = float((_tg or {}).get('skin_limit_h')
-                       or getattr(cfg, 'GRADE_SKIN_LIMIT_H', 8.0))
+                       if (_tg or {}).get('skin_limit_h') is not None
+                       else getattr(cfg, 'GRADE_SKIN_LIMIT_H', 8.0))
         _w = None
         try:                                        # ① 先试真脸掩膜
             from . import face as _F
