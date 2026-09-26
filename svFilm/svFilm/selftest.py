@@ -791,7 +791,7 @@ def t_scene():
 
     # ④ 场景覆盖：默认**一个字段都不动**；命中才盖、且只盖命中的那些
     base = targets.for_stock(_PRESET, None)
-    _sc = {'key': 'v1|x', 'exp': '暗', 'span': '平', 'back': False,
+    _sc = {'key': 'v1|x', 'exp': '暗', 'span': '平', 'back': '顺平光',
            'shot': '近景', 'face': 'face', 'overwhite': False}
     same = targets.for_stock(_PRESET, _sc)
     check('★★ 没有 `_scene` 段时，给不给场景一个字段都不变（默认逐位不变）',

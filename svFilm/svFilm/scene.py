@@ -24,7 +24,7 @@ SV 09-26 提的：「可不可以分场景，比如分**过曝**场景、分**�
 |---|---|---|---|
 | `exp`  曝光 | 整张中位 L50 | 暗 / 正常 / 亮 | 影调层的压黑位/压亮部力度 |
 | `span` 光比 | 跨度 L95−L5 | 平 / 正常 / 大 | 同上的护栏（大光比先压暗部会压死） |
-| `back` 逆光 | 脸中位L − 整张L50 | 是 / 否 | 脸的亮度靶（逆光的脸**本来**就暗） |
+| `back` 光位 | **背景 vs 主体**的亮度差 ＋ **最亮区的位置** | 正逆光 / 侧逆光 / 顺平光 | 光晕、轮廓光、高光该不该放手 |
 | `shot` 景别 | 人占画面面积 % | 特写 / 近景 / 中景 / 远景 | L4 脸修正的作用面 |
 | `face` 脸可见度 | 检测器 / 分割 | face / seg / none | 没脸时 L4 整套不该跑 |
 | `overwhite` 源头过曝 | **线性域**里**超过白点**的像素占比 | 是 / 否 | 唯一一条"必须在引擎里动作"的轴 |
@@ -55,7 +55,7 @@ import numpy as np
 from . import color
 from . import config as C
 
-VERSION = 1
+VERSION = 2                          # ★ 换判据就要 +1（缓存键带它）
 AXES = ('exp', 'span', 'back', 'shot', 'face', 'overwhite')
 
 _EXP_ORDER = ('暗', '正常', '亮')
@@ -72,6 +72,105 @@ def _b(names, edges, v):
     return names[i]
 
 
+def _mask(parsed, name, shape):
+    """从 `face.parse` 的结果里取一张掩膜，尺寸不对就当没有。"""
+    a = ((parsed or {}).get('masks') or {}).get(name)
+    if a is None:
+        return None
+    a = np.asarray(a, np.float64)
+    return a if tuple(a.shape[:2]) == tuple(shape) else None
+
+
+def _light_position(d, L, parsed, cfg):
+    """**光位**：逆光 / 侧逆光 / 顺平光。
+
+    ★★★ 判据来自同行的实现（见技能 §91.2），**不是**"脸比整张中位暗"：
+      ① **背景明显亮于主体** —— 光是从主体背后来的（这是逆光的因果，不是它的表现）；
+      ② **最亮那一块在画面上方** —— 光源在主体后方/上方（Matsushita 那件专利用"从哪条边
+         向内延伸的暗块最多"来定光位，是同一个道理）；
+      ③ **亮区偏画面中央 ⇒ 正逆光；偏某一侧 ⇒ 侧逆光**（专业上按光源与镜头光轴的夹角分：
+         170~180° 是正逆光、120~150° 是侧逆光；图像上对应的就是"亮区在不在中轴"）；
+      ④ **主体边缘比内部亮 ⇒ 轮廓光**（逆光的签名；只作佐证，不参与判决）。
+
+    ⚠ 一律**用主体 vs 它身后的背景**来比，**不用整张中位** —— 逆光片是"两头重"的分布，
+      整张中位落在两峰之间的谷里，最没有信息量。
+    @returns (标签 or None, raw 字典)
+    """
+    H, W = L.shape
+    per = _mask(parsed, 'person', L.shape)
+    bgm = _mask(parsed, 'bg', L.shape)
+    sub = (per > 0.5) if per is not None else None
+    bak = (bgm > 0.5) if bgm is not None else None
+    raw = dict(bg_sub=None, above_sub=None, hi_cy=None, hi_cx=None, hi_gap=None, hi_on_sub=None,
+               rim=None, clip_bg_pct=None)
+    if sub is None or bak is None:
+        return None, raw
+    if int(sub.sum()) < int(getattr(cfg, 'SCENE_BACK_MIN_SUB_PX', 800)) or int(bak.sum()) < 500:
+        return None, raw                              # 主体太小 / 没背景 ⇒ 这一轴无从判
+
+    raw['bg_sub'] = float(np.median(L[bak]) - np.median(L[sub]))     # 诊断用（见 config 注释）
+
+    ys, xs = np.nonzero(sub)
+    Hm, Wm = max(H - 1, 1), max(W - 1, 1)
+    bx0, bx1 = float(xs.min()) / Wm, float(xs.max()) / Wm
+    by0, by1 = float(ys.min()) / Hm, float(ys.max()) / Hm
+    subc_x = float(np.median(xs)) / Wm
+
+    # ★★ 主体正上方那条带（保留作诊断 —— 它只对"光在正后方、主体居中"成立；
+    #   实测：主体在画面右侧、光从左上来的侧逆光，正上方是**树冠**（暗的），这条会判负）。
+    band_h = max(8, int(0.6 * (bys := (ys.max() - ys.min() + 1))))
+    band = np.zeros_like(sub)
+    band[max(0, ys.min() - band_h):max(ys.min(), band_h), xs.min():xs.max() + 1] = True
+    band &= bak
+    raw['above_sub'] = (float(np.median(L[band]) - np.median(L[sub]))
+                        if int(band.sum()) >= 200 else raw['bg_sub'])
+
+    # ★★★ 主判据：**画面最亮那一块 (P95+) 在不在主体身上、比主体亮多少**
+    #   为什么是这个：逆光的因果是"光源在主体背后" ⇒ **最亮的东西是背景/天空，不是主体**。
+    #   顺光时最亮的多半就是主体自己（皮肤/衣服的高光）⇒ 最亮区落在主体的外接框里。
+    #   实测（DSCF1231，侧逆光）：最亮 5% 的重心在 (0.28, 0.19) = 左上角，主体在右侧
+    #   ⇒ 重心落在主体框**外**，且两者亮度差很大。这一条**不依赖"亮区在上方"那句**。
+    hi = L >= float(np.percentile(L, 95.0))
+    if int(hi.sum()) < 50:
+        return None, raw
+    yy, xx = np.nonzero(hi)
+    raw['hi_cy'] = float(np.median(yy)) / Hm
+    raw['hi_cx'] = float(np.median(xx)) / Wm
+    raw['hi_gap'] = float(np.median(L[hi]) - np.median(L[sub]))
+    # ★ 「最亮那块有多少落在主体身上」—— 比"外接框"稳：
+    #   外接框会被**画面里的第二个人**撑满整幅（实测 DSCF1231 左下角还有个人），
+    #   于是"亮区在框内"会误成立。这个比例只跟像素走，跟几个人无关。
+    raw['hi_on_sub'] = float((hi & sub).sum()) / max(int(hi.sum()), 1)
+
+    # ④ 轮廓光（佐证）：主体**边界带**的中位亮度 − 主体**内部**的中位亮度
+    if per is not None:
+        edge = (per > 0.35) & (per < 0.80)
+        inner = per > 0.92
+        if int(edge.sum()) > 200 and int(inner.sum()) > 200:
+            raw['rim'] = float(np.median(L[edge]) - np.median(L[inner]))
+
+    # ★ 「糊死的是哪一块」：全通道贴白的像素里，落在**背景**上的占比。
+    #   为什么要有它：负片在逆光下**让天空爆是正常的**（技能 §94.3 的专业共识），
+    #   把**主体/皮肤**爆掉才是问题 ⇒ 光看"糊死占比"缺了位置信息，必须看爆在哪。
+    rgb = np.clip(np.asarray(d, np.float64), 0.0, 1.0)
+    if rgb.ndim == 3:
+        cl = rgb.min(axis=-1) >= 254.0 / 255.0
+        n_cl = int(cl.sum())
+        if n_cl > 0:
+            raw['clip_bg_pct'] = float((cl & bak).sum()) / n_cl * 100.0
+
+    # ---- 判决 ----
+    # ★ 主判据 = **最亮那块基本不在主体身上**（光在主体背后 ⇒ 最亮的是背景/天空，不是主体）
+    #   ＋ **最亮那块比主体亮得多**；次判据 = 亮区重心相对**主体重心**的水平偏移（分正 / 侧）。
+    if raw['hi_on_sub'] > float(getattr(cfg, 'SCENE_BACK_HI_ON_SUB', 0.15)):
+        return '顺平光', raw                       # 最亮的就是主体自己 ⇒ 光打在主体上
+    if raw['hi_gap'] < float(getattr(cfg, 'SCENE_BACK_HI_GAP', 18.0)):
+        return '顺平光', raw
+    if abs(raw['hi_cx'] - subc_x) <= float(getattr(cfg, 'SCENE_BACK_CX_TOL', 0.18)):
+        return '正逆光', raw
+    return '侧逆光', raw
+
+
 def token(axis, v):
     """把某一轴的值变成**写进 `_scene` 键里的那个词**。
 
@@ -83,7 +182,7 @@ def token(axis, v):
     if v is None:
         return '-'
     if axis == 'back':
-        return '逆光' if v else '顺平'
+        return str(v)                      # 正逆光 / 侧逆光 / 顺平光（本身就是词，直接用）
     if axis == 'overwhite':
         return '过曝' if v else '正常'
     return str(v)
@@ -139,13 +238,11 @@ def classify(disp, parsed=None, cfg=C, lin=None):
     else:
         out['face'] = 'none'
 
-    # 逆光 = 脸明显比整张暗（脸本来就该暗）。没有脸 ⇒ None（这一轴无从判断）
-    # ⚠⚠ **这一轴不能拿去看"大师的逆光脸是不是更暗"** —— 它是**用脸自己的相对亮度**定义的，
-    #   再去看脸亮度就是自证。09-26 实测踩过：按它分组得出"大师逆光脸暗 5~8 格"，
-    #   改用**与脸无关**的量（整张 L50 三分位）分组后，大师的脸 L* 只漂 ±2~5（鹿井 r=−0.17）
-    #   ⇒ 那是分组方式造成的**假象**，脸的绝对 L* 仍然是**不变量**。
-    out['back'] = (None if face_rel is None
-                   else bool(face_rel < float(getattr(cfg, 'SCENE_BACK_REL', -3.0))))
+    # ---- 「光位」：逆光 / 侧逆光 / 顺平光 ----
+    # ★ 判据 = **主体 vs 它身后的背景** ＋ **最亮区的位置**（见 `_light_position`），
+    #   **不是**"脸比整张中位暗" —— 后者在逆光片上恰恰判不出来（整张中位落在两峰之间的谷里）。
+    out['back'], _lp = _light_position(d, L, parsed, cfg)
+    out['raw'].update(_lp)
 
     if person_pct is None:
         out['shot'] = None
@@ -175,8 +272,8 @@ def label(scene):
     if not scene:
         return '（没判）'
     bits = [scene.get('exp') or '?', scene.get('span') or '?']
-    if scene.get('back') is not None:
-        bits.append('逆光' if scene['back'] else '顺平光')
+    if scene.get('back'):
+        bits.append(scene['back'])
     if scene.get('shot'):
         bits.append(scene['shot'])
     bits.append({'face': '认到脸', 'seg': '只有分割脸皮', 'none': '没有脸'}.get(scene.get('face'), '?'))
