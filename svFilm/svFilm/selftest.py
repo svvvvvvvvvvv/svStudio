@@ -533,6 +533,10 @@ def t_grade():
     from . import grade
 
     disp = _gray_img(seed=23)
+    # ★ 这一段断言测的是**分色 / 混色（L2/L3）**，所以显式把 scope 设成 'all' ——
+    #   当前阶段的默认是 'skin'（只跑肤色 L4），不设的话这几条会全部过期变红。
+    _scope0 = getattr(C, 'GRADE_SCOPE', 'all')
+    C.GRADE_SCOPE = 'all'
     # ① 关掉 ⇒ 逐位不变（不能"说关还偷偷动一点"）
     C.GRADE_ENABLE = False
     try:
@@ -612,6 +616,24 @@ def t_grade():
     check('★ 中性灰不被推彩度（彩度闸兜着；留 3 的余量给分级那一点点）',
           cmax < 3.0, '五档灰最大彩度 %.2f' % cmax,
           '中性轴被推偏 ⇒ 灰像素没被彩度闸挡掉（加饱和把中性轴一起推偏是 digitalFilm 的老毛病）')
+
+    # ⑤ ★ scope='skin' ⇒ 只跑肤色：分色/混色必须**逐位不生效**（这是"分阶段跑"的钉子）
+    _rgb = np.random.RandomState(77)
+    _c = np.stack([_rgb.rand(96, 96) * 0.55 + 0.22 for _ in range(3)], -1)
+    _c[..., 1] = np.clip(_c[..., 1] * 1.05, 0, 1)
+    C.GRADE_SCOPE = 'skin'
+    _o_skin, _i_skin = grade.apply(_c, C)
+    C.GRADE_SCOPE = 'all'
+    _o_all, _ = grade.apply(_c, C)
+    C.GRADE_SCOPE = _scope0
+    _lab_s = color.to_lab(np.ascontiguousarray(_o_skin))
+    _lab_a = color.to_lab(np.ascontiguousarray(_o_all))
+    _ms = float(np.median(np.hypot(_lab_s[..., 1], _lab_s[..., 2])))
+    _ma = float(np.median(np.hypot(_lab_a[..., 1], _lab_a[..., 2])))
+    check('★★ scope=skin ⇒ 分色/混色**不生效**（只肤色）；scope=all ⇒ 两者都生效',
+          abs(_ms - _ma) > 1e-6 and _i_skin.get('scope') == 'skin',
+          '整张彩度中位：skin %.2f vs all %.2f ；报告 scope=%s' % (_ms, _ma, _i_skin.get('scope')),
+          '两者完全一样 ⇒ 分色/混色没被真的跳过（"分阶段跑"这条就废了）')
 
 
 def t_config_keys():

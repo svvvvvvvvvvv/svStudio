@@ -168,8 +168,18 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
         if _fs0 is None or tuple(np.shape(_fs0)[:2]) != tuple(L.shape):
             _pz = None
 
+    # ★★★ 颜色层跑哪几段（`config.GRADE_SCOPE`）：'off' / 'skin' / 'all'。
+    #   为什么要有这个开关：**肤色（人像）**与**分色/混色（整幅颜色）**是两件事 ——
+    #   前者是"按人像区域做局部修正"，后者是"按亮度段/色相带做整幅染色"。
+    #   分阶段跑才能单独看清一件事的效果（不然两件事混在一起，改了说不清是谁的功劳）。
+    #   ⚠ 做法：进 L2/L3 之前存一份原图，若 scope='skin' 就在 L4 之前**还原** ——
+    #     这样 L4 是在**没被分色混色动过**的图上做，且 L2/L3 那些量仍然算出来（只用于报告）。
+    _scope = str(getattr(cfg, 'GRADE_SCOPE', 'all')).lower()
+    _a0, _b0, _L0 = a.copy(), b.copy(), L.copy()
+
     # ---------- L2 色彩分级 ----------
     w_sh, w_hi, w_deep = _sh_hi_weights(L, cfg)
+
     # ★★ 分色：**逐图往靶收**（跟影调层一个哲学）——
     #   先量"这张图当前的分色"，再补到大师的绝对值。**不是**加一个固定偏移：
     #   ① 固定偏移跟"分色测值"不是 1:1（加 a 会同时动整体中位）
@@ -289,6 +299,11 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
     # 亮度偏移：只作用在有颜色的地方（灰区不动）
     L = np.clip(L + dl * live, 0.0, 100.0)
 
+    # ★★ scope='skin' ⇒ 分色/混色**不生效**：还原成没被动过的 a*/b*/L，
+    #   让 L4 在**干净的底**上做（L2/L3 那些量上面已经算出来了，只用于报告）。
+    if _scope not in ('all', 'color'):
+        a, b, L = _a0, _b0, _L0
+
     # ===================== L4 肤色（09-24 重做） =====================
     # ★★★ 为什么重做：原来用**色相窗（9~61°）**定位肤色 —— 实测它覆盖的像素里
     #   **只有 10.5% 是真皮肤**，其余 89.5% 是墙/木头/黄叶
@@ -303,7 +318,12 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
     _face_seen = False          # ★ 09-26：报告里要说清「检测器认没认出脸」，先给默认值
     _model_ok = False           # ★ 09-26：分割模型跑起来了没有（决定能不能退回色相窗）
     if _tg and _tg.get('skin_l') is not None:
-        _lim_l = float(getattr(cfg, 'GRADE_SKIN_LIMIT_L', 6.0))
+        # ★★ 提脸的幅度上限：**靶里有就用靶、没有才退回 config**（跟下面 `_lim_c` / `_lim_h` 统一）。
+        #   ⚠ 原来这三行里**只有 `_lim_c` 和 `_lim_h` 会读靶，`_lim_l` 只读 config**
+        #     ⇒ 按场景放开"提脸的幅度"这件事**根本没生效**过（今天实测踩到）。
+        _lim_l = float((_tg or {}).get('skin_limit_l')
+                       if (_tg or {}).get('skin_limit_l') is not None
+                       else getattr(cfg, 'GRADE_SKIN_LIMIT_L', 6.0))
         # ★★ 09-26 修一个 bug：这三行原来只有 `_lim_h` 支持按靶覆盖，`_lim_c` **只读 config**
         #   ⇒ targets 里写的 `skin_limit_c`（0.35→0.5→0.6）**从来没生效过**，
         #     那两次改动是空转，而且当时把脸彩度的变化**错误归因**给了它。
@@ -430,13 +450,14 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
         _lab[..., 1] = np.where(_bad, _lab[..., 1] * 0.80, _lab[..., 1])
         _lab[..., 2] = np.where(_bad, _lab[..., 2] * 0.80, _lab[..., 2])
     out = np.clip(color.from_lab(_lab), 0.0, 1.0)
-    info = dict(applied=True,
+    info = dict(applied=True, scope=_scope,
                 L50_in=Lm, L50_out=float(np.median(color.to_lab(out)[..., 0])),
                 a_med_in=am, b_med_in=bm,
                 d_sh=(float(sha), float(shb)), d_hi=(float(hia), float(hib)),
                 c_gain=[(c, (k + (_bg[i] if i < len(_bg) else 0.0))) for i, (c, _, k, _) in enumerate(BANDS)],
                 target=(sha, shb, hia, hib), stock=stock,
                 skin_dL=_dl, skin_dC=_dc, skin_dH=_dh, skin_mask=_mask_src,
+                skin_limit_l=float(_lim_l) if '_lim_l' in dir() else None,
                 # ★★★ 09-26：`skin_mask` 的四个取值，语义**互斥**、别混：
                 #   'face' = 检测器(过三道防假脸闸)**认到脸** + 分割；脸严格、身体松一点
                 #   'seg'  = 检测器**没认到**（侧脸/背影/被挡），只用分割的 face_skin
