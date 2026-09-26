@@ -25,6 +25,11 @@ _PRESET = 'Portra400薄荷'
 # ★ 自检跟着**当前配置**走：曝光风格作用在引擎之后（三套力度）还是之前（三个绝对靶）。
 #   两套契约完全不同，所以下面凡是分叉的地方都按它选一条 —— 不许只测其中一条。
 _AFTER = bool(getattr(C, 'TONE_AFTER_ENGINE', False))
+# ★ 当前阶段可以只做胶片引擎（`TONE_ENABLE=False` / `GRADE_ENABLE=False`）——
+#   这时 `report['tone']` 里不再有 `bl_down` / `L5_out` 这些键，断言必须跟着开关走，
+#   否则会把"关掉这一层"误报成"功能坏了"。
+_TONE_ON = bool(getattr(C, 'TONE_ENABLE', True))
+_GRADE_ON = bool(getattr(C, 'GRADE_ENABLE', True))
 
 FAIL = []
 
@@ -59,6 +64,21 @@ def _lin_from_disp(d):
 
 def _mk_sample(disp, path='<自检>'):
     return io.Sample(_lin_from_disp(disp), disp, 'jpg', path)
+
+
+def _pure_engine_same(res, sample, style=None):
+    """关掉后期层时，`pipeline` 的出图应当**就是** `presets.render` 的输出。
+
+    ⚠ 引擎的颗粒是随机的 ⇒ 判据只能是"差值在引擎自身的噪声量级内"，
+      **不能**要求逐位相等。参照量 = 同一输入连跑两次纯引擎的差值。
+    """
+    lin = np.clip(sample.lin, 0.0, None)
+    a = np.asarray(res.disp)
+    b = presets.render(lin, res.report['stock'], C)
+    c = presets.render(lin, res.report['stock'], C)
+    noise = float(np.max(np.abs(b - c)))          # 引擎自身不可复现的那点
+    diff = float(np.max(np.abs(a - b)))
+    return diff <= max(noise * 2.5, 5e-3)
 
 
 def _main():
@@ -673,8 +693,13 @@ def t_mask_contract():
         check('★ 传了 parsed ⇒ grade 里**不再**调 face.parse（去掉重复的那一次）',
               len(calls) == 0, '调了 %d 次' % len(calls),
               '还在调 ⇒ region 与 L4 各算一遍，白付一次分割（实测 273 ms/次）')
-        check('报告里标明掩膜来自外部（skin_mask_src = given）',
-              gi.get('skin_mask_src') == 'given', str(gi.get('skin_mask_src')))
+        if _GRADE_ON:
+            check('报告里标明掩膜来自外部（skin_mask_src = given）',
+                  gi.get('skin_mask_src') == 'given', str(gi.get('skin_mask_src')))
+        else:
+            check('★ 颜色层关掉 ⇒ `grade.apply` 直接原样返回（连掩膜来源键都不产生）',
+                  gi.get('applied') is False and gi.get('skin_mask_src') is None,
+                  str(gi.get('note')))
 
         # ② 跑整条链：只算一次，而且喂的是**解码后**那张图
         s = _mk_sample(_gray_img(seed=77))
@@ -691,8 +716,13 @@ def t_mask_contract():
               '喂成片 ⇒ 链尾发白、分割认不出脸（老路专门避开这件事，'
               '新路 09-26 之前又撞上了）')
         _gi2 = ((r.report.get('tone') or {}).get('grade') or {})
-        check('★ 整条链的报告里 skin_mask_src = given（掩膜走的是解码后那一份）',
-              _gi2.get('skin_mask_src') == 'given', str(_gi2.get('skin_mask_src')))
+        if _GRADE_ON:
+            check('★ 整条链的报告里 skin_mask_src = given（掩膜走的是解码后那一份）',
+                  _gi2.get('skin_mask_src') == 'given', str(_gi2.get('skin_mask_src')))
+        else:
+            check('★ 颜色层关掉（`GRADE_ENABLE=False`）⇒ 报告里如实写明"没跑这一层"',
+                  _gi2.get('applied') is False and '关' in str(_gi2.get('note') or ''),
+                  str(_gi2.get('note')))
 
         # ④ 并发安全：4 线程同时解析 —— 不崩、结果与单线程一致
         _imgs = [np.random.RandomState(s).rand(240, 320, 3) for s in range(4)]
@@ -822,10 +852,13 @@ def t_contract():
             tone.settle_finished, presets.render = _f, _p0
         else:
             tone.apply, presets.render = _t0, _p0
-    if _AFTER:
+    if _AFTER and _TONE_ON:
         check('★★ 曝光风格跑在胶片引擎**之后**（控制不了成片亮度，只能事后收）',
               calls[:2] == ['presets', 'tone'], '调用序: %s' % calls[:4],
               '顺序反了 = 又回到"在引擎之前调亮度"，实测那样三条档只拉开 8.8（靶上该 29.4）')
+    elif _AFTER:
+        check('★ 影调层关掉 ⇒ 调用序里只有引擎、**没有** tone（别偷偷把这一层加回来）',
+              calls[:2] == ['presets'], '调用序: %s' % calls[:4])
     else:
         check('★★ 曝光风格跑在胶片风格**之前**（因果顺序：先给光、再显影）',
               calls[:2] == ['tone', 'presets'], '调用序: %s' % calls[:4],
@@ -843,7 +876,7 @@ def t_contract():
     # ③ 报告要说实话（进去多少 / 出来多少，能自查，不用读图）
     r = pipeline.run_from(_mk_sample(_gray_img(seed=17)), stock=_PRESET, style='暗调')
     t = r.report['tone']
-    if _AFTER:
+    if _AFTER and _TONE_ON:
         check('报告里带着"进去多少 / 出来多少"（能自查，不用读图）',
               t['L5_out'] < t['L5_in'] - 1.0
               and r.report['style_target']['bl_down'] == 14.0
@@ -856,6 +889,14 @@ def t_contract():
         # ⚠ 这里**不量** L5 的升降：喂进去的是合成小图、又过了一遍胶片引擎，
         #   分布已经很窄（L5≈L50≈L95），三点曲线会退化。真正的方向判据在
         #   `t_tone_hits`（直接喂 `_gray_img`，分布是正常的）。
+    elif _AFTER:
+        check('★ 影调层关掉（`TONE_ENABLE=False`）⇒ 报告里如实写明"没跑这一层"',
+              t.get('applied') is False and '关' in str(t.get('note') or ''),
+              str(t.get('note')))
+        check('★★ 关掉影调层 ⇒ 出图**就是纯引擎输出**（后两层不许偷偷动像素）',
+              _pure_engine_same(r, _mk_sample(_gray_img(seed=17)), '暗调'),
+              '与"只跑 presets.render"的差超出了引擎自身噪声',
+              '关了这一层却还在改像素 ⇒ 开关没接对')
     else:
         check('报告里带着"靶是多少 / 实到多少"（能自查，不用读图）',
               abs(t['L50_out'] - t['mid_L']) < 1.5

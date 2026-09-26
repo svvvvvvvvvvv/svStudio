@@ -187,10 +187,18 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
 
         disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg)
         # ---- L1 影调（明度分布）----
-        disp, t_info = tone.settle_finished(disp, style, cfg, stock=name, scene=_sc)
+        # ★ 当前阶段可整体关掉（`config.TONE_ENABLE`）：只做胶片引擎时不要这一层。
+        if bool(getattr(cfg, 'TONE_ENABLE', True)):
+            disp, t_info = tone.settle_finished(disp, style, cfg, stock=name, scene=_sc)
+        else:
+            t_info = dict(applied=False, note='影调层已关（当前阶段只做胶片引擎）')
         # ---- L2 分色 + L3 混色 + L4 肤色（颜色）----
         # ⚠ 这一层**不做曝光**（显示域乘增益 = 拉噪声 + 高光切白），只按亮度/色相加权染色。
-        disp, g_info = grade.apply(disp, cfg, stock=name, parsed=_pz, scene=_sc)
+        # ★ 同样可整体关掉（`config.GRADE_ENABLE`）—— 关掉后脸也不碰。
+        if bool(getattr(cfg, 'GRADE_ENABLE', True)):
+            disp, g_info = grade.apply(disp, cfg, stock=name, parsed=_pz, scene=_sc)
+        else:
+            g_info = dict(applied=False, note='颜色层已关（当前阶段只做胶片引擎）')
         t_info['grade'] = g_info
         t_info['scene'] = (None if _sc is None else dict(_sc))
         gk = 1.0
