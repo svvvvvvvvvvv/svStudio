@@ -61,8 +61,10 @@ def load():
     return _CACHE
 
 
-def for_stock(name):
+def for_stock(name, scene=None):
     """取某条预设的靶；没有专属靶的预设落回 `_default`。
+
+    `scene`：`scene.classify(...)` 的结果。★★★ 09-26 加 —— **这是「按场景分参数」的入口**。
 
     ★★ **肤色三项（skin_l / skin_c / skin_hue）不按预设分组** ——
       统一用 `_skin_shared`（「鹿井 + 小红书」的共识值）。理由见那个键的 `why`：
@@ -89,6 +91,39 @@ def for_stock(name):
     t['skin_shared'] = bool(sk)
     t['stock'] = name
     t['own'] = bool(d.get(name))
+
+    # ★★★ 09-26：**场景覆盖**（「按场景分参数」的入口）
+    #   结构：`"_scene": {"<轴>=<值>": {字段: 值, ...}}`，例：`{"overwhite=过曝": {"skin_L_abs": 64.0}}`。
+    #   · 轴名 = `scene.AXES`（exp / span / back / shot / face / overwhite）；
+    #     **值一律用中文词**（`back` 用「逆光/顺平」、`overwhite` 用「过曝/正常」）——
+    #     词形只由 `scene.token()` 负责，别在这儿另写一套（会静默不命中）。
+    #   · `"<轴>=*"` = 那个轴的任意值都命中（写兜底用）
+    #   · 轴序固定，后面的盖前面的
+    #   · ⚠ **默认没有 `_scene` 这个键 ⇒ 一个字段都不盖，行为与加它之前逐位相同**
+    #   · ⚠ 这里**只做覆盖、不做拟合** —— 数值从哪来是人的决定（见 `scene.py` 顶部那段：
+    #     我们跟大师的三条差跨所有分组一致 ⇒ 那几根旋钮分场景没有收益）。
+    t['_scene_hits'] = []
+    if scene:
+        ov = d.get('_scene') or {}
+        if ov:
+            # ⚠ 键里的"值"必须跟 `scene.token()` 一致（`back`/`blown` 在代码里是 bool，
+            #   写覆盖时要用「逆光/顺平」「过曝/正常」这些词）—— 词形只有那一个函数负责。
+            try:
+                from . import scene as _S
+                _tok = _S.token
+                _axes = _S.AXES
+            except Exception:                                  # noqa: BLE001
+                _tok, _axes = (lambda a, v: str(v)), tuple(scene.keys())
+            for _ax in _axes:
+                _v = scene.get(_ax)
+                if _v is None:
+                    continue
+                for _k in ('%s=%s' % (_ax, _tok(_ax, _v)), '%s=*' % _ax):
+                    _blk = ov.get(_k)
+                    if isinstance(_blk, dict):
+                        t.update(_blk)
+                        t['_scene_hits'].append(_k)
+    t['scene'] = (scene or {}).get('key')
     return t
 
 

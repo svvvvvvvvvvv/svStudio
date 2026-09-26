@@ -131,7 +131,7 @@ def _band_weight(H, center, half):
 # 主入口
 # ---------------------------------------------------------------------------
 
-def apply(disp, cfg=C, stock=None, parsed=None):
+def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
     """在**成片**（显示域）上做分色 + 混色。
 
     `parsed`：**调用方已经算好的一次** `face.parse(...)`（`pipeline` 在**解码后**那张图上算的）。
@@ -148,10 +148,10 @@ def apply(disp, cfg=C, stock=None, parsed=None):
     if not bool(getattr(cfg, 'GRADE_ENABLE', False)):
         return np.clip(np.asarray(disp, np.float64), 0.0, 1.0), dict(applied=False)
 
-    # ★★ 靶按**预设**取（同 tone）
+    # ★★ 靶按**预设**取（同 tone）；`scene` 是「按场景分参数」的入口（见 `targets.for_stock`）
     try:
         from . import targets as _T
-        _tg = _T.for_stock(stock)
+        _tg = _T.for_stock(stock, scene)
     except Exception:                                          # noqa: BLE001
         _tg = None
     d = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
@@ -445,5 +445,9 @@ def apply(disp, cfg=C, stock=None, parsed=None):
                 #   ⚠ 以前只有 'face'/'hue' 两个值，而 'face' 在检不到脸时也会出现 ⇒ 报告会骗人。
                 skin_mask_src=('given' if parsed is not None else 'self'),
                 skin_face_seen=bool(_face_seen),
-                skin_model_ok=bool(_model_ok))
+                skin_model_ok=bool(_model_ok),
+                # ★ 09-26：这一张命中了哪几条**场景覆盖**（`targets._scene`）——
+                #   空 = 一条都没命中（= 跟加场景之前逐位相同）。
+                scene_hits=list((_tg or {}).get('_scene_hits') or []),
+                scene=((_tg or {}).get('scene')))
     return out, info

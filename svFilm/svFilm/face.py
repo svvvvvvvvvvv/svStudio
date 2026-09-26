@@ -24,6 +24,7 @@ from __future__ import annotations
 import os
 import shutil
 import tempfile
+import threading
 
 import numpy as np
 
@@ -35,8 +36,16 @@ YUNET = os.path.join(MDIR, 'yunet.onnx')
 SELFIE = os.path.join(MDIR, 'selfie_multiclass_256x256.tflite')
 SEG_SIDE = 256                      # 分割模型的输入边长（固定）
 
+# ★★★ 09-26 线程安全（常驻服务是 `ThreadingHTTPServer`，两个请求会同时打到这里）：
+#   · 分割器（mediapipe `ImageSegmenter`）与 YuNet 检测器**都不是线程安全**的
+#     —— 实测共享一个 YuNet 实例并发调 `detect()` 直接崩 `cv2.error ... forwardGraph`。
+#   · 处理：分割器**只建一个实例**（建实例贵、吃内存）＋ 建与调都放同一把锁下；
+#     YuNet 检测器改成**每线程一份**（`threading.local`，它很轻，几十 KB/尺寸），
+#     这样"两个请求同时检测"不会互相踩，也不用把检测串行化。
 _SEG = None                         # (segmenter, mp)　模块级缓存
-_DET = {}                           # 尺寸 -> YuNet detector
+_SEG_LOCK = threading.Lock()        # 建实例 + 调 segment 都在它下面
+_DET_TLS = threading.local()        # 每线程一份 {尺寸: YuNet detector}
+
 
 
 class FaceUnavailable(RuntimeError):
@@ -57,34 +66,41 @@ def _ascii(path):
 
 
 def _segmenter():
+    """分割器单例。★ 建实例与调用都必须在 `_SEG_LOCK` 下（mediapipe 实例不是线程安全的）。"""
     global _SEG
     if _SEG is None:
-        try:
-            import mediapipe as mp
-            from mediapipe.tasks import python as mpp
-            from mediapipe.tasks.python import vision
-        except Exception as e:                                  # noqa: BLE001
-            raise FaceUnavailable('mediapipe 不可用：%s' % e)
-        for p in (YUNET, SELFIE):
-            if not os.path.exists(p):
-                raise FaceUnavailable('缺模型文件：%s' % p)
-        opt = vision.ImageSegmenterOptions(
-            base_options=mpp.BaseOptions(model_asset_path=_ascii(SELFIE)),
-            output_confidence_masks=True, output_category_mask=False)
-        _SEG = (vision.ImageSegmenter.create_from_options(opt), mp)
+        with _SEG_LOCK:
+            if _SEG is None:              # 双检：两个线程同时"第一次"进来也只建一个
+                try:
+                    import mediapipe as mp
+                    from mediapipe.tasks import python as mpp
+                    from mediapipe.tasks.python import vision
+                except Exception as e:                              # noqa: BLE001
+                    raise FaceUnavailable('mediapipe 不可用：%s' % e)
+                for p in (YUNET, SELFIE):
+                    if not os.path.exists(p):
+                        raise FaceUnavailable('缺模型文件：%s' % p)
+                opt = vision.ImageSegmenterOptions(
+                    base_options=mpp.BaseOptions(model_asset_path=_ascii(SELFIE)),
+                    output_confidence_masks=True, output_category_mask=False)
+                _SEG = (vision.ImageSegmenter.create_from_options(opt), mp)
     return _SEG
 
 
 def _detector(w, h):
+    """★ 每线程一份（`threading.local`）—— YuNet 实例共享时并发 `detect()` 会崩。"""
     key = (int(w), int(h))
-    if key not in _DET:
+    d = getattr(_DET_TLS, 'det', None)
+    if d is None:
+        d = _DET_TLS.det = {}
+    if key not in d:
         import cv2
-        d = cv2.FaceDetectorYN.create(_ascii(YUNET), '', (64, 64),
-                                      float(getattr(C, 'FACE_DET_SCORE', 0.55)),
-                                      float(getattr(C, 'FACE_DET_NMS', 0.30)))
-        d.setInputSize(key)
-        _DET[key] = d
-    return _DET[key]
+        det = cv2.FaceDetectorYN.create(_ascii(YUNET), '', (64, 64),
+                                        float(getattr(C, 'FACE_DET_SCORE', 0.55)),
+                                        float(getattr(C, 'FACE_DET_NMS', 0.30)))
+        det.setInputSize(key)
+        d[key] = det
+    return d[key]
 
 
 def masks(disp):
@@ -96,6 +112,12 @@ def masks(disp):
     （`cm[3] + cm[2]`）⇒ 拿它当"脸"必然把**手臂/手**一起圈进来（DSCF1954 / DSCF0791 实测）。
     分割本来就是分开的两类，只是没暴露。现在把 **`face_skin`（cm[3]）** 和
     **`hair`（cm[1]，定"头在哪"）** 也单独拿出来。
+
+    ⚠⚠ 09-26：**`face_skin` 是「分割模型圈的脸皮肤」，不是「人脸检测器认到的脸」。**
+      检不到脸时它**照样有值**（实测 12 张里 1 张检测器没认出、face_skin 却非空）
+      ⇒ 拿它当掩膜在**功能上可以**（侧脸/背影/被挡也能接住，SV 明确说这些片子该管），
+      但**报告里不能写成"用了脸"**。下游（`grade` 的 L4）要按 `parse()['face']` 是不是
+      `None` 去区分标签 —— 别只看这个掩膜非空就当成"有脸"。
     """
     import cv2
     seg, mp = _segmenter()
@@ -103,7 +125,8 @@ def masks(disp):
     H, W = u8.shape[:2]
     small = np.ascontiguousarray(cv2.resize(u8, (SEG_SIDE, SEG_SIDE),
                                             interpolation=cv2.INTER_AREA))
-    r = seg.segment(mp.Image(image_format=mp.ImageFormat.SRGB, data=small))
+    with _SEG_LOCK:                    # ★ 09-26：mediapipe 实例不是线程安全的 ⇒ 调用串行化
+        r = seg.segment(mp.Image(image_format=mp.ImageFormat.SRGB, data=small))
     # 6 类顺序：0=背景 1=头发 2=身体皮肤 3=脸皮肤 4=衣服 5=其他
     cm = [np.asarray(r.confidence_masks[i].numpy_view(), np.float32) for i in range(6)]
     up = lambda a: np.clip(cv2.resize(a, (W, H), interpolation=cv2.INTER_LINEAR), 0, 1)  # noqa: E731

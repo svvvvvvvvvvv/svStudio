@@ -323,11 +323,13 @@ def rel_of(name, cfg=C):
     return tbl.get(str(name)) or tbl.get(DEFAULT) or REL[DEFAULT]
 
 
-def settle_finished(disp, style=DEFAULT, cfg=C, stock=None):
+def settle_finished(disp, style=DEFAULT, cfg=C, stock=None, scene=None):
     """在**成片**（显示域）上做曝光风格：压曝光 / 压高光 / 提阴影。
 
     三点（L5 / L50 / L95）在 log2 亮度域插值 —— 和 `solve()` 同一个曲线机器，
     区别只是这里的靶是**相对当前的成片**算出来的，不是某个绝对数。
+
+    `scene`：`scene.classify(...)` 的结果（「按场景分参数」的入口，见 `targets.for_stock`）。
 
     @returns {(numpy.ndarray, dict)} 出图 + 报告（进去多少、出来多少，能自查）
     """
@@ -336,7 +338,7 @@ def settle_finished(disp, style=DEFAULT, cfg=C, stock=None):
     _tg = None
     try:
         from . import targets as _T
-        _tg = _T.for_stock(stock)
+        _tg = _T.for_stock(stock, scene)
     except Exception:                                          # noqa: BLE001
         _tg = None
     disp = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)

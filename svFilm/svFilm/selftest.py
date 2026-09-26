@@ -76,6 +76,7 @@ def _main():
         ('肤色层：真脸掩膜 / 空窗口 / 三件事', t_skin),
         ('可调键：config 里真的接上了（防"假旋钮"）', t_config_keys),
         ('人脸掩膜：算在解码后 / 只算一次 / 报告不说谎', t_mask_contract),
+        ('场景判据：六轴 / 只在线性域判过曝 / 覆盖只加不减', t_scene),
         ('契约：曝光在胶片之前 + 名字不认得要报错', t_contract),
         ('段缓存：同参数命中、换风格不命中', t_cache),
         ('服务：路由只剩该有的那几条', t_routes),
@@ -640,7 +641,11 @@ def t_mask_contract():
        实测同一批 12 张：解码后检出 12/12、引擎出图后只有 11/12。
     ② 一次出图**只算一遍** —— `region` 和 L4 原来各算一遍，同一份像素白付两次（273 ms/次）。
     ③ 报告**不许说谎** —— 原来只写 `'face'`/`'hue'`，而检测器没认出脸时也会写 `'face'`。
+    ④ **并发安全** —— 常驻服务是 `ThreadingHTTPServer`，而 YuNet 检测器不是线程安全的：
+       实测共享一个实例、8 线程 × 40 次，**崩 34 次**（`cv2.error ... net_impl2.cpp:1323`）。
     """
+    from concurrent.futures import ThreadPoolExecutor
+
     from . import face as _face, grade
 
     calls = []
@@ -681,8 +686,101 @@ def t_mask_contract():
         _gi2 = ((r.report.get('tone') or {}).get('grade') or {})
         check('★ 整条链的报告里 skin_mask_src = given（掩膜走的是解码后那一份）',
               _gi2.get('skin_mask_src') == 'given', str(_gi2.get('skin_mask_src')))
+
+        # ④ 并发安全：4 线程同时解析 —— 不崩、结果与单线程一致
+        _imgs = [np.random.RandomState(s).rand(240, 320, 3) for s in range(4)]
+        _base = [float(_orig(i)['masks']['person'].sum()) for i in _imgs]
+        _err = []
+
+        def _job(k):
+            try:
+                return float(_face.parse(_imgs[k % 4])['masks']['person'].sum())
+            except Exception as e:                                  # noqa: BLE001
+                _err.append('%s: %s' % (type(e).__name__, str(e)[:50]))
+                return None
+        with ThreadPoolExecutor(max_workers=4) as _ex:
+            _got = list(_ex.map(_job, list(range(4)) * 3))
+        _bad = sum(1 for i, g in enumerate(_got)
+                   if g is None or abs(g - _base[i % 4]) >= 1e-6)
+        check('★★★ 4 线程并发解析：不崩，且与单线程结果一致（YuNet 每线程一份）',
+              not _err and _bad == 0,
+              '异常 %d 次 ；结果不一致 %d 次' % (len(_err), _bad),
+              '共享一个 YuNet 实例时实测 8 线程 × 40 次**崩 34 次**'
+              '（`cv2.error ... net_impl2.cpp:1323`，OpenCV DNN 没有线程安全承诺）')
+        check('★ 并发确实走到了检测器那一层（不是"图太小没触发"）',
+              bool(getattr(_face._DET_TLS, 'det', None)),
+              '每线程检测器尺寸键：%s' % sorted(getattr(_face._DET_TLS, 'det', {}) or {}))
     finally:
         _face.parse = _orig
+
+
+def t_scene():
+    """场景判据（`scene.py`）：六轴都到得了 · key 带版本 · 源头过曝只在线性域判 ·
+    `targets._scene` 覆盖**只加不减**、不给场景就一个字段不动。"""
+    from . import scene, targets
+
+    # ① 六轴都在，key 带版本号，且**同一张图判两次一样**
+    sc = scene.classify(_gray_img(seed=91), None)
+    check('场景判据给出六根轴 + 版本化的 key（改了判据就要作废缓存）',
+          all(k in sc for k in scene.AXES) and sc['key'].startswith('v%d|' % scene.VERSION),
+          'key = %s' % sc['key'])
+    check('判据稳定：同一张图判两次 key 完全一样',
+          scene.classify(_gray_img(seed=91), None)['key'] == sc['key'])
+
+    # ② 每根轴的每一档都要**到得了**（落不到的分档 = 死的专家）
+    #   ⚠⚠ 给的是**显示域**的值，而分档线在 **Lab L\*** 上 —— 中间隔着 sRGB 解码 + 立方根。
+    #     "看起来中等"的 0.35 显示域其实是 L*≈38（落在「亮」档），在这儿红过两次。
+    #     实测对应：0.087→L*7.3 / 0.19→L*20.1 / 0.95→L*95.6。
+    dark = np.full((32, 32, 3), 0.087)
+    mid = np.full((32, 32, 3), 0.19)
+    bright = np.full((32, 32, 3), 0.95)
+    flat = np.full((32, 32, 3), 0.35)
+    wide = np.zeros((32, 32, 3)); wide[16:] = 1.0
+    e = {scene.classify(x, None)['exp'] for x in (dark, mid, bright)}
+    s = {scene.classify(x, None)['span'] for x in (flat, wide)}
+    check('「曝光」三档都到得了（暗/正常/亮）', len(e) == 3, str(sorted(e)))
+    check('「光比」至少两档到得了（平/大）', len(s) >= 2, str(sorted(s)))
+
+    # ③ ★★ 源头过曝**只在线性域**判：显示域一样、线性不一样 ⇒ 结论必须不同
+    #   ⚠ 判据是「通道最大值 ≥ 白点」，**不是**"三通道同时贴顶"（那样写永远不会响，
+    #     因为显示域的"白"只是 sRGB 把 1.0 以上压到 255 的假象，见 `config` 里那段）。
+    a = scene.classify(flat, None, C, lin=np.full((32, 32, 3), 0.5))['overwhite']
+    b = scene.classify(flat, None, C, lin=np.full((32, 32, 3), 1.2))['overwhite']
+    check('★★ 源头过曝在线性域判得出来（显示域一样、线性不一样 ⇒ 结论不同）',
+          a is False and b is True, '线性 0.5 → %s ；线性 1.2 → %s' % (a, b),
+          '只看显示域的话这两张"一样" ⇒ 这一轴就废了（成片那边早被重渲染压过了）')
+    check('不给线性图 ⇒ overwhite = None（不硬猜）',
+          scene.classify(flat, None)['overwhite'] is None)
+
+    # ④ 场景覆盖：默认**一个字段都不动**；命中才盖、且只盖命中的那些
+    base = targets.for_stock(_PRESET, None)
+    _sc = {'key': 'v1|x', 'exp': '暗', 'span': '平', 'back': False,
+           'shot': '近景', 'face': 'face', 'overwhite': False}
+    same = targets.for_stock(_PRESET, _sc)
+    check('★★ 没有 `_scene` 段时，给不给场景一个字段都不变（默认逐位不变）',
+          same['skin_L_abs'] == base['skin_L_abs'] and same['_scene_hits'] == []
+          and same.get('span') == base.get('span'),
+          'hits=%s' % same['_scene_hits'])
+
+    d = targets.load()
+    _save = d.get('_scene')
+    try:
+        d['_scene'] = {'overwhite=过曝': {'skin_L_abs': 1.23}, 'exp=*': {'skin_C_abs': 9.9}}
+        _hit = dict(_sc); _hit['overwhite'] = True
+        tt = targets.for_stock(_PRESET, _hit)
+        check('★★ 命中场景覆盖时字段真的盖上，且只盖命中的那些',
+              tt['skin_L_abs'] == 1.23 and tt['skin_C_abs'] == 9.9
+              and tt['_scene_hits'] == ['exp=*', 'overwhite=过曝'],
+              'hits=%s' % tt['_scene_hits'])
+        tt2 = targets.for_stock(_PRESET, _sc)
+        check('★ 没命中的档不盖（overwhite=False ⇒ 不掉进 overwhite=过曝）',
+              tt2['skin_L_abs'] == base['skin_L_abs'] and tt2.get('skin_C_abs') == 9.9,
+              '脸靶 %s（应还是 %s）' % (tt2['skin_L_abs'], base['skin_L_abs']))
+    finally:
+        if _save is None:
+            d.pop('_scene', None)
+        else:
+            d['_scene'] = _save
 
 
 def t_contract():

@@ -23,7 +23,7 @@ from collections import OrderedDict
 
 import numpy as np
 
-from . import config as C, grade, io, presets, tone
+from . import config as C, grade, io, presets, scene, tone
 
 
 class Result:
@@ -141,7 +141,11 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
 
     _ckey, _entry = None, None
     if cache is not None:
-        _ckey = ('film', _sample_uid(s), name, style, getattr(cfg, 'MAX_SIDE', None), _after)
+        # ★ 09-26：键里带上 **判据版本号**。场景是**这张图**的确定函数（同一张图永远同一套标签），
+        #   所以不用把标签本身塞进键；但判据一改（`scene.VERSION` +1）就是另一套参数 ⇒ 必须作废。
+        #   ⚠ `config.SCENE_*` 阈值改了不带版本号 ⇒ 同一进程内不会作废（config 都是进程内冻结的，无妨）。
+        _ckey = ('film', _sample_uid(s), name, style, getattr(cfg, 'MAX_SIDE', None), _after,
+                 int(getattr(scene, 'VERSION', 0)))
         _entry = cache.get(_ckey)
 
     if _entry is not None:
@@ -171,13 +175,24 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         except Exception:                                        # noqa: BLE001
             _pz = None
 
+        # ★★★ 场景判据（09-26，「按场景分参数」的**入口**）
+        #   · 跟人脸掩膜**用同一张图、同一次解析**（`parsed=_pz`）—— 不重复算、也不会两张图。
+        #   · `lin=s.lin` 只给 `blown`（源头过曝）那一轴用：它**只能在解码后的线性域判**，
+        #     显示域那边早被重渲染压过了。
+        #   · 判不出来 ⇒ `None`，下游 `targets.for_stock(…, None)` 一个字段都不盖，**不崩**。
+        try:
+            _sc = scene.classify(s.disp, _pz, cfg, lin=s.lin)
+        except Exception:                                        # noqa: BLE001
+            _sc = None
+
         disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg)
         # ---- L1 影调（明度分布）----
-        disp, t_info = tone.settle_finished(disp, style, cfg, stock=name)
+        disp, t_info = tone.settle_finished(disp, style, cfg, stock=name, scene=_sc)
         # ---- L2 分色 + L3 混色 + L4 肤色（颜色）----
         # ⚠ 这一层**不做曝光**（显示域乘增益 = 拉噪声 + 高光切白），只按亮度/色相加权染色。
-        disp, g_info = grade.apply(disp, cfg, stock=name, parsed=_pz)
+        disp, g_info = grade.apply(disp, cfg, stock=name, parsed=_pz, scene=_sc)
         t_info['grade'] = g_info
+        t_info['scene'] = (None if _sc is None else dict(_sc))
         gk = 1.0
         anc = dict(applied=False, note='曝光风格在引擎之后 ⇒ 不做脸锚点')
         if _ckey is not None:
