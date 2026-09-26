@@ -193,8 +193,8 @@
   "scan_black_correction": true,
   "scan_black_level": 0.065,
   "scan_unsharp_mask": [
-   0.0,
-   0.0
+   0.3,
+   0.3
   ],
   "output_color_space": "sRGB",
   "saving_color_space": "sRGB",

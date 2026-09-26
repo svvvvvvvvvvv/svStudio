@@ -36,7 +36,7 @@
  "grain": {
   "active": true,
   "sublayers_active": false,
-  "particle_area_um2": 0.5,
+  "particle_area_um2": 0.4,
   "particle_scale": [
    0.8,
    1.0,
@@ -193,8 +193,8 @@
   "scan_black_correction": true,
   "scan_black_level": 0.22,
   "scan_unsharp_mask": [
-   0.0,
-   0.0
+   0.3,
+   0.3
   ],
   "output_color_space": "sRGB",
   "saving_color_space": "sRGB",
