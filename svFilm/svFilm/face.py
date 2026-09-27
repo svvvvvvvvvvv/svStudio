@@ -145,7 +145,15 @@ def _birefnet():
                 try:
                     import onnxruntime as ort
                     o = ort.SessionOptions()
-                    o.intra_op_num_threads = max(1, (os.cpu_count() or 4) // 2)
+                    # ★★ 关掉 BFC arena（09-27 血案）：birefnet 在 1024² 上会申请 **~822 MB 的连续大块**
+                    #   （deformable conv 的中间张量）。开着 arena 时它按"预占+复用"走，
+                    #   多进程并跑会因碎片/超额提交**直接分配失败**——实测 747 张只活了 18 张，
+                    #   而且 `except` 把崩溃静默转成"无效样本"，看起来像"没检出人"。
+                    #   关掉 = 逐张量申请、用完即还，峰值低很多；代价是稍慢。
+                    o.enable_cpu_mem_arena = False
+                    # ★ 线程别开太多：并跑时 N 进程 × 每进程线程数 会远超核数，
+                    #   反而更容易撞分配失败。上限 8。
+                    o.intra_op_num_threads = max(1, min(8, (os.cpu_count() or 4) // 4))
                     _BIREF = ort.InferenceSession(p, o, providers=['CPUExecutionProvider'])
                 except Exception:                              # noqa: BLE001
                     _BIREF = False
