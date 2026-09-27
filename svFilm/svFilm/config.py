@@ -408,6 +408,15 @@ FACE_BOX_TOP = 1.40
 FACE_BOX_BOT = 1.55
 FACE_FEATHER_REL = 0.05         # 框羽化 σ = 这个比例 × 框宽（新路径也用它：σ = 比例 × 区域宽）
 
+# ---- ★★★ 范围层（`person` / `bg`）的来源（09-27 SV 拍板）----
+# 为什么要换：`selfie_multiclass` 是**视频会议自拍（头肩）**模型，全身 / 人小 / 白衣服低对比
+#   **会整块漏** —— 实测 DSCF1629（全身白裙）只认出上半身、人占 4.8% ⇒ "压背景"会连腿一起压。
+# 每张多花的时间：**约 7 s**（birefnet 在 CPU 上约 7 s，老口径 0.3 s）。
+FACE_PERSON_SRC = 'birefnet'    # 'birefnet' = 更准（默认）｜'mediapipe' = 老口径（快，会漏下半身）
+# birefnet ONNX 的路径。留空 ⇒ 找 `~/.rembg/models/birefnet-portrait/birefnet-portrait.onnx`
+# ⚠ 模型 **927 MB**，**绝不进仓库**。路径/模型缺失时**自动回退** mediapipe，不报错、不崩。
+FACE_BIREFNET = ''
+
 # ---- ★★ 「脸在哪」：不靠正脸框（09-14 SV 选「甲」）----
 # 为什么换：正脸检测器对**正侧脸 / 背影 / 小脸**基本给不出框 ——
 #   DSCF1954 正侧脸机内 JPEG **0 个候选**（整张被跳过）；DSCF0999 小脸被 FACE_GATE_EYED 挡掉，

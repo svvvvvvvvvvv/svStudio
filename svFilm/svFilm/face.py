@@ -27,6 +27,7 @@ import tempfile
 import threading
 
 import numpy as np
+from PIL import Image
 
 from . import config as C
 
@@ -35,6 +36,24 @@ MDIR = os.path.join(HERE, '_models')
 YUNET = os.path.join(MDIR, 'yunet.onnx')
 SELFIE = os.path.join(MDIR, 'selfie_multiclass_256x256.tflite')
 SEG_SIDE = 256                      # 分割模型的输入边长（固定）
+
+# ===== 范围层（person）的**第二个来源**：birefnet-portrait =====
+# ★★★ 为什么要加（09-27 SV 拍板）：原来的 `selfie_multiclass` 是**视频会议自拍（头肩）**模型，
+#   全身 / 人小 / 白衣服低对比 会**整块漏** —— 实测 DSCF1629（全身白裙）只认出上半身、人占 4.8%，
+#   于是"压背景"那一步会**连腿和裙子一起压**（那不是压背景，是压人）。
+#   birefnet-portrait 把同一张给到 11.5%，腿和裙子都回来了（15 张全样本目检过）。
+# ⚠ 三个已知代价（写在这儿免得以后忘）：
+#   ① **慢**：CPU 约 7 s/张（原来 0.3 s）；
+#   ② **大**：ONNX 927 MB ⇒ **绝不进仓库**，放用户目录（`config.FACE_BIREFNET` 可指）;
+#   ③ **失败模式**：人手上/身上有**巨大占画面的物体**时会把物体一起圈进来
+#      （实测"举巨大波点球"那张 11.6% → 57.5%）⇒ 下游拿 `person` 判"人占比"时要留余量。
+BIREF_SIDE = 1024                   # birefnet 的固定输入边长
+BIREF_DEFAULT = os.path.join(os.path.expanduser('~'), '.rembg', 'models',
+                             'birefnet-portrait', 'birefnet-portrait.onnx')
+_IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], np.float64)
+_IMAGENET_STD = np.array([0.229, 0.224, 0.225], np.float64)
+_BIREF = None                       # 会话单例；**False = 已判定不可用，不再重试**
+_BIREF_LOCK = threading.Lock()      # 只管"建实例"（onnxruntime 的 run 本身线程安全）
 
 # ★★★ 09-26 线程安全（常驻服务是 `ThreadingHTTPServer`，两个请求会同时打到这里）：
 #   · 分割器（mediapipe `ImageSegmenter`）与 YuNet 检测器**都不是线程安全**的
@@ -103,14 +122,85 @@ def _detector(w, h):
     return d[key]
 
 
+def birefnet_path():
+    """birefnet 模型在哪。`config.FACE_BIREFNET` 优先，否则找用户目录的默认下载位置。
+    找不到返回 None ⇒ 调用方**回退**到 mediapipe（不许崩）。"""
+    p = str(getattr(C, 'FACE_BIREFNET', '') or '') or BIREF_DEFAULT
+    return p if os.path.exists(p) else None
+
+
+def _birefnet():
+    """birefnet 会话单例。★ 建实例贵（927 MB 权重、要几秒）⇒ 全局一份；建的时候加锁。
+    （onnxruntime 的 `run()` 本身线程安全，所以"调"不用锁 —— 和 mediapipe 不一样。）"""
+    global _BIREF
+    if _BIREF is False:                     # 已经判定不可用 ⇒ 不再反复重试（省每张的开销）
+        return None
+    if _BIREF is None:
+        with _BIREF_LOCK:
+            if _BIREF is None:
+                p = birefnet_path()
+                if p is None:
+                    _BIREF = False
+                    return None
+                try:
+                    import onnxruntime as ort
+                    o = ort.SessionOptions()
+                    o.intra_op_num_threads = max(1, (os.cpu_count() or 4) // 2)
+                    _BIREF = ort.InferenceSession(p, o, providers=['CPUExecutionProvider'])
+                except Exception:                              # noqa: BLE001
+                    _BIREF = False
+                    return None
+    return _BIREF
+
+
+def person_birefnet(disp):
+    """人的范围，走 `birefnet-portrait`。拿不到模型/运行时就返回 `None`（调用方回退）。
+
+    ★★★ 下面五条是**模型自身的口径**，一条都不能改
+       （出处：rembg `sessions/birefnet_general.py::BiRefNetSessionGeneral.predict`）：
+      ① 输入 `[1,3,1024,1024]`；
+      ② resize 到 1024 是 **squash（压扁长宽比）**，**不是 letterbox** ——
+         实测 letterbox 会让人**腰斩**（纵跨度 0.96 → 0.43、面积对折），因为模型就是这么训的；
+      ③ `im / max(im)`：除的是**这张图自己的最大值**，**不是 255**（暗图会被整体提亮）；
+      ④ `(x − ImageNet 均值) / (ImageNet 标准差)`；
+      ⑤ 输出**先过 sigmoid**（★ u2net 不需要、birefnet 需要），**再**逐图 min-max。
+      ⚠ 改错**不会报错**，只会静默产出一张"看起来像抠图"的错掩膜 —— 最难发现的那类 bug。
+    """
+    s = _birefnet()
+    if s is None:
+        return None
+    u8 = np.ascontiguousarray((np.clip(disp, 0.0, 1.0) * 255).astype(np.uint8))
+    H, W = u8.shape[:2]
+    a = np.asarray(Image.fromarray(u8).resize((BIREF_SIDE, BIREF_SIDE), Image.LANCZOS), np.float64)
+    a = a / max(float(a.max()), 1e-6)                                          # ③
+    x = np.ascontiguousarray(((a - _IMAGENET_MEAN) / _IMAGENET_STD).transpose(2, 0, 1)[None],
+                             np.float32)                                       # ④
+    p = np.asarray(s.run(None, {s.get_inputs()[0].name: x})[0][0, 0], np.float64)
+    p = 1.0 / (1.0 + np.exp(-p))                                               # ⑤ sigmoid
+    p = (p - p.min()) / max(float(p.max() - p.min()), 1e-6)                    # ⑤ min-max
+    out = Image.fromarray((np.clip(p, 0, 1) * 255).astype(np.uint8)).resize((W, H), Image.LANCZOS)
+    return np.asarray(out, np.float64) / 255.0
+
+
 def masks(disp):
     """`disp` = 显示域 (H,W,3) 0~1 的 **RGB**。返回同尺寸的软掩膜 dict：
        bg / person / skin(=脸皮肤+身体皮肤) / face_skin(=只有脸皮肤) / hair(=头发)。
-    ⚠ 语义保证：**person == 1 − bg**（分割是 6 类互斥）。这条被权重层用到了，别改。
 
-    ★ 09-14 补两个键：原来只暴露 bg/person/skin，而 **`skin` 是"脸皮肤 + 身体皮肤"合起来的**
-    （`cm[3] + cm[2]`）⇒ 拿它当"脸"必然把**手臂/手**一起圈进来（DSCF1954 / DSCF0791 实测）。
-    分割本来就是分开的两类，只是没暴露。现在把 **`face_skin`（cm[3]）** 和
+    ⚠ 语义保证：**`person == 1 − bg` 仍然成立**（这条被权重层用到了，别改）。
+      09-27 起 `person` 可以来自**另一个模型**（birefnet），但这条恒等式是**我们自己显式构造的**，
+      不再依赖"分割的 6 类互斥"。
+
+    ★★★ **两层来源分开了**（09-27 SV 拍板，见文件头注释）：
+      · **范围层** `person` / `bg` ← `birefnet-portrait`（**准**：全身/人小/白衣服都不再整块漏）
+        拿不到模型或 onnxruntime ⇒ **自动回退** mediapipe 的 `1 − 背景类`（不崩、不报错）。
+      · **部位层** `skin` / `face_skin` / `hair` ← 仍然 mediapipe `selfie_multiclass`。
+        ⚠ 为什么部位不跟着换：试过 human parsing（SCHP，LIP 20 类），**实测更差** ——
+          它会把马路/树/长椅/篮子硬塞进 20 类里的某一类（**封闭类表的必然**），
+          而 MediaPipe 这 6 类反而不会把环境涂成人。
+
+    ★ 09-14 补两个键：**`skin` 是"脸皮肤 + 身体皮肤"合起来的**（`cm[3] + cm[2]`）
+    ⇒ 拿它当"脸"必然把**手臂/手**一起圈进来（DSCF1954 / DSCF0791 实测）。
+    分割本来就是分开的两类，只是没暴露 ⇒ 现在把 **`face_skin`（cm[3]）** 和
     **`hair`（cm[1]，定"头在哪"）** 也单独拿出来。
 
     ⚠⚠ 09-26：**`face_skin` 是「分割模型圈的脸皮肤」，不是「人脸检测器认到的脸」。**
@@ -130,10 +220,19 @@ def masks(disp):
     # 6 类顺序：0=背景 1=头发 2=身体皮肤 3=脸皮肤 4=衣服 5=其他
     cm = [np.asarray(r.confidence_masks[i].numpy_view(), np.float32) for i in range(6)]
     up = lambda a: np.clip(cv2.resize(a, (W, H), interpolation=cv2.INTER_LINEAR), 0, 1)  # noqa: E731
-    return dict(bg=up(cm[0]), person=up(1.0 - cm[0]),
-                skin=up(cm[3] + cm[2]),        # 原语义（脸+身），别动
-                face_skin=up(cm[3]),           # ★ 单独的脸皮肤
-                hair=up(cm[1]))                # ★ 头发（定"头在哪"的锚）
+    skin = up(cm[3] + cm[2])           # 原语义（脸+身），别动
+    face_skin = up(cm[3])              # ★ 单独的脸皮肤
+    hair = up(cm[1])                   # ★ 头发（定"头在哪"的锚）
+
+    # ===== 范围层：优先 birefnet，拿不到就回退 mediapipe =====
+    person = None
+    if str(getattr(C, 'FACE_PERSON_SRC', 'birefnet')).lower() == 'birefnet':
+        person = person_birefnet(disp)
+    if person is None:
+        person = up(1.0 - cm[0])       # 老口径（= mediapipe 的"人"）
+    person = np.clip(person, 0.0, 1.0)
+    return dict(bg=np.clip(1.0 - person, 0.0, 1.0), person=person,
+                skin=skin, face_skin=face_skin, hair=hair)
 
 
 def landmarks(disp, person):
