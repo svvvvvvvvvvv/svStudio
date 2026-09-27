@@ -380,6 +380,23 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
                 # 模型**不可用**（缺依赖/模型文件）⇒ 退回色相窗，有总比没有好
                 _w = _band_weight(H, 35.0, 26.0) * live * 0.6
                 _mask_src = 'hue'
+        # ★★★ 09-27：**掩膜边界要羽化**（不羽化的话，"提脸"的边界会看出分割感）。
+        #   出处：**CN104038704A**「提亮人脸后，**以人脸区域为边界做亮度平滑过渡**，
+        #         过渡范围取**人脸区域宽度的一半**」。
+        #   · 原来脸部权重是 `clip(face_skin × 1.6, 0, 1)` —— **乘 1.6 把软过渡带压窄**、边缘发硬；
+        #     而且全文**没有任何羽化**（只有一处双边滤波，那是治提亮后的色阶断裂，不是羽化边界）。
+        #   · 现在：`_w` **合成完之后统一羽化一次**（脸 ∪ 身体皮肤都在里面 ⇒ 接缝一起被抹平），
+        #     并把峰值**归一回 1**（高斯模糊会降峰，不归一会让脸中心也变弱）。
+        #   · σ = 脸的**等效边长** × `GRADE_SKIN_FEATHER`（默认 1/6 ⇒ 过渡约 ±3σ ≈ 脸宽的一半，对上专利）。
+        #     ⚠ 设 0 即关闭（回到老行为）。
+        _fe = float(getattr(cfg, 'GRADE_SKIN_FEATHER', 0.0) or 0.0)
+        if _fe > 0 and float(_w.max()) > 0.05:
+            from scipy.ndimage import gaussian_filter
+            _side = float(np.sqrt(max(int((_w > 0.3).sum()), 1)))     # 脸的等效边长（像素）
+            _wb = gaussian_filter(_w, max(1.0, _side * _fe))
+            _mx = float(_wb.max())
+            if _mx > 1e-6:
+                _w = np.clip(_wb / _mx, 0.0, 1.0)                     # 峰值归一 ⇒ 脸中心仍是 1
         _sel = _w > 0.5
         if float(_w.max()) > 0.05 and bool(_sel.any()):      # ★ 必须检查非空：空窗口时
             _Cc2 = np.sqrt(a * a + b * b)                   #   np.median([]) = nan ⇒ 整张被写成 nan
