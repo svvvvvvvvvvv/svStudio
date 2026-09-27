@@ -144,8 +144,14 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         # ★ 09-26：键里带上 **判据版本号**。场景是**这张图**的确定函数（同一张图永远同一套标签），
         #   所以不用把标签本身塞进键；但判据一改（`scene.VERSION` +1）就是另一套参数 ⇒ 必须作废。
         #   ⚠ `config.SCENE_*` 阈值改了不带版本号 ⇒ 同一进程内不会作废（config 都是进程内冻结的，无妨）。
+        # ★★ 09-27：**开关本身也必须进键**。原来只带了 `_after`（`TONE_AFTER_ENGINE`）
+        #   ⇒ 漏了 `GRADE_SCOPE` / `GRADE_ENABLE` / `TONE_ENABLE`：常驻进程里改了它们仍会命中
+        #   旧缓存，表现就是**"拧了没反应"**（和下面老路那段注释里说过的同一类坑）。
         _ckey = ('film', _sample_uid(s), name, style, getattr(cfg, 'MAX_SIDE', None), _after,
-                 int(getattr(scene, 'VERSION', 0)))
+                 int(getattr(scene, 'VERSION', 0)),
+                 str(getattr(cfg, 'GRADE_SCOPE', 'all')),
+                 bool(getattr(cfg, 'GRADE_ENABLE', True)),
+                 bool(getattr(cfg, 'TONE_ENABLE', False)))
         _entry = cache.get(_ckey)
 
     if _entry is not None:
@@ -180,6 +186,12 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         #   · `lin=s.lin` 只给 `blown`（源头过曝）那一轴用：它**只能在解码后的线性域判**，
         #     显示域那边早被重渲染压过了。
         #   · 判不出来 ⇒ `None`，下游 `targets.for_stock(…, None)` 一个字段都不盖，**不崩**。
+        #
+        # ⚠⚠⚠ 09-27：**试过把它拆成两段（引擎前 `blown` + 引擎后 `classify_after`），又退回来了。**
+        #   为什么退：`scene` 的**阈值是按「解码域」标的**（`SCENE_EXP_DARK=18.5` 这种整张中位），
+        #   一旦改到**成片域**去量，`exp` / `span` **会全部错档**（实测出图 77% 像素变了）。
+        #   ⇒ **要切两段，必须先把那两个阈值按"成片域"重新标定**，那是**另一件事、要单独做**。
+        #   新函数已经备好（`scene.blown` / `scene.classify_after`），**标定完再切**。
         try:
             _sc = scene.classify(s.disp, _pz, cfg, lin=s.lin)
         except Exception:                                        # noqa: BLE001
@@ -207,7 +219,8 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
             cache.put(_ckey, disp=disp, t_info=t_info, gk=gk, anc=anc)
     else:
         # ========== 老路：曝光风格作用在引擎**之前**的线性图上 ==========
-        # ========== 老路：曝光风格作用在引擎**之前**的线性图上 ==========
+        # ⚠⚠ **这条路当前不执行**：默认 `TONE_AFTER_ENGINE=True` ⇒ 永远走上面那个分支
+        #   （`if _after:`）。留着它只为"把开关拨回去"时还能跑；读代码时别把它当现行流程。
         # ⚠⚠ 09-26：这条路里原来有**两处和脸有关的动作** —— 解码后算一次脸掩膜 `_msk`、
         #   再用 `io.anchor_ev` / `io.finish_anchor` 按脸改曝光。**已整体删除**，
         #   理由：`TONE_AFTER_ENGINE=True` 时这条路根本不跑 ⇒ 那是死代码，而

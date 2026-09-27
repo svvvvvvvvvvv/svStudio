@@ -102,7 +102,7 @@ def _light_position(d, L, parsed, cfg):
     sub = (per > 0.5) if per is not None else None
     bak = (bgm > 0.5) if bgm is not None else None
     raw = dict(bg_sub=None, above_sub=None, hi_cy=None, hi_cx=None, hi_gap=None, hi_on_sub=None,
-               rim=None, clip_bg_pct=None)
+               clip_bg_pct=None)
     if sub is None or bak is None:
         return None, raw
     if int(sub.sum()) < int(getattr(cfg, 'SCENE_BACK_MIN_SUB_PX', 800)) or int(bak.sum()) < 500:
@@ -142,12 +142,12 @@ def _light_position(d, L, parsed, cfg):
     #   于是"亮区在框内"会误成立。这个比例只跟像素走，跟几个人无关。
     raw['hi_on_sub'] = float((hi & sub).sum()) / max(int(hi.sum()), 1)
 
-    # ④ 轮廓光（佐证）：主体**边界带**的中位亮度 − 主体**内部**的中位亮度
-    if per is not None:
-        edge = (per > 0.35) & (per < 0.80)
-        inner = per > 0.92
-        if int(edge.sum()) > 200 and int(inner.sum()) > 200:
-            raw['rim'] = float(np.median(L[edge]) - np.median(L[inner]))
+    # ④ 轮廓光（`rim`）—— ★★ 09-27 **已删除**，不要再加回来：
+    #   · 它算出来**没有任何下游用**（死代码）；
+    #   · 而且写法本身是**错的**：拿 `0.35 < person < 0.80`（软 alpha 区间）当"主体边界带"，
+    #     目检实测**黄色散进人的身体内部**（根因：`person = 1 − 背景` 是小尺寸分割上采样来的，
+    #     身体内部也有中间值）⇒ 正确做法要用**几何环**；
+    #   · 而"保护轮廓光"这件事 SV 09-27 已决定**放弃**（判不准、收益最小；不做只是少保护，弄不坏画面）。
 
     # ★ 「糊死的是哪一块」：全通道贴白的像素里，落在**背景**上的占比。
     #   为什么要有它：负片在逆光下**让天空爆是正常的**（技能 §94.3 的专业共识），
@@ -188,13 +188,19 @@ def token(axis, v):
     return str(v)
 
 
-def classify(disp, parsed=None, cfg=C, lin=None):
-    r"""给**解码后**那张图（`pipeline` 里传的是 `s.disp`）打标签。
+def classify_after(disp, parsed=None, cfg=C, blown_axis=None):
+    r"""在**引擎之后**的图（成片）上量各轴；把 `blown_axis` 原样并进来。
+
+    ★★ 为什么要拆成两段（09-27）：
+      · `overwhite`（源头过曝）**只能在引擎之前**判 —— 它要**线性域**（见 `blown()`）；
+      · **其余各轴要量的是「成片」的样子**（曝光 / 跨度 / 景别 / 脸可见度 / 光位）
+        ⇒ **必须在引擎之后**量。
+      原来是一次性在"解码后"量完、再拿去给"引擎之后"的层（`tone` / `grade`）用 ⇒ **量的口径不对**。
 
     `parsed`：`face.parse(...)` 的结果 —— **必须跟人脸掩膜是同一次**
       （同一张图、同一次调用；见 `pipeline` 里 `parsed=` 的说明）。
-    `lin`：**解码后的线性图**（`s.lin`）。只有 `blown` 那一轴要它 ——
-      源头过曝只能在**线性域**判（显示域那边已经压过了）。不传 ⇒ `blown=None`（不判）。
+      ⚠ 拆的是**量值**，**掩膜仍然只在解码后算一次**往下传（不重算）。
+    `blown_axis`：`blown()` 的返回值（引擎之前算好的那一轴）。
 
     @returns {dict}
       六根轴 + `key`（缓存用，带 VERSION）+ `raw`（量到的原值，便于自查与事后标定阈值）
@@ -252,19 +258,38 @@ def classify(disp, parsed=None, cfg=C, lin=None):
                           float(getattr(cfg, 'SCENE_SHOT_MED', 20.0)),
                           float(getattr(cfg, 'SCENE_SHOT_CLOSE', 35.0))], person_pct)
 
-    # ---- 源头过曝：只能在**线性域**判（"通道最大值 ≥ 白点" = 已经超过白）----
+    # ---- 源头过曝：**引擎之前**算好的，这里原样并进来 ----
+    # （它只能在**线性域**判 —— 显示域那边早被引擎重渲染压过了。见 `blown()`。）
+    out['raw']['overwhite_pct'] = None if not blown_axis else blown_axis.get('overwhite_pct')
+    out['overwhite'] = None if not blown_axis else blown_axis.get('overwhite')
+
+    out['key'] = 'v%d|%s' % (VERSION, '|'.join(token(k, out.get(k)) for k in AXES))
+    return out
+
+
+def blown(lin, cfg=C):
+    r"""★ **「引擎之前」那一轴**：源头过曝（在**线性域**判）。
+
+    只有这一轴依赖 `lin` —— 其余各轴都在引擎之后量（见 `classify_after`）。
+    """
     ow_pct = None
     if lin is not None:
         a = np.asarray(lin, np.float64)
         lvl = float(getattr(cfg, 'SCENE_OVERWHITE_LEVEL', 1.0))
         if a.ndim == 3 and a.shape[-1] >= 3:
             ow_pct = float((a[..., :3].max(axis=-1) >= lvl).mean() * 100.0)
-    out['raw']['overwhite_pct'] = ow_pct
-    out['overwhite'] = (None if ow_pct is None
-                        else bool(ow_pct >= float(getattr(cfg, 'SCENE_OVERWHITE_PCT', 0.5))))
+    return dict(overwhite_pct=ow_pct,
+                overwhite=(None if ow_pct is None
+                           else bool(ow_pct >= float(getattr(cfg, 'SCENE_OVERWHITE_PCT', 0.5)))))
 
-    out['key'] = 'v%d|%s' % (VERSION, '|'.join(token(k, out.get(k)) for k in AXES))
-    return out
+
+def classify(disp, parsed=None, cfg=C, lin=None):
+    r"""便捷入口：= `blown(lin)` + `classify_after(disp, parsed, cfg, …)`（一次算完）。
+
+    ⚠ **现行流程不走这里** —— `pipeline` 是**分两段**调的（引擎前 `blown`、引擎后 `classify_after`）。
+    留着它是给**自检 / 一次性分析**用（一次算完最方便）。
+    """
+    return classify_after(disp, parsed, cfg, blown_axis=blown(lin, cfg))
 
 
 def label(scene):
