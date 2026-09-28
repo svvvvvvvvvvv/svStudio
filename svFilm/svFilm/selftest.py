@@ -71,11 +71,29 @@ def _pure_engine_same(res, sample, style=None):
 
     ⚠ 引擎的颗粒是随机的 ⇒ 判据只能是"差值在引擎自身的噪声量级内"，
       **不能**要求逐位相等。参照量 = 同一输入连跑两次纯引擎的差值。
+    ★★ 09-29：参照物必须带上**生产那份引擎覆盖**（`_scene_engine`，例：全局那条
+      `density_curves_morph` 把跨度 76.2 拉到 81.87）。不带 ⇒ 拿"没有覆盖的引擎"去比
+      "有覆盖的引擎"，差的 0.032 **全是覆盖带来的**，与"影调 / 颜色两层"无关
+      —— 这条老账就是这么红的（`_scene_engine` 是 09-28 才加的，这条检查没跟着改）。
+    ★★ 同理：**脸增益也是"引擎这一步"的一部分**（默认开）⇒ 它动了就要带它当参照物。
     """
     lin = np.clip(sample.lin, 0.0, None)
     a = np.asarray(res.disp)
-    b = presets.render(lin, res.report['stock'], C)
-    c = presets.render(lin, res.report['stock'], C)
+    from . import targets as _TS
+    _sc = (res.report.get('tone') or {}).get('scene')
+    ov = _TS.scene_engine(_sc, stock=res.report['stock'], cfg=C) or None
+    stock = res.report['stock']
+    fg = res.report.get('face_gain') or {}
+    ft = _TS.face_lab_target(stock) if fg.get('applied') else None
+    if ft:
+        from . import face as _face
+        pz = _face.parse(np.clip(sample.disp, 0.0, 1.0))
+        _kw = dict(pz=pz, target_L=ft[0], target_a=ft[1], target_b=ft[2], overrides=ov)
+        b = np.asarray(presets.render_with_face(lin, stock, C, **_kw)[0])
+        c = np.asarray(presets.render_with_face(lin, stock, C, **_kw)[0])
+    else:
+        b = np.asarray(presets.render(lin, stock, C, overrides=ov))
+        c = np.asarray(presets.render(lin, stock, C, overrides=ov))
     noise = float(np.max(np.abs(b - c)))          # 引擎自身不可复现的那点
     diff = float(np.max(np.abs(a - b)))
     return diff <= max(noise * 2.5, 5e-3)
@@ -96,6 +114,7 @@ def _main():
         ('肤色层：真脸掩膜 / 空窗口 / 三件事', t_skin),
         ('可调键：config 里真的接上了（防"假旋钮"）', t_config_keys),
         ('人脸掩膜：算在解码后 / 只算一次 / 报告不说谎', t_mask_contract),
+        ('脸增益：转正后只动脸 / 没脸不动 / ΔE00 是真尺子', t_facegain),
         ('场景判据：六轴 / 只在线性域判过曝 / 覆盖只加不减', t_scene),
         ('契约：曝光在胶片之前 + 名字不认得要报错', t_contract),
         ('段缓存：同参数命中、换风格不命中', t_cache),
@@ -445,24 +464,150 @@ def t_skin():
               '补 亮度%s 色相%s' % (gi.get('skin_dL'), gi.get('skin_dH')),
               '空窗口时 np.median([]) = nan ⇒ 整张变 nan。必须先判 `_sel.any()`')
 
-    # ③ 报告里带上"用的哪种掩膜"（自查不用猜）
-    #   ★★★ 09-26 这里**新增 'seg'**：`skin_mask` 原来只有 'face'/'hue' 两个值，
-    #     而 'face' 在**检测器根本没认出脸**的时候也会出现（只看分割的 face_skin 非空就动手）
-    #     ⇒ 报告会骗人。现在四个取值互斥：face / seg / hue / none，见 `grade.apply` 的注释。
-    o, gi = grade.apply(np.asarray(_gray_img(seed=61), np.float64), C)
-    check('报告里带 skin_mask（face / seg / hue / none 四态，不许说谎）',
-          gi.get('skin_mask') in ('face', 'seg', 'hue', 'none'),
-          str(gi.get('skin_mask')),
-          '取值不在四态里 ⇒ 后来人改了这个字段却忘了它是有语义的')
-    check('★ 报告里还带「检测器到底认没认出脸」（`skin_face_seen`）',
-          'skin_face_seen' in gi and gi.get('skin_face_seen') is False,
-          'face_seen=%s model_ok=%s' % (gi.get('skin_face_seen'), gi.get('skin_model_ok')),
-          '灰图检不出脸 ⇒ 必须是 False。原来这条信息根本不在报告里，'
-          '所以"没检到脸却写着 face"藏了很久')
-    check('★ 有脸才写 face（没认出脸时不许写 face）',
-          (gi.get('skin_mask') != 'face') or bool(gi.get('skin_face_seen')),
-          'skin_mask=%s face_seen=%s' % (gi.get('skin_mask'), gi.get('skin_face_seen')),
-          'skin_mask=face 但检测器没认出脸 ⇒ 又回到"只看分割就动手"的老毛病')
+    # ★★ 09-29：下面这三条测的是**颜色层自己**（报告字段），所以显式把它打开
+    #   （与 `t_grade` 显式设 `GRADE_SCOPE='all'` 同理）。当前阶段
+    #   `config.GRADE_ENABLE=False` ⇒ 不打开的话 `grade.apply` 直接原样返回，
+    #   报告里根本没有 `skin_mask` 这些键 ⇒ 这几条会"过期变红"。
+    #   ⚠ 必须 try/finally 还原：这一组跑在 `t_mask_contract` / `t_contract` / `t_cache`
+    #     **之前**，漏还原会让那三组里所有"关掉"分支错位。（09-29 的老账正是这么来的。）
+    _ge0 = bool(getattr(C, 'GRADE_ENABLE', True))
+    C.GRADE_ENABLE = True
+    try:
+        # ③ 报告里带上"用的哪种掩膜"（自查不用猜）
+        #   ★★★ 09-26 这里**新增 'seg'**：`skin_mask` 原来只有 'face'/'hue' 两个值，
+        #     而 'face' 在**检测器根本没认出脸**的时候也会出现（只看分割的 face_skin 非空就动手）
+        #     ⇒ 报告会骗人。现在四个取值互斥：face / seg / hue / none，见 `grade.apply` 的注释。
+        o, gi = grade.apply(np.asarray(_gray_img(seed=61), np.float64), C)
+        check('报告里带 skin_mask（face / seg / hue / none 四态，不许说谎）',
+              gi.get('skin_mask') in ('face', 'seg', 'hue', 'none'),
+              str(gi.get('skin_mask')),
+              '取值不在四态里 ⇒ 后来人改了这个字段却忘了它是有语义的')
+        check('★ 报告里还带「检测器到底认没认出脸」（`skin_face_seen`）',
+              'skin_face_seen' in gi and gi.get('skin_face_seen') is False,
+              'face_seen=%s model_ok=%s' % (gi.get('skin_face_seen'), gi.get('skin_model_ok')),
+              '灰图检不出脸 ⇒ 必须是 False。原来这条信息根本不在报告里，'
+              '所以"没检到脸却写着 face"藏了很久')
+        check('★ 有脸才写 face（没认出脸时不许写 face）',
+              (gi.get('skin_mask') != 'face') or bool(gi.get('skin_face_seen')),
+              'skin_mask=%s face_seen=%s' % (gi.get('skin_mask'), gi.get('skin_face_seen')),
+              'skin_mask=face 但检测器没认出脸 ⇒ 又回到"只看分割就动手"的老毛病')
+    finally:
+        C.GRADE_ENABLE = _ge0
+
+
+# ---------------------------------------------------------------------------
+# 脸增益（09-29 转正）
+# ---------------------------------------------------------------------------
+
+def t_facegain():
+    """★★ 09-29「脸增益」**转正**（`config.FACE_GAIN_ENABLE = True`）。
+
+    它改的是**每张的出图** ⇒ 静默失效 / 静默乱动都没人看得出来 ⇒ 这组钉四件事：
+      ① 开关真的在 `config` 里、且默认开；
+      ② 闸门卡在**最终掩膜**（脸 ∪ 身体皮肤）的像素数上 —— 真脸 0 px 也**照样动**
+         （`DSCF1629` 就是）；掩膜小到量不准才不动。
+         ⚠ 残留风险（未解决，如实记）：画面里有**大块皮肤但没脸**时仍会被当脸提亮。
+      ③ 有靶 ⇒ 真的把脸搬到靶，而且**只动脸**（掩膜外不动）；
+      ④ 没有靶 ⇒ 走普通 `render`（不启用，逐位同旧行为）。
+    """
+    from . import facegain, targets
+
+    check('config.FACE_GAIN_ENABLE 这个键真的在', hasattr(C, 'FACE_GAIN_ENABLE'),
+          '当前 %r' % getattr(C, 'FACE_GAIN_ENABLE', None),
+          '缺它 ⇒ 代码里 `getattr(cfg, …)` 永远取那个字面默认')
+    check('★ 脸增益**转正**了（默认开）', bool(getattr(C, 'FACE_GAIN_ENABLE', False)),
+          '7 张实测脸 ΔE00 0.67~1.32（判据 ≤3.0）')
+    check('★★ 两个"摆着看的"旧键已清干净（`FACE_GAIN_MIN_PX` / `FACE_GAIN_SKIP_BODY_ONLY`）',
+          not hasattr(C, 'FACE_GAIN_MIN_PX') and not hasattr(C, 'FACE_GAIN_SKIP_BODY_ONLY'),
+          '掩膜下限现在叫 FACE_GAIN_MIN_MASK_PX=%r' % getattr(C, 'FACE_GAIN_MIN_MASK_PX', None),
+          '留着它们 ⇒ 改了没反应（已知第 4 类"拧了没反应"）')
+
+    # ---- ② 掩膜契约：闸门卡在「真脸」，不是「最终掩膜」 ----
+    h, w = 180, 240
+    z = np.zeros((h, w), np.float64)
+    sk = z.copy()
+    sk[h // 2:, :] = 1.0                       # 下半张全是"身体皮肤"
+    fs = z.copy()
+    fs[60:110, 90:150] = 1.0                   # 一小块真脸（3000 px）
+    pz = {'masks': {'face_skin': fs, 'skin': sk}}
+
+    check('★★ 只有身体皮肤、真脸 0 px ⇒ **照样动**（不许被筛掉）',
+          facegain._mask({'masks': {'face_skin': z.copy(), 'skin': sk}}, (h, w, 3), C) is not None,
+          '真脸 0 但并集 %d px' % int((sk * 0.5 > 0.05).sum()),
+          'DSCF1629 就是这样一张（掩膜全靠身体皮肤撑）而它是 09-29 实测**收住**的 —— '
+          '拿"真脸为 0"当闸门会把好案例一起筛掉（09-29 我差点这么干）')
+    _tz = z.copy()
+    _tz[80:100, 110:130] = 1.0                 # 400 px 的掩膜：太小，量不准
+    check('★ 掩膜小到量不准（< FACE_GAIN_MIN_MASK_PX）⇒ 不动',
+          facegain._mask({'masks': {'face_skin': _tz}}, (h, w, 3), C) is None,
+          '下限 %r px' % getattr(C, 'FACE_GAIN_MIN_MASK_PX', None))
+    m = facegain._mask(pz, (h, w, 3), C)
+    check('★ 真脸够大 ⇒ 掩膜出来，且**并上了身体皮肤**（只圈脸会留接缝）',
+          m is not None and float(m[85, 120]) > 0.9 and float(m[h - 3, 3]) > 0.2,
+          ('脸处 %.2f · 身体处 %.2f' % (float(m[85, 120]), float(m[h - 3, 3])))
+          if m is not None else '掩膜没出来',
+          '身体那半张没进掩膜 ⇒ 脸亮、脖子手臂暗 ⇒ SV 报过的"突兀"')
+    if m is None:
+        return                                  # 上面已经红了；后面依赖掩膜，跑下去只会抛异常
+
+    # ---- ΔE00 的尺子（09-29 栽过：方法名写错 ⇒ `except` 静默换成欧氏） ----
+    _pair = ((50.0, 0.0, 0.0), (60.0, 30.0, -10.0))
+    _d00 = facegain._de00(*_pair)
+    _e76 = float(np.sqrt(sum((a - b) ** 2 for a, b in zip(*_pair))))
+    check('★★ ΔE00 不许等于欧氏 ΔE76（方法名写成 `CIEDE2000` 就会静默退化）',
+          abs(_d00 - _e76) > 0.5,
+          'ΔE00 %.2f · ΔE76 %.2f · 尺子 %s' % (_d00, _e76, facegain._DE_METRIC[0]),
+          '两者相等 ⇒ `colour.delta_E` 抛了、`except` 把它静默换成欧氏（报出来的"ΔE00"是假数）')
+
+    # ---- ③④ 端到端（走的是生产同一条 `presets.render_with_face`） ----
+    # ★★ 端到端必须用**接近真实比例**的掩膜（脸框 30x36 ≈ 2.5% 画幅）。
+    #   羽化 σ = √(掩膜面积)/6 ⇒ **掩膜铺满画幅时，羽化会把整张都盖上**，"真·掩膜外"
+    #   一个像素都不剩，这条检查就成了空转。09-29 我第一版拿 53% 的掩膜量出"掩膜外也动 0.27"
+    #   —— 那 0.27 量的是**羽化环**（掩膜的一部分，本来就该动）：**是尺子错了，不是代码错了**。
+    lin = _lin_from_disp(_gray_img(seed=83))
+    _bh, _bw = 50, 50                             # ★ 必须 ≥ FACE_GAIN_MIN_MASK_PX（2500 px）
+    _y0, _x0 = (h - _bh) // 2, (w - _bw) // 2
+    _fs2 = np.zeros((h, w), np.float64)
+    _fs2[_y0:_y0 + _bh, _x0:_x0 + _bw] = 1.0
+    pzF = {'masks': {'face_skin': _fs2}}          # ★ 只给脸 ⇒ 羽化不会盖满全图
+    mF = facegain._mask(pzF, (h, w, 3), C)
+    _in = (mF > 0.5) if mF is not None else np.zeros((h, w), bool)
+    _out = (mF <= 1e-9) if mF is not None else np.zeros((h, w), bool)
+    check('★ 端到端那张图的"真·掩膜外"占得住（否则下面那条是空转）',
+          mF is not None and float(_out.mean()) > 0.20,
+          '掩膜内 %.1f%% · 真外 %.1f%%' % (100 * _in.mean(), 100 * _out.mean()),
+          '真外太少 ⇒ 羽化把整张盖住了，量"溢出"等于没量')
+    ft = targets.face_lab_target(_PRESET)
+    check('★ 这条预设的**脸靶**在（L* / a* / b* 三件）', bool(ft), '解析出 %r' % (ft,),
+          '靶不在 ⇒ 脸增益静默不启用（"改了没反应"）')
+    if not ft or float(_out.mean()) <= 0.20:
+        return
+
+    base = np.asarray(presets.render(lin, _PRESET, C))
+    noise = float(np.max(np.abs(base - np.asarray(presets.render(lin, _PRESET, C)))))
+    out, gi = presets.render_with_face(lin, _PRESET, C, pz=pzF, target_L=ft[0],
+                                       target_a=ft[1], target_b=ft[2])
+    check('★ 有靶 ⇒ 报告说它真的动了（applied + 迭代轮数）',
+          bool(gi.get('applied')) and gi.get('de00') is not None,
+          'iters=%s · ΔE00=%s · 真脸 %s px' % (gi.get('iters'), gi.get('de00'), gi.get('face_px')),
+          '没动 ⇒ 整段闭环是空转的，而报告里还写着"开了"')
+    _de0 = facegain._de00(np.asarray(gi['lab_before'], np.float64),
+                          np.asarray(gi['target'], np.float64))
+    check('★ 收敛：ΔE00 真的变小（不是乱动）',
+          gi.get('de00') is not None and float(gi['de00']) < _de0 - 0.5,
+          'ΔE00 %.2f → %.2f（%s 轮）' % (_de0, float(gi['de00'] or _de0), gi.get('iters')),
+          '没变小 ⇒ 响应矩阵不是这一版标定的那个 / 掩膜与迭代用的不是同一个')
+    _d = np.abs(np.asarray(out) - base).max(axis=-1)
+    _din, _dout = float(_d[_in].mean()), float(_d[_out].max())
+    check('★★ 只动脸：掩膜内明显变动、**真·掩膜外**一动没动',
+          _din > 0.02 and _dout <= max(5.0 * noise, 5e-3),
+          '掩膜内均 %.4f · 真外 max %.4f · 引擎自噪声 %.4f' % (_din, _dout, noise),
+          '真外也动 ⇒ 这个"局部层"在污染整张（当年 L4 就是这么坏事的）')
+    out2, gi2 = presets.render_with_face(lin, _PRESET, C, pz=pzF)          # 不给靶
+    check('★ 没有靶 ⇒ 走普通 `render`（不启用，逐位同旧行为）',
+          not gi2.get('applied')
+          and float(np.max(np.abs(np.asarray(out2) - base))) <= max(noise * 2.5, 5e-3),
+          'applied=%s' % gi2.get('applied'))
 
 
 def t_targets():
@@ -536,13 +681,18 @@ def t_grade():
     # ★ 这一段断言测的是**分色 / 混色（L2/L3）**，所以显式把 scope 设成 'all' ——
     #   当前阶段的默认是 'skin'（只跑肤色 L4），不设的话这几条会全部过期变红。
     _scope0 = getattr(C, 'GRADE_SCOPE', 'all')
+    # ★★ 09-29：原来只有 `GRADE_SCOPE` 被还原，`GRADE_ENABLE` **在 `finally` 里被硬写成 True**
+    #   ⇒ 这一组跑完，后面所有组看到的都是"颜色层开着"，而 `_GRADE_ON`（进口时读的）还是 False
+    #   ⇒ `t_mask_contract` / `t_contract` 里那些 `else`（"关掉"分支）全部错位变红
+    #   —— 4 条老账里有 3 条是这么来的。**开关必须成对还原**。
+    _ge0 = bool(getattr(C, 'GRADE_ENABLE', True))
     C.GRADE_SCOPE = 'all'
     # ① 关掉 ⇒ 逐位不变（不能"说关还偷偷动一点"）
     C.GRADE_ENABLE = False
     try:
         off, info = grade.apply(disp, C)
     finally:
-        C.GRADE_ENABLE = True
+        C.GRADE_ENABLE = True          # 下面几条要测"开着"的样子（函数结束时会还原成 _ge0）
     check('★ 关掉二次调色 ⇒ 逐位不动（不许"说关还偷偷动"）',
           float(np.max(np.abs(off - disp))) < 1e-12,
           '最大差 %.2e' % float(np.max(np.abs(off - disp))))
@@ -626,6 +776,7 @@ def t_grade():
     C.GRADE_SCOPE = 'all'
     _o_all, _ = grade.apply(_c, C)
     C.GRADE_SCOPE = _scope0
+    C.GRADE_ENABLE = _ge0              # ★ 09-29：开关成对还原（漏了它 ⇒ 后面三组全部错位变红）
     _lab_s = color.to_lab(np.ascontiguousarray(_o_skin))
     _lab_a = color.to_lab(np.ascontiguousarray(_o_all))
     _ms = float(np.median(np.hypot(_lab_s[..., 1], _lab_s[..., 2])))
@@ -845,35 +996,32 @@ def t_scene():
 def t_contract():
     # ① 曝光风格与胶片引擎的先后
     calls = []
+    # ★★ 09-29：引擎这一步现在有**两条入口** —— `presets.render`（普通）与
+    #   `presets.render_with_face`（脸增益，**默认开**）。只插桩前者 ⇒ 走脸增益那条路时
+    #   `calls` 会**空着**，把"引擎跑了"误报成"引擎没跑"（这条就是这么红的）。
+    #   `render_with_face` 不给靶时内部还会调一次 `render` ⇒ **相邻同名去重**。
+    def _mark(tag, fn):
+        def _w(*a, **k):
+            if not calls or calls[-1] != tag:
+                calls.append(tag)
+            return fn(*a, **k)
+        return _w
+
     if _AFTER:
-        _f, _p0 = tone.settle_finished, presets.render
-
-        def _t(*a, **k):
-            calls.append('tone')
-            return _f(*a, **k)
-
-        def _p(*a, **k):
-            calls.append('presets')
-            return _p0(*a, **k)
-        tone.settle_finished, presets.render = _t, _p
+        _f, _p0, _pf0 = tone.settle_finished, presets.render, presets.render_with_face
+        tone.settle_finished, presets.render, presets.render_with_face = (
+            _mark('tone', _f), _mark('presets', _p0), _mark('presets', _pf0))
     else:
-        _t0, _p0 = tone.apply, presets.render
-
-        def _t(*a, **k):
-            calls.append('tone')
-            return _t0(*a, **k)
-
-        def _p(*a, **k):
-            calls.append('presets')
-            return _p0(*a, **k)
-        tone.apply, presets.render = _t, _p
+        _t0, _p0, _pf0 = tone.apply, presets.render, presets.render_with_face
+        tone.apply, presets.render, presets.render_with_face = (
+            _mark('tone', _t0), _mark('presets', _p0), _mark('presets', _pf0))
     try:
         pipeline.run_from(_mk_sample(_gray_img(seed=11)), stock=_PRESET, style='中性调')
     finally:
         if _AFTER:
-            tone.settle_finished, presets.render = _f, _p0
+            tone.settle_finished, presets.render, presets.render_with_face = _f, _p0, _pf0
         else:
-            tone.apply, presets.render = _t0, _p0
+            tone.apply, presets.render, presets.render_with_face = _t0, _p0, _pf0
     if _AFTER and _TONE_ON:
         check('★★ 曝光风格跑在胶片引擎**之后**（控制不了成片亮度，只能事后收）',
               calls[:2] == ['presets', 'tone'], '调用序: %s' % calls[:4],
@@ -943,9 +1091,30 @@ def t_cache():
           not r3.report['stage_cache']['hit'])
     r4 = pipeline.run_from(s, stock='C200青蓝', style='中性调', cache=c)
     check('★ 换胶片风格 ⇒ **不**命中', not r4.report['stage_cache']['hit'])
-    check('两档出来的画面真的不同',
-          float(np.max(np.abs(r2.disp - r3.disp))) > 0.01,
-          '最大差 %.4f' % np.max(np.abs(r2.disp - r3.disp)))
+    # ★★ 09-29：这条要**跟着阶段走**。当前阶段 `TONE_ENABLE=False`（只做胶片引擎）
+    #   ⇒ 换曝光风格本来就**不该改画面**（只换了标签），原来那条"两档画面必须不同"
+    #   是影调层开着时的判据 ⇒ 在老账里一直红着。反过来钉"关着就必须一样"，
+    #   正好能抓住"影调层偷偷跑起来了"。
+    _ds = float(np.max(np.abs(r2.disp - r3.disp)))
+    if _TONE_ON:
+        check('两档出来的画面真的不同', _ds > 0.01, '最大差 %.4f' % _ds)
+    else:
+        check('★ 影调层关着（`TONE_ENABLE=False`）⇒ 换曝光风格画面照旧一样'
+              '（只换标签，不许偷偷改像素）',
+              _ds < 5e-3, '最大差 %.4f（引擎自身噪声量级）' % _ds,
+              '换了个曝光风格画面就变了 ⇒ 影调层在偷偷跑')
+
+    # ★★ 09-29：**脸增益开关也必须进键** —— 它改的是出图本身。
+    #   不进键 ⇒ 常驻进程里把它一开，仍会命中"没开脸增益"的旧缓存 ⇒ "拧了没反应"（第 4 类）。
+    _fg0 = bool(C.FACE_GAIN_ENABLE)
+    try:
+        C.FACE_GAIN_ENABLE = not _fg0
+        r5 = pipeline.run_from(s, stock=_PRESET, style='中性调', cache=c)
+    finally:
+        C.FACE_GAIN_ENABLE = _fg0
+    check('★★ 换脸增益开关 ⇒ **不**命中（否则就是"拧了没反应"）',
+          not r5.report['stage_cache']['hit'],
+          '开关 %s → %s，命中=%s' % (_fg0, not _fg0, r5.report['stage_cache']['hit']))
 
 
 def t_routes():

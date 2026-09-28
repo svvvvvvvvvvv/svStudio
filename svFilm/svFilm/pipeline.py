@@ -171,6 +171,10 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
                  str(getattr(cfg, 'GRADE_SCOPE', 'all')),
                  bool(getattr(cfg, 'GRADE_ENABLE', True)),
                  bool(getattr(cfg, 'TONE_ENABLE', False)),
+                 # ★★ 09-29：**脸增益开关也进键**。它改的是出图本身（每张的负片 CMY 密度），
+                 #   不进键 ⇒ 常驻进程里把它一开，仍会命中"没开脸增益"的旧缓存
+                 #   （与上面 `GRADE_ENABLE` / `TONE_ENABLE` 同一类坑 —— "拧了没反应"第 4 类）。
+                 bool(getattr(cfg, 'FACE_GAIN_ENABLE', False)),
                  _ov_key, _tg_key)
         _entry = cache.get(_ckey)
 

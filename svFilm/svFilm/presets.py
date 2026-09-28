@@ -527,22 +527,28 @@ def render_with_face(lin, name, cfg=C, pz=None, target_L=None, target_a=None, ta
     spektra._sf()                           # ★ 保证 spektrafilm 路径正确（_sf 的守护会拦错的）
     from spektrafilm.runtime.pipeline import SimulationPipeline   # noqa: E402
     from . import facegain
-    p = _params_for(name, cfg)
-    if overrides:
-        pl = SimulationPipeline(copy.deepcopy(p))
-        for _dotted, _val in dict(overrides).items():
-            _holder = pl._params
-            _parts = [s for s in str(_dotted).split('.') if s]
-            for _k in _parts[:-1]:
-                _holder = getattr(_holder, _k)
-            _attr = _parts[-1]
-            if _is_frozen_dc(_holder):
-                _pobj, _pkey, _orig = _walk_holder(pl._params, _parts[:-1])
-                setattr(_pobj, _pkey, dataclasses.replace(_holder, **{_attr: _val}))
-            else:
-                setattr(_holder, _attr, _val)
-    else:
-        pl = SimulationPipeline(p)
+    # ★★ 09-29：与 `render` 用**同一把按名锁**。这里虽然不"原地改共享 p"
+    #   （有 overrides 时走 deepcopy），但 `copy.deepcopy(p)` / `SimulationPipeline(p)`
+    #   期间若另一个线程正停在 `_render_locked` 里**临时改写同一个 p**，
+    #   拷/读到的就是**半改状态**（§87.3 记的那个竞态）。
+    #   脸增益现在**默认开** ⇒ 生产上每次请求都走这条路 ⇒ 必须串起来。
+    with _lock_of(name):
+        p = _params_for(name, cfg)
+        if overrides:
+            pl = SimulationPipeline(copy.deepcopy(p))
+            for _dotted, _val in dict(overrides).items():
+                _holder = pl._params
+                _parts = [s for s in str(_dotted).split('.') if s]
+                for _k in _parts[:-1]:
+                    _holder = getattr(_holder, _k)
+                _attr = _parts[-1]
+                if _is_frozen_dc(_holder):
+                    _pobj, _pkey, _orig = _walk_holder(pl._params, _parts[:-1])
+                    setattr(_pobj, _pkey, dataclasses.replace(_holder, **{_attr: _val}))
+                else:
+                    setattr(_holder, _attr, _val)
+        else:
+            pl = SimulationPipeline(p)
     return facegain.apply(pl, np.clip(np.asarray(lin, np.float64), 0.0, None), pz,
                           target_L, target_a, target_b, cfg)
 

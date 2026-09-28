@@ -27,6 +27,10 @@ r"""**脸增益** —— 在负片的 CMY 密度（`cmy_film` tap）上，**只�
 ## 四、掩膜
 **脸 ∪ 身体皮肤**（脸 1.0 / 身体 `BODY_W`）+ **羽化**（σ = 脸等效边长 × 1/6，照 CN104038704A）
 —— 只圈脸的话，脸亮而脖子/手臂还暗 ⇒ 接缝一眼可见（SV 09-29 报的"突兀"）。
+★★ **闸门卡在「最终掩膜」的像素数上**（`config.FACE_GAIN_MIN_MASK_PX = 2000`）：
+掩膜小到量不准就不动。**不是**"真脸为 0 就不动"——
+`DSCF1629` 实测真脸 0 px（掩膜全靠身体皮肤撑）而它是**收住**的一张（ΔE00 0.95）
+⇒ 那条闸门会把好案例筛掉。**掩膜 = 脸 ∪ 身体，闸门也看这个并集。**
 """
 from __future__ import annotations
 
@@ -49,21 +53,32 @@ STEP_LIMIT = 0.12         # 单轮单通道最大增量（保险丝）
 TOTAL_LIMIT = 0.40        # 累计上限
 FEATHER = 1.0 / 6.0       # 掩膜羽化 σ = 脸的等效边长 × 它（照 CN104038704A，与 L4 同一口径）
 # ★★ 掩膜必须含"身体皮肤"：只圈脸 ⇒ 脸亮、脖子/手臂暗 ⇒ 接缝可见（SV：「不然太突兀了」）
-BODY_W = 0.5              # 脸 1.0 / 身体 0.5（同 `GRADE_SKIN_BODY_W`）
+BODY_W = 0.5              # **兜底值**；真值读 `config.GRADE_SKIN_BODY_W`（"可调参数只在 config"）
 
 
-def _mask(pz, shape):
-    """脸掩膜 = **脸 ∪ 身体皮肤**（脸 1.0 / 身体 `BODY_W`），羽化 + 峰值归一。"""
+def _mask(pz, shape, cfg=C):
+    """脸掩膜 = **脸 ∪ 身体皮肤**（脸 1.0 / 身体 `BODY_W`），羽化 + 峰值归一。
+
+    ★★ 09-29：闸门卡在**最终掩膜**的像素数上（`cfg.FACE_GAIN_MIN_MASK_PX`，就是原来
+      `FACE_GAIN_MIN_PX = 2000` 那个意图），**不是**"真脸为 0 就不动"。为什么：
+      `DSCF1629` 实测**真脸 0 px**（检测器 / 分割都没出脸皮，掩膜全靠身体皮肤撑），
+      而它正是 09-29 实测**收住**的一张（ΔE00 0.95，全 7 张里排第二）
+      ⇒ "真脸为 0 就不动"那条闸门会把好案例一起筛掉。
+    ⚠ 计数用 `m > 0.05`（身体那半张的权重是 0.5，用 `> 0.5` 会把它们漏掉）。
+    """
     mk = (pz or {}).get('masks') or {}
     fs = mk.get('face_skin')
     if fs is None:
         return None
     m = np.clip(np.asarray(fs, np.float64), 0.0, 1.0)
     sk = mk.get('skin')                       # 身体皮肤（没有就只用脸）
+    _bw = float(getattr(cfg, 'GRADE_SKIN_BODY_W', BODY_W))
     if sk is not None and np.shape(sk)[:2] == m.shape[:2]:
-        m = np.maximum(m, np.clip(np.asarray(sk, np.float64), 0.0, 1.0) * BODY_W)
+        m = np.maximum(m, np.clip(np.asarray(sk, np.float64), 0.0, 1.0) * _bw)
     if tuple(m.shape[:2]) != tuple(shape[:2]):
         return None                      # 尺寸对不上 ⇒ 不认（换了渲染尺寸必须现算）
+    if int((m > 0.05).sum()) < max(1, int(getattr(cfg, 'FACE_GAIN_MIN_MASK_PX', 2000))):
+        return None                      # 掩膜太小 ⇒ 量不准，动了也是噪声
     if float(m.max()) <= 0.05:
         return None
     if FEATHER > 0:
@@ -125,10 +140,16 @@ def apply(pl, lin, pz, target_L=None, target_a=None, target_b=None, cfg=C):
                 lab_before=None, lab_after=None, de00=None, target=[target_L, target_a, target_b])
     if not target_L or target_L <= 0:
         return out, info
-    m = _mask(pz, out.shape)
+    _fs = ((pz or {}).get('masks') or {}).get('face_skin')
+    n_face = (int((np.clip(np.asarray(_fs, np.float64), 0.0, 1.0) > 0.5).sum())
+              if _fs is not None else 0)
+    info['face_px'] = n_face                  # ★ 真脸多大（1629 那种"靠身体皮肤撑"的一眼能看出来）
+    m = _mask(pz, out.shape, cfg)
     if m is None:
-        info['note'] = '掩膜不可用（尺寸不符 / 没脸）⇒ 不动'
+        info['note'] = ('掩膜不可用 ⇒ 不动（真脸 %d px / 掩膜下限 %s px / 或尺寸对不上）'
+                        % (n_face, getattr(cfg, 'FACE_GAIN_MIN_MASK_PX', 2000)))
         return out, info
+    info['mask_px'] = int((m > 0.05).sum())    # 最终掩膜多大（含身体皮肤那半张）
     m3 = m[..., None]
     lab0 = face_lab(out, m)
     if lab0 is None:
