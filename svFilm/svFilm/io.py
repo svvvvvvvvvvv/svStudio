@@ -97,33 +97,6 @@ def load_std(path, max_side=C.MAX_SIDE):
                   dict(kind='jpg', note='无 IDT 余量（相机曲线已压过）'))
 
 
-def apply_entry_curve(lin, curve):
-    """按实测相机曲线补入口：三通道乘同一个"亮度 → 增益"，**只动亮度、不改色相**。
-
-    契约里"曲线只在亮度域做"指的就是这条。曲线本身由
-    `_debug/calib_entry_curve_from_pairs.py` 从真实 RAW+机内 JPEG 对量出来。
-    """
-    _, xs, gs = curve
-    Y = color.luma(np.clip(lin, 0.0, None))
-    return lin * np.interp(Y, xs, gs)[..., np.newaxis]
-
-
-def scene_exposure_index(lin):
-    """场景曝光指数 `e = log2(场景线性亮度中位 / 0.18)`。
-
-    「这张图整体有多少档高于/低于 18% 灰」。与 `_debug/lab_pos_law_fit.py` 的口径逐字一致：
-    那边写的是 `L_of_lin(median(luma(lin)))` 再 `log2(lin_of_L(·)/0.18)`；因 `L_of_lin` 与
-    `lin_of_L` 互逆、且**单调变换与中位可交换** ⇒ 等于本式。**改口径会让规律偏掉**。
-
-    只为省时间对大图抽稀（中线数对抽稀不敏感）。
-    """
-    y = color.luma(np.clip(lin, 0.0, None))
-    if y.size > 3_000_000:
-        k = int(np.ceil(np.sqrt(y.size / 3_000_000.0)))
-        y = y[::k, ::k]
-    return float(np.log2(max(float(np.median(y)), 1e-9) / 0.18))
-
-
 
 def clip_guard(lin, cfg=C):
     """入口高光护栏：给入口增益设一个**只往下**的上限（按"允许裁切的像素比例"）。

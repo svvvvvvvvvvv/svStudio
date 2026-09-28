@@ -241,25 +241,6 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         anc = dict(applied=False, note='曝光风格在引擎之后 ⇒ 不做脸锚点')
         if _ckey is not None:
             cache.put(_ckey, disp=disp, t_info=t_info, gk=gk, anc=anc)
-    else:
-        # ========== 老路：曝光风格作用在引擎**之前**的线性图上 ==========
-        # ⚠⚠ **这条路当前不执行**：默认 `TONE_AFTER_ENGINE=True` ⇒ 永远走上面那个分支
-        #   （`if _after:`）。留着它只为"把开关拨回去"时还能跑；读代码时别把它当现行流程。
-        # ⚠⚠ 09-26：这条路里原来有**两处和脸有关的动作** —— 解码后算一次脸掩膜 `_msk`、
-        #   再用 `io.anchor_ev` / `io.finish_anchor` 按脸改曝光。**已整体删除**，
-        #   理由：`TONE_AFTER_ENGINE=True` 时这条路根本不跑 ⇒ 那是死代码，而
-        #   `config.ANCHOR_ENABLE=True` 还摆着 ⇒ 会被误读成"救暗脸有机制"（实际没有）。
-        #   **和脸有关的机制只许有一个** ⇒ 现在只剩新路里 `grade` 的 L4。
-        # ---------- svFilm：曝光风格（线性域）----------
-        lin_out, t_info = tone.apply(s.lin, style, cfg, preset=name)
-        # ---------- 高光护栏（只往下）----------
-        lin_out, gk = io.clip_guard(lin_out, cfg)
-        t_info['clip_guard_k'] = float(gk)
-        # ---------- spektrafilm：胶片风格 ----------
-        disp = presets.render(lin_out, name, cfg)
-        anc = dict(applied=False, note='脸锚点已删除（09-26）：和脸有关的东西只留新路那一处')
-        if _ckey is not None:
-            cache.put(_ckey, disp=disp, t_info=t_info, gk=gk, anc=anc)
 
     rep = dict(
         camera=s.cam,
