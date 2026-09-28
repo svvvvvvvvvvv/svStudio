@@ -127,5 +127,53 @@ def for_stock(name, scene=None):
     return t
 
 
+# ---------------------------------------------------------------------------
+# ★★★ 09-28 新增：**场景 → 引擎参数覆盖**（`_scene_engine`）
+# ---------------------------------------------------------------------------
+def scene_engine(scene):
+    r"""**按场景改【引擎参数】** —— 和 `_scene` 并列，但喂给的地方不同。
+
+    为什么要有它（09-28 SV 追问「之前不是做了场景识别影响柔光/颗粒/光晕吗」）：
+      调研确实做过（`效果debug\2026-09-27\调研_颗粒与柔光该给多少.md`），
+      结论之一：**「光晕只在有强光源时出现 ⇒ 不该固定，该按 `back` 轴挂覆盖」**。
+      ⚠ 但**一直没落地** —— 因为 `_scene` 走的是 `for_stock()` ⇒ 返回的是**靶**，
+      只能喂**后期层（`grade`）**，**够不到引擎**（柔光/颗粒/光晕都在引擎里）。
+      ⇒ 本函数就是补这个通道。
+
+    结构（键语义**与 `_scene` 完全一致** —— 同一个 `scene.token()`、同一套轴序）：
+        `"_scene_engine": {"back=正逆光": {"film_render.halation.halation_strength": [80, 24, 0]}}`
+      · 值是**引擎参数的点路径**（如 `film_render.halation.halation_strength`）
+      · `"<轴>=*"` = 该轴任意值都命中（兜底）
+      · 轴序固定（`scene.AXES`），后面的盖前面的
+
+    ⚠⚠ **写错路径会当场报错**（`presets._render_locked` 里那个"字段路径走不通"）——
+      这是**故意**的：静默不命中才是灾难。
+    ⚠ **默认没这个键 ⇒ 返回空 dict ⇒ 逐位同旧行为**（机制先建好，数值后面调研）。
+
+    @returns {dict} `{引擎参数点路径: 值}`（可直接喂 `presets.render(overrides=...)`）
+    """
+    out = {}
+    if not scene:
+        return out
+    d = load()
+    ov = d.get('_scene_engine') or {}
+    if not ov:
+        return out
+    try:
+        from . import scene as _S
+        _tok, _axes = _S.token, _S.AXES
+    except Exception:                                      # noqa: BLE001
+        _tok, _axes = (lambda a, v: str(v)), tuple(scene.keys())
+    for _ax in _axes:
+        _v = scene.get(_ax)
+        if _v is None:
+            continue
+        for _k in ('%s=%s' % (_ax, _tok(_ax, _v)), '%s=*' % _ax):
+            _blk = ov.get(_k)
+            if isinstance(_blk, dict):
+                out.update(_blk)
+    return out
+
+
 def names():
     return [k for k in load() if not k.startswith('_')]

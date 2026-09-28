@@ -197,7 +197,14 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         except Exception:                                        # noqa: BLE001
             _sc = None
 
-        disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg)
+        # ★★ 09-28：**场景 → 引擎参数覆盖**（柔光 / 颗粒 / 光晕这类「质感」参数在引擎里，
+        #   `_scene` 只够到后期层的靶 ⇒ 走这里喂给引擎）。没配 `_scene_engine` ⇒ 空 dict ⇒ 逐位同旧行为。
+        try:
+            from . import targets as _TS
+            _ov = _TS.scene_engine(_sc)
+        except Exception:                                  # noqa: BLE001
+            _ov = {}
+        disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg, overrides=(_ov or None))
         # ---- L1 影调（明度分布）----
         # ★ 当前阶段可整体关掉（`config.TONE_ENABLE`）：只做胶片引擎时不要这一层。
         if bool(getattr(cfg, 'TONE_ENABLE', True)):
