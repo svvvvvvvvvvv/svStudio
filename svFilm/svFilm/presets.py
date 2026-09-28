@@ -508,14 +508,17 @@ def _walk_holder(root, parts):
     return obj, parts[-1], getattr(obj, parts[-1])
 
 
-def render_with_face(lin, name, cfg=C, pz=None, target_L=None, overrides=None):
+def render_with_face(lin, name, cfg=C, pz=None, target_L=None, target_a=None, target_b=None,
+                     overrides=None):
     r"""**带「脸增益」的渲染** —— 在负片 CMY 密度上只给脸加密度（见 `facegain.py`）。
 
     为什么要它：引擎测光定的是**整张落点** ⇒ 提脸必然推亮整张（实测 `partial`/`median`
     把脸拉到 75~79 而整张也到 73~78）⇒ **"只提脸"只能在局部的物理中间态上做。**
 
-    `target_L`：脸的 L\* 靶（`None`/0 ⇒ 走普通 `render`，**逐位同旧行为**）。
-    `pz`：`face.parse()` 的结果（脸掩膜；`facegain` 会羽化它）。
+    `target_L / target_a / target_b`：脸的 **Lab 绝对靶**。
+      · 全空 ⇒ 走普通 `render`，**逐位同旧行为**；只给 `target_L` ⇒ 只按亮度做；
+        **三个都给 ⇒ 分通道迭代**（推荐，见 `_calib_resp.py` 标定的响应矩阵）。
+    `pz`：`face.parse()` 的结果（脸掩膜；`facegain` 会羽化 + 并上身体皮肤）。
     @returns {(ndarray, dict)} 出图 + `facegain` 的报告
     """
     if not target_L:
@@ -540,7 +543,8 @@ def render_with_face(lin, name, cfg=C, pz=None, target_L=None, overrides=None):
                 setattr(_holder, _attr, _val)
     else:
         pl = SimulationPipeline(p)
-    return facegain.apply(pl, np.clip(np.asarray(lin, np.float64), 0.0, None), pz, target_L, cfg)
+    return facegain.apply(pl, np.clip(np.asarray(lin, np.float64), 0.0, None), pz,
+                          target_L, target_a, target_b, cfg)
 
 
 def _walk(root, dotted):
