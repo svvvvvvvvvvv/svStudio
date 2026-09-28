@@ -87,13 +87,24 @@ def face_lab(out, mask, sel_thr=0.5):
             float(np.median(lab[..., 2][sel])))
 
 
+_DE_METRIC = ['cie2000']
+
+
 def _de00(lab1, lab2):
-    """ΔE00（用 colour 库；失败时退回欧氏）。"""
+    r"""ΔE00（CIEDE2000）。
+
+    ⚠⚠ **`colour` 的方法名是 `'cie2000'`，不是 `'CIEDE2000'`。**
+      写成 `'CIEDE2000'` 会**抛 ValueError**，而下面那个 `except` 会把它**静默**换成欧氏距离
+      ⇒ 报出来的"ΔE00"其实是 **ΔE76**（数值偏大）—— **09-29 真踩过**（整批 14 个格全是假 ΔE00）。
+      ⇒ 现在**把"用的哪把尺子"记进报告**（`info['de_metric']`），**不许再静默**。
+    """
     try:
-        import colour
-        return float(colour.delta_E(np.asarray([lab1], np.float64),
-                                    np.asarray([lab2], np.float64), method='CIEDE2000')[0])
+        from colour.difference import delta_E
+        _DE_METRIC[0] = 'cie2000'
+        return float(delta_E(np.asarray([lab1], np.float64),
+                             np.asarray([lab2], np.float64), method='cie2000')[0])
     except Exception:                                          # noqa: BLE001
+        _DE_METRIC[0] = 'euclid(ΔE76 回退 —— colour 不可用)'
         return float(np.sqrt(sum((x - y) ** 2 for x, y in zip(lab1, lab2))))
 
 
@@ -153,5 +164,5 @@ def apply(pl, lin, pz, target_L=None, target_a=None, target_b=None, cfg=C):
         if abs(step).max() < 1e-4:
             break
     info.update(applied=bool(info['iters'] > 0), delta=[float(x) for x in delta],
-                lab_after=list(cur_lab), de00=de)
+                lab_after=list(cur_lab), de00=de, de_metric=_DE_METRIC[0])
     return out, info

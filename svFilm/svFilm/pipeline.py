@@ -139,6 +139,9 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
     # 否则改了开关、缓存里还是另一条路出来的那张（"拧了没反应"的经典长相）。
     _after = bool(getattr(cfg, 'TONE_AFTER_ENGINE', False))
 
+    # ★ 脸增益的报告（`FACE_GAIN_ENABLE` 关着时恒为 `None`）。
+    #   先在这里初始化：缓存命中那条路不会再算它，但 `rep` 里照样要能看到"这张到底跑没跑脸增益"。
+    _fg = None
     _ckey, _entry = None, None
     if cache is not None:
         # ★ 09-26：键里带上 **判据版本号**。场景是**这张图**的确定函数（同一张图永远同一套标签），
@@ -271,6 +274,7 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         style_target=(dict(tone.rel_of(style)) if _after else dict(tone.get(style))),
         tone=t_info,
         anchor=anc,
+        face_gain=_fg,
         stage_cache=dict(hit=bool(_entry is not None)),
         ms=(time.perf_counter() - t0) * 1000.0,
     )
