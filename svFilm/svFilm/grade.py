@@ -186,7 +186,12 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
     #   ② 换条预设引擎出来的底就不一样，"固定偏移"立刻失准
     #   ⚠ 分色是**相对量**，不像影调那样"往上没数据" ⇒ 这里**可以双向**补，但要有上限。
     _bg = (_tg or {}).get('band_gain') or [0.0] * 12
-    _lim = float(getattr(cfg, 'GRADE_SPLIT_LIMIT', 2.5))
+    # ★ 09-28：**允许靶里覆盖分色限幅**（`split_limit`）——
+    #   原来只有全局 `cfg.GRADE_SPLIT_LIMIT`（2.5）⇒ 放开它会连带影响全部 9 条预设。
+    #   实测：把 `mid_abs[0]` 从 0.77 改到 −4.0（要动 4.8），**实测只动 0.13** ⇒ 被这个限幅截住。
+    _lim = float((_tg or {}).get('split_limit')
+                 if (_tg or {}).get('split_limit') is not None
+                 else getattr(cfg, 'GRADE_SPLIT_LIMIT', 2.5))
     if _tg and _tg.get('sh_abs'):
         _p25, _p90 = np.percentile(L, 25.0), np.percentile(L, 90.0)
         _msh, _mhi = L <= _p25, L >= _p90
@@ -214,6 +219,16 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
             mma = float(np.clip(float(_mid[0]) - (float(a[_mm].mean()) - am), -_lim, _lim))
             mmb = float(np.clip(float(_mid[1]) - (float(b[_mm].mean()) - bm), -_lim, _lim))
     w_mid = np.clip(1.0 - w_sh - w_hi, 0.0, 1.0)
+    # ★★★ 09-28：**中调权重归一化**（和肤色层 `GRADE_SKIN_W_REF` 同一招）。
+    #   为什么：`w_sh` 和 `w_hi` 的过渡带**各占 0.75 个 span**（span = P75−P25）
+    #   ⇒ 两条合起来 1.5 个 span ⇒ **把中调 `w_mid` 挤得只剩一点点**
+    #   ⇒ 实测后果：`mid_abs[0]` 从 0.77 改到 **−6**（要动 ~6.8）、限幅也放开到 12，
+    #     而**中 a* 只从 2.77 挪到 2.10（动 0.67）** ⇒ 修正被权重吃掉。
+    #   ⇒ 归一化成 `min(w_mid / W_REF, 1)`：**中调的心部（w_mid ≥ W_REF）修满**、
+    #     过渡带照旧渐变。**设 1.0 = 关**（逐位回老行为）。
+    _wmid_ref = float(getattr(cfg, 'GRADE_SPLIT_W_REF', 1.0) or 1.0)
+    if _wmid_ref < 1.0 - 1e-9:
+        w_mid = np.minimum(w_mid / max(_wmid_ref, 1e-6), 1.0)
     da2 = sha * w_sh + hia * w_hi + dpa * w_deep + mma * w_mid
     db2 = shb * w_sh + hib * w_hi + dpb * w_deep + mmb * w_mid
     a = a + da2
@@ -435,11 +450,42 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
                                     -_lim_c, _lim_c))
             _dh = float(np.clip(((float(_tg['skin_hue']) - _cH + 180.0) % 360.0) - 180.0,
                                 -_lim_h, _lim_h))
-            L = np.clip(L + _dl * _w, 0.0, 100.0)
-            _k = 1.0 + _dc * _w
+            # ★ 09-28：把「肤色权重 `_w` 在脸选区内 的中位」报出来 —— 诊断用。
+            #   为什么加：色相实际转的角度 = `_dh × _w`，而 `_w` 是**羽化后的软权重**
+            #   （中间≈1、边缘≈0）⇒ **脸的中位数只反映那个渐变的平均值**
+            #   ⇒ 所以"限幅放开到 50° 但中位 hue 纹丝不动"的那个谜，答案就在这里。
+            try:
+                _wmed = float(np.median(_w[_sel]))
+            except Exception:                                       # noqa: BLE001
+                _wmed = None
+            # ★★★ 09-28：**权重归一化**（治"修正永远差三成"）。
+            #   `_w` 是羽化后的软权重，脸上中位只有 ~0.70 ⇒ 所有修正量（亮度/彩度/色相）
+            #   都只做到 70% 就停 ⇒ 色相限幅放开到 50° 中位 hue 仍纹丝不动。
+            #   ⇒ 归一化成 `min(_w / W_REF, 1.0)`：中心区转满、过渡带照旧渐变。
+            #   `W_REF = 1.0` ⇒ 逐位回到老行为（可关）。
+            _wref = float(getattr(cfg, 'GRADE_SKIN_W_REF', 1.0) or 1.0)
+            _wn = _w if _wref >= 1.0 - 1e-9 else np.minimum(_w / max(_wref, 1e-6), 1.0)
+            # ★★★ 09-28 新增：**脸的「明暗对比」增益**（靶字段 `skin_contrast`，默认 1.0 = 不动）。
+            #   为什么加（SV：「整张质感好了，但**肤色光感还是不好**」）——
+            #   实测三家对比（脸区内的 L 分位）：
+            #     | | 脸明暗跨度 | 脸高光P95 | 脸暗部P5 |
+            #     | SV 修的 | 41.9 | 87.7 | 45.7 |
+            #     | 鹿井配对 | **50.5** | **83.3** | **31.8** |
+            #     | 我们 | **35.8** | **79.7** | **42.0** |
+            #   ⇒ **我们的脸「太平」**（跨度只有鹿井的 70%），**因为暗部不够暗、高光不够亮**。
+            #   根因：下面的 `_dl`（把脸整体拉到 `skin_L_abs`）是个**常数** ⇒
+            #     **连脸的暗部一起提** ⇒ 明暗差被压平 ⇒ 脸没有立体感/光泽。
+            #   做法：绕**脸自己的中位**把明暗拉开（`mid + (L−mid)·gain`）——
+            #     **暗部更暗、亮部更亮，中位不动** ⇒ 立体感回来。用 `_wn` 加权（带羽化、只作用在脸）。
+            _sk_ct = float((_tg or {}).get('skin_contrast', 1.0) or 1.0)
+            if abs(_sk_ct - 1.0) > 1e-9:
+                _mid_f = float(np.median(L[_sel]))
+                L = np.clip(L + ((_mid_f + (L - _mid_f) * _sk_ct) - L) * _wn, 0.0, 100.0)
+            L = np.clip(L + _dl * _wn, 0.0, 100.0)
+            _k = 1.0 + _dc * _wn
             a = a * _k
             b = b * _k
-            _th = np.radians(_dh) * _w                    # 色相绕原点转（往靶的色相角）
+            _th = np.radians(_dh) * _wn                   # 色相绕原点转（往靶的色相角）
             _ca, _sa = np.cos(_th), np.sin(_th)
             a, b = a * _ca - b * _sa, a * _sa + b * _ca
             # ★ 提亮量大 ⇒ 对肤色区的 L 做一次弱双边滤波（保边去噪，别把脸磨平）
@@ -474,6 +520,7 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
                 c_gain=[(c, (k + (_bg[i] if i < len(_bg) else 0.0))) for i, (c, _, k, _) in enumerate(BANDS)],
                 target=(sha, shb, hia, hib), stock=stock,
                 skin_dL=_dl, skin_dC=_dc, skin_dH=_dh, skin_mask=_mask_src,
+                skin_w_med=(round(_wmed, 3) if '_wmed' in dir() and _wmed is not None else None),
                 skin_limit_l=float(_lim_l) if '_lim_l' in dir() else None,
                 # ★★★ 09-26：`skin_mask` 的四个取值，语义**互斥**、别混：
                 #   'face' = 检测器(过三道防假脸闸)**认到脸** + 分割；脸严格、身体松一点

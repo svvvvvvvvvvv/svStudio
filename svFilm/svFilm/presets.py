@@ -496,9 +496,17 @@ def _simulate_once(p, lin, apply_specifics=False):
         from spektrafilm.runtime.params_builder import digest_params
 
         def _run(image, params, _specifics, **kw):
+            # ★★★ 09-28 修一个**静默 bug**（"我们调的光晕 40 从来没生效"的真根因）：
+            #   这里 digest 了一次（用 `_specifics=False` ✓），但**忘了告诉 `simulate` 别再 digest**
+            #   ⇒ `simulate` 的 `digest_params_first` 默认 **True** ⇒ 它内部**又 digest 一次**
+            #   （用 `apply_stocks_specifics=True`）⇒ `_apply_halation_preset` 把
+            #   `halation_strength` 从我们设的 **0.4 重写回卷的出厂值 0.08**（实测确认）。
+            #   vendor 的 docstring 明写：「If you already have digested parameters or want to
+            #   digest them yourself, set `digest_params_first=False`」—— 我们正是"自己 digest"。
+            #   ⇒ 补上 `digest_params_first=False`。
             return _simulate(image,
                              digest_params(params, apply_stocks_specifics=bool(_specifics)),
-                             **kw)
+                             digest_params_first=False, **kw)
         _SIM[0] = _run
     return _SIM[0](lin, p, bool(apply_specifics), print_timings=False)
 
