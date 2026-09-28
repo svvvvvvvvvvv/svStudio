@@ -157,7 +157,7 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
             if False else None
         try:
             from . import targets as _TSk
-            _ov = _TSk.scene_engine(_sc) if _sc else {}
+            _ov = _TSk.scene_engine(_sc, stock=name, cfg=cfg) if _sc else {}
             _ov_key = tuple(sorted((k, tuple(v) if isinstance(v, list) else str(v))
                                    for k, v in (_ov or {}).items()))
             _tg_key = _TSk.cache_key(name, _sc)
@@ -218,10 +218,28 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         #   `_scene` 只够到后期层的靶 ⇒ 走这里喂给引擎）。没配 `_scene_engine` ⇒ 空 dict ⇒ 逐位同旧行为。
         try:
             from . import targets as _TS
-            _ov = _TS.scene_engine(_sc)
+            _ov = _TS.scene_engine(_sc, stock=name, cfg=cfg)
         except Exception:                                  # noqa: BLE001
             _ov = {}
-        disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg, overrides=(_ov or None))
+        # ★★ 09-29：**脸增益**（可选）—— 在负片 CMY 密度上「只给脸加密度」，
+        #   闭环迭代到脸的 Lab 靶（ΔE00 达标）。为什么不能在测光上做：测光定的是**整张落点**
+        #   ⇒ 提脸必然推亮整张（实测 partial/median 把脸拉到 75~79 而整张也到 73~78）。
+        #   靶自动从 `targets` 读（`skin_L_abs/C_abs/hue`）⇒ **没这几项的预设自动不启用**。
+        _fg = None
+        if bool(getattr(cfg, 'FACE_GAIN_ENABLE', False)) and _pz is not None:
+            try:
+                from . import targets as _TF
+                _ft = _TF.face_lab_target(name, _sc)
+                if _ft:
+                    disp, _fg = presets.render_with_face(
+                        s.lin, name, cfg, pz=_pz,
+                        target_L=_ft[0], target_a=_ft[1], target_b=_ft[2],
+                        overrides=(_ov or None))
+            except Exception as _e:                            # noqa: BLE001
+                _fg = dict(applied=False, note='脸增益失败：%s' % str(_e)[:120])
+        if _fg is None:
+            disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg,
+                                  overrides=(_ov or None))
         # ---- L1 影调（明度分布）----
         # ★ 当前阶段可整体关掉（`config.TONE_ENABLE`）：只做胶片引擎时不要这一层。
         if bool(getattr(cfg, 'TONE_ENABLE', True)):

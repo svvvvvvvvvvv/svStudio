@@ -130,7 +130,7 @@ def for_stock(name, scene=None):
 # ---------------------------------------------------------------------------
 # ★★★ 09-28 新增：**场景 → 引擎参数覆盖**（`_scene_engine`）
 # ---------------------------------------------------------------------------
-def scene_engine(scene):
+def scene_engine(scene, stock=None, cfg=None):
     r"""**按场景改【引擎参数】** —— 和 `_scene` 并列，但喂给的地方不同。
 
     为什么要有它（09-28 SV 追问「之前不是做了场景识别影响柔光/颗粒/光晕吗」）：
@@ -146,10 +146,19 @@ def scene_engine(scene):
       · `"<轴>=*"` = 该轴任意值都命中（兜底）
       · 轴序固定（`scene.AXES`），后面的盖前面的
 
+    ★★ **值有两种写法**（`设计_光位到引擎参数的提示与偏移表.md` §1.2）：
+        · **标量 / 列表** ⇒ **绝对值**，直接覆盖（如那条全局 morph）。
+        · **`{"mul": k}`** ⇒ ★ **乘性系数**，乘在**该预设的基线**上（`k<1` 变亮、`k>1` 变暗，看字段）。
+          ⇒ **落地按系数写**：这样 `SPEK_PE_SHIFT` 这类"手动微调旋钮"以及**换预设**时都还跟得上。
+          ⚠ 传 `stock` 才解析得动（要读预设基线）；`stock=None` 时 `{"mul":...}` **原样返回** ⇒
+            下游 `presets._render_locked` 会当场报"字段路径走不通" ⇒ **故意的，别让它静默**。
+
     ⚠⚠ **写错路径会当场报错**（`presets._render_locked` 里那个"字段路径走不通"）——
       这是**故意**的：静默不命中才是灾难。
     ⚠ **默认没这个键 ⇒ 返回空 dict ⇒ 逐位同旧行为**（机制先建好，数值后面调研）。
 
+    @param scene {dict}  `scene.classify()` 的输出（`None` ⇒ 只吃全局兜底 `"*"`）
+    @param stock {str|None}  预设名（解析 `{"mul": k}` 用；`None` ⇒ 不解析）
     @returns {dict} `{引擎参数点路径: 值}`（可直接喂 `presets.render(overrides=...)`）
     """
     out = {}
@@ -179,6 +188,21 @@ def scene_engine(scene):
             _blk = ov.get(_k)
             if isinstance(_blk, dict):
                 out.update(_blk)
+    # ---- ★ 解析 `{"mul": k}`（乘性系数 → 绝对量）----
+    if stock and any(isinstance(v, dict) and 'mul' in v for v in out.values()):
+        from . import presets as _PR
+        _p = None
+        for _k, _v in list(out.items()):
+            if not (isinstance(_v, dict) and 'mul' in _v):
+                continue
+            if _p is None:
+                _p = _PR._params_for(stock, cfg) if cfg is not None else _PR._params_for(stock)
+            _b = getattr(*_PR._walk(_p, _k))       # ⚠ 路径走不通 ⇒ 抛，别吞
+            _m = float(_v['mul'])
+            if isinstance(_b, (list, tuple)):
+                out[_k] = [float(x) * _m for x in _b]
+            else:
+                out[_k] = float(_b) * _m
     return out
 
 
@@ -215,3 +239,21 @@ def cache_key(stock, scene=None):
             v = str(v)
         items.append((k, v))
     return tuple(items)
+
+
+# ---------------------------------------------------------------------------
+# ★ 09-29：**脸 Lab 靶**（给 `facegain` 用）
+# ---------------------------------------------------------------------------
+def face_lab_target(stock, scene=None):
+    """把 `skin_L_abs` / `skin_C_abs` / `skin_hue` 转成 Lab 的 `(L*, a*, b*)` 绝对靶。
+
+    没这几项的预设 ⇒ 返回 `None`（`facegain` 自动不启用，**逐位同旧行为**）。
+    """
+    t = for_stock(stock, scene) or {}
+    L = t.get('skin_L_abs'); C = t.get('skin_C_abs'); H = t.get('skin_hue')
+    if L is None or C is None or H is None:
+        # 旧语义（相对量）也能给个近似：脸 L* 用 `skin_L_abs`，没有就没法做
+        return None
+    import math
+    h = math.radians(float(H))
+    return (float(L), float(C) * math.cos(h), float(C) * math.sin(h))
