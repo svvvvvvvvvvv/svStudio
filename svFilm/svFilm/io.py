@@ -90,10 +90,11 @@ def load_std(path, max_side=C.MAX_SIDE):
     arr = np.asarray(im, np.float64) / 255.0
     arr = _resize(arr, max_side)
     disp = np.clip(arr, 0.0, 1.0)
-    # ★★ 09-28：白平衡由解码那一步的 PUBLIC_WB 负责，此处不再二次白平衡。
-    disp = np.clip(color.l2s(lin), 0.0, 1.0)
+    # ★★ 09-28 瘦身：**不做二次白平衡**（中性色偏由解码那一步的 PUBLIC_WB 负责）。
+    #   旧的 `idt_wb`（近中性灰世界）已删 —— 它和入口白平衡是同一件事、且实测几乎没在工作。
+    lin = color.s2l(disp)
     return Sample(lin, disp, 'jpg', path, _exif_orientation_fixed(im),
-                  dict(kind='jpg', wb=wb_info, note='无 IDT 余量（相机曲线已压过）'))
+                  dict(kind='jpg', note='无 IDT 余量（相机曲线已压过）'))
 
 
 def apply_entry_curve(lin, curve):
@@ -266,33 +267,10 @@ def load_raw(path, max_side=C.MAX_SIDE):
             dr, raw_ev = None, None
     cam['fuji_dr'] = dr
 
-    # ---- 入口补偿（受开关管）：零点 + 曲线形状 ----
-    bias = 0.0
-    curve = None
-    # ⚠ `ENTRY_BIAS_ENABLE` 必须管住**整件事**（机型基底 + DR 额外量 + 曲线）。
-    #   之前把"×2^baseline_ev"写在开关外面 ⇒ 关掉开关照样补 0.72 档，
-    #   A/B 实验的"未补偿"组其实已经带了补偿，结论会被带偏。
-    bias = float(cam['baseline_ev'])
-    # ★ 优先：实测相机曲线（逐 机型×DR 一组；增益锚点 = 线性亮度 → 增益倍数）
-    #   ⚠ P1-6：默认路径（ENTRY_TONE=True）**只取 curve[0]（零点）**，
-    #     `anchors`（形状）是死数据 —— 别以为它还在参与运算（见 cameras.py 文件头）。
-    curve = cameras.entry_curve(model, dr)
-    if curve is not None:
-        bias = float(cameras.entry_zero_ev(model, dr))   # 零点 = 18% 灰处的实测增益（一个 EV 数）
-        cam['bias_source'] = '实测相机曲线 DR%s' % dr
-    elif raw_ev is not None:
-        # 机身直接写了精确 EV（已含基础偏移）—— 次优，只有零点没有形状
-        bias = float(raw_ev)
-        cam['bias_source'] = 'tag 0x9650'
-    else:
-        dr_ev = cameras.dr_bias_ev(dr)
-        if dr_ev is not None:
-            bias += float(dr_ev)
-            cam['dr_bias_ev'] = float(dr_ev)
-            cam['bias_source'] = 'DR%s 查表' % dr
-        else:
-            cam['bias_source'] = '仅机型基底（无 DR tag）'
-    cam['idt_bias_ev'] = bias              # 下游据此判断"入口补过了没有"
+    # ★★ 09-28 瘦身：**「机型基线曝光」整块删掉**。
+    #   理由：删掉 entry_tone 之后，bias 只被写进报告、不参与任何运算（实测空转）。
+    #   ⇒ 基线曝光交给**引擎的 camera.auto_exposure**（本来就在跑）。
+    #   ⚠ `cameras.py` 里那张实测表先留着（SV 量出来的，且将来引擎若要补偿还用得上）。
 
     # ---- ★ 入口高光护栏（09-13 SV 拍板）：「按高光不裁切定零点」 ----
     # 放在这里 = **在 `np.clip(lin, 0, 1)` 之前**，所以高光的梯度还救得回来。
