@@ -37,6 +37,7 @@ L1 影调 + 空间层**继续让位**（预设自带 H&D 曲线、颗粒、柔�
 from __future__ import annotations
 
 import copy
+import dataclasses          # ★ 09-29：0.3.4 的 `PrintCurvesMorphParams` 是 frozen ⇒ 要 replace
 import json
 import os
 import threading
@@ -447,12 +448,30 @@ def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
             p.enlarger.normalize_print_exposure = False
 
         # ★ 场景覆盖放**最后**（能盖住上面两项）。字段路径写错 **当场报错**，不静默吞掉。
+        # ★★ 09-29（0.3.4）：**frozen dataclass 要整体替换，不能 setattr**。
+        #   实例：`print_render.density_curves_morph`（`PrintCurvesMorphParams`，`@dataclass(frozen=True)`）
+        #   ⇒ 直接 `setattr` 会 `FrozenInstanceError`。这里改成 `dataclasses.replace` 造新对象装回父对象。
         for _dotted, _val in (dict(overrides) if overrides else {}).items():
-            _obj, _attr = _walk(p, _dotted)
-            if not hasattr(_obj, _attr):
+            _parts = [s for s in str(_dotted).split('.') if s]
+            if not _parts:
+                raise KeyError('overrides 的字段路径是空的')
+            _holder = p
+            for _k in _parts[:-1]:
+                if not hasattr(_holder, _k):
+                    raise KeyError('overrides 的字段路径走不通: %s（在 %r 处断了）'
+                                   % (_dotted, _k))
+                _holder = getattr(_holder, _k)
+            _attr = _parts[-1]
+            if not hasattr(_holder, _attr):
                 raise KeyError('overrides 里这个字段不存在: %s（预设 %s）' % (_dotted, name))
-            _ovs.append((_obj, _attr, getattr(_obj, _attr)))
-            setattr(_obj, _attr, _val)
+            if _is_frozen_dc(_holder):
+                _new = dataclasses.replace(_holder, **{_attr: _val})
+                _pobj, _pkey, _orig = _walk_holder(p, _parts[:-1])
+                _ovs.append((_pobj, _pkey, _orig))          # 还原用
+                setattr(_pobj, _pkey, _new)
+            else:
+                _ovs.append((_holder, _attr, getattr(_holder, _attr)))
+                setattr(_holder, _attr, _val)
 
         out = _simulate_once(p, np.clip(np.asarray(lin, np.float64), 0.0, None),
                              bool(getattr(cfg, 'PRESET_APPLY_STOCK_SPECIFICS', False)))
@@ -464,6 +483,29 @@ def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
         p.enlarger.normalize_print_exposure = _np0
         p.print = _pp0
     return np.clip(np.asarray(out, np.float64), 0.0, 1.0)
+
+
+def _is_frozen_dc(obj):
+    """是不是 `@dataclass(frozen=True)` —— 那种不能 `setattr`，只能整体替换。"""
+    try:
+        return bool(dataclasses.is_dataclass(obj) and obj.__dataclass_params__.frozen)
+    except Exception:                                          # noqa: BLE001
+        return False
+
+
+def _walk_holder(root, parts):
+    """按【父段】走到持有者，返回 `(父对象, 键, 持有者)` —— 供"整体替换"用。
+
+    例：`root.print_render` 的 parts 是 `['print_render']` ⇒ 返回 `(root, 'print_render', root.print_render)`。
+    """
+    if not parts:
+        raise KeyError('要整体替换的东西不能是根对象本身')
+    obj = root
+    for k in parts[:-1]:
+        if not hasattr(obj, k):
+            raise KeyError('overrides 的字段路径走不通: %s（在 %r 处断了）' % ('.'.join(parts), k))
+        obj = getattr(obj, k)
+    return obj, parts[-1], getattr(obj, parts[-1])
 
 
 def _walk(root, dotted):
