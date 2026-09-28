@@ -177,3 +177,34 @@ def scene_engine(scene):
 
 def names():
     return [k for k in load() if not k.startswith('_')]
+
+
+# ---------------------------------------------------------------------------
+# ★★★ 09-29：**靶的缓存键**（给 pipeline 的渲染缓存用）
+# ---------------------------------------------------------------------------
+def cache_key(stock, scene=None):
+    """把"这条预设 + 这套场景覆盖之后的靶"压成一个可哈希的键。
+
+    为什么必须有它：`pipeline` 的渲染缓存 key 原来**不含靶** ⇒
+      同一进程里改了 `targets.json`（或 `_scene` 覆盖生效与否变了）⇒ **仍然命中旧缓存** ⇒
+      表现就是"拧了没反应"。⇒ 把它塞进 ckey，靶一变缓存立刻作废。
+    """
+    try:
+        t = for_stock(stock, scene)
+    except Exception:                                      # noqa: BLE001
+        return ('tg-err', stock)
+    items = []
+    for k in sorted(t.keys()):
+        v = t[k]
+        if k.startswith('_scene_hits'):
+            v = tuple(v or [])
+        elif isinstance(v, list):
+            v = tuple(v)
+        elif isinstance(v, dict):
+            v = tuple(sorted(v.items()))
+        try:
+            hash(v)
+        except Exception:                                  # noqa: BLE001
+            v = str(v)
+        items.append((k, v))
+    return tuple(items)

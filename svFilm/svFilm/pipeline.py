@@ -147,11 +147,28 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         # ★★ 09-27：**开关本身也必须进键**。原来只带了 `_after`（`TONE_AFTER_ENGINE`）
         #   ⇒ 漏了 `GRADE_SCOPE` / `GRADE_ENABLE` / `TONE_ENABLE`：常驻进程里改了它们仍会命中
         #   旧缓存，表现就是**"拧了没反应"**（和下面老路那段注释里说过的同一类坑）。
+        # ★★★ 09-29：**overrides 和靶也必须进键**。
+        #   原来只带了"判据版本号"（理由：场景是这张图的确定函数）—— 那个理由本身没错，
+        #   但漏了：`_scene` / `_scene_engine` 真正影响的是【靶】和【引擎 overrides】，
+        #   而这两样都不在键里 ⇒ 同一进程里改了靶/覆盖 ⇒ **仍命中旧缓存** ⇒
+        #   表现就是"拧了没反应"（今天在这上面栽了好几次：入口 A/B 三组一样、按场景覆盖不生效）。
+        _ov_key = tuple(sorted(
+            (k, tuple(v) if isinstance(v, list) else v) for k, v in ({}).items())) \
+            if False else None
+        try:
+            from . import targets as _TSk
+            _ov = _TSk.scene_engine(_sc) if _sc else {}
+            _ov_key = tuple(sorted((k, tuple(v) if isinstance(v, list) else str(v))
+                                   for k, v in (_ov or {}).items()))
+            _tg_key = _TSk.cache_key(name, _sc)
+        except Exception:                                  # noqa: BLE001
+            _ov_key, _tg_key = None, None
         _ckey = ('film', _sample_uid(s), name, style, getattr(cfg, 'MAX_SIDE', None), _after,
                  int(getattr(scene, 'VERSION', 0)),
                  str(getattr(cfg, 'GRADE_SCOPE', 'all')),
                  bool(getattr(cfg, 'GRADE_ENABLE', True)),
-                 bool(getattr(cfg, 'TONE_ENABLE', False)))
+                 bool(getattr(cfg, 'TONE_ENABLE', False)),
+                 _ov_key, _tg_key)
         _entry = cache.get(_ckey)
 
     if _entry is not None:
