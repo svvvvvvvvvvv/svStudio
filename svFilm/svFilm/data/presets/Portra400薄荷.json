@@ -1,212 +1,213 @@
 {
- "input_image": {
-  "upscale_factor": 1.0,
-  "crop": false,
-  "crop_center": [
-   0.5,
-   0.5
-  ],
-  "crop_size": [
-   0.1,
-   0.1
-  ],
-  "input_color_space": "ProPhoto RGB",
-  "apply_cctf_decoding": false,
-  "spectral_upsampling_method": "hanatos2025",
-  "apply_hanatos2025_adaptation_window": true,
-  "apply_hanatos2025_adaptation_surface": false,
-  "spectral_gaussian_blur": 0.0,
-  "filter_uv": [
-   0.0,
-   410.0,
-   8.0
-  ],
-  "filter_ir": [
-   0.0,
-   675.0,
-   15.0
-  ]
- },
- "load_raw": {
-  "white_balance": "custom",
-  "temperature": 5200.0,
-  "tint": 1.0,
-  "lens_correction": false
- },
- "grain": {
-  "active": true,
-  "sublayers_active": false,
-  "particle_area_um2": 0.3,
-  "particle_scale": [
-   0.8,
-   1.0,
-   2.0
-  ],
-  "particle_scale_layers": [
-   2.5,
-   1.0,
-   0.5
-  ],
-  "density_min": [
-   0.07,
-   0.08,
-   0.12
-  ],
-  "uniformity": [
-   0.97,
-   0.97,
-   0.99
-  ],
-  "blur": 0.65,
-  "blur_dye_clouds_um": 1.0,
-  "micro_structure": [
-   0.2,
-   30
-  ]
- },
- "preflashing": {
-  "exposure": 0.0,
-  "y_filter_shift": 0.0,
-  "m_filter_shift": 0.0
- },
- "halation": {
-  "active": true,
-  "scatter_amount": 1.3,
-  "scatter_spatial_scale": 1.0,
-  "halation_amount": 1.0,
-  "halation_spatial_scale": 1.0,
-  "boost_ev": 0.0,
-  "protect_ev": 4.0,
-  "boost_range": 0.3,
-  "scatter_core_um": [
-   2.2,
-   2.0,
-   1.6
-  ],
-  "scatter_tail_um": [
-   9.3,
-   9.7,
-   9.1
-  ],
-  "scatter_tail_weight": [
-   78.0,
-   65.0,
-   67.0
-  ],
-  "halation_strength": [
-   40.0,
-   12.0,
-   0.0
-  ],
-  "halation_first_sigma_um": [
-   65.0,
-   65.0,
-   65.0
-  ],
-  "halation_n_bounces": 3,
-  "halation_bounce_decay": 0.5,
-  "halation_renormalize": true
- },
- "couplers": {
-  "active": true,
-  "amount": 1.2,
-  "inhibition_samelayer": 1.0,
-  "inhibition_interlayer": 1.05,
-  "gamma_samelayer_rgb": [
-   0.34,
-   0.32,
-   0.27
-  ],
-  "gamma_interlayer_r_to_gb": [
-   0.35,
-   0.3
-  ],
-  "gamma_interlayer_g_to_rb": [
-   0.15,
-   0.35
-  ],
-  "gamma_interlayer_b_to_rg": [
-   0.17,
-   0.23
-  ],
-  "diffusion_size_um": 10.0,
-  "diffusion_tail_um": 20.0
- },
- "glare": {
-  "active": true,
-  "percent": 0.03,
-  "roughness": 0.7,
-  "blur": 0.5
- },
- "special": {
-  "film_channel_swap": [
-   0,
-   1,
-   2
-  ],
-  "film_gamma_factor": 0.99,
-  "print_channel_swap": [
-   0,
-   1,
-   2
-  ],
-  "print_gamma_factor": 0.97
- },
- "simulation": {
-  "film_stock": "kodak_portra_400",
-  "film_format_mm": 36.0,
-  "camera_lens_blur_um": 12.0,
-  "camera_diffusion_filter_active": false,
-  "camera_diffusion_filter_family": "pro_mist",
-  "camera_diffusion_filter_strength": 0.125,
-  "camera_diffusion_filter_spatial_scale": 1.0,
-  "camera_diffusion_filter_halo_warmth": 0.0,
-  "camera_diffusion_filter_core_intensity": 1.0,
-  "camera_diffusion_filter_core_size": 1.0,
-  "camera_diffusion_filter_halo_intensity": 1.0,
-  "camera_diffusion_filter_halo_size": 1.0,
-  "camera_diffusion_filter_bloom_intensity": 1.0,
-  "camera_diffusion_filter_bloom_size": 1.0,
-  "exposure_compensation_ev": 0.0,
-  "auto_exposure": true,
-  "auto_exposure_method": "center_weighted",
-  "print_paper": "kodak_portra_endura",
-  "print_illuminant": "TH-KG3",
-  "print_exposure": 0.46,
-  "print_exposure_compensation": true,
-  "print_y_filter_shift": 7.0,
-  "print_m_filter_shift": -3.0,
-  "diffusion_filter_active": true,
-  "diffusion_filter_family": "pro_mist",
-  "diffusion_filter_strength": 0.45,
-  "diffusion_filter_spatial_scale": 1.0,
-  "diffusion_filter_halo_warmth": 0.0,
-  "diffusion_filter_core_intensity": 1.0,
-  "diffusion_filter_core_size": 1.0,
-  "diffusion_filter_halo_intensity": 1.0,
-  "diffusion_filter_halo_size": 1.0,
-  "diffusion_filter_bloom_intensity": 1.0,
-  "diffusion_filter_bloom_size": 1.0,
-  "scan_lens_blur": 0.6,
-  "scan_white_correction": true,
-  "scan_white_level": 1.0,
-  "scan_black_correction": true,
-  "scan_black_level": 0.065,
-  "scan_unsharp_mask": [
-   0.3,
-   0.3
-  ],
-  "output_color_space": "sRGB",
-  "saving_color_space": "sRGB",
-  "saving_cctf_encoding": true,
-  "auto_preview": true,
-  "scan_film": false
- },
- "display": {
-  "use_display_transform": true,
-  "gray_18_canvas": true,
-  "white_padding": 0.03,
-  "preview_max_size": 1200,
-  "output_interpolation": "spline36"
- }
+  "input_image": {
+    "upscale_factor": 1.0,
+    "crop": false,
+    "crop_center": [
+      0.5,
+      0.5
+    ],
+    "crop_size": [
+      0.1,
+      0.1
+    ],
+    "input_color_space": "ProPhoto RGB",
+    "apply_cctf_decoding": false,
+    "spectral_upsampling_method": "hanatos2025",
+    "apply_hanatos2025_adaptation_window": true,
+    "apply_hanatos2025_adaptation_surface": false,
+    "spectral_gaussian_blur": 0.0,
+    "filter_uv": [
+      0.0,
+      410.0,
+      8.0
+    ],
+    "filter_ir": [
+      0.0,
+      675.0,
+      15.0
+    ]
+  },
+  "load_raw": {
+    "white_balance": "custom",
+    "temperature": 5200.0,
+    "tint": 1.0,
+    "lens_correction": false
+  },
+  "grain": {
+    "active": true,
+    "sublayers_active": false,
+    "particle_area_um2": 0.3,
+    "particle_scale": [
+      0.8,
+      1.0,
+      2.0
+    ],
+    "particle_scale_layers": [
+      2.5,
+      1.0,
+      0.5
+    ],
+    "density_min": [
+      0.07,
+      0.08,
+      0.12
+    ],
+    "uniformity": [
+      0.97,
+      0.97,
+      0.99
+    ],
+    "blur": 0.65,
+    "blur_dye_clouds_um": 1.0,
+    "micro_structure": [
+      0.2,
+      30
+    ]
+  },
+  "preflashing": {
+    "exposure": 0.0,
+    "y_filter_shift": 0.0,
+    "m_filter_shift": 0.0
+  },
+  "halation": {
+    "active": true,
+    "scatter_amount": 1.3,
+    "scatter_spatial_scale": 1.0,
+    "halation_amount": 1.0,
+    "halation_spatial_scale": 1.0,
+    "boost_ev": 0.0,
+    "protect_ev": 4.0,
+    "boost_range": 0.3,
+    "scatter_core_um": [
+      2.2,
+      2.0,
+      1.6
+    ],
+    "scatter_tail_um": [
+      9.3,
+      9.7,
+      9.1
+    ],
+    "scatter_tail_weight": [
+      78.0,
+      65.0,
+      67.0
+    ],
+    "halation_strength": [
+      40.0,
+      12.0,
+      0.0
+    ],
+    "halation_first_sigma_um": [
+      65.0,
+      65.0,
+      65.0
+    ],
+    "halation_n_bounces": 3,
+    "halation_bounce_decay": 0.5,
+    "halation_renormalize": true
+  },
+  "couplers": {
+    "active": true,
+    "amount": 1.2,
+    "inhibition_samelayer": 1.0,
+    "inhibition_interlayer": 1.05,
+    "gamma_samelayer_rgb": [
+      0.34,
+      0.32,
+      0.27
+    ],
+    "gamma_interlayer_r_to_gb": [
+      0.35,
+      0.3
+    ],
+    "gamma_interlayer_g_to_rb": [
+      0.15,
+      0.35
+    ],
+    "gamma_interlayer_b_to_rg": [
+      0.17,
+      0.23
+    ],
+    "diffusion_size_um": 60.0,
+    "diffusion_tail_um": 20.0,
+    "_note_diffusion": "★★★ 09-29：10 → **60**。依据：README 明说「couplers 在空间上扩散 ⇒ 提高【局部对比】和感知锐度」；实测（2 张中位）扩散 10→20→40→60→80 ⇒ 局部对比 1.01→1.04→1.08→**1.10**→1.11，**60 正中靶（目标 1.10）**，而 L50 只掉 0.09、跨度 +0.43、彩度 −0.11 ⇒ 几乎不污染别的。⚠ 上游 GUI 给的推荐范围是 (5-20 um) —— 我们超出它，因为我们的靶（鹿井/小红书）的局部对比比 JPEG 直出的更\"实\"。⚠ 这是【物理层】的治（DIR 成色剂扩散），比后期 unsharp_mask 补锐化更\"胶片\"。"
+  },
+  "glare": {
+    "active": true,
+    "percent": 0.03,
+    "roughness": 0.7,
+    "blur": 0.5
+  },
+  "special": {
+    "film_channel_swap": [
+      0,
+      1,
+      2
+    ],
+    "film_gamma_factor": 0.99,
+    "print_channel_swap": [
+      0,
+      1,
+      2
+    ],
+    "print_gamma_factor": 0.97
+  },
+  "simulation": {
+    "film_stock": "kodak_portra_400",
+    "film_format_mm": 36.0,
+    "camera_lens_blur_um": 12.0,
+    "camera_diffusion_filter_active": false,
+    "camera_diffusion_filter_family": "pro_mist",
+    "camera_diffusion_filter_strength": 0.125,
+    "camera_diffusion_filter_spatial_scale": 1.0,
+    "camera_diffusion_filter_halo_warmth": 0.0,
+    "camera_diffusion_filter_core_intensity": 1.0,
+    "camera_diffusion_filter_core_size": 1.0,
+    "camera_diffusion_filter_halo_intensity": 1.0,
+    "camera_diffusion_filter_halo_size": 1.0,
+    "camera_diffusion_filter_bloom_intensity": 1.0,
+    "camera_diffusion_filter_bloom_size": 1.0,
+    "exposure_compensation_ev": 0.0,
+    "auto_exposure": true,
+    "auto_exposure_method": "center_weighted",
+    "print_paper": "kodak_portra_endura",
+    "print_illuminant": "TH-KG3",
+    "print_exposure": 0.46,
+    "print_exposure_compensation": true,
+    "print_y_filter_shift": 7.0,
+    "print_m_filter_shift": -3.0,
+    "diffusion_filter_active": true,
+    "diffusion_filter_family": "pro_mist",
+    "diffusion_filter_strength": 0.45,
+    "diffusion_filter_spatial_scale": 1.0,
+    "diffusion_filter_halo_warmth": 0.0,
+    "diffusion_filter_core_intensity": 1.0,
+    "diffusion_filter_core_size": 1.0,
+    "diffusion_filter_halo_intensity": 1.0,
+    "diffusion_filter_halo_size": 1.0,
+    "diffusion_filter_bloom_intensity": 1.0,
+    "diffusion_filter_bloom_size": 1.0,
+    "scan_lens_blur": 0.6,
+    "scan_white_correction": true,
+    "scan_white_level": 1.0,
+    "scan_black_correction": true,
+    "scan_black_level": 0.065,
+    "scan_unsharp_mask": [
+      0.3,
+      0.3
+    ],
+    "output_color_space": "sRGB",
+    "saving_color_space": "sRGB",
+    "saving_cctf_encoding": true,
+    "auto_preview": true,
+    "scan_film": false
+  },
+  "display": {
+    "use_display_transform": true,
+    "gray_18_canvas": true,
+    "white_padding": 0.03,
+    "preview_max_size": 1200,
+    "output_interpolation": "spline36"
+  }
 }

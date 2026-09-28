@@ -154,11 +154,18 @@ def scene_engine(scene):
     """
     out = {}
     if not scene:
-        return out
+        scene = {}
     d = load()
     ov = d.get('_scene_engine') or {}
     if not ov:
         return out
+    # ★★★ 09-29：**先应用全局兜底 `"*"`**。
+    #   为什么要有：`"<轴>=*"` 只有在**该轴判出了值**时才命中（轴为 None 时整轴跳过）。
+    #   而现实里"判不出光位"很常见（画面里没主体/人检不出）⇒ 那些片会一条都不命中。
+    #   ⇒ `"*"` 是**无条件**的兜底（所有片都吃），后面的按轴覆盖再叠上去。
+    _base = ov.get('*')
+    if isinstance(_base, dict):
+        out.update(_base)
     try:
         from . import scene as _S
         _tok, _axes = _S.token, _S.AXES

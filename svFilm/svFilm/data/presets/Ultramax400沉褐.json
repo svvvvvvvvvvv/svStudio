@@ -1,215 +1,216 @@
 {
- "_note_scan_white": "★ 09-26 改：冲扫设白 1.04 → 1.00。1.04 是全 10 条预设里的**离群值**（其余 6 条 0.98、薄荷 1.00、滨田 0.96），它导致约两成片子有 4~14% 的画面被顶成纯白（三通道≥254）。实测同一批片子：1.04 糊死 4.01%，1.00/0.98/0.92 全部 0.00%，而 1.00 对已校准的六项指标改动最小（跨度 85.9→83.2，更靠靶 82.6；彩P90 25.5→24.6；脸彩度 19.2→18.3）。0.92 会走过头（跨度压到 80.5、彩P90 22.8，都穿过靶）。历史值保留在此备查。",
- "_note_print_y_filter": "★★★ 09-28 早上：**SV 拍板 = 改回 13**（`print_y_filter_shift: 13`）。为什么改回：上面那次「13→4」的依据是**只过引擎、不过颜色层**的单变量扫 ⇒ **不完整**；而且它**只看了「脸 hue」、没看分色** ⇒ 顺带把**中调改黄了**。09-28 做了**完整链**的 A/B（`_debug/_ab_yfilter.py`，4 张中位，鹿井 730 张为参照），11 项里 **9 项都是 y=4 更好**、但**唯一对立的「中调 b*」y=13 才对**：脸 hue 54.17 靶 ⇒ y=4 **53.99 ✓**／y=13 **49.68 ✗**；中调 b* +1.42 靶 ⇒ y=4 **+7.57 ✗**／y=13 **+1.70 ✓**（其余：脸 C* 22.81 靶 ⇒ 22.21/20.98；脸 L* 67.47 ⇒ 66.09/65.55；跨度 81.59 ⇒ 81.49/82.06；暗部Δb −13.45 ⇒ −11.59/−13.06；高光Δb +23.13 ⇒ +20.80/19.62；中调 a* −0.94 ⇒ +2.62/+4.06）。⇒ **SV 选中调优先**。⚠ **代价如实记：脸 hue 会从 53.99 掉到 49.68（离靶差 −4.5）**。★ 我的评审意见（供以后再议）：y_filter 是「压黄推红」的**全局**旋钮、同时管脸和中调 ⇒ 顾此失彼；**中调分色更适合在颜色层的 `mid_abs` 修**（`grade.py:207`，靶 `mid_abs=[0.77,4.81]`）。———— 历史（09-27）：改：印相黄滤片 13 → 4。为什么改：**引擎出图那一步就把肤色色相甩了 −35°**（实测 4 张中位 hue 17.2°，靶 52.3°／§195 分层实验证明「甩偏」发生在引擎、不在颜色层也不在肤色层），而 y_filter 正是**压黄、把脸推红**的那一根。单变量扫（4 张，只过引擎、不过颜色层）：y=13→hue 17.2° ／ 8→37.6° ／ 4→49.3° ／ 0→56.5°，**每降 1 涨约 3.0°**，单调；y=4 时**彩度 22.8 几乎精确命中靶 22.4**（y=0 过头到 26.5）。★ 换完之后**引擎自己就把肤色做对了**，肤色层(L4) 不用再使劲往回拽 —— 原来那 −35° 全靠 L4 拉，还撞 `GRADE_SKIN_LIMIT_L=6` 的限幅、拉不回来。⚠ 脸亮度仍差 9.2 格，**不是这根的事**，另算。",
+  "_note_scan_white": "★ 09-26 改：冲扫设白 1.04 → 1.00。1.04 是全 10 条预设里的**离群值**（其余 6 条 0.98、薄荷 1.00、滨田 0.96），它导致约两成片子有 4~14% 的画面被顶成纯白（三通道≥254）。实测同一批片子：1.04 糊死 4.01%，1.00/0.98/0.92 全部 0.00%，而 1.00 对已校准的六项指标改动最小（跨度 85.9→83.2，更靠靶 82.6；彩P90 25.5→24.6；脸彩度 19.2→18.3）。0.92 会走过头（跨度压到 80.5、彩P90 22.8，都穿过靶）。历史值保留在此备查。",
+  "_note_print_y_filter": "★★★ 09-28 早上：**SV 拍板 = 改回 13**（`print_y_filter_shift: 13`）。为什么改回：上面那次「13→4」的依据是**只过引擎、不过颜色层**的单变量扫 ⇒ **不完整**；而且它**只看了「脸 hue」、没看分色** ⇒ 顺带把**中调改黄了**。09-28 做了**完整链**的 A/B（`_debug/_ab_yfilter.py`，4 张中位，鹿井 730 张为参照），11 项里 **9 项都是 y=4 更好**、但**唯一对立的「中调 b*」y=13 才对**：脸 hue 54.17 靶 ⇒ y=4 **53.99 ✓**／y=13 **49.68 ✗**；中调 b* +1.42 靶 ⇒ y=4 **+7.57 ✗**／y=13 **+1.70 ✓**（其余：脸 C* 22.81 靶 ⇒ 22.21/20.98；脸 L* 67.47 ⇒ 66.09/65.55；跨度 81.59 ⇒ 81.49/82.06；暗部Δb −13.45 ⇒ −11.59/−13.06；高光Δb +23.13 ⇒ +20.80/19.62；中调 a* −0.94 ⇒ +2.62/+4.06）。⇒ **SV 选中调优先**。⚠ **代价如实记：脸 hue 会从 53.99 掉到 49.68（离靶差 −4.5）**。★ 我的评审意见（供以后再议）：y_filter 是「压黄推红」的**全局**旋钮、同时管脸和中调 ⇒ 顾此失彼；**中调分色更适合在颜色层的 `mid_abs` 修**（`grade.py:207`，靶 `mid_abs=[0.77,4.81]`）。———— 历史（09-27）：改：印相黄滤片 13 → 4。为什么改：**引擎出图那一步就把肤色色相甩了 −35°**（实测 4 张中位 hue 17.2°，靶 52.3°／§195 分层实验证明「甩偏」发生在引擎、不在颜色层也不在肤色层），而 y_filter 正是**压黄、把脸推红**的那一根。单变量扫（4 张，只过引擎、不过颜色层）：y=13→hue 17.2° ／ 8→37.6° ／ 4→49.3° ／ 0→56.5°，**每降 1 涨约 3.0°**，单调；y=4 时**彩度 22.8 几乎精确命中靶 22.4**（y=0 过头到 26.5）。★ 换完之后**引擎自己就把肤色做对了**，肤色层(L4) 不用再使劲往回拽 —— 原来那 −35° 全靠 L4 拉，还撞 `GRADE_SKIN_LIMIT_L=6` 的限幅、拉不回来。⚠ 脸亮度仍差 9.2 格，**不是这根的事**，另算。",
   "input_image": {
-  "upscale_factor": 1.0,
-  "crop": false,
-  "crop_center": [
-   0.5,
-   0.5
-  ],
-  "crop_size": [
-   0.1,
-   0.1
-  ],
-  "input_color_space": "ProPhoto RGB",
-  "apply_cctf_decoding": false,
-  "spectral_upsampling_method": "hanatos2025",
-  "apply_hanatos2025_adaptation_window": true,
-  "apply_hanatos2025_adaptation_surface": false,
-  "spectral_gaussian_blur": 0.0,
-  "filter_uv": [
-   0.0,
-   410.0,
-   8.0
-  ],
-  "filter_ir": [
-   0.0,
-   675.0,
-   15.0
-  ]
- },
- "load_raw": {
-  "white_balance": "custom",
-  "temperature": 5200.0,
-  "tint": 1.0,
-  "lens_correction": false
- },
- "grain": {
-  "active": true,
-  "sublayers_active": false,
-  "particle_area_um2": 0.5,
-  "particle_scale": [
-   0.8,
-   1.0,
-   2.0
-  ],
-  "particle_scale_layers": [
-   2.5,
-   1.0,
-   0.5
-  ],
-  "density_min": [
-   0.07,
-   0.08,
-   0.12
-  ],
-  "uniformity": [
-   0.97,
-   0.97,
-   0.99
-  ],
-  "blur": 0.65,
-  "blur_dye_clouds_um": 1.0,
-  "micro_structure": [
-   0.2,
-   30
-  ]
- },
- "preflashing": {
-  "exposure": 0.0,
-  "y_filter_shift": 0.0,
-  "m_filter_shift": 0.0
- },
- "halation": {
-  "active": true,
-  "scatter_amount": 0.9,
-  "scatter_spatial_scale": 1.0,
-  "halation_amount": 1.0,
-  "halation_spatial_scale": 1.0,
-  "boost_ev": 0.0,
-  "protect_ev": 4.0,
-  "boost_range": 0.3,
-  "scatter_core_um": [
-   2.2,
-   2.0,
-   1.6
-  ],
-  "scatter_tail_um": [
-   9.3,
-   9.7,
-   9.1
-  ],
-  "scatter_tail_weight": [
-   78.0,
-   65.0,
-   67.0
-  ],
-  "halation_strength": [
-   40.0,
-   12.0,
-   0.0
-  ],
-  "halation_first_sigma_um": [
-   65.0,
-   65.0,
-   65.0
-  ],
-  "halation_n_bounces": 3,
-  "halation_bounce_decay": 0.5,
-  "halation_renormalize": true
- },
- "couplers": {
-  "active": true,
-  "amount": 0.76,
-  "inhibition_samelayer": 1.0,
-  "inhibition_interlayer": 1.3,
-  "gamma_samelayer_rgb": [
-   0.34,
-   0.32,
-   0.27
-  ],
-  "gamma_interlayer_r_to_gb": [
-   0.35,
-   0.3
-  ],
-  "gamma_interlayer_g_to_rb": [
-   0.15,
-   0.35
-  ],
-  "gamma_interlayer_b_to_rg": [
-   0.17,
-   0.23
-  ],
-  "diffusion_size_um": 10.0,
-  "diffusion_tail_um": 20.0
- },
- "glare": {
-  "active": true,
-  "percent": 0.03,
-  "roughness": 0.7,
-  "blur": 0.5
- },
- "special": {
-  "film_channel_swap": [
-   0,
-   1,
-   2
-  ],
-  "film_gamma_factor": 0.99,
-  "print_channel_swap": [
-   0,
-   1,
-   2
-  ],
-  "print_gamma_factor": 0.97
- },
- "simulation": {
-  "film_stock": "kodak_ultramax_400",
-  "film_format_mm": 36.0,
-  "camera_lens_blur_um": 0.0,
-  "camera_diffusion_filter_active": false,
-  "camera_diffusion_filter_family": "pro_mist",
-  "camera_diffusion_filter_strength": 0.25,
-  "camera_diffusion_filter_spatial_scale": 1.0,
-  "camera_diffusion_filter_halo_warmth": 0.0,
-  "camera_diffusion_filter_core_intensity": 1.0,
-  "camera_diffusion_filter_core_size": 1.0,
-  "camera_diffusion_filter_halo_intensity": 1.0,
-  "camera_diffusion_filter_halo_size": 1.0,
-  "camera_diffusion_filter_bloom_intensity": 1.0,
-  "camera_diffusion_filter_bloom_size": 1.0,
-  "exposure_compensation_ev": 0.0,
-  "auto_exposure": true,
-  "auto_exposure_method": "center_weighted",
-  "print_paper": "kodak_portra_endura",
-  "print_illuminant": "TH-KG3",
-  "print_exposure": 0.505,
-  "print_exposure_compensation": true,
-  "print_y_filter_shift": 13,
-  "print_m_filter_shift": -1.0,
-  "diffusion_filter_active": true,
-  "diffusion_filter_family": "pro_mist",
-  "diffusion_filter_strength": 0.3,
-  "diffusion_filter_spatial_scale": 1.0,
-  "diffusion_filter_halo_warmth": 0.0,
-  "diffusion_filter_core_intensity": 1.0,
-  "diffusion_filter_core_size": 1.0,
-  "diffusion_filter_halo_intensity": 1.0,
-  "diffusion_filter_halo_size": 1.0,
-  "diffusion_filter_bloom_intensity": 1.0,
-  "diffusion_filter_bloom_size": 1.0,
-  "scan_lens_blur": 0.32,
-  "scan_white_correction": true,
-  "scan_white_level": 1.0,
-  "scan_black_correction": true,
-  "scan_black_level": 0.065,
-  "_note_scan_unsharp": "★★★ 09-28：**scan_unsharp_mask 0.3/0.3 → 1.5/2.0**。为什么改（**直击「观感差「的真凶**）：量了「局部对比」（相邻像素差的中位）—— **鹿井 1.13 · SV 自己修的 1.10，而我们只有 0.68（60%）**；P90 我们 3.07 vs 5.3~5.9（55%）。**而「层次熵「三家几乎一样（5.75~5.78）⇒ 全局影调是对的，差的是【局部反差/细节层次】⇒ 画面「平/糊/闷「、不够透。** 查了三条原因（`_debug/_sharp.py` / `_res.py` / `_sharp2.py`）：① 印相柔光 0.3 ⇒ 关掉只 +18%；② 加载尺寸 1600 ⇒ 用原尺寸能 +46% 但**慢 8 倍**；③ **输出锐化太弱 [0.3,0.3] ⇒ 放到 [1.5,2.0] 后局部对比 0.61→1.28（过目标 1.11）· P90 2.74→5.18（目标 5.60）**，而**跨度只动 +1.5、L50 不动** ⇒ **只补细节、不破坏别的**。图上：清晰通透、无锐化痕迹（无白边）。⇒ **这是「还原细节「（胶片扫描的 unsharp mask 本职），不是「加锐「。**",
-  "scan_unsharp_mask": [
-   1.5,
-   2.0
-  ],
-  "output_color_space": "sRGB",
-  "saving_color_space": "sRGB",
-  "saving_cctf_encoding": true,
-  "auto_preview": true,
-  "scan_film": false
- },
- "display": {
-  "use_display_transform": true,
-  "gray_18_canvas": true,
-  "white_padding": 0.03,
-  "preview_max_size": 1200,
-  "output_interpolation": "spline36"
- }
+    "upscale_factor": 1.0,
+    "crop": false,
+    "crop_center": [
+      0.5,
+      0.5
+    ],
+    "crop_size": [
+      0.1,
+      0.1
+    ],
+    "input_color_space": "ProPhoto RGB",
+    "apply_cctf_decoding": false,
+    "spectral_upsampling_method": "hanatos2025",
+    "apply_hanatos2025_adaptation_window": true,
+    "apply_hanatos2025_adaptation_surface": false,
+    "spectral_gaussian_blur": 0.0,
+    "filter_uv": [
+      0.0,
+      410.0,
+      8.0
+    ],
+    "filter_ir": [
+      0.0,
+      675.0,
+      15.0
+    ]
+  },
+  "load_raw": {
+    "white_balance": "custom",
+    "temperature": 5200.0,
+    "tint": 1.0,
+    "lens_correction": false
+  },
+  "grain": {
+    "active": true,
+    "sublayers_active": false,
+    "particle_area_um2": 0.5,
+    "particle_scale": [
+      0.8,
+      1.0,
+      2.0
+    ],
+    "particle_scale_layers": [
+      2.5,
+      1.0,
+      0.5
+    ],
+    "density_min": [
+      0.07,
+      0.08,
+      0.12
+    ],
+    "uniformity": [
+      0.97,
+      0.97,
+      0.99
+    ],
+    "blur": 0.65,
+    "blur_dye_clouds_um": 1.0,
+    "micro_structure": [
+      0.2,
+      30
+    ]
+  },
+  "preflashing": {
+    "exposure": 0.0,
+    "y_filter_shift": 0.0,
+    "m_filter_shift": 0.0
+  },
+  "halation": {
+    "active": true,
+    "scatter_amount": 0.9,
+    "scatter_spatial_scale": 1.0,
+    "halation_amount": 1.0,
+    "halation_spatial_scale": 1.0,
+    "boost_ev": 0.0,
+    "protect_ev": 4.0,
+    "boost_range": 0.3,
+    "scatter_core_um": [
+      2.2,
+      2.0,
+      1.6
+    ],
+    "scatter_tail_um": [
+      9.3,
+      9.7,
+      9.1
+    ],
+    "scatter_tail_weight": [
+      78.0,
+      65.0,
+      67.0
+    ],
+    "halation_strength": [
+      40.0,
+      12.0,
+      0.0
+    ],
+    "halation_first_sigma_um": [
+      65.0,
+      65.0,
+      65.0
+    ],
+    "halation_n_bounces": 3,
+    "halation_bounce_decay": 0.5,
+    "halation_renormalize": true
+  },
+  "couplers": {
+    "active": true,
+    "amount": 0.76,
+    "inhibition_samelayer": 1.0,
+    "inhibition_interlayer": 1.3,
+    "gamma_samelayer_rgb": [
+      0.34,
+      0.32,
+      0.27
+    ],
+    "gamma_interlayer_r_to_gb": [
+      0.35,
+      0.3
+    ],
+    "gamma_interlayer_g_to_rb": [
+      0.15,
+      0.35
+    ],
+    "gamma_interlayer_b_to_rg": [
+      0.17,
+      0.23
+    ],
+    "diffusion_size_um": 60.0,
+    "diffusion_tail_um": 20.0,
+    "_note_diffusion": "★★★ 09-29：10 → **60**。依据：README 明说「couplers 在空间上扩散 ⇒ 提高【局部对比】和感知锐度」；实测（2 张中位）扩散 10→20→40→60→80 ⇒ 局部对比 1.01→1.04→1.08→**1.10**→1.11，**60 正中靶（目标 1.10）**，而 L50 只掉 0.09、跨度 +0.43、彩度 −0.11 ⇒ 几乎不污染别的。⚠ 上游 GUI 给的推荐范围是 (5-20 um) —— 我们超出它，因为我们的靶（鹿井/小红书）的局部对比比 JPEG 直出的更\"实\"。⚠ 这是【物理层】的治（DIR 成色剂扩散），比后期 unsharp_mask 补锐化更\"胶片\"。"
+  },
+  "glare": {
+    "active": true,
+    "percent": 0.03,
+    "roughness": 0.7,
+    "blur": 0.5
+  },
+  "special": {
+    "film_channel_swap": [
+      0,
+      1,
+      2
+    ],
+    "film_gamma_factor": 0.99,
+    "print_channel_swap": [
+      0,
+      1,
+      2
+    ],
+    "print_gamma_factor": 0.97
+  },
+  "simulation": {
+    "film_stock": "kodak_ultramax_400",
+    "film_format_mm": 36.0,
+    "camera_lens_blur_um": 0.0,
+    "camera_diffusion_filter_active": false,
+    "camera_diffusion_filter_family": "pro_mist",
+    "camera_diffusion_filter_strength": 0.25,
+    "camera_diffusion_filter_spatial_scale": 1.0,
+    "camera_diffusion_filter_halo_warmth": 0.0,
+    "camera_diffusion_filter_core_intensity": 1.0,
+    "camera_diffusion_filter_core_size": 1.0,
+    "camera_diffusion_filter_halo_intensity": 1.0,
+    "camera_diffusion_filter_halo_size": 1.0,
+    "camera_diffusion_filter_bloom_intensity": 1.0,
+    "camera_diffusion_filter_bloom_size": 1.0,
+    "exposure_compensation_ev": 0.0,
+    "auto_exposure": true,
+    "auto_exposure_method": "center_weighted",
+    "print_paper": "kodak_portra_endura",
+    "print_illuminant": "TH-KG3",
+    "print_exposure": 0.505,
+    "print_exposure_compensation": true,
+    "print_y_filter_shift": 13,
+    "print_m_filter_shift": -1.0,
+    "diffusion_filter_active": true,
+    "diffusion_filter_family": "pro_mist",
+    "diffusion_filter_strength": 0.3,
+    "diffusion_filter_spatial_scale": 1.0,
+    "diffusion_filter_halo_warmth": 0.0,
+    "diffusion_filter_core_intensity": 1.0,
+    "diffusion_filter_core_size": 1.0,
+    "diffusion_filter_halo_intensity": 1.0,
+    "diffusion_filter_halo_size": 1.0,
+    "diffusion_filter_bloom_intensity": 1.0,
+    "diffusion_filter_bloom_size": 1.0,
+    "scan_lens_blur": 0.32,
+    "scan_white_correction": true,
+    "scan_white_level": 1.0,
+    "scan_black_correction": true,
+    "scan_black_level": 0.065,
+    "_note_scan_unsharp": "★★★ 09-28：**scan_unsharp_mask 0.3/0.3 → 1.5/2.0**。为什么改（**直击「观感差「的真凶**）：量了「局部对比」（相邻像素差的中位）—— **鹿井 1.13 · SV 自己修的 1.10，而我们只有 0.68（60%）**；P90 我们 3.07 vs 5.3~5.9（55%）。**而「层次熵「三家几乎一样（5.75~5.78）⇒ 全局影调是对的，差的是【局部反差/细节层次】⇒ 画面「平/糊/闷「、不够透。** 查了三条原因（`_debug/_sharp.py` / `_res.py` / `_sharp2.py`）：① 印相柔光 0.3 ⇒ 关掉只 +18%；② 加载尺寸 1600 ⇒ 用原尺寸能 +46% 但**慢 8 倍**；③ **输出锐化太弱 [0.3,0.3] ⇒ 放到 [1.5,2.0] 后局部对比 0.61→1.28（过目标 1.11）· P90 2.74→5.18（目标 5.60）**，而**跨度只动 +1.5、L50 不动** ⇒ **只补细节、不破坏别的**。图上：清晰通透、无锐化痕迹（无白边）。⇒ **这是「还原细节「（胶片扫描的 unsharp mask 本职），不是「加锐「。**",
+    "scan_unsharp_mask": [
+      1.5,
+      2.0
+    ],
+    "output_color_space": "sRGB",
+    "saving_color_space": "sRGB",
+    "saving_cctf_encoding": true,
+    "auto_preview": true,
+    "scan_film": false
+  },
+  "display": {
+    "use_display_transform": true,
+    "gray_18_canvas": true,
+    "white_padding": 0.03,
+    "preview_max_size": 1200,
+    "output_interpolation": "spline36"
+  }
 }
