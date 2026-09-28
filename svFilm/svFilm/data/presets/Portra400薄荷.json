@@ -201,7 +201,8 @@
     "saving_color_space": "sRGB",
     "saving_cctf_encoding": true,
     "auto_preview": true,
-    "scan_film": false
+    "scan_film": false,
+    "_note_unsharp_back": "★★★ 09-29：1.5/2.0 → **0.3/0.3（回原值）**。SV：「锐化太狠了，要重新考虑」。为什么退：**「局部对比」的正解是 couplers 的空间扩散**（README 明说「让 couplers 扩散 ⇒ 提高局部对比和感知锐度」）—— 实测扩散 10→60 把局部对比从 1.01 拉到 **1.10（正中靶）**。⇒ 锐化是【补】（数字）、couplers 是【治】（物理）；两个都开就过火。⚠ 要再调就调 `couplers.diffusion_size_um`，别再靠锐化。"
   },
   "display": {
     "use_display_transform": true,
