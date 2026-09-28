@@ -508,6 +508,41 @@ def _walk_holder(root, parts):
     return obj, parts[-1], getattr(obj, parts[-1])
 
 
+def render_with_face(lin, name, cfg=C, pz=None, target_L=None, overrides=None):
+    r"""**带「脸增益」的渲染** —— 在负片 CMY 密度上只给脸加密度（见 `facegain.py`）。
+
+    为什么要它：引擎测光定的是**整张落点** ⇒ 提脸必然推亮整张（实测 `partial`/`median`
+    把脸拉到 75~79 而整张也到 73~78）⇒ **"只提脸"只能在局部的物理中间态上做。**
+
+    `target_L`：脸的 L\* 靶（`None`/0 ⇒ 走普通 `render`，**逐位同旧行为**）。
+    `pz`：`face.parse()` 的结果（脸掩膜；`facegain` 会羽化它）。
+    @returns {(ndarray, dict)} 出图 + `facegain` 的报告
+    """
+    if not target_L:
+        return render(lin, name, cfg, overrides=overrides), dict(applied=False, note='未启用脸增益')
+    spektra = __import__(__name__.rsplit('.', 1)[0] + '.spektra', fromlist=['x'])
+    spektra._sf()                           # ★ 保证 spektrafilm 路径正确（_sf 的守护会拦错的）
+    from spektrafilm.runtime.pipeline import SimulationPipeline   # noqa: E402
+    from . import facegain
+    p = _params_for(name, cfg)
+    if overrides:
+        pl = SimulationPipeline(copy.deepcopy(p))
+        for _dotted, _val in dict(overrides).items():
+            _holder = pl._params
+            _parts = [s for s in str(_dotted).split('.') if s]
+            for _k in _parts[:-1]:
+                _holder = getattr(_holder, _k)
+            _attr = _parts[-1]
+            if _is_frozen_dc(_holder):
+                _pobj, _pkey, _orig = _walk_holder(pl._params, _parts[:-1])
+                setattr(_pobj, _pkey, dataclasses.replace(_holder, **{_attr: _val}))
+            else:
+                setattr(_holder, _attr, _val)
+    else:
+        pl = SimulationPipeline(p)
+    return facegain.apply(pl, np.clip(np.asarray(lin, np.float64), 0.0, None), pz, target_L, cfg)
+
+
 def _walk(root, dotted):
     """把 `'enlarger.print_y_filter_shift'` 解成 (倒数第二层的对象, 最后的属性名)。"""
     parts = [s for s in str(dotted).split('.') if s]
