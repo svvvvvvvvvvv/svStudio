@@ -1,47 +1,28 @@
 # -*- coding: utf-8 -*-
-r"""二次调色（胶片引擎**之后**的分色层）—— L2 分色 + L3 混色。
+r"""二次调色（胶片引擎**之后**的颜色层）—— **L2 分色 + L3 混色 + L4 肤色**。
 
-边界：`tone.py` 管**影调**（明度分布），这里管**颜色**。两步都在成片（显示域）上做。
+## ★★★ 本文件的结构纪律（09-28 拆分，SV：「职责划分干干净净、边界清晰」）
 
-## ★★★ 一条铁律：这里**不做"曝光"**
-成片是 8bit 显示域，乘 `2^EV` = 放大已经量化过的数据 ⇒ 提亮 = 拉噪声、高光立刻切白
-（反面教材：digitalFilm 的 `ExposureModule` 在显示域每级 clamp，实测 1/6 像素切白）。
+**每一段都是一个"纯函数"**：`(当前图像 + 自己的参数) → (新图像 + 自己的报告)`。
+**三段之间不共享可变状态**（09-28 之前是一个 406 行的 `apply`，四件事共用 `L/a/b/Cc/live/_wn`
+⇒ 改一段必然碰另一段 —— 那是"改一处另一处动"的物理根因）。
+
+| 段 | 函数 | 只该管 | 不许碰 |
+|---|---|---|---|
+| **L2** | `split()` | 暗/中/高的 **色偏**（a*/b*）| 亮度、彩度 |
+| **L3** | `mix()` | **彩度**（总量 + 按色相分配）| 亮度（除"带内 dL"那一项）、色偏 |
+| **L4** | `skin()` | **脸的** 亮度/彩度/色相/明暗对比 | 非脸区域 |
+| — | `gamut()` | 出界颜色往中性轴收 | — |
+| — | `apply()` | **编排**上面四个 + 汇总报告 | **自己不写任何量** |
+
+★ 验证方式：`_debug/_coupling_check.py`（逐段关掉，看别段漂不漂）。
+★ 拆分前的基线：`效果debug/2026-09-28/_拆分前基线/`（逐位对比用）。
+
+## 边界：`tone.py` 管**影调**（明度分布），这里管**颜色**。
+## ★★ 一条铁律：这里**不做"曝光"**
+成片是显示域，乘 `2^EV` = 放大已经量化过的数据 ⇒ 提亮 = 拉噪声、高光立刻切白。
 **整体亮暗回引擎那一步改**（`pe` / `SPEK_PE_SHIFT`，那里是线性域、有高光余量）。
 这一层只做**按亮度/色相加权的染色与塑形**。
-
-## 数值从哪来（去量鹿井 32 张，不靠拍脑袋）
-素材：`E:\WorkBuddy\摄影助手\大师作品\鹿井\`（32 张）× 我们的成片（919 十张）。
-
-### L2 色彩分级（Lab 的 a*/b*，都相对整张的中位）
-| | 鹿井 32 | 我们 10 | 差（鹿井 − 我们） |
-|---|---|---|---|
-| 暗部 Δa* | −1.48 | −0.60 | **−0.88** |
-| 暗部 Δb* | +0.75 | −2.13 | **+2.88** |
-| 亮部 Δa* | +0.77 | +0.61 | +0.17 |
-| 亮部 Δb* | +0.23 | +0.74 | −0.51 |
-
-⇒ **我们暗部太蓝（b* 差 2.88）、不够绿（a* 差 0.88）；亮部基本已经在位。**
-⚠ 注意这与那份 LR 教程说的「阴影加青蓝」**不一致** —— 教程是作者针对**他自己那张图**的动作，
-而这是**量他 32 张成片**得到的平均形状。以量到的为准。
-
-### L3 混色（按色相带，**归一后**：相对彩度 = 带内 C / 全图 C 中位）
-| 色相带 | 鹿井 | 我们 | 要动 |
-|---|---|---|---|
-| 0–30° 红 | 2.97 | 2.52 | C ×1.18 |
-| 30–60° 橙/肤 | 3.60 | 2.63 | C ×1.37 |
-| 60–90° 黄 | 3.02 | 2.75 | C ×1.10 |
-| 90–120° 黄绿 | 2.53 | **2.97** | C ×0.85 |
-| 120–150° 绿 | 3.01 | 2.63 | C ×1.14 |
-| 150–180° 青绿 | 2.49 | 2.14 | C ×1.16 |
-| 180–210° 青 | 2.16 | 2.10 | 不动 |
-| 210–240° 蓝 | 2.31 | 2.26 | 不动（只提亮） |
-| 240–270° 蓝紫 | 2.43 | **2.67** | C ×0.91 |
-| 270–300° 紫 | 2.72 | **2.91** | C ×0.93 |
-| 300–360° | ≈ | ≈ | 不动 |
-
-⇒ **暖色（红/橙/绿/青绿）我们彩度不够，冷色（黄绿/蓝紫/紫）太艳。**
-这一点跟教程里「绿降饱和、蓝往青走」的**方向**是合的（只是具体数值要按量到的来）。
-⚠ 归一之后仍然是我方内容 vs 他的内容，所以**只取"符号一致、量级 >10%"的带**，弱差别不动。
 """
 from __future__ import annotations
 
@@ -52,7 +33,7 @@ from . import config as C
 
 
 # ---------------------------------------------------------------------------
-# L2 色彩分级：按亮度加权的 a*/b* 偏移
+# 工具
 # ---------------------------------------------------------------------------
 def _ramp(x, lo, hi):
     """0→1 的平滑窗（lo 处 0、hi 处 1；lo>hi 时反向）。"""
@@ -77,33 +58,23 @@ def _sh_hi_weights(L, cfg):
     return w_sh, w_hi, w_deep
 
 
+def _band_weight(H, center, half):
+    """色相软窗（cos 过渡，绕环）。"""
+    d = np.abs(((H - center + 180.0) % 360.0) - 180.0)
+    if d.max() <= half:
+        pass
+    w = np.clip(1.0 - (d - half * 0.35) / (half * 0.65), 0.0, 1.0)
+    return w * w * (3.0 - 2.0 * w)
+
+
 # ---------------------------------------------------------------------------
 # L3 混色：按色相带调彩度（软过渡，不是硬切 8 个色相）
 # ---------------------------------------------------------------------------
 # ★★ 靶子（09-24 迭代）：**小红书胶片人像话题的观众审美**。
 #   参考集：`大师作品/xhs_抓取/`（72 个文件夹 413 张，抽样 80）。
 #   口径 = 该色相带的 C 中位 ÷ 整张 C 中位，**内容归一**。
-#
-#   | 色相带   | 小红书 | 鹿井 | 我们(未迭代) | 我们该动 |
-#   |---------|-------|------|------------|---------|
-#   | 0-30 红  | 2.27  | 2.99 | 2.57 | ×1.04 ⇒ 不动 |
-#   | 30-60 橙 | 2.74  | 3.60 | 2.79 | **不动（已经在位）** |
-#   | 60-90 黄 | 2.55  | 3.01 | 2.67 | ×1.05 |
-#   | 90-120 黄绿| 2.47 | 2.51 | 2.56 | ×0.82 |
-#   | 120-150 绿| 2.28 | 3.08 | 2.51 | ×1.00 |
-#   | 150-180 青绿| 1.75| 2.50 | 2.00 | ×1.00 |
-#   | 180-210 青| 1.78 | 2.15 | 1.85 | ×1.00 |
-#   | 210-240 蓝| 1.92 | 2.31 | 2.05 | ×1.00 |
-#   | 240-270 蓝紫| 2.05| 2.43 | 2.18 | ×0.86 |
-#   | 270-300 紫| 2.51 | 2.72 | 2.42 | ×0.97 |
-#   | 300-330 品红| 1.74| 2.09 | 2.09 | **×0.83** |
-#   | 330-360 粉红| 1.82| 2.40 | 2.22 | **×0.82** |
-#
 #   ⇒ 一句话：**肤色（橙）保持，只压"杂色"（黄绿 / 蓝紫 / 品红 / 粉红）。**
-#     这就是那几篇调色教程反复说的「**刻意控制色彩数量**」——
-#     干净不是把整张降饱和，是**让少数色相占主导、把边缘色相收掉**。
-#   ⚠ 注意跟上一版的区别：上一版按鹿井，是"暖色提、冷色压"；按小红书反过来 ——
-#     小红书那批**整体更素**（相对彩度 1.7~2.5），而且**橙正好在位**，不用再加。
+#     这就是那几篇调色教程反复说的「**刻意控制色彩数量**」。
 BANDS = (
     (15.0, 34.0, -0.08, +3.0),     # 红（小红书 ×1.04，按"不动"处理）
     (45.0, 34.0, +0.20, +2.0),     # 橙 / 肤色（**保留**：量出来正好在位）
@@ -118,99 +89,48 @@ BANDS = (
 )
 
 
-def _band_weight(H, center, half):
-    """色相软窗（cos 过渡，绕环）。"""
-    d = np.abs(((H - center + 180.0) % 360.0) - 180.0)
-    if d.max() <= half:
-        pass
-    w = np.clip(1.0 - (d - half * 0.35) / (half * 0.65), 0.0, 1.0)
-    return w * w * (3.0 - 2.0 * w)
-
-
-# ---------------------------------------------------------------------------
-# 主入口
-# ---------------------------------------------------------------------------
-
-def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
-    """在**成片**（显示域）上做分色 + 混色。
-
-    `parsed`：**调用方已经算好的一次** `face.parse(...)`（`pipeline` 在**解码后**那张图上算的）。
-      ★★★ 09-26 为什么要传下来（两件事一起解决）：
-      ① **喂哪张图**：链尾（胶片出图后）画面发白 ⇒ 分割模型认不出脸。`pipeline` 老路专门
-         把掩膜挪到"解码后算一次"，新链路（`TONE_AFTER_ENGINE`）又在这里现算 ⇒ 撞回同一个病
-         （实测同一批 12 张：解码后检出 12/12、引擎出图后 11/12）。
-      ② **白付两次**：本函数里 `region.weights` 和 L4 各要一份掩膜，同一份像素调两遍分割
-         （实测 273 ms/次）。传进来就只算一次。
-      `None` ⇒ 本函数自己算（单独调用时的老行为，逐位不变）。
-
-    @returns {(numpy.ndarray, dict)} 出图 + 报告（能自查动了多少）
-    """
-    if not bool(getattr(cfg, 'GRADE_ENABLE', False)):
-        return np.clip(np.asarray(disp, np.float64), 0.0, 1.0), dict(applied=False)
-
-    # ★★ 靶按**预设**取（同 tone）；`scene` 是「按场景分参数」的入口（见 `targets.for_stock`）
+def _tgt_of(stock, scene):
+    """取靶（按预设 + 场景）。失败 ⇒ None（各段自己退回 config 兜底）。"""
     try:
         from . import targets as _T
-        _tg = _T.for_stock(stock, scene)
+        return _T.for_stock(stock, scene)
     except Exception:                                          # noqa: BLE001
-        _tg = None
-    d = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
-    lab = color.to_lab(d)
-    L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
-    Lm, am, bm = float(np.median(L)), float(np.median(a)), float(np.median(b))
+        return None
 
-    # ★★★ 09-26：传进来的那次解析，**只在这一层用一次**（region 与 L4 共用）。
-    #   ⚠ 尺寸对不上就不认（掩膜是在另一张同尺寸图上算的；换了渲染尺寸必须现算）。
-    _pz = parsed
-    if _pz is not None:
-        _mk0 = (_pz or {}).get('masks') or {}
-        _fs0 = _mk0.get('face_skin')
-        if _fs0 is None or tuple(np.shape(_fs0)[:2]) != tuple(L.shape):
-            _pz = None
 
-    # ★★★ 颜色层跑哪几段（`config.GRADE_SCOPE`）：'off' / 'skin' / 'all'。
-    #   为什么要有这个开关：**肤色（人像）**与**分色/混色（整幅颜色）**是两件事 ——
-    #   前者是"按人像区域做局部修正"，后者是"按亮度段/色相带做整幅染色"。
-    #   分阶段跑才能单独看清一件事的效果（不然两件事混在一起，改了说不清是谁的功劳）。
-    #   ⚠ 做法：进 L2/L3 之前存一份原图，若 scope='skin' 就在 L4 之前**还原** ——
-    #     这样 L4 是在**没被分色混色动过**的图上做，且 L2/L3 那些量仍然算出来（只用于报告）。
-    _scope = str(getattr(cfg, 'GRADE_SCOPE', 'all')).lower()
-    _a0, _b0, _L0 = a.copy(), b.copy(), L.copy()
+# ---------------------------------------------------------------------------
+# L2 分色：按亮度段把 a*/b* 往靶收
+# ---------------------------------------------------------------------------
+def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
+    """**L2 分色** —— 只改 a*/b*（暗/中/高各一段 + 最深阴影）。
 
-    # ---------- L2 色彩分级 ----------
+    ★ 口径全部是「**相对整张中位**」（`sh_abs` / `hi_abs` / `mid_abs`）。
+    ★ 逐图往靶收（不是加固定偏移）：固定偏移跟测值不是 1:1，换条预设就失准。
+    ★ 限幅：靶里 `split_limit` 优先，否则 config 的 `GRADE_SPLIT_LIMIT`。
+    @returns {(a, b, dict)} 新的 a/b + 本段报告（不改 L）
+    """
     w_sh, w_hi, w_deep = _sh_hi_weights(L, cfg)
-
-    # ★★ 分色：**逐图往靶收**（跟影调层一个哲学）——
-    #   先量"这张图当前的分色"，再补到大师的绝对值。**不是**加一个固定偏移：
-    #   ① 固定偏移跟"分色测值"不是 1:1（加 a 会同时动整体中位）
-    #   ② 换条预设引擎出来的底就不一样，"固定偏移"立刻失准
-    #   ⚠ 分色是**相对量**，不像影调那样"往上没数据" ⇒ 这里**可以双向**补，但要有上限。
-    _bg = (_tg or {}).get('band_gain') or [0.0] * 12
-    # ★ 09-28：**允许靶里覆盖分色限幅**（`split_limit`）——
-    #   原来只有全局 `cfg.GRADE_SPLIT_LIMIT`（2.5）⇒ 放开它会连带影响全部 9 条预设。
-    #   实测：把 `mid_abs[0]` 从 0.77 改到 −4.0（要动 4.8），**实测只动 0.13** ⇒ 被这个限幅截住。
-    _lim = float((_tg or {}).get('split_limit')
-                 if (_tg or {}).get('split_limit') is not None
+    Lm, am, bm = m['Lm'], m['am'], m['bm']
+    _lim = float((tg or {}).get('split_limit')
+                 if (tg or {}).get('split_limit') is not None
                  else getattr(cfg, 'GRADE_SPLIT_LIMIT', 2.5))
-    if _tg and _tg.get('sh_abs'):
+    if tg and tg.get('sh_abs'):
         _p25, _p90 = np.percentile(L, 25.0), np.percentile(L, 90.0)
         _msh, _mhi = L <= _p25, L >= _p90
         cur = (float(a[_msh].mean() - am), float(b[_msh].mean() - bm),
                float(a[_mhi].mean() - am), float(b[_mhi].mean() - bm))
-        tgt = (float(_tg['sh_abs'][0]), float(_tg['sh_abs'][1]),
-               float(_tg['hi_abs'][0]), float(_tg['hi_abs'][1]))
+        tgt = (float(tg['sh_abs'][0]), float(tg['sh_abs'][1]),
+               float(tg['hi_abs'][0]), float(tg['hi_abs'][1]))
         d4 = [float(np.clip(tgt[i] - cur[i], -_lim, _lim)) for i in range(4)]
         sha, shb, hia, hib = d4
     else:
         sha, shb = float(getattr(cfg, 'GRADE_SH_A', 0.0)), float(getattr(cfg, 'GRADE_SH_B', 0.0))
         hia, hib = float(getattr(cfg, 'GRADE_HI_A', 0.0)), float(getattr(cfg, 'GRADE_HI_B', 0.0))
     dpa, dpb = float(getattr(cfg, 'GRADE_DEEP_A', 0.0)), float(getattr(cfg, 'GRADE_DEEP_B', 0.0))
-    # ★ 09-24 新增：**中间调**那一段也能收（原来只有暗部 w_sh / 高光 w_hi 两段，
-    #   L 的 25%~75% 这一段**没人管**）。量鹿井 32 张时发现：问题恰恰出在中间调 ——
-    #   他的中间调 Δa*/Δb* = -0.37/+0.45（几乎中性），而我们中调 b* 比整张中位高 10 格以上
+    # ★ 09-24：**中间调**那一段也能收（原来只有 w_sh / w_hi 两段，L 的 25%~75% **没人管**）。
+    #   量鹿井时发现问题恰恰在中间调 —— 他几乎中性，而我们中调 b* 比整张中位高 10 格以上
     #   ⇒ 肤色落在这一段，观感就是"发黄发暖"。
-    #   靶字段 = `mid_abs`（相对整张中位的 a*/b*），没这个字段就恒等于 0（对别的预设零影响）。
-    _mid = (_tg or {}).get('mid_abs')
+    _mid = (tg or {}).get('mid_abs')
     mma = mmb = 0.0
     if _mid:
         _p25m, _p75m = np.percentile(L, 25.0), np.percentile(L, 75.0)
@@ -220,37 +140,47 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
             mmb = float(np.clip(float(_mid[1]) - (float(b[_mm].mean()) - bm), -_lim, _lim))
     w_mid = np.clip(1.0 - w_sh - w_hi, 0.0, 1.0)
     # ★★★ 09-28：**中调权重归一化**（和肤色层 `GRADE_SKIN_W_REF` 同一招）。
-    #   为什么：`w_sh` 和 `w_hi` 的过渡带**各占 0.75 个 span**（span = P75−P25）
-    #   ⇒ 两条合起来 1.5 个 span ⇒ **把中调 `w_mid` 挤得只剩一点点**
-    #   ⇒ 实测后果：`mid_abs[0]` 从 0.77 改到 **−6**（要动 ~6.8）、限幅也放开到 12，
-    #     而**中 a* 只从 2.77 挪到 2.10（动 0.67）** ⇒ 修正被权重吃掉。
-    #   ⇒ 归一化成 `min(w_mid / W_REF, 1)`：**中调的心部（w_mid ≥ W_REF）修满**、
-    #     过渡带照旧渐变。**设 1.0 = 关**（逐位回老行为）。
+    #   为什么：`w_sh`/`w_hi` 的过渡带**各占 0.75 个 span** ⇒ 合起来 1.5 span
+    #   ⇒ **把中调 `w_mid` 挤得只剩一点点**（实测全图中位 0.000、中调区均值 0.231）
+    #   ⇒ 实测后果：`mid_abs[0]` 从 0.77 改到 **−6**、限幅开到 12，中 a* 只挪了 0.67。
+    #   **设 1.0 = 关**（逐位回老行为）。
     _wmid_ref = float(getattr(cfg, 'GRADE_SPLIT_W_REF', 1.0) or 1.0)
     if _wmid_ref < 1.0 - 1e-9:
         w_mid = np.minimum(w_mid / max(_wmid_ref, 1e-6), 1.0)
     da2 = sha * w_sh + hia * w_hi + dpa * w_deep + mma * w_mid
     db2 = shb * w_sh + hib * w_hi + dpb * w_deep + mmb * w_mid
-    a = a + da2
-    b = b + db2
+    info = dict(d_sh=(float(sha), float(shb)), d_hi=(float(hia), float(hib)),
+                d_deep=(float(dpa), float(dpb)), d_mid=(float(mma), float(mmb)),
+                split_limit=_lim)
+    return a + da2, b + db2, info
 
-    # ---------- L3 混色（按色相带改彩度 / 亮度）----------
+
+# ---------------------------------------------------------------------------
+# L3 混色：按色相带改彩度（+ 带内亮度偏移）
+# ---------------------------------------------------------------------------
+def mix(disp, L, a, b, tg, cfg, parsed, m):
+    """**L3 混色** —— 只改彩度（总量 + 按色相分配）+ 色相带内的少量亮度。
+
+    ★ 灰色像素不动（`live` 窗）—— 否则会把中性轴一起推偏（digitalFilm 那条教训）。
+    ★ 色相带增益**按语义区域加权**（`GRADE_REGION_SCOPE='env'`）—— 环境增益不落到人身上。
+    ★ 最后**归一**（把整张彩度中位拉回 "总量 × sat"）⇒ 「形状归曲线、总量归 sat」。
+    @returns {(L, a, b, dict)} 新的 L/a/b + 本段报告
+    """
+    Lm, am, bm = m['Lm'], m['am'], m['bm']
     Cc = np.sqrt(a * a + b * b)
     H = np.degrees(np.arctan2(b, a)) % 360.0
-    # 灰色像素不动（否则会把中性轴一起推偏 —— digitalFilm 那条教训）
     cmin = float(getattr(cfg, 'GRADE_C_MIN', 12.0))
     live = _ramp(Cc, cmin * 0.6, cmin * 1.4)
     kc = np.zeros_like(Cc)
     dl = np.zeros_like(Cc)
+    _bg = (tg or {}).get('band_gain') or [0.0] * 12
     # ★★ 09-24：色相带的增益**按语义区域加权** —— 环境增益不落到人身上。
-    #   原来自查出来的病根：按**色相带**分区 ≈ 用"能算的量（色相）"代替
-    #   "需要判断的量（这是什么）"，跟 L4 那次"用色相窗当人脸"是同一类错。
-    #   ⇒ "绿色的都降饱和"会误伤人的衣服；现在环境增益乘 `env_scale`（= 1 − 人）。
+    #   原来自查出来的病根：按**色相带**分区 ≈ 用"能算的量（色相）"代替"需要判断的量（这是什么）"。
     _resc = np.ones(L.shape, np.float64)
     try:
         if str(getattr(cfg, 'GRADE_REGION_SCOPE', 'env')).lower() == 'env':
             from . import region as _R
-            _rm = _R.weights(np.clip(disp, 0.0, 1.0), cfg, parsed=_pz)   # ★ 复用同一次解析
+            _rm = _R.weights(np.clip(disp, 0.0, 1.0), cfg, parsed=parsed)   # ★ 复用同一次解析
             _resc = _rm['env_scale']
     except Exception:                                          # noqa: BLE001
         _resc = np.ones(L.shape, np.float64)
@@ -267,242 +197,200 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
     dl = np.clip(dl * scale, -6.0, 8.0)
 
     newC = np.maximum(Cc * (1.0 + kc), 0.0)
-    # ★★ 09-26 新增：**彩度压缩曲线**（压中低彩度、保住高彩度）。
-    #   为什么需要它：`sat` 是**整体等比缩**，只能同时把中位和 P90 一起拉 —— 而实测
-    #   大师的彩度分布比我们**更开**（鹿井 747 块 C90/C50 = 3.21，我们 2.70）。
-    #   用 sat 单独去对中位，P90 就会掉过头（52 张全量实测：中位 11.3→7.1 对上了，
-    #   但 P90 30.5→19.1、脸彩度 23.3→14.4 都掉过头）。
+    # ★★ 09-26：**彩度压缩曲线**（压中低彩度、保住高彩度）。
+    #   为什么需要：`sat` 是**整体等比缩**（中位和 P90 一起拉），而大师的分布比我们**更开**。
     #   ⇒ 形状归曲线、总量归 sat，两个自由度分开。
-    #   曲线：k(C) = k_lo + (k_hi - k_lo) * smoothstep(C; C_lo, C_hi)
     #   `k_lo < k_hi` ⇒ 低彩度压得多、高彩度压得少 = 把分布拉开。
-    _klo = (_tg or {}).get('c_k_lo')
-    _khi = (_tg or {}).get('c_k_hi')
+    _klo = (tg or {}).get('c_k_lo')
+    _khi = (tg or {}).get('c_k_hi')
     if _klo is not None and _khi is not None:
-        _Clo = float((_tg or {}).get('c_lo', 8.0))
-        _Chi = float((_tg or {}).get('c_hi', 35.0))
+        _Clo = float((tg or {}).get('c_lo', 8.0))
+        _Chi = float((tg or {}).get('c_hi', 35.0))
         _t = np.clip((Cc - _Clo) / max(_Chi - _Clo, 1e-6), 0.0, 1.0)
         _t = _t * _t * (3.0 - 2.0 * _t)                       # smoothstep
         _k = float(_klo) + (float(_khi) - float(_klo)) * _t
-        # ★★ 09-26：**曲线上的人（脸/身体）豁免** —— 跟 L3 色相带增益的约定一致
-        #   （`_resc` = env_scale = 1 − 人；"环境增益不落到人身上"）。
-        #   为什么必须豁免：曲线本来就是"压中低彩度"，而**脸的彩度本来就低**（~16），
-        #   一起压等于把脸也做素了 —— 52 张全量实测脸彩度 23.3→14.4（靶 22.4）就是这个来的。
+        # ★★ 09-26：**曲线上的人（脸/身体）豁免**（跟 L3 色相带增益的约定一致）。
+        #   为什么必须豁免：曲线本来就是"压中低彩度"，而**脸的彩度本来就低** ⇒ 一起压等于把脸做素。
         _k = 1.0 - _resc * (1.0 - _k)
         newC = newC * _k
     nz = np.maximum(Cc, 1e-6)
     # ★★ 归一：**把整张彩度中位拉回原值**（只重新分配、不改总量）。
-    #   为什么必须有这一步：靶子是「某色相带的 C ÷ 整张 C 中位」——
-    #   分母一动，所有带的比值都跟着动。09-24 实测过：不归一的时候，
-    #   我把黄绿/蓝紫/品红**往下压**，结果"相对彩度"反而**全线上升**
-    #   （分母被压小了）⇒ 看数会得出完全反的结论。
-    #   归一之后，"哪几个带变艳/变素"才是真的。
-    #   `GRADE_SAT` 是**另一个**旋钮：整体更素/更艳（默认 1.0 = 总量不动）。
-    # ⚠⚠ 09-24 修了一个我自己引入的 bug：原来 `_m0/_m1` 取的是**彩色像素（live>0.5）的中位**，
-    #   但乘的时候乘到了**所有**像素上 ⇒ 灰像素被多乘一次 ⇒ 整张彩度**虚涨 46%**、
-    #   画面发飘发白（SV 一眼看出"脸崩了"）。
-    #   ⇒ 改成**整张中位**归一 —— 这也正好跟靶的口径一致（靶 = 带内 C ÷ **整张** C 中位）。
-    # ★ 09-24：**靶里可以带 `sat` 覆盖 config** —— 每条预设的"整体浓淡"不同
-    #   （鹿井那条要比其余 9 条素一档），一个全局 config 装不下这件事。
-    _sat = float((_tg or {}).get('sat') if (_tg or {}).get('sat') is not None
+    #   ⚠⚠ 09-24 修过一个 bug：原来 `_m0/_m1` 取"彩色像素的中位"但乘到**所有**像素上
+    #     ⇒ 灰像素被多乘一次 ⇒ 整张彩度**虚涨 46%**、画面发飘发白。⇒ 改成**整张中位**归一。
+    _sat = float((tg or {}).get('sat') if (tg or {}).get('sat') is not None
                  else getattr(cfg, 'GRADE_SAT', 1.0))
     _m0 = float(np.median(Cc))
     _m1 = float(np.median(newC))
     newC = newC * (_sat * _m0 / max(_m1, 1e-6)) if _m1 > 1e-6 else newC
-    a = a * (newC / nz)
-    b = b * (newC / nz)
-
+    a2 = a * (newC / nz)
+    b2 = b * (newC / nz)
     # 亮度偏移：只作用在有颜色的地方（灰区不动）
-    L = np.clip(L + dl * live, 0.0, 100.0)
+    L2 = np.clip(L + dl * live, 0.0, 100.0)
+    info = dict(c_gain=[(c, (k + (_bg[i] if i < len(_bg) else 0.0)))
+                        for i, (c, _, k, _) in enumerate(BANDS)],
+                sat=_sat, dL_bands=(float(np.min(dl)), float(np.max(dl))))
+    return L2, a2, b2, info
 
-    # ★★ scope='skin' ⇒ 分色/混色**不生效**：还原成没被动过的 a*/b*/L，
-    #   让 L4 在**干净的底**上做（L2/L3 那些量上面已经算出来了，只用于报告）。
-    if _scope not in ('all', 'color'):
-        a, b, L = _a0, _b0, _L0
 
-    # ===================== L4 肤色（09-24 重做） =====================
-    # ★★★ 为什么重做：原来用**色相窗（9~61°）**定位肤色 —— 实测它覆盖的像素里
-    #   **只有 10.5% 是真皮肤**，其余 89.5% 是墙/木头/黄叶
-    #   ⇒ 调的不是脸、是把背景提亮了（"脸崩了"就是这个来的）。
-    #   ⇒ 现在用**人脸皮肤掩膜**（`face.py`，MediaPipe，跟 Sony / rodrigorcz 两家同源）。
-    # ★ 三件事都往靶收（不是只调亮度）：相对亮度 · 相对彩度 · **色相角**
-    #   （量出来我们跟増田的差是「色相角偏黄 5.7°」+「彩度偏素 0.96」，光调亮度救不了）
-    # ★ 脸 / 身体分开：脸严格、身体宽一点（都有掩膜）
-    # ★ 提亮量大的时候对肤色区做一次**双边滤波**（rodrigorcz 那篇的做法，治提亮后的色阶断裂）
-    _dl = _dc = _dh = 0.0
+# ---------------------------------------------------------------------------
+# L4 肤色：按人脸掩膜修「脸的亮度 / 彩度 / 色相 / 明暗对比」
+# ---------------------------------------------------------------------------
+def skin(disp, L, a, b, tg, cfg, parsed):
+    """**L4 肤色** —— 只动脸（用 `_wn` 羽化权重），只修"脸自己的"四个量。
+
+    ★ 三件事都往靶收（不是只调亮度）：**绝对 L\\***（`skin_L_abs`）· **绝对彩度**（`skin_C_abs`）·
+      **色相角**（`skin_hue`）。为什么用绝对值：相对量会随"整张多暗"漂（实测漂 39 格）。
+    ★ 脸 / 身体分开：脸严格、身体宽一点。
+    ★ 掩膜边界**羽化**（出处 **CN104038704A**：以人脸区域为边界做亮度平滑过渡）。
+    ★ 权重**归一化**（`GRADE_SKIN_W_REF`）：软权重脸上中位只有 ~0.70 ⇒ 修正只做到七成。
+    ★ **明暗对比**（`skin_contrast`）：绕脸中位拉开 ⇒ 暗部更暗、亮部更亮（治"脸太平"）。
+    @returns {(L, a, b, dict)} 新的 L/a/b + 本段报告
+    """
+    info = dict(skin_dL=0.0, skin_dC=0.0, skin_dH=0.0, skin_mask='none',
+                skin_face_seen=False, skin_model_ok=False, skin_w_med=None,
+                skin_limit_l=None, skin_mask_src=('given' if parsed is not None else 'self'),
+                skin_contrast=float((tg or {}).get('skin_contrast', 1.0) or 1.0))
+    if not (tg and tg.get('skin_l') is not None):
+        return L, a, b, info
+
+    # 限幅：**靶里有就用靶、没有才退回 config**（三行写法统一）。
+    # ⚠ 用 `if ... is not None` 而不是 `or`：`or` 会把**合法的 0**（= 关掉这一路修正）当成"没设"。
+    _lim_l = float((tg or {}).get('skin_limit_l')
+                   if (tg or {}).get('skin_limit_l') is not None
+                   else getattr(cfg, 'GRADE_SKIN_LIMIT_L', 6.0))
+    _lim_c = float((tg or {}).get('skin_limit_c')
+                   if (tg or {}).get('skin_limit_c') is not None
+                   else getattr(cfg, 'GRADE_SKIN_LIMIT_C', 0.0))
+    _lim_h = float((tg or {}).get('skin_limit_h')
+                   if (tg or {}).get('skin_limit_h') is not None
+                   else getattr(cfg, 'GRADE_SKIN_LIMIT_H', 8.0))
+    info['skin_limit_l'] = _lim_l
+
+    _pzr = parsed
+    if _pzr is None:
+        try:                                    # 没传进来就自己算一遍（单独调用时的老行为）
+            from . import face as _F
+            _pzr = _F.parse(np.clip(disp, 0.0, 1.0))
+        except Exception:                                        # noqa: BLE001
+            _pzr = None
+    _w = None
     _mask_src = 'none'
-    _face_seen = False          # ★ 09-26：报告里要说清「检测器认没认出脸」，先给默认值
-    _model_ok = False           # ★ 09-26：分割模型跑起来了没有（决定能不能退回色相窗）
-    if _tg and _tg.get('skin_l') is not None:
-        # ★★ 提脸的幅度上限：**靶里有就用靶、没有才退回 config**（跟下面 `_lim_c` / `_lim_h` 统一）。
-        #   ⚠ 原来这三行里**只有 `_lim_c` 和 `_lim_h` 会读靶，`_lim_l` 只读 config**
-        #     ⇒ 按场景放开"提脸的幅度"这件事**根本没生效**过（今天实测踩到）。
-        _lim_l = float((_tg or {}).get('skin_limit_l')
-                       if (_tg or {}).get('skin_limit_l') is not None
-                       else getattr(cfg, 'GRADE_SKIN_LIMIT_L', 6.0))
-        # ★★ 09-26 修一个 bug：这三行原来只有 `_lim_h` 支持按靶覆盖，`_lim_c` **只读 config**
-        #   ⇒ targets 里写的 `skin_limit_c`（0.35→0.5→0.6）**从来没生效过**，
-        #     那两次改动是空转，而且当时把脸彩度的变化**错误归因**给了它。
-        #   三行现在写法统一：**靶里有就用靶、没有才退回 config**。
-        #   ⚠ 用 `if ... is not None` 而不是 `or`：`or` 会把**合法的 0**（= 关掉这一路修正）
-        #     当成"没设"而退回 config —— `sat` / `skin_limit_h` 那两处也有同样的坑。
-        _lim_c = float((_tg or {}).get('skin_limit_c')
-                       if (_tg or {}).get('skin_limit_c') is not None
-                       else getattr(cfg, 'GRADE_SKIN_LIMIT_C', 0.0))
-        _lim_h = float((_tg or {}).get('skin_limit_h')
-                       if (_tg or {}).get('skin_limit_h') is not None
-                       else getattr(cfg, 'GRADE_SKIN_LIMIT_H', 8.0))
-        _w = None
-        _face_seen = False                          # ★ 检测器（YuNet）到底认没认出脸
-        _model_ok = False                           # ★ 分割模型跑起来了没有
-        _pzr = _pz
-        if _pzr is None:
-            try:                                    # ① 没传进来就自己算一遍（老行为）
-                from . import face as _F
-                _pzr = _F.parse(np.clip(disp, 0.0, 1.0))
-            except Exception:                                        # noqa: BLE001
-                _pzr = None
-        if _pzr is not None:
-            _model_ok = True
-            _mk = (_pzr or {}).get('masks') or {}
-            _fs = _mk.get('face_skin')
-            if _fs is not None and float(np.max(_fs)) > 0.05:
-                _w = np.clip(np.asarray(_fs, np.float64) * 1.6, 0.0, 1.0)   # 脸：严格
-                # ★★★ 09-26 修的正是这里：**"有没有脸"以前根本没查**。
-                #   `face_skin` 是**分割**出来的"脸皮肤"类，**检不到脸时它照样有值**
-                #   （实测 12 张：引擎出图后检测器只认出 11 张，但 12 张的 face_skin 都非空）
-                #   ⇒ 只看"它非空"就动手 = 假装有脸，报告里还写 'face'。
-                #   现在按**检测器的结论**分两条：
-                #     · 认到脸（过了那三道防假脸闸）⇒ 脸严格 + 身体皮肤松一点（老行为）
-                #     · 没认到脸（侧脸 / 背影 / 被挡 —— SV 明确说这些片子也该管）
-                #       ⇒ **只用 face_skin**，并如实标 `seg`，别冒充 `face`
-                if (_pzr or {}).get('face') is not None:
-                    _face_seen = True
-                    _mask_src = 'face'
-                    if _mk.get('skin') is not None:
-                        _w = np.maximum(_w, np.clip(np.asarray(_mk['skin'], np.float64), 0.0, 1.0)
-                                        * float(getattr(cfg, 'GRADE_SKIN_BODY_W', 0.5)))
-                else:
-                    _mask_src = 'seg'
-        if _w is None:
-            if _model_ok:
-                # ★★★ 09-26：模型**能跑**、但整张没有皮肤 ⇒ **什么都别做**。
-                #   原来这里退回色相窗，而那个窗正是这次重做要废掉的东西
-                #   （实测窗内只有 10.5% 是真皮肤，剩下是墙/木头/黄叶）。没人的风景里
-                #   "按色相窗当成皮肤"会把木头/黄墙提亮 —— 那就是当年"脸崩"的来源。
-                _w = np.zeros(L.shape, np.float64)
-                _mask_src = 'none'
+    _face_seen = False
+    _model_ok = False
+    if _pzr is not None:
+        _model_ok = True
+        _mk = (_pzr or {}).get('masks') or {}
+        _fs = _mk.get('face_skin')
+        if _fs is not None and float(np.max(_fs)) > 0.05:
+            _w = np.clip(np.asarray(_fs, np.float64) * 1.6, 0.0, 1.0)   # 脸：严格
+            # ★★★ 09-26 修：**"有没有脸"以前根本没查**（`face_skin` 检不到脸时也非空
+            #   ⇒ 只看"非空"就动手 = 假装有脸）。现在按**检测器的结论**分两条：
+            #     · 认到脸 ⇒ 脸严格 + 身体皮肤松一点 · 没认到（侧脸/背影/被挡）⇒ **只用 face_skin**，标 `seg`
+            if (_pzr or {}).get('face') is not None:
+                _face_seen = True
+                _mask_src = 'face'
+                if _mk.get('skin') is not None:
+                    _w = np.maximum(_w, np.clip(np.asarray(_mk['skin'], np.float64), 0.0, 1.0)
+                                    * float(getattr(cfg, 'GRADE_SKIN_BODY_W', 0.5)))
             else:
-                # 模型**不可用**（缺依赖/模型文件）⇒ 退回色相窗，有总比没有好
-                _w = _band_weight(H, 35.0, 26.0) * live * 0.6
-                _mask_src = 'hue'
-        # ★★★ 09-27：**掩膜边界要羽化**（不羽化的话，"提脸"的边界会看出分割感）。
-        #   出处：**CN104038704A**「提亮人脸后，**以人脸区域为边界做亮度平滑过渡**，
-        #         过渡范围取**人脸区域宽度的一半**」。
-        #   · 原来脸部权重是 `clip(face_skin × 1.6, 0, 1)` —— **乘 1.6 把软过渡带压窄**、边缘发硬；
-        #     而且全文**没有任何羽化**（只有一处双边滤波，那是治提亮后的色阶断裂，不是羽化边界）。
-        #   · 现在：`_w` **合成完之后统一羽化一次**（脸 ∪ 身体皮肤都在里面 ⇒ 接缝一起被抹平），
-        #     并把峰值**归一回 1**（高斯模糊会降峰，不归一会让脸中心也变弱）。
-        #   · σ = 脸的**等效边长** × `GRADE_SKIN_FEATHER`（默认 1/6 ⇒ 过渡约 ±3σ ≈ 脸宽的一半，对上专利）。
-        #     ⚠ 设 0 即关闭（回到老行为）。
-        _fe = float(getattr(cfg, 'GRADE_SKIN_FEATHER', 0.0) or 0.0)
-        if _fe > 0 and float(_w.max()) > 0.05:
-            from scipy.ndimage import gaussian_filter
-            _side = float(np.sqrt(max(int((_w > 0.3).sum()), 1)))     # 脸的等效边长（像素）
-            _wb = gaussian_filter(_w, max(1.0, _side * _fe))
-            _mx = float(_wb.max())
-            if _mx > 1e-6:
-                _w = np.clip(_wb / _mx, 0.0, 1.0)                     # 峰值归一 ⇒ 脸中心仍是 1
-        _sel = _w > 0.5
-        if float(_w.max()) > 0.05 and bool(_sel.any()):      # ★ 必须检查非空：空窗口时
-            _Cc2 = np.sqrt(a * a + b * b)                   #   np.median([]) = nan ⇒ 整张被写成 nan
+                _mask_src = 'seg'
+    if _w is None:
+        if _model_ok:
+            # ★★★ 09-26：模型**能跑**、但整张没有皮肤 ⇒ **什么都别做**（别退回色相窗 ——
+            #   那个窗实测只有 10.5% 是真皮肤，会把木头/黄墙提亮，是当年"脸崩"的来源）。
+            _w = np.zeros(L.shape, np.float64)
+            _mask_src = 'none'
+        else:
+            # 模型**不可用**（缺依赖/模型文件）⇒ 退回色相窗，有总比没有好
+            CcH = np.sqrt(a * a + b * b)
+            H = np.degrees(np.arctan2(b, a)) % 360.0
+            cmin = float(getattr(cfg, 'GRADE_C_MIN', 12.0))
+            _w = _band_weight(H, 35.0, 26.0) * _ramp(CcH, cmin * 0.6, cmin * 1.4) * 0.6
+            _mask_src = 'hue'
+    # ★★★ 09-27：**掩膜边界要羽化**（不羽化的话，"提脸"的边界会看出分割感）。
+    #   σ = 脸的**等效边长** × `GRADE_SKIN_FEATHER`（默认 1/6 ⇒ 过渡约 ±3σ ≈ 脸宽的一半，对上专利）。
+    _fe = float(getattr(cfg, 'GRADE_SKIN_FEATHER', 0.0) or 0.0)
+    if _fe > 0 and float(_w.max()) > 0.05:
+        from scipy.ndimage import gaussian_filter
+        _side = float(np.sqrt(max(int((_w > 0.3).sum()), 1)))     # 脸的等效边长（像素）
+        _wb = gaussian_filter(_w, max(1.0, _side * _fe))
+        _mx = float(_wb.max())
+        if _mx > 1e-6:
+            _w = np.clip(_wb / _mx, 0.0, 1.0)                     # 峰值归一 ⇒ 脸中心仍是 1
+    info['skin_mask'] = _mask_src
+    info['skin_face_seen'] = bool(_face_seen)
+    info['skin_model_ok'] = bool(_model_ok)
 
-            _cL = float(np.median(L[_sel]) - np.median(L))
-            _aL = float(np.median(L[_sel]))          # ★ 脸自己的绝对 L*（见下面 skin_L_abs）
-            _cC = float(np.median(_Cc2[_sel])) / max(float(np.median(_Cc2)), 1e-6)
-            _cH = float(np.degrees(np.arctan2(float(np.median(b[_sel])),
-                                              float(np.median(a[_sel])))) % 360.0)
-            # ★★ 09-26 新增**绝对语义** `skin_L_abs`：脸的绝对 L*。
-            #   为什么：原来只有相对语义 `skin_l`（= 脸L − 整张L50）。但实测大师 728 张 ——
-            #     **他的脸 L* 恒定在 67（各组 65.7~68.3，波动 ±1.3）**，
-            #     而 **「脸−整张」在他的不同场景里从 −4.4 漂到 +34.9（差 39）**，
-            #     即那个相对量**测的是"整张多暗"、不是"脸的风格"**。
-            #   ⇒ 拿一个随场景漂 39 格的相对量当靶，会把**已经正确的脸**（我们实测 66.3 vs 他 67.5）
-            #     硬往下压（限幅 −6），症状就是"脸浮不起来"。跟"跨度才是不变量"同一个道理：
-            #     **脸的绝对 L* 才是不变量。**
-            #   靶里有 `skin_L_abs` 就**优先用它**（只有鹿井那条有），没有则退回老语义 ⇒ 别的预设零影响。
-            _sl_abs = (_tg or {}).get('skin_L_abs')
-            if _sl_abs is not None:
-                _dl = float(np.clip(float(_sl_abs) - _aL, -_lim_l, _lim_l))
-            else:
-                _dl = float(np.clip(float(_tg['skin_l']) - _cL, -_lim_l, _lim_l))
-            _dc = float(np.clip(float(_tg['skin_c']) / max(_cC, 1e-6) - 1.0, -_lim_c, _lim_c))
-            # ★★ 09-26 新增**绝对语义** `skin_C_abs`：脸的绝对彩度（a*/b* 的模）。
-            #   为什么：原来只有相对语义 `skin_c`（= 脸彩度 ÷ 整张彩度）。代码里原本就注释警告过
-            #   「靶子是比值 ⇒ 分母一动、所有比值都跟着动」。实测就撞上了：`sat` 把整张彩度
-            #   从 11.3 压到 7.1（分母变小）之后，这个比值靶就不再代表大师了 ——
-            #   结果脸被顺带做素（23.3→14.4，而大师是 22.4）。
-            #   大师 730 块实测：脸的**绝对**彩度在各曝光组是 22.93 / 22.96 / 21.89 / 21.30
-            #   （±4%），跟「脸的绝对 L*」一样是个**不变量** ⇒ 该锁绝对值。
-            #   靶里有 `skin_C_abs` 就优先用它；没有则退回老语义（其余预设零影响）。
-            _C_abs = (_tg or {}).get('skin_C_abs')
-            if _C_abs is not None:
-                _dc = float(np.clip(float(_C_abs) / max(float(np.median(_Cc2[_sel])), 1e-6) - 1.0,
-                                    -_lim_c, _lim_c))
-            _dh = float(np.clip(((float(_tg['skin_hue']) - _cH + 180.0) % 360.0) - 180.0,
-                                -_lim_h, _lim_h))
-            # ★ 09-28：把「肤色权重 `_w` 在脸选区内 的中位」报出来 —— 诊断用。
-            #   为什么加：色相实际转的角度 = `_dh × _w`，而 `_w` 是**羽化后的软权重**
-            #   （中间≈1、边缘≈0）⇒ **脸的中位数只反映那个渐变的平均值**
-            #   ⇒ 所以"限幅放开到 50° 但中位 hue 纹丝不动"的那个谜，答案就在这里。
+    _sel = _w > 0.5
+    if float(_w.max()) > 0.05 and bool(_sel.any()):      # ★ 必须检查非空：
+        _Cc2 = np.sqrt(a * a + b * b)                    #   空窗口时 np.median([]) = nan
+        _cL = float(np.median(L[_sel]) - np.median(L))
+        _aL = float(np.median(L[_sel]))          # ★ 脸自己的绝对 L*（见下面 skin_L_abs）
+        _cC = float(np.median(_Cc2[_sel])) / max(float(np.median(_Cc2)), 1e-6)
+        _cH = float(np.degrees(np.arctan2(float(np.median(b[_sel])),
+                                          float(np.median(a[_sel])))) % 360.0)
+        # ★★ 绝对语义 `skin_L_abs`：**脸的绝对 L\* 才是不变量**（大师 728 张恒定在 67、
+        #   而"脸−整张"从他 −4.4 漂到 +34.9）。靶里有就优先，没有则退回老相对语义。
+        _sl_abs = (tg or {}).get('skin_L_abs')
+        if _sl_abs is not None:
+            _dl = float(np.clip(float(_sl_abs) - _aL, -_lim_l, _lim_l))
+        else:
+            _dl = float(np.clip(float(tg['skin_l']) - _cL, -_lim_l, _lim_l))
+        _dc = float(np.clip(float(tg['skin_c']) / max(_cC, 1e-6) - 1.0, -_lim_c, _lim_c))
+        # ★★ 绝对语义 `skin_C_abs`（同理：比值靶的分母一动就全变 ⇒ 该锁绝对值）。
+        _C_abs = (tg or {}).get('skin_C_abs')
+        if _C_abs is not None:
+            _dc = float(np.clip(float(_C_abs) / max(float(np.median(_Cc2[_sel])), 1e-6) - 1.0,
+                                -_lim_c, _lim_c))
+        _dh = float(np.clip(((float(tg['skin_hue']) - _cH + 180.0) % 360.0) - 180.0,
+                            -_lim_h, _lim_h))
+        # ★ 09-28：把「肤色权重在脸选区内的中位」报出来（诊断用 —— 它就是"修正只做到七成"的答案）。
+        try:
+            _wmed = float(np.median(_w[_sel]))
+        except Exception:                                       # noqa: BLE001
+            _wmed = None
+        # ★★★ 09-28：**权重归一化**（治"修正永远差三成"）。`W_REF = 1.0` ⇒ 逐位回老行为。
+        _wref = float(getattr(cfg, 'GRADE_SKIN_W_REF', 1.0) or 1.0)
+        _wn = _w if _wref >= 1.0 - 1e-9 else np.minimum(_w / max(_wref, 1e-6), 1.0)
+        # ★★★ 09-28：**脸的「明暗对比」增益**（靶字段 `skin_contrast`）。
+        #   为什么加（SV：「肤色光感还是不好」）—— 实测脸明暗跨度 我们 35.8 / 鹿井 50.5
+        #   ⇒ **脸太平**。根因：`_dl` 是个**常数偏移** ⇒ 连脸暗部一起提 ⇒ 压平明暗差。
+        #   做法：绕**脸自己的中位**拉开（暗部更暗、亮部更亮、中位不动），用 `_wn` 加权。
+        _sk_ct = float((tg or {}).get('skin_contrast', 1.0) or 1.0)
+        if abs(_sk_ct - 1.0) > 1e-9:
+            _mid_f = float(np.median(L[_sel]))
+            L = np.clip(L + ((_mid_f + (L - _mid_f) * _sk_ct) - L) * _wn, 0.0, 100.0)
+        L = np.clip(L + _dl * _wn, 0.0, 100.0)
+        _k = 1.0 + _dc * _wn
+        a = a * _k
+        b = b * _k
+        _th = np.radians(_dh) * _wn                   # 色相绕原点转（往靶的色相角）
+        _ca, _sa = np.cos(_th), np.sin(_th)
+        a, b = a * _ca - b * _sa, a * _sa + b * _ca
+        # ★ 提亮量大 ⇒ 对肤色区的 L 做一次弱双边滤波（保边去噪，别把脸磨平）
+        if abs(_dl) >= float(getattr(cfg, 'GRADE_SKIN_BILATERAL_EV', 4.0)):
             try:
-                _wmed = float(np.median(_w[_sel]))
-            except Exception:                                       # noqa: BLE001
-                _wmed = None
-            # ★★★ 09-28：**权重归一化**（治"修正永远差三成"）。
-            #   `_w` 是羽化后的软权重，脸上中位只有 ~0.70 ⇒ 所有修正量（亮度/彩度/色相）
-            #   都只做到 70% 就停 ⇒ 色相限幅放开到 50° 中位 hue 仍纹丝不动。
-            #   ⇒ 归一化成 `min(_w / W_REF, 1.0)`：中心区转满、过渡带照旧渐变。
-            #   `W_REF = 1.0` ⇒ 逐位回到老行为（可关）。
-            _wref = float(getattr(cfg, 'GRADE_SKIN_W_REF', 1.0) or 1.0)
-            _wn = _w if _wref >= 1.0 - 1e-9 else np.minimum(_w / max(_wref, 1e-6), 1.0)
-            # ★★★ 09-28 新增：**脸的「明暗对比」增益**（靶字段 `skin_contrast`，默认 1.0 = 不动）。
-            #   为什么加（SV：「整张质感好了，但**肤色光感还是不好**」）——
-            #   实测三家对比（脸区内的 L 分位）：
-            #     | | 脸明暗跨度 | 脸高光P95 | 脸暗部P5 |
-            #     | SV 修的 | 41.9 | 87.7 | 45.7 |
-            #     | 鹿井配对 | **50.5** | **83.3** | **31.8** |
-            #     | 我们 | **35.8** | **79.7** | **42.0** |
-            #   ⇒ **我们的脸「太平」**（跨度只有鹿井的 70%），**因为暗部不够暗、高光不够亮**。
-            #   根因：下面的 `_dl`（把脸整体拉到 `skin_L_abs`）是个**常数** ⇒
-            #     **连脸的暗部一起提** ⇒ 明暗差被压平 ⇒ 脸没有立体感/光泽。
-            #   做法：绕**脸自己的中位**把明暗拉开（`mid + (L−mid)·gain`）——
-            #     **暗部更暗、亮部更亮，中位不动** ⇒ 立体感回来。用 `_wn` 加权（带羽化、只作用在脸）。
-            _sk_ct = float((_tg or {}).get('skin_contrast', 1.0) or 1.0)
-            if abs(_sk_ct - 1.0) > 1e-9:
-                _mid_f = float(np.median(L[_sel]))
-                L = np.clip(L + ((_mid_f + (L - _mid_f) * _sk_ct) - L) * _wn, 0.0, 100.0)
-            L = np.clip(L + _dl * _wn, 0.0, 100.0)
-            _k = 1.0 + _dc * _wn
-            a = a * _k
-            b = b * _k
-            _th = np.radians(_dh) * _wn                   # 色相绕原点转（往靶的色相角）
-            _ca, _sa = np.cos(_th), np.sin(_th)
-            a, b = a * _ca - b * _sa, a * _sa + b * _ca
-            # ★ 提亮量大 ⇒ 对肤色区的 L 做一次弱双边滤波（保边去噪，别把脸磨平）
-            if abs(_dl) >= float(getattr(cfg, 'GRADE_SKIN_BILATERAL_EV', 4.0)):
-                try:
-                    import cv2 as _cv
-                    _L8 = np.clip(L * 2.55, 0, 255).astype(np.uint8)
-                    _L8 = _cv.bilateralFilter(_L8, 5, 8.0, 5.0)
-                    _Lf = _L8.astype(np.float64) / 2.55
-                    L = np.clip(L * (1.0 - _w) + _Lf * _w, 0.0, 100.0)
-                except Exception:                                # noqa: BLE001
-                    pass
-    # ★★ 09-24 加**显式色域映射**：直接 `clip` 会按通道砍，把**色相也一起改掉**
-    #   —— 实测"色相转 −6°"在高彩度亮色上只有 **1/4** 有效（转到一半就出 sRGB 界被砍）。
-    #   标准做法：出界的颜色**保住亮度、往中性轴（a=b=0）收**，收到进界为止。
-    #   ⚠ 注意 `color.from_lab` **内部自己就 clip**（所以"看输出有没有出界"检测不到）。
-    #     改用**往返检测**：转出去再转回来，a*/b* 对不上 ⇒ 说明这个颜色被砍过。
+                import cv2 as _cv
+                _L8 = np.clip(L * 2.55, 0, 255).astype(np.uint8)
+                _L8 = _cv.bilateralFilter(_L8, 5, 8.0, 5.0)
+                _Lf = _L8.astype(np.float64) / 2.55
+                L = np.clip(L * (1.0 - _w) + _Lf * _w, 0.0, 100.0)
+            except Exception:                                # noqa: BLE001
+                pass
+        info.update(skin_dL=_dl, skin_dC=_dc, skin_dH=_dh, skin_w_med=_wmed)
+    return L, a, b, info
+
+
+# ---------------------------------------------------------------------------
+# 色域映射（出界颜色往中性轴收）
+# ---------------------------------------------------------------------------
+def gamut(L, a, b):
+    """★★ 09-24：直接 `clip` 会按通道砍，把**色相也一起改掉**
+    —— 实测"色相转 −6°"在高彩度亮色上只有 **1/4** 有效（转到一半就出 sRGB 界被砍）。
+    标准做法：出界的颜色**保住亮度、往中性轴（a=b=0）收**，收到进界为止。
+    ⚠ `color.from_lab` **内部自己就 clip**（所以"看输出有没有出界"检测不到）
+      ⇒ 改用**往返检测**：转出去再转回来，a*/b* 对不上 ⇒ 说明这个颜色被砍过。
+    """
     _lab = np.stack([L, a, b], -1)
     for _ in range(5):
         _back = color.to_lab(np.clip(color.from_lab(_lab), 0.0, 1.0))
@@ -512,27 +400,81 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
             break
         _lab[..., 1] = np.where(_bad, _lab[..., 1] * 0.80, _lab[..., 1])
         _lab[..., 2] = np.where(_bad, _lab[..., 2] * 0.80, _lab[..., 2])
-    out = np.clip(color.from_lab(_lab), 0.0, 1.0)
+    return np.clip(color.from_lab(_lab), 0.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# 主入口（**编排，自己不写任何量**）
+# ---------------------------------------------------------------------------
+def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
+    """在**成片**（显示域）上做 L2 分色 + L3 混色 + L4 肤色。
+
+    `parsed`：**调用方已经算好的一次** `face.parse(...)`（`pipeline` 在**解码后**那张图上算的）。
+      ★ 为什么要传下来：① 链尾画面发白 ⇒ 分割模型认不出脸（实测解码后 12/12、引擎出图后 11/12）
+      ② 本函数里 `region.weights` 和 L4 各要一份掩膜，同一份像素调两遍（273 ms/次）。
+      `None` ⇒ 本函数自己算（单独调用时的老行为，逐位不变）。
+
+    `scene`：`scene.classify(...)` 的结果 —— **只用来取靶**（`targets._scene` 覆盖）。
+
+    ★★★ 09-28 拆分：本函数**只做编排**，三段各自是纯函数（见文件头那张表）。
+    @returns {(numpy.ndarray, dict)} 出图 + 报告（能自查动了多少）
+    """
+    if not bool(getattr(cfg, 'GRADE_ENABLE', False)):
+        return np.clip(np.asarray(disp, np.float64), 0.0, 1.0), dict(applied=False)
+
+    tg = _tgt_of(stock, scene)
+    d = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
+    lab = color.to_lab(d)
+    L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
+    m = dict(Lm=float(np.median(L)), am=float(np.median(a)), bm=float(np.median(b)))
+
+    # ★★★ 09-26：传进来的那次解析，**只在这一层用一次**（region 与 L4 共用）。
+    #   ⚠ 尺寸对不上就不认（掩膜是在另一张同尺寸图上算的；换了渲染尺寸必须现算）。
+    _pz = parsed
+    if _pz is not None:
+        _mk0 = (_pz or {}).get('masks') or {}
+        _fs0 = _mk0.get('face_skin')
+        if _fs0 is None or tuple(np.shape(_fs0)[:2]) != tuple(L.shape):
+            _pz = None
+
+    # ★★★ `GRADE_SCOPE`：'off' / 'skin'（只 L4）/ 'all'（三段全跑，当前）
+    #   ⚠ 做法：进 L2/L3 之前存一份原图，若 scope='skin' 就在 L4 之前**还原** ——
+    #     这样 L4 是在**没被分色混色动过**的图上做，且 L2/L3 那些量仍然算出来（只用于报告）。
+    _scope = str(getattr(cfg, 'GRADE_SCOPE', 'all')).lower()
+    _a0, _b0, _L0 = a.copy(), b.copy(), L.copy()
+
+    # ---- L2 分色 ----
+    a, b, i2 = split(L, a, b, tg, cfg, m)
+    # ---- L3 混色 ----
+    L, a, b, i3 = mix(disp, L, a, b, tg, cfg, _pz, m)
+    if _scope not in ('all', 'color'):
+        a, b, L = _a0, _b0, _L0          # scope='skin' ⇒ 分色/混色不生效（只报告）
+    # ---- L4 肤色 ----
+    L, a, b, i4 = skin(disp, L, a, b, tg, cfg, _pz)
+    # ---- 色域映射 ----
+    out = gamut(L, a, b)
+
     info = dict(applied=True, scope=_scope,
-                L50_in=Lm, L50_out=float(np.median(color.to_lab(out)[..., 0])),
-                a_med_in=am, b_med_in=bm,
-                d_sh=(float(sha), float(shb)), d_hi=(float(hia), float(hib)),
-                c_gain=[(c, (k + (_bg[i] if i < len(_bg) else 0.0))) for i, (c, _, k, _) in enumerate(BANDS)],
-                target=(sha, shb, hia, hib), stock=stock,
-                skin_dL=_dl, skin_dC=_dc, skin_dH=_dh, skin_mask=_mask_src,
-                skin_w_med=(round(_wmed, 3) if '_wmed' in dir() and _wmed is not None else None),
-                skin_limit_l=float(_lim_l) if '_lim_l' in dir() else None,
+                L50_in=m['Lm'], L50_out=float(np.median(color.to_lab(out)[..., 0])),
+                a_med_in=m['am'], b_med_in=m['bm'],
+                d_sh=i2['d_sh'], d_hi=i2['d_hi'], target=(i2['d_sh'][0], i2['d_sh'][1],
+                                                          i2['d_hi'][0], i2['d_hi'][1]),
+                c_gain=i3['c_gain'], stock=stock,
+                skin_dL=i4['skin_dL'], skin_dC=i4['skin_dC'], skin_dH=i4['skin_dH'],
+                skin_mask=i4['skin_mask'],
+                skin_w_med=(round(i4['skin_w_med'], 3) if i4['skin_w_med'] is not None else None),
+                skin_limit_l=i4['skin_limit_l'],
                 # ★★★ 09-26：`skin_mask` 的四个取值，语义**互斥**、别混：
                 #   'face' = 检测器(过三道防假脸闸)**认到脸** + 分割；脸严格、身体松一点
                 #   'seg'  = 检测器**没认到**（侧脸/背影/被挡），只用分割的 face_skin
                 #   'hue'  = 模型**不可用**，退回色相窗（可信度最低）
                 #   'none' = 模型能跑但整张没皮肤 ⇒ **没动手**
-                #   ⚠ 以前只有 'face'/'hue' 两个值，而 'face' 在检不到脸时也会出现 ⇒ 报告会骗人。
-                skin_mask_src=('given' if parsed is not None else 'self'),
-                skin_face_seen=bool(_face_seen),
-                skin_model_ok=bool(_model_ok),
+                skin_mask_src=i4['skin_mask_src'],
+                skin_face_seen=i4['skin_face_seen'],
+                skin_model_ok=i4['skin_model_ok'],
+                skin_contrast=i4['skin_contrast'],
                 # ★ 09-26：这一张命中了哪几条**场景覆盖**（`targets._scene`）——
                 #   空 = 一条都没命中（= 跟加场景之前逐位相同）。
-                scene_hits=list((_tg or {}).get('_scene_hits') or []),
-                scene=((_tg or {}).get('scene')))
+                scene_hits=list((tg or {}).get('_scene_hits') or []),
+                scene=((tg or {}).get('scene')))
     return out, info
