@@ -212,6 +212,7 @@ def entry_zero_ev(model=None, dr=None):
     return None if c is None else float(c[0])
 
 
+# ⚠ 09-28：**入口成形已删 ⇒ 本函数没人调用**（全 svStudio 扫过）。数据先留着。
 def dr_zero_evs(model=None):
     """同一机型各 DR 档的零点 {dr: mid_ev} —— 给 selftest 查"步进该是 +1EV"用。"""
     tab = ENTRY_CURVE.get(str(model or '').strip().lower()) or {}
@@ -256,6 +257,7 @@ SETTLE_LAW = {
 }
 
 
+# ⚠ 09-28：**入口成形已删 ⇒ 本函数没人调用**（全 svStudio 扫过）。数据先留着。
 def entry_settle_level(model=None, dr=None, e=None):
     """「相机落点规律」：给这张图定入口落点 `a`（乘在 `2^mid_ev` 之后）。
 
@@ -273,6 +275,7 @@ def entry_settle_level(model=None, dr=None, e=None):
     return float(2.0 ** (float(t['alpha']) + float(t['beta']) * float(e) + float(off)))
 
 
+# ⚠ 09-28：**入口成形已删 ⇒ 本函数没人调用**（全 svStudio 扫过）。数据先留着。
 def settle_law_models():
     """标过「相机落点规律」的机型（给 selftest / 文档用）。"""
     return sorted(SETTLE_LAW)
