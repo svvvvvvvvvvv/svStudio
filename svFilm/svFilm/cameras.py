@@ -2,7 +2,7 @@
 #   （ /  /  / ）**现在没人调用了**。
 #   原因：A/B/C 实测 —— 关掉入口成形输出逐位不变 ⇒ 落点/跨度已被引擎
 #   （camera.auto_exposure + H&D 显影 + scanner 黑白点）接管。
-#   ⚠ **标定数据先留着不删**（那是 SV 实测量出来的，且将来若把落点搬进引擎还会用到）。
+#   ⚠ **标定数据先留着不删**（是实测标定数据，将来若把落点搬进引擎还会用到）。
 
 # -*- coding: utf-8 -*-
 r"""IDT 机型表 —— **加机型不改代码**，只在这里加一行。
@@ -17,7 +17,7 @@ r"""IDT 机型表 —— **加机型不改代码**，只在这里加一行。
 表里存两样东西，**别混**：
   1) `baseline_ev`：与该**机型**绑定的常数基线。
   2) 富士的 DR 档额外欠曝 —— 这一项**每张都可能不同**，逐张从 RAF 的 MakerNote 里读
-     （`rawmeta.fuji_development_dr`），量在 `FUJI_DR_BIAS`。
+     （09-30：`rawmeta` 已随那条入口路一起删除；本表现在只填报告的机型名）。
      最终补量 = baseline_ev + FUJI_DR_BIAS[dr]；若机身写了精确的
      `0x9650 RawExposureBias`，**直接用那个值覆盖**（它是含基础偏移的总量）。
 
@@ -50,7 +50,7 @@ TABLE = {
     'ilce-7m4': dict(baseline_ev=0.0, note='▲ 未标定。同上'),
 }
 
-DEFAULT = dict(baseline_ev=0.0, note='未知机型 ⇒ 不猜，常数项按 0；有没有 DR tag 由 rawmeta 决定')
+DEFAULT = dict(baseline_ev=0.0, note='未知机型 ⇒ 不猜，常数项按 0')
 
 # 富士「动态范围」档位的**额外**欠曝（不含那 0.72 的基底）。
 # 来源：darktable 官方 lua 脚本 fujifilm_dynamic_range 的实测值

@@ -66,7 +66,7 @@ _path_cache = OrderedDict()
 _path_cache_lock = threading.Lock()
 _PATH_CACHE_MAX = [24]
 
-# ★★ 段缓存（09-15 SV 选「A」）：把「胶片出图」那一段及其之前的产物留下来。
+# ★★ 段缓存（09-15 选「A」）：把「胶片出图」那一段及其之前的产物留下来。
 #   一次出图 3.7 s 里真卷渲染占 2.4 s，而拖「脸/白区」那几根滑杆时它**一个像素都不会变**
 #   ⇒ 只重跑 L3 肤色 + L4 护栏：**3.8 s → 0.99 s（实测 −74%）**。
 #   ⚠ 关掉（`config.CACHE_ENABLE=False` 或起服务时 `--no-stage-cache`）＝ 每次全跑，
@@ -87,7 +87,7 @@ _STAGES = [pipeline.StageCache() if getattr(C, 'CACHE_ENABLE', False) else None]
 #   ⚠ 不收 `MAX_SIDE`：它是**默认参数**（`def load_raw(path, max_side=C.MAX_SIDE)`），
 #     真正的尺寸由调用方传进来、而且已经算在键里了（见 `_load_key` 的第 2 个元素）。
 _DECODE_SIG_KEYS = tuple(sorted(
-    [k for k in dir(C) if k.startswith('ENTRY_')] + ['RAW_DECODE']))
+    [k for k in dir(C) if k.startswith('ENTRY_')]))
 
 
 def _decode_sig():
@@ -110,7 +110,7 @@ def _decode_sig():
 def _load_key(path, side):
     """解码缓存的键 = 路径 + 尺寸 + **解码签名**。
 
-    ⚠ `side=None` = **原图全尺寸**（09-15 SV 选「A」的导出默认）⇒ 必须映射成**独立的键**，
+    ⚠ `side=None` = **原图全尺寸**（09-15 选「A」的导出默认）⇒ 必须映射成**独立的键**，
       不能 `int(None)` 崩、也不能跟别的尺寸撞在一起（撞了就是"拿 700 那份当真"）。
     """
     return (os.path.abspath(path), 'full' if side is None else int(side), _decode_sig())
@@ -152,7 +152,7 @@ def _load_one(path, side):
 
     ⚠ 必须**按「路径 + 尺寸 + 入口签名」复用**：台子上换模式 / 翻回来 / 重新出图都会再喊一次 /load，
       如果没有这一层，每次都要重新解码一遍（实测 RAW 2.3 秒）⇒ 前端就觉得"卡"。
-      之前这里每次都真解码（只有 `/render` 那一层缓存），是 09-14 SV 报「点调色台非常卡」的根因之一。
+      之前这里每次都真解码（只有 `/render` 那一层缓存），是 09-14 报「点调色台非常卡」的根因之一。
     ★ 09-15 键里加了**入口签名**（`_load_key`）：入口参数一改就作废、重新解码。
     """
     key = _load_key(path, side)
@@ -247,14 +247,14 @@ def _render_bytes(i, stock, side, fmt, quality):
 
 
 def _export_one(i, out_path, stock, side, quality, src_path=None):
-    r"""★ 导出**成片**（09-15 SV 选「A」第 ② 项）：把渲染结果写成真照片文件。
+    r"""★ 导出**成片**（09-15 选「A」第 ② 项）：把渲染结果写成真照片文件。
 
     为什么这件事由引擎做（而不是把 base64 交给前端让它写）：
       `io.save` 已经处理好了 **EXIF / 4:4:4（无色度抽样）/ 质量**；
       前端拿 base64 再写一遍 = 丢相机信息 + 多一次编解码。
 
     ⚠ 导出尺寸与预览尺寸**不是**同一个：预览固定 700，导出**默认就是原图全尺寸**
-      （09-15 SV 选「A」定的）。胶片颗粒是**物理量**，尺寸一变观感就会变 ——
+      （09-15 选「A」定的）。胶片颗粒是**物理量**，尺寸一变观感就会变 ——
       **而且是"越大颗粒越明显"**（每个像素收集到的银盐颗粒 ∝ 像素面积，越小越少 ⇒ 相对噪声越大）：
       同一块平坦区实测 2048/3000/原图 = 0.63/0.77/1.87。这不是 bug，是这条链的本性。
       所以由调用方**显式**给 `side`，引擎照那个尺寸**重新解码 + 重新跑一遍**
@@ -283,7 +283,7 @@ def _export_one(i, out_path, stock, side, quality, src_path=None):
     #   一个 (81, 40M) 的 float64 中间量就要 **24.2 GiB**，引擎进程会当场死掉。
     #   上限 3000 长边（6MP）：真跑完 56 秒、峰值数组 138 MB，安全。
     #   ⚠ 被夹住要**说出来**（返回 `side_clamped`）—— 不许静默降级成"小一点的图"。
-    # ★★ 尺寸口径（09-15 SV 选「A」：**默认就出原图尺寸**）：
+    # ★★ 尺寸口径（09-15 选「A」：**默认就出原图尺寸**）：
     #   `side=None`（调用方不传）= **原图全尺寸**；给数字 = 那个长边。
     #   ⚠ `io._resize` 对 `max_side=None` 是"保持原样" ⇒ 这条路上不需要别的哨兵值。
     _cap = getattr(C, 'EXPORT_MAX_SIDE', None)      # None = 不设上限
@@ -489,8 +489,8 @@ class _H(BaseHTTPRequestHandler):
                     return self._json(info, 404)
                 return self._img(b, info['mime'], info)
             if u.path == '/export':
-                # ★★ 导出成片（09-15 SV 选「A」）：把渲染结果写成**真照片文件**。
-                #   ⚠ `side` 不传 = **原图全尺寸**（SV 选「A」定的默认）——
+                # ★★ 导出成片（09-15 选「A」）：把渲染结果写成**真照片文件**。
+                #   ⚠ `side` 不传 = **原图全尺寸**（选「A」定的默认）——
                 #     绝不是悄悄用 700 那份预览（那是"看着对、其实缩水"）。
                 #   ⚠ 写盘要时间：2048 长边十来秒、**原图尺寸 ~6 分半**（RAW）⇒ 前端超时要放宽。
                 _sv = (q.get('side') or '').strip()
@@ -517,7 +517,7 @@ _WEB = [None]        # --web <dir>：要不要顺手 serve 一个静态前端（
 def _port_taken(port, host='127.0.0.1', timeout=2.0):
     r"""端口上**已经有人应答**了吗？（只连一下，不发请求）
 
-    ★★★ 09-15（SV 报「点出图没反应，后台也没动静」）挖出来的：
+    ★★★ 09-15（报「点出图没反应，后台也没动静」）挖出来的：
       台子每次启动**都起了两个引擎**（`engine_start.log` 里 spawn 一律成对出现），
       两个都 LISTENING 8765 —— 因为 `ThreadingHTTPServer.allow_reuse_address = 1`
       在 Windows 上走的是 **SO_REUSEADDR**，语义是"**可以抢**"而不是"用完立刻能重绑"：
@@ -525,7 +525,7 @@ def _port_taken(port, host='127.0.0.1', timeout=2.0):
       只管 TIME_WAIT，不会有这种事 —— 这是 Windows 特有的坑）。
       ⇒ 后果是**请求被哪个进程收到不确定**：落在"那个刚起、什么都没载入"的空引擎上时，
         它会瞬间回一句"id 不在缓存里"就完事 ⇒ 界面上"点了没反应"、而那个真在干活的引擎
-        CPU 一动不动 —— 正是 SV 描述的现象。
+        CPU 一动不动 —— 正是当时描述的现象。
       ⇒ 所以：**启动前先探一下端口**，有人应答就**响亮地退出**，绝不静默开第二个。
     """
     import socket
