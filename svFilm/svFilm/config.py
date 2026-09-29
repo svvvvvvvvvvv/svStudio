@@ -14,7 +14,8 @@ r"""svFilm 的全部可调参数 —— **一个文件，别处不许写死数**
 |-------|---------|-----------|
 | 相机转换 / 白平衡 | 入口（`PUBLIC_WB`）| ✅ 入口（解码 + 白平衡 + 高光护栏）|
 | **整张落点（曝光）** | **引擎**（`camera.auto_exposure` + `enlarger.print_exposure`）| ✅ 引擎 |
-| **整张跨度（反差）** | **引擎**（`develop` 的 H&D 曲线）| ✅ 引擎 ★ 实际兜住它的是 `targets._scene_engine` 的全局 `"*"` → `density_curves_morph`（实测 81.87 到共识靶 81.9）|
+| **整张跨度（反差）** | **引擎**（`develop` 的 H&D 曲线）| ✅ 引擎 ★ 实际兜住它的是 `targets._scene_engine` 的全局 `"*"` → `density_curves_morph`。⚠ **09-29 放开高光后跨度上移 ~+7（≈88）**，离共识靶 81.9 超 ~6 —— **SV 已裁定接受、"跨度的事单独再说"** |
+| **高光放开（允许白）** | **引擎**（`io.output_gamut_compress.lightness_compression`）| ✅ 09-29 落地：threshold **0.70 → 0.95**（放在 `_scene_engine` 的全局 `"*"` 里）。★ **实测唯一有效的旋钮**（肩部 gamma / 印相曝光 / 白电平都放不开）。依据见 `targets.json` 的 `_scene_engine_note` |
 | 胶片物理（卷/纸/印相）· 质感（颗粒/光晕/柔光/锐化）| 引擎（spektrafilm 0.3.4）| ✅ 引擎 |
 | 整张色偏（暗/中/高）| 颜色层 `grade.split()` | ✅ 在岗 ★ 换代：三色轮 → 亮度修正曲线（见下）|
 | 彩度（总量+分布+按色相）| 颜色层 `grade.mix()` | ✅ 在岗（同上）|
