@@ -582,6 +582,21 @@ def t_facegain():
           '掩膜下限现在叫 FACE_GAIN_MIN_MASK_PX=%r' % getattr(C, 'FACE_GAIN_MIN_MASK_PX', None),
           '留着它们 ⇒ 改了没反应（已知第 4 类"拧了没反应"）')
 
+    # ★★ 09-29 SV 拍板：**身体皮肤权重 0.5 → 0.8**（原话"身体皮肤×0.5 有点少"）。
+    #   这一个权重**同时管两处**：① `facegain._mask()` 的掩膜 = 脸 ∪ 身体皮肤×它；
+    #   ② `grade.py` 的 L4 肤色层，修正量也乘它。⇒ 改它 = 一次改两处，别只改一边。
+    _bw = float(getattr(C, 'GRADE_SKIN_BODY_W', -1.0))
+    check('★★ 身体皮肤权重 = 0.8（SV 09-29 拍板，0.5 少了）',
+          abs(_bw - 0.8) < 1e-9,
+          'GRADE_SKIN_BODY_W=%r ｜ facegain.BODY_W=%r'
+          % (_bw, float(getattr(facegain, 'BODY_W', -1.0))),
+          '身体皮肤只做到半路 ⇒ 脖子/手臂跟脸差一截 ⇒ SV 报过的"突兀"；'
+          '本项影响脸增益掩膜 + L4 肤色层两处')
+    check('★ 兜底值与真值一致（`facegain` 不许自己留一份旧值）',
+          abs(float(getattr(facegain, 'BODY_W', -1.0)) - _bw) < 1e-9,
+          'facegain.BODY_W=%r vs config=%r' % (float(getattr(facegain, 'BODY_W', -1.0)), _bw),
+          '两份不一样 ⇒ 以后只改 config 会"改了一半"（脸 0.8、身体还是旧值）')
+
     # ---- ② 掩膜契约：闸门卡在「真脸」，不是「最终掩膜」 ----
     h, w = 180, 240
     z = np.zeros((h, w), np.float64)
@@ -593,7 +608,7 @@ def t_facegain():
 
     check('★★ 只有身体皮肤、真脸 0 px ⇒ **照样动**（不许被筛掉）',
           facegain._mask({'masks': {'face_skin': z.copy(), 'skin': sk}}, (h, w, 3), C) is not None,
-          '真脸 0 但并集 %d px' % int((sk * 0.5 > 0.05).sum()),
+          '真脸 0 但并集 %d px（身体权重 %s）' % (int((sk * float(getattr(C, 'GRADE_SKIN_BODY_W', 0.5)) > 0.05).sum()), getattr(C, 'GRADE_SKIN_BODY_W', '?')),
           'DSCF1629 就是这样一张（掩膜全靠身体皮肤撑）而它是 09-29 实测**收住**的 —— '
           '拿"真脸为 0"当闸门会把好案例一起筛掉（09-29 我差点这么干）')
     _tz = z.copy()
@@ -602,13 +617,53 @@ def t_facegain():
           facegain._mask({'masks': {'face_skin': _tz}}, (h, w, 3), C) is None,
           '下限 %r px' % getattr(C, 'FACE_GAIN_MIN_MASK_PX', None))
     m = facegain._mask(pz, (h, w, 3), C)
-    check('★ 真脸够大 ⇒ 掩膜出来，且**并上了身体皮肤**（只圈脸会留接缝）',
-          m is not None and float(m[85, 120]) > 0.9 and float(m[h - 3, 3]) > 0.2,
-          ('脸处 %.2f · 身体处 %.2f' % (float(m[85, 120]), float(m[h - 3, 3])))
+    # ★★ 09-29：身体权重抬到 0.8 后，"峰值归一"的天平**会往身体倒**（本用例身体 21600 px、
+    #   脸只有 3000 px）⇒ 脸处从 0.947 掉到 0.847。**但脸拿到的修正量没少** ——
+    #   `GRADE_SKIN_W_REF=0.70` 会把权重归一（`min(w / 0.70, 1)`）⇒ 0.847/0.70 > 1 ⇒ 仍顶满。
+    #   ⇒ 判据卡**这个契约**（脸处 ≥ W_REF），不卡"脸处 > 0.9"（那只是替旧权重留影）。
+    check('★ 真脸够大 ⇒ 掩膜出来、并上身体皮肤，且**脸拿满修正**（≥ `GRADE_SKIN_W_REF`）',
+          m is not None and float(m[85, 120]) >= float(C.GRADE_SKIN_W_REF)
+          and float(m[h - 3, 3]) > 0.2,
+          ('脸处 %.2f（W_REF %.2f ⇒ 修正量顶满）· 身体处 %.2f'
+           % (float(m[85, 120]), float(C.GRADE_SKIN_W_REF), float(m[h - 3, 3])))
           if m is not None else '掩膜没出来',
-          '身体那半张没进掩膜 ⇒ 脸亮、脖子手臂暗 ⇒ SV 报过的"突兀"')
+          '身体那半张没进掩膜 ⇒ 脸亮、脖子手臂暗 ⇒ SV 报过的"突兀"；'
+          '★ 注意：脸处读数会随身体权重下降（峰值归一的副作用），但只要 ≥ W_REF 就不亏')
     if m is None:
         return                                  # 上面已经红了；后面依赖掩膜，跑下去只会抛异常
+
+    # ★★★ 09-29：**「量」和「作用」是两张不同的掩膜**（`facegain._masks` 的两个返回值）。
+    #   原来"量"也用并集 ⇒ 调大 `GRADE_SKIN_BODY_W` 会改"闭环盯着谁" ⇒ **真脸被带偏**
+    #   （实测 7 张单变量：6 张里 4 张出界，最差 ΔE00 10.54）。
+    _ma, _mm = facegain._masks(pz, (h, w, 3), C)
+    check('★★★ 「量」的掩膜**只用脸**（身体不许进来拉动闭环）',
+          _ma is not None and _mm is not None
+          and float(_mm[85, 120]) > 0.5 and float(_mm[h - 3, 3]) < 0.1,
+          ('量：脸处 %.2f · 身体处 %.2f ｜ 作用：脸处 %.2f · 身体处 %.2f'
+           % (float(_mm[85, 120]), float(_mm[h - 3, 3]),
+              float(_ma[85, 120]), float(_ma[h - 3, 3]))) if _mm is not None else '掩膜没出来',
+          '身体进了"量"的那张 ⇒ 调大身体权重会改"闭环盯着谁" ⇒ 真脸被带偏（09-29 实测最差 10.54）')
+    _bw_keep = float(getattr(C, 'GRADE_SKIN_BODY_W', 0.8))
+    try:
+        C.GRADE_SKIN_BODY_W = 0.5 if _bw_keep > 0.65 else 0.8
+        _ma2, _mm2 = facegain._masks(pz, (h, w, 3), C)
+    finally:
+        C.GRADE_SKIN_BODY_W = _bw_keep
+    check('★★ 改身体权重 ⇒ **只动"作用"那张**，「量」那张一动不动',
+          _ma2 is not None and _mm2 is not None
+          and abs(float(_mm[h - 3, 3]) - float(_mm2[h - 3, 3])) < 1e-9
+          and abs(float(_mm[85, 120]) - float(_mm2[85, 120])) < 1e-9
+          and abs(float(_ma[h - 3, 3]) - float(_ma2[h - 3, 3])) > 0.1,
+          ('量：身体处 %.2f → %.2f（应一动不动）｜ 作用：身体处 %.2f → %.2f'
+           % (float(_mm[h - 3, 3]), float(_mm2[h - 3, 3]),
+              float(_ma[h - 3, 3]), float(_ma2[h - 3, 3]))) if _mm2 is not None else '掩膜没出来',
+          '两张一起变 ⇒ 身体权重又在偷偷改"闭环盯着谁"（09-29 那个坑）')
+    _ma3, _mm3 = facegain._masks({'masks': {'face_skin': z.copy(), 'skin': sk}}, (h, w, 3), C)
+    check('★★ 没有真脸（`DSCF1629` 那种）⇒ 「量」**回退成并集**（不许整张不动）',
+          _mm3 is not None and _mm3 is _ma3 and float(_mm3[h - 3, 3]) > 0.2,
+          ('回退后身体处 %.2f（与"作用"同一张：%s）'
+           % (float(_mm3[h - 3, 3]), _mm3 is _ma3)) if _mm3 is not None else '掩膜没出来',
+          '不回退 ⇒ 真脸 0 px 的片子整个不动作 ⇒ 把 `DSCF1629`（实测收住、ΔE00 0.95）一起筛掉')
 
     # ---- ΔE00 的尺子（09-29 栽过：方法名写错 ⇒ `except` 静默换成欧氏） ----
     _pair = ((50.0, 0.0, 0.0), (60.0, 30.0, -10.0))
@@ -1175,6 +1230,22 @@ def t_cache():
     check('★★ 换脸增益开关 ⇒ **不**命中（否则就是"拧了没反应"）',
           not r5.report['stage_cache']['hit'],
           '开关 %s → %s，命中=%s' % (_fg0, not _fg0, r5.report['stage_cache']['hit']))
+
+    # ★★ 09-29：**肤色层的"形状旋钮"也必须进键**（`GRADE_SKIN_BODY_W` 尤其）。
+    #   它改的是"脸 ∪ 身体皮肤"的掩膜形状 + L4 修正量 = **直接改出图**。
+    #   ⚠ 不进键 ⇒ 常驻进程里改了这个值仍命中旧缓存 ⇒ 画面照旧 = "拧了没反应"（第 4 类）。
+    _bw0 = float(getattr(C, 'GRADE_SKIN_BODY_W', 0.5))
+    _bw1 = 0.5 if abs(_bw0 - 0.8) < 1e-9 else 0.8
+    try:
+        C.GRADE_SKIN_BODY_W = _bw1
+        r6 = pipeline.run_from(s, stock=_PRESET, style='中性调', cache=c)
+    finally:
+        C.GRADE_SKIN_BODY_W = _bw0
+    check('★★ 换身体皮肤权重 ⇒ **不**命中（它改掩膜形状 + L4 修正量）',
+          not r6.report['stage_cache']['hit'],
+          'GRADE_SKIN_BODY_W %.1f → %.1f，命中=%s'
+          % (_bw0, _bw1, r6.report['stage_cache']['hit']),
+          '不进键 ⇒ 改了这个值画面照旧 ⇒ "拧了没反应"（与 `GRADE_ENABLE` 同一类坑）')
 
 
 def t_routes():

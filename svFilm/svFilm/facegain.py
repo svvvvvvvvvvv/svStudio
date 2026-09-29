@@ -25,8 +25,10 @@ r"""**脸增益** —— 在负片的 CMY 密度（`cmy_film` tap）上，**只�
 物理检查：加 C ⇒ 更红更黄 · 加 M ⇒ 更绿 · 加 Y ⇒ 更蓝 ✓
 
 ## 四、掩膜
-**脸 ∪ 身体皮肤**（脸 1.0 / 身体 `BODY_W`）+ **羽化**（σ = 脸等效边长 × 1/6，照 CN104038704A）
-—— 只圈脸的话，脸亮而脖子/手臂还暗 ⇒ 接缝一眼可见（SV 09-29 报的"突兀"）。
+**★ 「作用」和「量」是两张不同的掩膜**（09-29 拆开，理由见 `_masks` 的 docstring）：
+- **作用** = 脸 ∪ 身体皮肤（脸 1.0 / 身体 `BODY_W`）+ 羽化 + 峰值归一
+  —— 只圈脸的话，脸亮而脖子/手臂还暗 ⇒ 接缝一眼可见（SV 09-29 报的"突兀"）。
+- **量** = **只用脸**（认不到脸才回退成并集）—— 有靶的是脸，闭环必须盯脸。
 ★★ **闸门卡在「最终掩膜」的像素数上**（`config.FACE_GAIN_MIN_MASK_PX = 2000`）：
 掩膜小到量不准就不动。**不是**"真脸为 0 就不动"——
 `DSCF1629` 实测真脸 0 px（掩膜全靠身体皮肤撑）而它是**收住**的一张（ΔE00 0.95）
@@ -53,42 +55,81 @@ STEP_LIMIT = 0.12         # 单轮单通道最大增量（保险丝）
 TOTAL_LIMIT = 0.40        # 累计上限
 FEATHER = 1.0 / 6.0       # 掩膜羽化 σ = 脸的等效边长 × 它（照 CN104038704A，与 L4 同一口径）
 # ★★ 掩膜必须含"身体皮肤"：只圈脸 ⇒ 脸亮、脖子/手臂暗 ⇒ 接缝可见（SV：「不然太突兀了」）
-BODY_W = 0.5              # **兜底值**；真值读 `config.GRADE_SKIN_BODY_W`（"可调参数只在 config"）
+BODY_W = 0.8              # **兜底值**；真值读 `config.GRADE_SKIN_BODY_W`（"可调参数只在 config"）
 
 
-def _mask(pz, shape, cfg=C):
-    """脸掩膜 = **脸 ∪ 身体皮肤**（脸 1.0 / 身体 `BODY_W`），羽化 + 峰值归一。
+# ★★★ 09-29：**「量」的那张掩膜必须只用脸**（`MEAS_FACE_MIN_PX` 是它的下限）。
+MEAS_FACE_MIN_PX = 200          # 「量」用脸掩膜时的最小像素（小于它 ⇒ 回退成并集）
 
-    ★★ 09-29：闸门卡在**最终掩膜**的像素数上（`cfg.FACE_GAIN_MIN_MASK_PX`，就是原来
-      `FACE_GAIN_MIN_PX = 2000` 那个意图），**不是**"真脸为 0 就不动"。为什么：
-      `DSCF1629` 实测**真脸 0 px**（检测器 / 分割都没出脸皮，掩膜全靠身体皮肤撑），
-      而它正是 09-29 实测**收住**的一张（ΔE00 0.95，全 7 张里排第二）
-      ⇒ "真脸为 0 就不动"那条闸门会把好案例一起筛掉。
-    ⚠ 计数用 `m > 0.05`（身体那半张的权重是 0.5，用 `> 0.5` 会把它们漏掉）。
+
+def _finish(m):
+    """羽化 + **峰值归一**（σ = 掩膜等效边长 × `FEATHER`，照 CN104038704A）。
+
+    ⚠ 峰值归一之后，**谁的面积大 / 谁权重高，谁就顶到 1** ⇒ 下游用 `> 0.5` 取"核心"时，
+      选中哪些像素**会跟着权重变**。这正是下面 `_masks` 要把"量"和"作用"分开的原因。
+    """
+    if FEATHER <= 0:
+        return m
+    from scipy.ndimage import gaussian_filter
+    side = float(np.sqrt(max(int((m > 0.3).sum()), 1)))
+    m = gaussian_filter(m, max(1.0, side * FEATHER))
+    mx = float(m.max())
+    if mx > 1e-6:
+        m = np.clip(m / mx, 0.0, 1.0)          # 峰值归一回 1（羽化会降峰）
+    return m
+
+
+def _masks(pz, shape, cfg=C):
+    r"""返回 `(m_apply, m_meas)` —— ★★★ **「作用」和「量」用两张不同的掩膜**。
+
+    - `m_apply`（**作用**）= **脸 ∪ 身体皮肤**（脸 1.0 / 身体 `BODY_W`）+ 羽化 + 峰值归一。
+      为什么必须含身体：只圈脸 ⇒ 脸亮而脖子/手臂还暗 ⇒ **接缝一眼可见**（SV 09-29 报的"突兀"）。
+    - `m_meas`（**量**）= **只用脸** + 同样的羽化 + 峰值归一。
+      为什么：**有靶的是脸**（`skin_L_abs` / `skin_C_abs` / `skin_hue`）⇒ 闭环该盯脸。
+
+    ★★★ 为什么非要分开（09-29 实测，`GRADE_SKIN_BODY_W` 0.5→0.8 暴露）：
+      原来**量也用并集** ⇒ 权重一调大，并集的**代表色被身体拉走** ⇒ 闭环把
+      「**脸+身体**」一起往**脸靶**凑 ⇒ **真脸被带偏**。实测 7 张单变量：
+      脸 ΔE00 旧 `[1.04,1.15,2.28,2.4,1.08,0.95]` → 新 `[0.65,2.32,6.78,10.54,5.35,2.55]`
+      ⇒ **6 张里 4 张出界**（判据 ≤3.0，最差 10.54）。分开之后 `BODY_W` 变成纯
+      「**身体拿多少修正**」这一个含义，不再能影响"闭环盯着谁"。
+
+    ⚠ **回退**：真脸太小 / 认不到脸（`DSCF1629` 实测**真脸 0 px**，掩膜全靠身体皮肤撑）
+      ⇒ `m_meas` **回退成 `m_apply`**。不回退的话那张就整个不动了 ——
+      而它正是 09-29 实测**收住**的一张（ΔE00 0.95，全 7 张里排第二）。
+
+    ★ 闸门卡在**最终掩膜**（`m_apply`）的像素数上（`cfg.FACE_GAIN_MIN_MASK_PX`），
+      **不是**"真脸为 0 就不动"：后者会把 `DSCF1629` 那种好案例一起筛掉。
+    ⚠ 计数用 `m > 0.05`（身体那半张的权重不是 1，用 `> 0.5` 会把它们漏掉）。
     """
     mk = (pz or {}).get('masks') or {}
     fs = mk.get('face_skin')
     if fs is None:
-        return None
-    m = np.clip(np.asarray(fs, np.float64), 0.0, 1.0)
+        return None, None
+    face0 = np.clip(np.asarray(fs, np.float64), 0.0, 1.0)
+    m = face0.copy()
     sk = mk.get('skin')                       # 身体皮肤（没有就只用脸）
     _bw = float(getattr(cfg, 'GRADE_SKIN_BODY_W', BODY_W))
     if sk is not None and np.shape(sk)[:2] == m.shape[:2]:
         m = np.maximum(m, np.clip(np.asarray(sk, np.float64), 0.0, 1.0) * _bw)
     if tuple(m.shape[:2]) != tuple(shape[:2]):
-        return None                      # 尺寸对不上 ⇒ 不认（换了渲染尺寸必须现算）
+        return None, None                # 尺寸对不上 ⇒ 不认（换了渲染尺寸必须现算）
     if int((m > 0.05).sum()) < max(1, int(getattr(cfg, 'FACE_GAIN_MIN_MASK_PX', 2000))):
-        return None                      # 掩膜太小 ⇒ 量不准，动了也是噪声
+        return None, None                # 掩膜太小 ⇒ 量不准，动了也是噪声
     if float(m.max()) <= 0.05:
-        return None
-    if FEATHER > 0:
-        from scipy.ndimage import gaussian_filter
-        side = float(np.sqrt(max(int((m > 0.3).sum()), 1)))
-        m = gaussian_filter(m, max(1.0, side * FEATHER))
-        mx = float(m.max())
-        if mx > 1e-6:
-            m = np.clip(m / mx, 0.0, 1.0)      # 峰值归一回 1（羽化会降峰）
-    return m
+        return None, None
+    m = _finish(m)
+    # ---- 「量」的那张：优先只用脸；脸太小 / 认不到脸 ⇒ 回退成并集 ----
+    if float(face0.max()) > 0.05:
+        fm = _finish(face0.copy())
+        if int((fm > 0.5).sum()) >= MEAS_FACE_MIN_PX:
+            return m, fm
+    return m, m
+
+
+def _mask(pz, shape, cfg=C):
+    """兼容旧调用：返回**作用**用的那张（脸 ∪ 身体）。新代码请用 `_masks`。"""
+    return _masks(pz, shape, cfg)[0]
 
 
 def face_lab(out, mask, sel_thr=0.5):
@@ -144,14 +185,17 @@ def apply(pl, lin, pz, target_L=None, target_a=None, target_b=None, cfg=C):
     n_face = (int((np.clip(np.asarray(_fs, np.float64), 0.0, 1.0) > 0.5).sum())
               if _fs is not None else 0)
     info['face_px'] = n_face                  # ★ 真脸多大（1629 那种"靠身体皮肤撑"的一眼能看出来）
-    m = _mask(pz, out.shape, cfg)
+    m, m_meas = _masks(pz, out.shape, cfg)
     if m is None:
         info['note'] = ('掩膜不可用 ⇒ 不动（真脸 %d px / 掩膜下限 %s px / 或尺寸对不上）'
                         % (n_face, getattr(cfg, 'FACE_GAIN_MIN_MASK_PX', 2000)))
         return out, info
-    info['mask_px'] = int((m > 0.05).sum())    # 最终掩膜多大（含身体皮肤那半张）
+    info['mask_px'] = int((m > 0.05).sum())    # 作用掩膜多大（含身体皮肤那半张）
+    # ★★★ 09-29：「量」用 `m_meas`（优先**只用脸**；认不到脸才回退成并集）。
+    #   有靶的是脸 ⇒ 闭环必须盯脸；否则调大 `GRADE_SKIN_BODY_W` 会**把脸带偏**（见 `_masks` 注释）。
+    info['meas_masked'] = 'face' if m_meas is not m else 'union(回退：脸太小/认不到)'
     m3 = m[..., None]
-    lab0 = face_lab(out, m)
+    lab0 = face_lab(out, m_meas)
     if lab0 is None:
         info['note'] = '量不到脸 ⇒ 不动'
         return out, info
@@ -176,7 +220,7 @@ def apply(pl, lin, pz, target_L=None, target_a=None, target_b=None, cfg=C):
         step = np.clip(step, -STEP_LIMIT, STEP_LIMIT)
         delta = np.clip(delta + step, -TOTAL_LIMIT, TOTAL_LIMIT)
         out = pl.process(cmy + delta[None, None, :] * m3, inject='cmy_film')
-        new_lab = face_lab(out, m)
+        new_lab = face_lab(out, m_meas)
         if new_lab is None:
             break
         cur_lab = new_lab

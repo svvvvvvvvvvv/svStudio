@@ -175,6 +175,13 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
                  #   不进键 ⇒ 常驻进程里把它一开，仍会命中"没开脸增益"的旧缓存
                  #   （与上面 `GRADE_ENABLE` / `TONE_ENABLE` 同一类坑 —— "拧了没反应"第 4 类）。
                  bool(getattr(cfg, 'FACE_GAIN_ENABLE', False)),
+                 # ★★ 09-29：**肤色层那三个"形状旋钮"也进键**。它们改的是掩膜形状
+                 #   （脸 ∪ 身体皮肤×`GRADE_SKIN_BODY_W`）和 L4 的修正量 = **直接改出图**。
+                 #   ⚠ 刚踩过：`GRADE_SKIN_BODY_W` 0.5→0.8，常驻进程里仍会命中旧缓存 ⇒
+                 #     又是"拧了没反应"（与上面 `GRADE_ENABLE` / `FACE_GAIN_ENABLE` 同类）。
+                 float(getattr(cfg, 'GRADE_SKIN_BODY_W', 0.5)),
+                 float(getattr(cfg, 'GRADE_SKIN_W_REF', 0.0)),
+                 float(getattr(cfg, 'GRADE_SKIN_FEATHER', 0.0)),
                  _ov_key, _tg_key)
         _entry = cache.get(_ckey)
 

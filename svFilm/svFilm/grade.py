@@ -302,7 +302,7 @@ def skin(disp, L, a, b, tg, cfg, parsed):
                 _mask_src = 'face'
                 if _mk.get('skin') is not None:
                     _w = np.maximum(_w, np.clip(np.asarray(_mk['skin'], np.float64), 0.0, 1.0)
-                                    * float(getattr(cfg, 'GRADE_SKIN_BODY_W', 0.5)))
+                                    * float(getattr(cfg, 'GRADE_SKIN_BODY_W', 0.8)))
             else:
                 _mask_src = 'seg'
     if _w is None:
