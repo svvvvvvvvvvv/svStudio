@@ -243,7 +243,8 @@ def build_parser():
 
     ap.add_argument('--version', action='version', version='svFilm ' + C.VERSION)
 
-    p = sub.add_parser('stocks', help='列出所有胶片风格（9 条预设）')
+    # ⚠ 09-30：原来是写死的「9 条预设」，实际已有 10 条 —— **写死的数会过期** ⇒ 改成运行时数出来。
+    p = sub.add_parser('stocks', help='列出所有胶片风格（%d 条预设）' % len(presets.names()))
     p.add_argument('--stock', default=None)
     p.set_defaults(func=cmd_stocks)
 

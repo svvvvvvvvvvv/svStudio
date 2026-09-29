@@ -51,6 +51,25 @@ r"""svFilm 的全部可调参数 —— **一个文件，别处不许写死数**
 ⚠⚠ **死值警告**：下面的 `GRADE_SH_*` / `GRADE_HI_*` / `GRADE_DEEP_*` / `GRADE_SAT` /
     `GRADE_SPLIT_LIMIT` —— **对写了靶的预设是死值**（靶里写了 ⇒ 靶优先）
     ⇒ **改这里没用**（只对靶里没写的预设生效）。
+    ⚠ **10 条预设里只有 3 条写了靶**（Portra400薄荷 / Pro400H清风 / Ultramax400沉褐）
+      ⇒ 这把刀是"一半死一半活"：**换一条预设，同一个键的死活就变了**。
+
+## ★★★ 09-30 **死键清单（改了没反应 —— 最容易被误判成"旋钮坏了"）**
+
+把参数对象和作者 schema 的出厂默认**全量逐字段 diff**（135 个字段，脚本
+`C:/tmp/_params_diff.py`）之后确认，下面这些**写了也白写**：
+
+| 死的东西 | 为什么死 |
+|---|---|
+| 预设 JSON 的 **`load_raw` 整段** | `presets._apply()` 一个字节都不读（见该预设里的 `_note_load_raw`）|
+| **`camera.diffusion_filter.*`** | `active=False`（吃出厂默认）⇒ 那堆 pro_mist 参数全是死值 |
+| **`film_render.glare.*`** | schema 里有，但管线 `scanning.py` 只取 `print_render.glare` ⇒ **死字段** |
+| **`grain.particle_scale_layers`** | `sublayers_active=False` ⇒ 只有开了子层才参与（出厂是 True，我们关了）|
+| 上面的 `GRADE_*` | 对写了靶的预设是死值（见上）|
+
+**⇒ 排查"改了没反应"的顺序**：① 查这张表 ② 查 `settings.preview_mode`（为 True 会把
+颗粒/模糊/锐化**全部清零**）③ 查字段名有没有随 vendor 版本改名（见 §135 那个 `agx_` 前缀的坑）
+④ 才轮到怀疑缓存 / digest / 并发。
 """
 from __future__ import annotations
 

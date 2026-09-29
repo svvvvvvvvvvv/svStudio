@@ -260,12 +260,15 @@ def _apply(p, d, cfg):
     h.halation_renormalize = bool(ha['halation_renormalize'])
 
     # ---- grain ----
-    # ⚠⚠ 字段名必须跟 vendor 版本对得上：**0.3.2 叫 `agx_particle_area_um2` / `agx_particle_scale` /
-    #    `agx_particle_scale_layers`**（0.3.4 把 `agx_` 前缀去掉了）。
-    #    名字写错**不会报错**（`GrainParams` 是普通 dataclass、没有 `__slots__`），
-    #    只会静默多出几个没人读的属性 ⇒ 颗粒参数一点没生效、画面照旧。
-    #    `selftest.t_presets` 拿 JSON 的值逐条回读钉着这一条。
+    # ⚠⚠⚠ 09-30 修一个**静默了整轮**的 bug：这几个字段名**必须跟 vendor 版本对得上**。
+    #    **0.3.2 = `agx_particle_*`；0.3.4 去掉了 `agx_` 前缀 ⇒ 一律写 `particle_*`。**
+    #    `GrainParams` 是普通 dataclass、**没有 `__slots__`** ⇒ 名字写错**不报错**，
+    #    只会静默多出几个**没人读**的属性 ⇒ **颗粒参数一点没生效、画面照旧**。
+    #    ★ 我们就是这样：`particle_area_um2` 我们写 2.5，vendor `grain.py` 实读的却是
+    #      schema 默认 **0.2** ⇒ 整轮"调颗粒到靶"全是空的（实测铁证见 `selftest.t_presets`）。
     #    ⚠ 换 vendor 版本时**这里必须跟着换**，否则颗粒静默失效。
+    #    `selftest.t_presets` 现在**验 vendor 真正读的那个名字**，并断言带 `agx_` 的死属性
+    #      **不该存在**（防回退）。
     g = p.film_render.grain
     if float(gr['particle_area_um2']) <= 0:
         # 粒子面积为 0 物理上无意义（grain.py 里会除以零）⇒ 等同关掉
@@ -273,9 +276,9 @@ def _apply(p, d, cfg):
     else:
         g.active = bool(gr['active'])
         g.sublayers_active = bool(gr['sublayers_active'])
-        g.agx_particle_area_um2 = float(gr['particle_area_um2'])
-        g.agx_particle_scale = tuple(gr['particle_scale'])
-        g.agx_particle_scale_layers = tuple(gr['particle_scale_layers'])
+        g.particle_area_um2 = float(gr['particle_area_um2'])
+        g.particle_scale = tuple(gr['particle_scale'])
+        g.particle_scale_layers = tuple(gr['particle_scale_layers'])
         g.density_min = tuple(gr['density_min'])
         g.uniformity = tuple(gr['uniformity'])
         g.blur = float(gr['blur'])

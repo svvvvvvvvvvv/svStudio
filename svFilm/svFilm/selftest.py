@@ -141,16 +141,28 @@ def t_presets():
     #   （`GrainParams`/`HalationParams` 都是普通 dataclass、没有 `__slots__`
     #    ⇒ 字段名写错**不报错**，只会静默多出一个没人读的属性）
     #    ⚠ 字段名跟 vendor 版本绑死：**0.3.2 = `agx_particle_*`**、0.3.4 = `particle_*`。
-    #      这条**必须**跟着 `_apply` 一起改 —— 它就是防"换版本忘了换字段名"的。
+    #      ★★★ 09-30：**原来这条自检验的就是"我们写进去的那个名字"**（`agx_particle_area_um2`）
+    #      ⇒ 写进去、读出来、对上了 ⇒ **假绿**，整整一轮"调颗粒到靶"是空的。
+    #      ⇒ 现在**必须验 vendor 真正读的那个名字**（源码 `model/grain.py` 里的
+    #        `grain.particle_area_um2`），并断言带 `agx_` 的死属性**根本不该存在**。
+    #      （"拿同一个数验两边"是验不出"没人读它"的 —— 见技能 §135。）
     p = presets.digested(_PRESET)
     d = presets.load_raw(_PRESET)
-    check('颗粒真落到 params（防字段改名后静默吞掉）',
-          abs(float(p.film_render.grain.agx_particle_area_um2)
+    check('颗粒真落到 vendor 实读的字段（particle_*，不是 agx_particle_*）',
+          abs(float(p.film_render.grain.particle_area_um2)
               - float(d['grain']['particle_area_um2'])) < 1e-9,
-          '%.3f vs %.3f' % (p.film_render.grain.agx_particle_area_um2,
+          '%.3f vs %.3f' % (p.film_render.grain.particle_area_um2,
                             d['grain']['particle_area_um2']),
           '颗粒字段对不上 ⇒ 有人改了 vendor 的字段名（0.3.2 叫 agx_particle_*、0.3.4 叫 particle_*）'
           ' —— 换 vendor 版本时 `presets._apply` 和这里要一起改')
+    check('颗粒不许再有 agx_ 死属性（防回退到"写了没人读"）',
+          not hasattr(p.film_render.grain, 'agx_particle_area_um2')
+          and abs(float(p.film_render.grain.particle_scale[0])
+                  - float(d['grain']['particle_scale'][0])) < 1e-9,
+          'agx_ 残留=%s ｜ scale %.2f vs %.2f'
+          % (hasattr(p.film_render.grain, 'agx_particle_area_um2'),
+             p.film_render.grain.particle_scale[0], d['grain']['particle_scale'][0]),
+          '又按老版本名写了 ⇒ vendor 读不到、画面不动（`GrainParams` 没有 __slots__，不会报错）')
     check('光晕强度真落到 params（不被卷的抗晕层标签冲掉）',
           abs(float(p.film_render.halation.halation_strength[0]) * 100.0
               - float(d['halation']['halation_strength'][0])) < 1e-6,
