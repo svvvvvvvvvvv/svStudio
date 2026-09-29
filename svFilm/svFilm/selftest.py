@@ -551,6 +551,91 @@ def t_skin():
               (gi.get('skin_mask') != 'face') or bool(gi.get('skin_face_seen')),
               'skin_mask=%s face_seen=%s' % (gi.get('skin_mask'), gi.get('skin_face_seen')),
               'skin_mask=face 但检测器没认出脸 ⇒ 又回到"只看分割就动手"的老毛病')
+
+        # ④ ★★★★ 09-29 新契约：**L4 的「量」只用脸**（与 `facegain` 同款拆法）
+        #   + 「脸的绝对靶」唯一主人 = 脸增益。
+        #   ★ 为什么必须 A/B：这条改的正是**旧 bug 的签名** ——
+        #     `_w = max(脸×1.6, 身体×GRADE_SKIN_BODY_W)` 且 `BODY_W = 0.8 > 0.5`
+        #     ⇒ 直方图里的 `_sel = _w > 0.5` 把**身体也圈进来了**
+        #     ⇒ `_aL`（注释写"脸自己的绝对 L*"）实际是"脸 ∪ 身体"的中位
+        #     ⇒ **身体比脸暗 ⇒ `_aL` 偏低 ⇒ `_dl` 偏大 ⇒ 脸被推得更高**（"脸太白"的方向）。
+        #   造一张**脸亮、身体暗**的合成图，靶就设成脸自己的亮度 ⇒
+        #     新行为 `_dl ≈ 0` ；旧行为 `_dl` 会被身体拉成正的大值。两条一起跑，差值就是证据。
+        from . import color as _col
+        _h, _w2 = 240, 320
+        _lab = np.zeros((_h, _w2, 3), np.float64)
+        _lab[..., 0] = 55.0                       # 背景
+        _lab[40:120, 120:200, 0] = 60.0           # 脸（亮）
+        # ★ 身体必须**比脸大得多**才复现得出那个 bug：羽化(σ≈面积开方/6)会把
+        #   `皮肤×0.8` 的软区压薄，身体太小的话它掉到 0.5 以下、压根进不了旧 `_sel`，
+        #   测试就变成"空转"（第一版就是这么假过的）。真照片里胳膊+脖子+手
+        #   的面积常**大于**脸掩膜的核心区，所以"身体更大"才是**代表真实**的造法。
+        _lab[150:230, 10:310, 0] = 40.0           # 身体（暗，且面积远大于脸）
+        _img = np.clip(_col.from_lab(_lab), 0.0, 1.0)
+        _fs = np.zeros((_h, _w2), np.float64)
+        _fs[40:120, 120:200] = 1.0
+        _sk = _fs.copy()
+        _sk[150:230, 10:310] = 1.0
+        _pzr2 = dict(face=dict(), masks=dict(face_skin=_fs, skin=_sk))
+        _lab2 = _col.to_lab(np.ascontiguousarray(_img))
+        _L2, _a2, _b2 = _lab2[..., 0], _lab2[..., 1], _lab2[..., 2]
+        _tg2 = dict(skin_l=4.0, skin_c=1.0, skin_hue=54.8,
+                    skin_L_abs=60.0, skin_C_abs=12.0)      # 靶 = 脸自己的亮度
+
+        _bw0 = float(getattr(C, 'GRADE_SKIN_BODY_W', 0.8))
+        _mf0 = bool(getattr(C, 'GRADE_SKIN_MEAS_FACE', True))
+        _ow0 = getattr(C, 'SKIN_ABS_OWNER', 'facegain')
+        _fg0 = bool(getattr(C, 'FACE_GAIN_ENABLE', False))
+        try:
+            C.GRADE_SKIN_MEAS_FACE = True
+            C.SKIN_ABS_OWNER = 'grade'                 # 先把"主人"让给 L4，才测得到 `_dl`
+            C.FACE_GAIN_ENABLE = False
+            _i_new = grade.skin(_img, _L2, _a2, _b2, _tg2, C, _pzr2)[3]
+            C.GRADE_SKIN_MEAS_FACE = False             # 退回旧行为（量 = 脸∪身体）
+            _i_old = grade.skin(_img, _L2, _a2, _b2, _tg2, C, _pzr2)[3]
+            C.GRADE_SKIN_MEAS_FACE = True
+            C.GRADE_SKIN_BODY_W = 0.2                  # 动"作用"权重，看「量」跟不跟
+            _i_bw = grade.skin(_img, _L2, _a2, _b2, _tg2, C, _pzr2)[3]
+
+            check('★★ 「量」的掩膜标记 = face（`skin_meas_mask` 不许说谎）',
+                  _i_new.get('skin_meas_mask') == 'face', str(_i_new.get('skin_meas_mask')))
+            check('★★★★ 身体比脸暗时：**新行为**的 `_dl` ≈ 0（脸没被身体拖走）',
+                  abs(float(_i_new['skin_dL'])) < 1.0,
+                  '新 %.2f ｜ 旧 %.2f（靶 = 脸自己的亮度 60）'
+                  % (_i_new['skin_dL'], _i_old['skin_dL']),
+                  '旧行为把身体圈进 `_sel` ⇒ `_aL` 偏低 ⇒ `_dl` 被推成正的大值 ⇒'
+                  ' **脸被推得更高（"脸太白"的来源）**')
+            check('★★★★ 同图同靶：**旧行为**的 `_dl` 明显更大（差值就是那个 bug 的量级）',
+                  float(_i_old['skin_dL']) - float(_i_new['skin_dL']) > 2.0,
+                  'Δ = %+.2f L*' % (_i_old['skin_dL'] - _i_new['skin_dL']),
+                  '两条一样 ⇒ 说明那条 bug 没被真正修掉（或测试图没造对）')
+            check('★★ 改身体权重 ⇒ 只动"作用"，「量」一动不动（`_dl` 不变）',
+                  abs(float(_i_bw['skin_dL']) - float(_i_new['skin_dL'])) < 1e-6,
+                  'BODY_W 0.8→0.2：_dl %.4f → %.4f' % (_i_new['skin_dL'], _i_bw['skin_dL']))
+
+            # ---- 主人裁定（`SKIN_ABS_OWNER`）----
+            C.SKIN_ABS_OWNER = 'facegain'
+            C.FACE_GAIN_ENABLE = True
+            _i_o1 = grade.skin(_img, _L2, _a2, _b2, _tg2, C, _pzr2)[3]
+            check('★★★ 裁定生效：`SKIN_ABS_OWNER="facegain"` ⇒ L4 **不写**脸的绝对靶',
+                  _i_o1.get('skin_abs_owner') == 'facegain'
+                  and abs(float(_i_o1['skin_dL'])) < 1e-9
+                  and abs(float(_i_o1['skin_dC'])) < 1e-9
+                  and abs(float(_i_o1['skin_dH'])) < 1e-9,
+                  'owner=%s dL=%.3f dC=%.3f dH=%.3f'
+                  % (_i_o1.get('skin_abs_owner'), _i_o1['skin_dL'], _i_o1['skin_dC'], _i_o1['skin_dH']),
+                  '不归零 ⇒ 又变成"脸增益和 L4 两处写同一个量"（打架的根因）')
+            C.SKIN_ABS_OWNER = 'grade'                 # 故意造冲突（脸增益还开着）
+            _i_o2 = grade.skin(_img, _L2, _a2, _b2, _tg2, C, _pzr2)[3]
+            check('★★★ 真冲突（owner=grade 且脸增益开着）⇒ 记进报告，不静默',
+                  bool(_i_o2.get('skin_owner_conflict')) and _i_o2.get('skin_abs_owner') == 'facegain',
+                  'conflict=%s owner=%s' % (_i_o2.get('skin_owner_conflict'), _i_o2.get('skin_abs_owner')),
+                  '静默的话就是"改了没反应"第 4 类：两个开关都在写，谁赢看不出来')
+        finally:
+            C.GRADE_SKIN_BODY_W = _bw0
+            C.GRADE_SKIN_MEAS_FACE = _mf0
+            C.SKIN_ABS_OWNER = _ow0
+            C.FACE_GAIN_ENABLE = _fg0
     finally:
         C.GRADE_ENABLE = _ge0
 
@@ -1246,6 +1331,29 @@ def t_cache():
           'GRADE_SKIN_BODY_W %.1f → %.1f，命中=%s'
           % (_bw0, _bw1, r6.report['stage_cache']['hit']),
           '不进键 ⇒ 改了这个值画面照旧 ⇒ "拧了没反应"（与 `GRADE_ENABLE` 同一类坑）')
+
+    # ★★ 09-29（B 清账）：L4 新增的两个键**也必须进键**（同一类坑，先堵上）。
+    #   现在 `GRADE_ENABLE=False` ⇒ 它们不影响画面；但一旦把 L4 打开，
+    #   改 `GRADE_SKIN_MEAS_FACE`（「量」用哪张掩膜）或 `SKIN_ABS_OWNER`（谁写脸的绝对靶）
+    #   就是在改修正量 ⇒ 不进键照样"拧了没反应"。
+    _mf0 = bool(getattr(C, 'GRADE_SKIN_MEAS_FACE', True))
+    _ow0 = str(getattr(C, 'SKIN_ABS_OWNER', 'facegain'))
+    try:
+        C.GRADE_SKIN_MEAS_FACE = not _mf0
+        r7 = pipeline.run_from(s, stock=_PRESET, style='中性调', cache=c)
+        C.GRADE_SKIN_MEAS_FACE = _mf0
+        C.SKIN_ABS_OWNER = 'grade' if _ow0 != 'grade' else 'facegain'
+        r8 = pipeline.run_from(s, stock=_PRESET, style='中性调', cache=c)
+    finally:
+        C.GRADE_SKIN_MEAS_FACE = _mf0
+        C.SKIN_ABS_OWNER = _ow0
+    check('★★ 换「量」的掩膜口径（`GRADE_SKIN_MEAS_FACE`）⇒ **不**命中',
+          not r7.report['stage_cache']['hit'],
+          '命中=%s' % r7.report['stage_cache']['hit'])
+    check('★★ 换「脸的绝对靶」主人（`SKIN_ABS_OWNER`）⇒ **不**命中',
+          not r8.report['stage_cache']['hit'],
+          '命中=%s' % r8.report['stage_cache']['hit'],
+          '不进键 ⇒ 以后打开 L4 时改这两个键画面照旧 ⇒ "拧了没反应"第 4 类')
 
 
 def t_routes():

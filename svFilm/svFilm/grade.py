@@ -246,6 +246,21 @@ def mix(disp, L, a, b, tg, cfg, parsed, m):
 # ---------------------------------------------------------------------------
 # L4 肤色：按人脸掩膜修「脸的亮度 / 彩度 / 色相 / 明暗对比」
 # ---------------------------------------------------------------------------
+_OWNER_WARNED = [False]          # ★ 09-29：冲突**只警告一次**（不然每张图刷屏）
+
+
+def _warn_owner_conflict():
+    """`SKIN_ABS_OWNER='grade'` 且脸增益也开着 ⇒ 两处在写同一套靶。**响一次**，不静默。"""
+    if _OWNER_WARNED[0]:
+        return
+    _OWNER_WARNED[0] = True
+    import sys as _sys
+    _sys.stderr.write(
+        '[svFilm] ⚠ 层纪律冲突：`SKIN_ABS_OWNER="grade"` 且 `FACE_GAIN_ENABLE=True` —— '
+        '两处都在写"脸的绝对靶(L*/C*/H)"。按 09-29 裁定**脸增益优先**，L4 本次不写。'
+        '要让 L4 当主人，请把 `FACE_GAIN_ENABLE` 关掉。\n')
+
+
 def skin(disp, L, a, b, tg, cfg, parsed):
     """**L4 肤色** —— 只动脸（用 `_wn` 羽化权重），只修"脸自己的"四个量。
 
@@ -260,7 +275,11 @@ def skin(disp, L, a, b, tg, cfg, parsed):
     info = dict(skin_dL=0.0, skin_dC=0.0, skin_dH=0.0, skin_mask='none',
                 skin_face_seen=False, skin_model_ok=False, skin_w_med=None,
                 skin_limit_l=None, skin_mask_src=('given' if parsed is not None else 'self'),
-                skin_contrast=float((tg or {}).get('skin_contrast', 1.0) or 1.0))
+                skin_contrast=float((tg or {}).get('skin_contrast', 1.0) or 1.0),
+                # ★★ 09-29 新增两个自查字段（`selftest.t_skin` ④ 会盯它们）
+                skin_meas_mask='none',       # 「量」那张掩膜：face / union(回退)
+                skin_abs_owner='none',       # 脸的绝对靶这一轮归谁写：facegain / grade
+                skin_owner_conflict=False)   # True = 两个开关同时在写（非法状态，已被守卫压平）
     if not (tg and tg.get('skin_l') is not None):
         return L, a, b, info
 
@@ -284,7 +303,12 @@ def skin(disp, L, a, b, tg, cfg, parsed):
             _pzr = _F.parse(np.clip(disp, 0.0, 1.0))
         except Exception:                                        # noqa: BLE001
             _pzr = None
+    # ★★★ 09-29：**「量」和「作用」用两张掩膜**（与 `facegain` 09-29 的修法对齐，见 `config.GRADE_SKIN_MEAS_FACE`）
+    #   · `_w`  = **作用**权重 = 脸(1.0) ∪ 身体皮肤 × `GRADE_SKIN_BODY_W`（**逐位不变**）
+    #   · `_wf` = **「量」**权重 = **只用脸**
+    #   ⇒ 「量」分不开时（没脸掩膜 / 模型不可用）`_wf is _w`，标 'union' 回退，行为与旧版一致。
     _w = None
+    _wf = None
     _mask_src = 'none'
     _face_seen = False
     _model_ok = False
@@ -294,6 +318,7 @@ def skin(disp, L, a, b, tg, cfg, parsed):
         _fs = _mk.get('face_skin')
         if _fs is not None and float(np.max(_fs)) > 0.05:
             _w = np.clip(np.asarray(_fs, np.float64) * 1.6, 0.0, 1.0)   # 脸：严格
+            _wf = _w.copy()                                             # ★「量」= 只用脸
             # ★★★ 09-26 修：**"有没有脸"以前根本没查**（`face_skin` 检不到脸时也非空
             #   ⇒ 只看"非空"就动手 = 假装有脸）。现在按**检测器的结论**分两条：
             #     · 认到脸 ⇒ 脸严格 + 身体皮肤松一点 · 没认到（侧脸/背影/被挡）⇒ **只用 face_skin**，标 `seg`
@@ -310,6 +335,7 @@ def skin(disp, L, a, b, tg, cfg, parsed):
             # ★★★ 09-26：模型**能跑**、但整张没有皮肤 ⇒ **什么都别做**（别退回色相窗 ——
             #   那个窗实测只有 10.5% 是真皮肤，会把木头/黄墙提亮，是当年"脸崩"的来源）。
             _w = np.zeros(L.shape, np.float64)
+            _wf = _w
             _mask_src = 'none'
         else:
             # 模型**不可用**（缺依赖/模型文件）⇒ 退回色相窗，有总比没有好
@@ -317,6 +343,7 @@ def skin(disp, L, a, b, tg, cfg, parsed):
             H = np.degrees(np.arctan2(b, a)) % 360.0
             cmin = float(getattr(cfg, 'GRADE_C_MIN', 12.0))
             _w = _band_weight(H, 35.0, 26.0) * _ramp(CcH, cmin * 0.6, cmin * 1.4) * 0.6
+            _wf = _w                       # 色相窗里没有"脸"的概念 ⇒ 分不开，回退成同一张
             _mask_src = 'hue'
     # ★★★ 09-27：**掩膜边界要羽化**（不羽化的话，"提脸"的边界会看出分割感）。
     #   σ = 脸的**等效边长** × `GRADE_SKIN_FEATHER`（默认 1/6 ⇒ 过渡约 ±3σ ≈ 脸宽的一半，对上专利）。
@@ -328,11 +355,31 @@ def skin(disp, L, a, b, tg, cfg, parsed):
         _mx = float(_wb.max())
         if _mx > 1e-6:
             _w = np.clip(_wb / _mx, 0.0, 1.0)                     # 峰值归一 ⇒ 脸中心仍是 1
+    # ---- ★★★ 09-29：「量」的那张 —— 同样羽化 + 峰值归一；σ 用**脸自己**的等效边长 ----
+    #   ★ 为什么必须**单独**做（而不是复用 `_w`）：`_w` 的 σ 是按"脸 ∪ 身体"的面积算的，
+    #     比脸大 ⇒ 用它的 σ 去羽化脸，脸的核心会被缩得比脸小、还偏向脸心。
+    #     脸增益那边就是这么拆的（`facegain._finish(face0)`）⇒ 两边口径一致。
+    _meas_same = _wf is _w                                # 「量」分不开（回退）⇒ 不重复羽化
+    if (not _meas_same) and _fe > 0 and _wf is not None and float(_wf.max()) > 0.05:
+        from scipy.ndimage import gaussian_filter
+        _side_f = float(np.sqrt(max(int((_wf > 0.3).sum()), 1)))
+        _wmb = gaussian_filter(_wf, max(1.0, _side_f * _fe))
+        _mxf = float(_wmb.max())
+        if _mxf > 1e-6:
+            _wf = np.clip(_wmb / _mxf, 0.0, 1.0)
+    if not bool(getattr(cfg, 'GRADE_SKIN_MEAS_FACE', True)):
+        _meas_same = True                                 # 显式退回老行为（量也用并集）
     info['skin_mask'] = _mask_src
     info['skin_face_seen'] = bool(_face_seen)
     info['skin_model_ok'] = bool(_model_ok)
+    info['skin_meas_mask'] = 'union(回退：没脸掩膜/模型不可用/开关关了)' if _meas_same else 'face'
 
-    _sel = _w > 0.5
+    # ★★★ 09-29 修（真 bug）：`_sel` 必须是**「量」**的选区（脸），不是「作用」的选区（脸∪身体）。
+    #   旧 `_sel = _w > 0.5` 里 `_w` 已并入身体 `GRADE_SKIN_BODY_W = 0.8 > 0.5`
+    #   ⇒ 身体也在 `_sel` 里 ⇒ 下面注释写"脸自己的绝对 L*"的 `_aL` 实际是"脸 ∪ 身体"的中位
+    #   ⇒ **身体越暗 ⇒ `_aL` 越低 ⇒ `_dl` 越大 ⇒ 脸被推得越高**（正是"脸太白"的方向）。
+    #   注：`_sel` 只用于**量**（`_aL/_cC/_cH/_cL/_mid_f/_wmed`）；**作用**走 `_wn`（仍用 `_w`）⇒ 逐位不变。
+    _sel = (_wf if not _meas_same else _w) > 0.5
     if float(_w.max()) > 0.05 and bool(_sel.any()):      # ★ 必须检查非空：
         _Cc2 = np.sqrt(a * a + b * b)                    #   空窗口时 np.median([]) = nan
         _cL = float(np.median(L[_sel]) - np.median(L))
@@ -363,6 +410,23 @@ def skin(disp, L, a, b, tg, cfg, parsed):
         # ★★★ 09-28：**权重归一化**（治"修正永远差三成"）。`W_REF = 1.0` ⇒ 逐位回老行为。
         _wref = float(getattr(cfg, 'GRADE_SKIN_W_REF', 1.0) or 1.0)
         _wn = _w if _wref >= 1.0 - 1e-9 else np.minimum(_w / max(_wref, 1e-6), 1.0)
+        # ★★★★ 09-29 裁定（`config.SKIN_ABS_OWNER`）—— **脸的绝对靶（L*/C*/H）唯一主人 = 脸增益**。
+        #   为什么守卫落在**这里**：L4 与脸增益盯的是**同一套三个数**（`skin_L_abs`/`skin_C_abs`/`skin_hue`）
+        #   ⇒ 两处都写 = 打架（`config.py` 09-26 自己标过"最严重，是改来改去打架的根因"）。
+        #   规则：① `SKIN_ABS_OWNER != 'grade'` ⇒ 本层**不写**这三个量（`skin_contrast` 照旧，那是脸增益没有的能力）；
+        #        ② 脸增益在本图生效时**脸增益优先**（它有靶、有闭环、实测 ΔE00 0.40 收得住）；
+        #        ③ 真冲突 ⇒ 记进报告 + 只警告一次，**不静默**。
+        #   ⚠ `GRADE_ENABLE=False`（现在）⇒ 本段当前不影响任何一张图，是**前置修复**。
+        _owner = str(getattr(cfg, 'SKIN_ABS_OWNER', 'facegain')).lower()
+        _fg_on = bool(getattr(cfg, 'FACE_GAIN_ENABLE', False))
+        if _owner == 'grade' and not _fg_on:
+            info['skin_abs_owner'] = 'grade'
+        else:
+            info['skin_abs_owner'] = 'facegain'
+            if _owner == 'grade' and _fg_on:
+                info['skin_owner_conflict'] = True
+                _warn_owner_conflict()
+            _dl = _dc = _dh = 0.0            # ← 归零 = 本层不写这三个量
         # ★★★ 09-28：**脸的「明暗对比」增益**（靶字段 `skin_contrast`）。
         #   为什么加（SV：「肤色光感还是不好」）—— 实测脸明暗跨度 我们 35.8 / 鹿井 50.5
         #   ⇒ **脸太平**。根因：`_dl` 是个**常数偏移** ⇒ 连脸暗部一起提 ⇒ 压平明暗差。

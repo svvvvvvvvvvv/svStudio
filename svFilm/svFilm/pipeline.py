@@ -182,6 +182,13 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
                  float(getattr(cfg, 'GRADE_SKIN_BODY_W', 0.5)),
                  float(getattr(cfg, 'GRADE_SKIN_W_REF', 0.0)),
                  float(getattr(cfg, 'GRADE_SKIN_FEATHER', 0.0)),
+                 # ★★ 09-29（B 清账）：**L4 那两个新键也进键** —— 同一类坑，先堵上。
+                 #   · `GRADE_SKIN_MEAS_FACE` 改的是「量」用哪张掩膜 ⇒ 改 `_aL/_cC/_cH` ⇒ 改修正量；
+                 #   · `SKIN_ABS_OWNER` 直接决定 L4 写不写脸的绝对靶。
+                 #   ⇒ 不进键的话，**以后把 `GRADE_ENABLE` 打开**时改这两个键会命中旧缓存
+                 #     = "拧了没反应"第 4 类（这条注释上面的历史就是这么来的）。
+                 bool(getattr(cfg, 'GRADE_SKIN_MEAS_FACE', True)),
+                 str(getattr(cfg, 'SKIN_ABS_OWNER', 'facegain')),
                  _ov_key, _tg_key)
         _entry = cache.get(_ckey)
 
