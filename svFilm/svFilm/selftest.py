@@ -311,13 +311,14 @@ def t_dropped_layers():
 # ---------------------------------------------------------------------------
 
 def t_person_light():
-    r"""光位（`back` 轴）—— 判据只用 `person.py` 那个 **~0.3 s 的粗"人在哪"**。
+    r"""光位（`back` 轴）—— 判据是 **09-27 的 v3（分块亮度场 + 全相对量）**，
+    输入只用 `person.py` 那个 **~0.3 s 的粗"人在哪"**（**不跑人脸检测**）。
 
-    SV 原话：「人识别就不要用那个性能开销太高的，用之前那个性能开销特别低的，
-    一两秒就能迅速地算出人物整体位置，现在**只需要一个人物整体位置**来辅助判断光位」
-    ⇒ 这组钉两件事：
+    这组钉三件事：
       ① **只用低开销那条** —— 源码里不许出现人脸检测 / birefnet / onnxruntime；
-      ② **判据本身对** —— 逆光判得出、顺光判得出、**判不出时弃权**（不许硬给"顺平光"）。
+      ② **判据对得上** —— 逆光判得出逆光族、平光判得出面光；
+      ③ ★★ **判不动时必须弃权**（`None`），**不许硬给一个"顺平光"** —— 那是 v1 的老毛病，
+         扰动关一测就翻（v3 的立身之本）。
     """
     import inspect
     import re as _re
@@ -325,7 +326,7 @@ def t_person_light():
     from . import person as _pmod
     from . import scene
 
-    # ⑤ ★★★ 只做"人在哪"：源码里（**剥掉注释与文档串之后**）不许有人脸检测 / birefnet
+    # ① ★★★ 只做"人在哪"：源码里（**剥掉注释与文档串之后**）不许有人脸检测 / birefnet
     _raw = inspect.getsource(_pmod)
     _code = _re.sub(r'r?"""[\s\S]*?"""', '', _raw)
     _code = '\n'.join(l.split('#')[0] for l in _code.splitlines())
@@ -340,50 +341,61 @@ def t_person_light():
     check('★ 模型文件在仓库里（不靠 pip / 不靠下载）', os.path.exists(_pmod.SELFIE),
           _pmod.SELFIE)
 
-    # ---- 光位判据：合成图（不需要 mediapipe，直接喂假掩膜）----
+    # ② 判据本身（合成图，不需要 mediapipe —— 直接喂假掩膜）
     H, W = 120, 160
     d = np.full((H, W, 3), 0.25)
     d[: H // 3] = 0.95                                  # 上方一大片亮 ⇒ 光在背后
     person = np.zeros((H, W), np.float64)
-    person[H // 2:, W // 3: 2 * W // 3] = 1.0           # 主体在下方中间（够 SCENE_BACK_MIN_SUB_PX）
+    person[H // 2:, W // 3: 2 * W // 3] = 1.0
     L = color.to_lab(d)[..., 0]
 
     _b1, _r1 = scene._light_position(d, L, person, C)
-    check('★★ 最亮在上面、主体在下面 ⇒ 判成逆光（正逆光 / 侧逆光）',
+    check('★★ 上亮下暗、主体在下方 ⇒ 判成**逆光族**（正逆光 / 侧逆光）',
           _b1 in ('正逆光', '侧逆光'),
-          'back=%s  hi_on_sub=%.2f hi_gap=%.1f' % (_b1, _r1['hi_on_sub'], _r1['hi_gap']),
-          '判成顺平光 ⇒ 主判据（最亮那块在不在主体身上）没接上')
+          'back=%s  E_tb=%+.1f E_bg=%+.1f clip_bg_blk=%.2f' % (
+              _b1, _r1['E_tb'], _r1['E_bg'], _r1['clip_blk_off']),
+          '判成面光 ⇒ 判据没接上（v3 的第一条触发条件是 E_tb ≤ −TS）')
 
     d2 = np.full((H, W, 3), 0.2)
     p2 = np.zeros((H, W), np.float64)
     p2[H // 3: 2 * H // 3, W // 3: 2 * W // 3] = 1.0
     d2[H // 3: 2 * H // 3, W // 3: 2 * W // 3] = 0.95   # 最亮的就是主体自己
     _b2, _r2 = scene._light_position(d2, color.to_lab(d2)[..., 0], p2, C)
-    check('★ 最亮的就是主体自己 ⇒ 顺平光（光打在主体上）', _b2 == '顺平光',
-          'back=%s  hi_on_sub=%.2f' % (_b2, _r2['hi_on_sub']))
+    check('★ 最亮的就是主体自己 ⇒ **面光 / 顺平光**', _b2 == '面光/顺平光',
+          'back=%s  E_tb=%+.1f E_bg=%+.1f spike=%.1f' % (
+              _b2, _r2['E_tb'], _r2['E_bg'], _r2['spike']))
 
-    _b3, _ = scene._light_position(d, L, None, C)
-    check('★★★ 没有"人在哪"⇒ 光位**弃权**（返回 None，不许硬判"顺平光"）', _b3 is None,
-          '', '硬判 ⇒ 下游会照着一个假标签去改参数')
+    # ③ ★★★ 弃权必须是合法输出（v1 最大的毛病就是"无论如何都硬给一个答案"）
+    _b3, _r3 = scene._light_position(d, L, None, C)
+    check('★★★ 没有"人在哪" ⇒ **弃权**（返回 None，不许硬判面光）',
+          _b3 is None and _r3['why'], 'why=%s' % _r3['why'],
+          '硬判 ⇒ 下游会照着一个假标签去改参数')
     tiny = np.zeros((H, W), np.float64)
     tiny[0:8, 0:8] = 1.0
-    _b4, _ = scene._light_position(d, L, tiny, C)
-    check('★★ 主体太小 ⇒ 同样**弃权**（`SCENE_BACK_MIN_SUB_PX` 兜着）', _b4 is None,
-          '主体 %d px' % int(tiny.sum()))
+    _b4, _r4 = scene._light_position(d, L, tiny, C)
+    check('★★ 主体太小 ⇒ 同样**弃权**（`SCENE_BACK_MIN_SUB_PX` 兜着）',
+          _b4 is None and _r4['why'], '主体 %d px · why=%s' % (int(tiny.sum()), _r4['why']))
+    dark = np.zeros((H, W, 3))                          # 全黑 ⇒ 极端亮度，判不动
+    _b5, _r5 = scene._light_position(dark, color.to_lab(dark)[..., 0], person, C)
+    check('★★ 整张太暗 ⇒ **弃权**（`extreme_luma`）', _b5 is None, 'why=%s' % _r5['why'])
+    allp = np.ones((H, W), np.float64)                  # 掩膜盖满 ⇒ 没有背景可比
+    _b6, _r6 = scene._light_position(d, L, allp, C)
+    check('★★ 只有主体、没有背景 ⇒ **弃权**（`no_subject`）',
+          _b6 is None, 'why=%s' % _r6['why'])
 
-    # ---- `classify`：不给 person ⇒ 只有光位那一位是 '-'，其余照常 ----
+    # ④ `classify`：不给"人在哪" ⇒ 只有光位那一位是 '-'，其余照常
     sc = scene.classify(d, C)
-    _parts = sc['key'].split('|')
     check('★★ 不给"人在哪" ⇒ 只有光位弃权（`-`），exp / span / overwhite 照常',
-          sc['back'] is None and _parts[3] == '-' and sc['exp'] and sc['span'],
+          sc['back'] is None and sc['key'].split('|')[3] == '-' and sc['exp'] and sc['span'],
           'key=%s' % sc['key'])
     sc2 = scene.classify(d, C, person=person)
     check('★ 给了"人在哪" ⇒ key 里光位那一位不再是 `-`',
           sc2['key'].split('|')[3] != '-', 'key=%s' % sc2['key'])
-    check('★ 光位判据的 raw 里带着诊断量（事后标定阈值用）',
-          all(k in sc2['raw'] for k in ('hi_on_sub', 'hi_gap', 'hi_cx', 'bg_sub', 'person_pct')),
-          'raw 键: %s' % sorted(sc2['raw'].keys())[:8])
-
+    _need = ('E_lr', 'E_tb', 'E_span', 'E_bg', 'spike', 'z_span', 'clip_pct',
+             'clip_blk_off', 'hot_blk_off', 'has_spike_src', 'person_pct', 'cx_diff', 'why')
+    _miss = [k for k in _need if k not in sc2['raw']]
+    check('★ 光位判据的 raw 里带着**全部诊断量**（事后标定阈值用）', not _miss,
+          '缺: %s' % (_miss or '无'))
 
 # ---------------------------------------------------------------------------
 # 3. 契约
@@ -635,9 +647,10 @@ def t_scene():
           'key = %s' % sc['key'])
     check('判据稳定：同一张图判两次 key 完全一样',
           scene.classify(_gray_img(seed=91))['key'] == sc['key'])
-    check('★ 原来靠"人"的三根轴已经不在了（back / shot / face）',
-          not [k for k in ('back', 'shot', 'face') if k in scene.AXES],
-          'AXES = %s' % (scene.AXES,))
+    check('★ 靠"人"的三根轴里：`back`（光位）**加回来了**，`shot` / `face` **仍然没有**',
+          'back' in scene.AXES and not [k for k in ('shot', 'face') if k in scene.AXES],
+          'AXES = %s' % (scene.AXES,),
+          '09-29：光位用 `person.py`（~0.3 s 的粗"人在哪"）重建；景别 / 脸可见度随认人整套删了、没回来')
 
     # ② 每根轴的每一档都要**到得了**（落不到的分档 = 死的专家）
     #   ⚠⚠ 给的是**显示域**的值，而分档线在 **Lab L\*** 上 —— 中间隔着 sRGB 解码 + 立方根。

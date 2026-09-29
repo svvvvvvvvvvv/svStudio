@@ -56,7 +56,7 @@ import numpy as np
 from . import color
 from . import config as C
 
-VERSION = 4                          # ★ 换判据就要 +1（缓存键带它）
+VERSION = 5                          # ★ 换判据就要 +1（缓存键带它）
 AXES = ('exp', 'span', 'back', 'overwhite')
 
 _EXP_ORDER = ('暗', '正常', '亮')
@@ -89,82 +89,186 @@ def token(axis, v):
     return str(v)
 
 
-def _light_position(d, L, person, cfg):
-    """**光位**：正逆光 / 侧逆光 / 顺平光。
+def _block_z(L, n):
+    r"""**分块亮度场** —— `z(i,j) = 块中位 L − 整张中位 L`（**全相对量**）。
 
-    ★★★ 判据来自同行的实现（技能 §91.2），**不是**"脸比整张中位暗"：
-      ① **最亮那一块在不在主体身上** —— 逆光的**因果**是"光源在主体背后" ⇒
-         **最亮的东西是背景 / 天空，不是主体**（顺光时最亮的多半就是主体自己）；
-      ② **最亮那块比主体亮多少** —— 背景明显亮于主体 ⇒ 光从背后来；
-      ③ **亮区重心相对主体重心的水平偏移** —— 偏中轴 ⇒ 正逆光；偏一侧 ⇒ 侧逆光
-         （专业上按光源与镜头光轴夹角分：170~180° 是正逆光、120~150° 是侧逆光）。
-    ⚠ 一律**用主体 vs 它身后的背景**来比，**不用整张中位** —— 逆光片是"两头重"的分布，
-      整张中位落在两峰之间的谷里，最没有信息量。
-    ⚠ **主体太小 / 没有人掩膜 ⇒ 返回 `None`（弃权）**，不许硬给"顺平光"。
+    ★★★ 为什么用相对量（v3 的立身之本）：绝对阈值**换一个域就错档**（我们解码图的整张中位 L*≈21，
+    而成片/大师原片 ≈61）⇒ 同一套阈值判不了两种图。减掉整张中位以后，**跨域可比**。
+    """
+    h, w = L.shape
+    g = float(np.median(L))
+    z = np.zeros((n, n), np.float64)
+    for i in range(n):
+        for j in range(n):
+            s = L[i * h // n:(i + 1) * h // n, j * w // n:(j + 1) * w // n]
+            if s.size:
+                z[i, j] = float(np.median(s)) - g
+    return z
+
+
+def _light_position(d, L, person, cfg):
+    r"""**光位** —— 正逆光 / 侧逆光 / 侧光 / 面光顺平光；判不动 ⇒ `None`（**弃权**）。
+
+    ## 出处 = 09-27 的 **v3**（`_debug/lightpos_v3.py`，过了四关：幻影/目检/扰动/反例）
+
+    ```
+    z(块)  = 块中位 L − 整张中位 L           # 相对量 ⇒ 免疫"我们的解码图整体偏暗"
+    E_lr   = mean(z[右列]) − mean(z[左列])    # 左右亮暗差
+    E_tb   = mean(z[下行]) − mean(z[上行])    # 上下亮暗差（负 = 上亮）
+    E_span = max(z) − min(z)                  # 块级跨度
+    E_bg   = median(L[背景]) − median(L[主体])
+    spike  = z(最高块) − z(第二高块)           # ★ 区分「**光源**」与「**渐变**」
+    ```
+
+    ## 判决（**条件触发**，不投票 —— 光位本身决定哪种证据会出现）
+    1. `E_bg ≥ TB` **或** `E_tb ≤ −TS` **或** 有过曝块落在主体之外 **或** 有突出光源（`spike` 够大）
+       ⇒ **逆光族**：亮区重心偏主体中轴 ⇒ **正逆光**；偏一侧 ⇒ **侧逆光**；
+    2. 否则 `|E_lr| ≥ TS` ⇒ **侧光**；
+    3. 都弱 ⇒ **面光 / 顺平光**。
+
+    ## 弃权 = 五条兜底（**弃权是合法输出**，下游按"没判"处理，什么都不改）
+    `no_subject` · `extreme_luma`（整张太暗/太亮）· `mostly_blown`（整张过曝太多）
+    · `conflict`（背景亮 **且** 左右差都大 —— 两条证据打架）· `marginal`（量落在阈值 ±N% 内）
+
+    ## ⚠⚠ 三条 v3 用血换来的教训（别改回去）
+    1. **「最亮块在主体之外」几乎没有区分力** —— 任何真实照片的最亮块几乎总在主体外
+       （v3 第三次修实测：加上这条后 8 张大师片里 **6 张变成"正逆光"**，连 `E_lr=+54.4`
+       这种极强左右差都被判正逆光）⇒ 正确的区分是「**光源 vs 渐变**」，即 `spike`。
+    2. **「贴边 ⇒ 弃权」是必须的** —— 只要"算不算"依赖一个会动的阈值，贴边的图就必然翻。
+       配套口径：**`None` ↔ 某一档不算翻**（扰动关就按这个判"翻不翻"）。
+    3. **只有"所有证据都弱"才兜底**，不许"有一条贴边就整张弃权"（那会把 1726 这种
+       `E_tb=−54.8` 已经非常确定的片子判掉 —— 15 张里 6 张 None，40%）。
+    ⚠ 输入是 `person.py` 那个 **~0.3 s 的粗"人在哪"**（**不跑人脸检测**）；
+      拿不到 / 主体太小 ⇒ 直接弃权，**不许硬给"顺平光"**。
     @returns (标签 or None, raw 字典)
     """
     H, W = L.shape
-    raw = dict(bg_sub=None, above_sub=None, hi_cy=None, hi_cx=None, hi_gap=None,
-               hi_on_sub=None, clip_bg_pct=None, person_pct=None)
+    raw = dict(why=None, E_lr=None, E_tb=None, E_span=None, E_bg=None, spike=None,
+               z_span=None, clip_pct=None, clip_blk_off=None, hot_blk_off=None,
+               has_spike_src=False, hi_cx=None, sub_cx=None, cx_diff=None,
+               person_pct=None, tb=None, ts=None)
+    tb = float(getattr(cfg, 'SCENE_BACK_TB', 15.0))
+    ts = float(getattr(cfg, 'SCENE_BACK_TS', 20.0))
+    mg = float(getattr(cfg, 'SCENE_BACK_MARGIN', 0.25))
+    n = max(int(getattr(cfg, 'SCENE_BACK_NBLK', 3) or 3), 2)
+    raw['tb'], raw['ts'] = tb, ts
+
+    # ---------------- ★ 兜底 0：连"主体 / 背景"都没有 ⇒ 无从判 ----------------
     if person is None:
+        raw['why'] = 'no_person(没人在哪)'
         return None, raw
     per = np.asarray(person, np.float64)
     if tuple(per.shape[:2]) != (H, W):
+        raw['why'] = 'person_shape_mismatch'
         return None, raw
     sub = per > 0.5
     bak = ~sub
     raw['person_pct'] = float(sub.mean() * 100.0)
-    if int(sub.sum()) < int(getattr(cfg, 'SCENE_BACK_MIN_SUB_PX', 800)) or int(bak.sum()) < 500:
-        return None, raw                    # 主体太小 / 没背景 ⇒ 这一轴无从判（**弃权**）
-
-    raw['bg_sub'] = float(np.median(L[bak]) - np.median(L[sub]))      # 诊断用（见 config 注释）
-
-    ys, xs = np.nonzero(sub)
-    Hm, Wm = max(H - 1, 1), max(W - 1, 1)
-    subc_x = float(np.median(xs)) / Wm
-
-    # ★★ 主体正上方那条带（**保留作诊断** —— 它只对"光在正后方、主体居中"成立；
-    #   实测：主体在画面右侧、光从左上来的侧逆光，正上方是**树冠**（暗的），这条会判负）。
-    band_h = max(8, int(0.6 * (ys.max() - ys.min() + 1)))
-    band = np.zeros_like(sub)
-    band[max(0, ys.min() - band_h):max(ys.min(), band_h), xs.min():xs.max() + 1] = True
-    band &= bak
-    raw['above_sub'] = (float(np.median(L[band]) - np.median(L[sub]))
-                        if int(band.sum()) >= 200 else raw['bg_sub'])
-
-    # ★★★ 主判据：**画面最亮那一块 (P95+) 在不在主体身上、比主体亮多少**
-    hi = L >= float(np.percentile(L, 95.0))
-    if int(hi.sum()) < 50:
+    if (int(sub.sum()) < int(getattr(cfg, 'SCENE_BACK_MIN_SUB_PX', 500))
+            or int(bak.sum()) < 500):
+        raw['why'] = 'no_subject'
         return None, raw
-    yy, xx = np.nonzero(hi)
-    raw['hi_cy'] = float(np.median(yy)) / Hm
-    raw['hi_cx'] = float(np.median(xx)) / Wm
-    raw['hi_gap'] = float(np.median(L[hi]) - np.median(L[sub]))
-    # ★ 「最亮那块有多少落在主体身上」—— 比"外接框"稳：
-    #   外接框会被**画面里的第二个人**撑满整幅（实测 DSCF1231 左下角还有个人），
-    #   于是"亮区在框内"会误成立。这个比例只跟像素走，跟几个人无关。
-    raw['hi_on_sub'] = float((hi & sub).sum()) / max(int(hi.sum()), 1)
 
-    # ④ 「糊死的是哪一块」：全通道贴白的像素里，落在**背景**上的占比。
-    #   为什么要有它：负片在逆光下**让天空爆是正常的**（技能 §94.3 的专业共识），
-    #   把**主体/皮肤**爆掉才是问题 ⇒ 光看"糊死占比"缺了位置信息，必须看爆在哪。
+    # ---------------- ★ 兜底 1：图本身极端（几乎全白 / 几乎全黑）⇒ 判不动 ----------------
+    _l50 = float(np.median(L))
+    if (_l50 < float(getattr(cfg, 'SCENE_BACK_EXTREME_LO', 8.0))
+            or _l50 > float(getattr(cfg, 'SCENE_BACK_EXTREME_HI', 92.0))):
+        raw['why'] = 'extreme_luma(%.0f)' % _l50
+        return None, raw
     rgb = np.clip(np.asarray(d, np.float64), 0.0, 1.0)
-    if rgb.ndim == 3:
-        cl = rgb.min(axis=-1) >= 254.0 / 255.0
-        n_cl = int(cl.sum())
-        if n_cl > 0:
-            raw['clip_bg_pct'] = float((cl & bak).sum()) / n_cl * 100.0
+    cl = (rgb.max(axis=2) >= 254.0 / 255.0) if rgb.ndim == 3 else np.zeros((H, W), bool)
+    raw['clip_pct'] = 100.0 * float(cl.mean())
+    if raw['clip_pct'] > float(getattr(cfg, 'SCENE_BACK_BLOWN_ALL', 30.0)):
+        raw['why'] = 'mostly_blown(%.1f%%)' % raw['clip_pct']
+        return None, raw
 
-    # ---- 判决 ----
-    # ★ 主判据 = **最亮那块基本不在主体身上** ＋ **最亮那块比主体亮得多**；
-    #   次判据 = 亮区重心相对**主体重心**的水平偏移（分正 / 侧）。
-    if raw['hi_on_sub'] > float(getattr(cfg, 'SCENE_BACK_HI_ON_SUB', 0.15)):
-        return '顺平光', raw                       # 最亮的就是主体自己 ⇒ 光打在主体上
-    if raw['hi_gap'] < float(getattr(cfg, 'SCENE_BACK_HI_GAP', 18.0)):
-        return '顺平光', raw
-    if abs(raw['hi_cx'] - subc_x) <= float(getattr(cfg, 'SCENE_BACK_CX_TOL', 0.18)):
-        return '正逆光', raw
-    return '侧逆光', raw
+    # ---------------- 分块亮度场 + 三个方向量 ----------------
+    z = _block_z(L, n)
+    raw['E_lr'] = float(np.mean(z[:, -1]) - np.mean(z[:, 0]))
+    raw['E_tb'] = float(np.mean(z[-1]) - np.mean(z[0]))
+    raw['E_span'] = float(z.max() - z.min())
+    zf = np.sort(z.ravel())[::-1]
+    span_z = float(zf[0] - zf[-1])
+    spike = float(zf[0] - zf[1]) if zf.size > 1 else 0.0
+    raw['spike'], raw['z_span'] = round(spike, 1), round(span_z, 1)
+
+    # ---- 过曝块：有多少块「过曝了、而且那块不是主体」 ----
+    cz = 0.0
+    if cl.any():
+        off = 0
+        _cp = float(getattr(cfg, 'SCENE_BACK_CLIP_PCT', 1.0))
+        for i in range(n):
+            for j in range(n):
+                sb = cl[i * H // n:(i + 1) * H // n, j * W // n:(j + 1) * W // n]
+                sp = sub[i * H // n:(i + 1) * H // n, j * W // n:(j + 1) * W // n]
+                if sb.size and sb.mean() * 100.0 >= _cp:
+                    off += 1 if (sp.size and sp.mean() < 0.5) else 0
+        cz = float(off) / float(n * n)
+    raw['clip_blk_off'] = cz
+
+    # ---- ★★ 光源 vs 渐变：只取「最高的那一块」，看它落在不在主体外 ----
+    hot = z >= zf[0] - float(getattr(cfg, 'SCENE_BACK_HOT_REL', 0.10)) * max(span_z, 1e-6)
+    hz = 0.0
+    if hot.any():
+        off = 0
+        for i in range(n):
+            for j in range(n):
+                if not hot[i, j]:
+                    continue
+                sp = sub[i * H // n:(i + 1) * H // n, j * W // n:(j + 1) * W // n]
+                if sp.size and sp.mean() < 0.5:
+                    off += 1
+        hz = float(off) / float(n * n)
+    raw['hot_blk_off'] = hz
+    raw['has_spike_src'] = bool(hz > 0.0 and spike >=
+                                float(getattr(cfg, 'SCENE_BACK_SPIKE_REL', 0.30)) * max(span_z, 1e-6))
+
+    # ---- 主体 vs 它身后的**背景**（不用整张中位 —— 逆光片是"两头重"，中位落在谷里没信息量）----
+    raw['E_bg'] = float(np.median(L[bak]) - np.median(L[sub]))
+    eb = raw['E_bg']
+
+    # ---------------- ★ 兜底 2：证据互相矛盾 ⇒ 不猜 ----------------
+    if (eb >= tb) and abs(raw['E_lr']) >= ts:
+        raw['why'] = 'conflict: 背景亮 且 左右差也大'
+        return None, raw
+
+    # ---------------- ★ 兜底 3：**每条证据各自过「贴边 ⇒ 弃权」** ----------------
+    #   ★★★ 09-29 修（扰动关实测出来的）：v3 只在**最后统一**查贴边，于是
+    #     `E_tb` / `E_bg` **刚越过阈值**就直接进了"逆光族" —— 阈值一动就翻
+    #     （实测 1526：`E_tb=−14.1` 对 `TS=20`；×0.7 时 `TS=14` ⇒ 越阈 ⇒ 判侧逆光 ⇒ **翻**）。
+    #   ⇒ 正确做法：**证据要"明确超过带宽"才算数**（`> t×(1+mg)`）；
+    #     落在带内的量**直接弃权** —— "不猜"本来就该是合法输出。
+    #   ⚠ 只有"所有证据都弱 / 都贴边"才弃权：有**明确强证据**照判
+    #     （1726 的 `E_tb=−54.8`、1231/1665 的过曝块，都不受影响）。
+    _hard = (eb >= tb * (1 + mg)
+             or raw['E_tb'] <= -ts * (1 + mg)
+             or cz > float(getattr(cfg, 'SCENE_BACK_CLIP_OFF_MIN', 0.05))
+             or (raw['has_spike_src']
+                 and raw['E_span'] >= float(getattr(cfg, 'SCENE_BACK_SPAN_MIN', 20.0))))
+    if not _hard:
+        for _k, _v, _t in (('E_bg', abs(eb), tb), ('E_tb', abs(raw['E_tb']), ts),
+                           ('E_lr', abs(raw['E_lr']), ts)):
+            if _t * (1 - mg) <= _v <= _t * (1 + mg):
+                raw['why'] = 'marginal: %s=%.1f 贴 %.1f' % (_k, _v, _t)
+                return None, raw
+
+    if _hard:
+        # 亮区偏"主体中轴"还是偏一侧 ⇒ 正逆光 / 侧逆光
+        if cl.any():
+            _yy, _xx = np.nonzero(cl)
+            hi_cx = float(np.median(_xx)) / max(W - 1, 1)
+        else:
+            hi_cx = float(int(np.argmax(z[0] + z[1] + z[2])) + 0.5) / n
+        _ys, _xs = np.nonzero(sub)
+        sub_cx = float(np.median(_xs)) / max(W - 1, 1)
+        raw['hi_cx'], raw['sub_cx'] = round(hi_cx, 3), round(sub_cx, 3)
+        raw['cx_diff'] = round(abs(hi_cx - sub_cx), 3)
+        _tol = float(getattr(cfg, 'SCENE_BACK_CX_TOL', 0.10))
+        return ('正逆光' if abs(hi_cx - sub_cx) <= _tol else '侧逆光'), raw
+
+    if abs(raw['E_lr']) >= ts:
+        return '侧光', raw
+    return '面光/顺平光', raw
 
 
 def classify(disp, cfg=C, lin=None, person=None):
