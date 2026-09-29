@@ -36,7 +36,6 @@ L1 影调 + 空间层**继续让位**（预设自带 H&D 曲线、颗粒、柔�
 
 from __future__ import annotations
 
-import copy
 import dataclasses          # ★ 09-29：0.3.4 的 `PrintCurvesMorphParams` 是 frozen ⇒ 要 replace
 import json
 import os
@@ -417,8 +416,6 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=
 
 def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
     _p0 = p.enlarger.print_exposure
-    _ae0 = p.camera.auto_exposure
-    _np0 = p.enlarger.normalize_print_exposure
     _pp0 = p.print
     _ovs = []                       # [(对象, 属性名, 原值)] —— 还原用
     try:
@@ -436,16 +433,10 @@ def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
             if bool(getattr(cfg, 'PRESET_PE_SHIFT_FROM_SPEK', True)):
                 _sh = float(getattr(cfg, 'SPEK_PE_SHIFT', 1.0) or 1.0)
             p.enlarger.print_exposure = pe_of(name) * _sh
-        # ★★ 引擎自己那套测光要不要留 —— **跟着"曝光风格作用在哪一段"走**：
-        #   · `TONE_AFTER_ENGINE = True`（当前）：曝光风格作用在**成片**上，引擎之前一个像素
-        #     不动 ⇒ **必须保留预设自己的测光**（`auto_exposure` / `normalize_print_exposure`）。
-        #     实测：逼着关掉，中位会比验收版低 **5.1** 个 L*（64.4 vs 69.3），
-        #     而且亮部也低（88.6 vs 89.8）；恢复预设原样 ⇒ 11.7/69.5/89.8，**三个数全中**。
-        #   · `TONE_AFTER_ENGINE = False`（老路）：落点由 `tone` 在引擎**之前**定
-        #     ⇒ 引擎那套测光会把它的活抵消掉，**必须关**（跟 `spektra.render` 一个道理）。
-        if not bool(getattr(cfg, 'TONE_AFTER_ENGINE', False)):
-            p.camera.auto_exposure = False
-            p.enlarger.normalize_print_exposure = False
+        # ★★ **保留引擎自己那套测光**（`auto_exposure` / `normalize_print_exposure`）——
+        #   曝光 / 反差归引擎，引擎之前一个像素不动。
+        #   实测：逼着关掉，中位会比验收版低 **5.1** 个 L*（64.4 vs 69.3），亮部也低（88.6 vs 89.8）；
+        #   恢复预设原样 ⇒ 11.7/69.5/89.8，**三个数全中**。
 
         # ★ 场景覆盖放**最后**（能盖住上面两项）。字段路径写错 **当场报错**，不静默吞掉。
         # ★★ 09-29（0.3.4）：**frozen dataclass 要整体替换，不能 setattr**。
@@ -476,11 +467,9 @@ def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
         out = _simulate_once(p, np.clip(np.asarray(lin, np.float64), 0.0, None),
                              bool(getattr(cfg, 'PRESET_APPLY_STOCK_SPECIFICS', False)))
     finally:
-        for _obj, _attr, _old in _ovs:          # ★ 覆盖先还，再还上面那三项
+        for _obj, _attr, _old in _ovs:          # ★ 覆盖先还，再还上面那两项
             setattr(_obj, _attr, _old)
         p.enlarger.print_exposure = _p0
-        p.camera.auto_exposure = _ae0
-        p.enlarger.normalize_print_exposure = _np0
         p.print = _pp0
     return np.clip(np.asarray(out, np.float64), 0.0, 1.0)
 
@@ -506,54 +495,6 @@ def _walk_holder(root, parts):
             raise KeyError('overrides 的字段路径走不通: %s（在 %r 处断了）' % ('.'.join(parts), k))
         obj = getattr(obj, k)
     return obj, parts[-1], getattr(obj, parts[-1])
-
-
-def render_with_face(lin, name, cfg=C, pz=None, target_L=None, target_a=None, target_b=None,
-                     overrides=None, gap_target=None):
-    r"""**带「脸增益」的渲染** —— 在负片 CMY 密度上只给脸加密度（见 `facegain.py`）。
-
-    为什么要它：引擎测光定的是**整张落点** ⇒ 提脸必然推亮整张（实测 `partial`/`median`
-    把脸拉到 75~79 而整张也到 73~78）⇒ **"只提脸"只能在局部的物理中间态上做。**
-
-    `target_L / target_a / target_b`：脸的 **Lab 绝对靶**。
-      · 全空 ⇒ 走普通 `render`，**逐位同旧行为**；只给 `target_L` ⇒ 只按亮度做；
-        **三个都给 ⇒ 分通道迭代**（推荐，见 `_calib_resp.py` 标定的响应矩阵）。
-    `pz`：`face.parse()` 的结果（脸掩膜；`facegain` 会羽化 + 并上身体皮肤）。
-      ★ `config.FACE_GAIN_MASK_SRC='baseline'` 时 `facegain` **会自己重算一份**（见那处注释）。
-    `gap_target`：**身体**闭环的靶 `(dL, dC, dH)`（语义 脸 − 身体），
-      由调用方从 `targets.skin_gap_target(name, scene)` 取 ⇒ `None` 就只做脸那一段。
-    @returns {(ndarray, dict)} 出图 + `facegain` 的报告
-    """
-    if not target_L:
-        return render(lin, name, cfg, overrides=overrides), dict(applied=False, note='未启用脸增益')
-    spektra = __import__(__name__.rsplit('.', 1)[0] + '.spektra', fromlist=['x'])
-    spektra._sf()                           # ★ 保证 spektrafilm 路径正确（_sf 的守护会拦错的）
-    from spektrafilm.runtime.pipeline import SimulationPipeline   # noqa: E402
-    from . import facegain
-    # ★★ 09-29：与 `render` 用**同一把按名锁**。这里虽然不"原地改共享 p"
-    #   （有 overrides 时走 deepcopy），但 `copy.deepcopy(p)` / `SimulationPipeline(p)`
-    #   期间若另一个线程正停在 `_render_locked` 里**临时改写同一个 p**，
-    #   拷/读到的就是**半改状态**（§87.3 记的那个竞态）。
-    #   脸增益现在**默认开** ⇒ 生产上每次请求都走这条路 ⇒ 必须串起来。
-    with _lock_of(name):
-        p = _params_for(name, cfg)
-        if overrides:
-            pl = SimulationPipeline(copy.deepcopy(p))
-            for _dotted, _val in dict(overrides).items():
-                _holder = pl._params
-                _parts = [s for s in str(_dotted).split('.') if s]
-                for _k in _parts[:-1]:
-                    _holder = getattr(_holder, _k)
-                _attr = _parts[-1]
-                if _is_frozen_dc(_holder):
-                    _pobj, _pkey, _orig = _walk_holder(pl._params, _parts[:-1])
-                    setattr(_pobj, _pkey, dataclasses.replace(_holder, **{_attr: _val}))
-                else:
-                    setattr(_holder, _attr, _val)
-        else:
-            pl = SimulationPipeline(p)
-    return facegain.apply(pl, np.clip(np.asarray(lin, np.float64), 0.0, None), pz,
-                          target_L, target_a, target_b, cfg, gap_target)
 
 
 def _walk(root, dotted):

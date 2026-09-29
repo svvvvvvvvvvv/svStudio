@@ -21,9 +21,11 @@ spektrafilm 的 profiles 与生成的 LUT = **CC BY-SA 4.0 + 自定义前言**
 （署名 + 相同方式共享）。用了它，我们仓库的分发也要跟着这条。
 
 ## ⚠ 落点谁定
-**曝光归 svFilm（`tone.py`），在 spektrafilm 之前** —— 曝光是"给胶片多少光"。
-spektrafilm 自己那套 `auto_exposure` 只保证"负片正确曝光"，不管好看 ⇒ 必须关掉
-（`presets.render` 里已经关了）。
+**曝光 / 反差归 spektrafilm 自己那套测光 + H&D 曲线**（`camera.auto_exposure` +
+`enlarger.print_exposure` + `normalize_print_exposure`）—— 它是"负片正确曝光"。
+`presets._render_locked` **保留**它（实测关掉中位会低 **5.1** 个 L*）。
+⚠ 09-29：原来那套"影调层在引擎之前定落点"（`tone.py`）**已整段删除**。
+svFilm 现在只在**成片**上做颜色（`grade.py`：混色 → 分色），不碰曝光。
 """
 from __future__ import annotations
 

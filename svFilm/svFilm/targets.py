@@ -64,37 +64,17 @@ def load():
 def for_stock(name, scene=None):
     """取某条预设的靶；没有专属靶的预设落回 `_default`。
 
-    `scene`：`scene.classify(...)` 的结果。★★★ 09-26 加 —— **这是「按场景分参数」的入口**。
-
-    ★★ **肤色三项（skin_l / skin_c / skin_hue）不按预设分组** ——
-      统一用 `_skin_shared`（「鹿井 + 小红书」的共识值）。理由见那个键的 `why`：
-      鹿井 54.7° / 小红书 54.8° 两个独立来源几乎同一个数，而増田 58.5°、石田 57.2°
-      各自偏黄 ⇒ 按预设分组会跟着偏。肤色是**审美**问题不是胶片风格问题。
+    `scene`：`scene.classify(...)` 的结果 —— **这是「按场景分参数」的入口**。
     """
     d = load()
     t = dict(d.get('_default') or {})
-    own = d.get(name) or {}
-    t.update(own)
-    sk = dict(d.get('_skin_shared') or {})
-    # ★ 09-24：**预设自己的肤色靶优先**。原来这里无条件用 `_skin_shared` 覆盖，
-    #   于是每条预设的肤色只能共用一份共识值。但量他主页 514 张之后发现：
-    #   那份共识值（skin_hue 54.8 / skin_l +4.0）是从**32 张单次拍摄**的小样本凑的，
-    #   真实值差很远（52.3 / −1.3）⇒ 「脸偏橘黄 + 偏亮」的根就在这儿。
-    #   现在：**预设条目里写了就用它自己的，没写才落回 `_skin_shared`** ⇒ 动一条不影响其余 9 条。
-    for k in ('skin_l', 'skin_c', 'skin_hue', 'skin_n'):
-        # ⚠ 必须**显式**用 `skin_own: true` 才让预设自己的值生效 ——
-        #   否则 `Pro400H清风`/`Portra400薄荷` 条目里那些遗留的 skin_*（以前被共享值覆盖、从没生效过）
-        #   会突然激活，连带改到别的预设。
-        if k in sk and not own.get('skin_own'):
-            t[k] = sk[k]
-    t['skin_own'] = bool(own.get('skin_own'))
-    t['skin_shared'] = bool(sk)
+    t.update(d.get(name) or {})
     t['stock'] = name
     t['own'] = bool(d.get(name))
 
     # ★★★ 09-26：**场景覆盖**（「按场景分参数」的入口）
-    #   结构：`"_scene": {"<轴>=<值>": {字段: 值, ...}}`，例：`{"overwhite=过曝": {"skin_L_abs": 64.0}}`。
-    #   · 轴名 = `scene.AXES`（exp / span / back / shot / face / overwhite）；
+    #   结构：`"_scene": {"<轴>=<值>": {字段: 值, ...}}`，例：`{"overwhite=过曝": {"split_limit": 8.0}}`。
+    #   · 轴名 = `scene.AXES`（exp / span / overwhite）；
     #     **值一律用中文词**（`back` 用「逆光/顺平」、`overwhite` 用「过曝/正常」）——
     #     词形只由 `scene.token()` 负责，别在这儿另写一套（会静默不命中）。
     #   · `"<轴>=*"` = 那个轴的任意值都命中（写兜底用）
@@ -141,7 +121,7 @@ def scene_engine(scene, stock=None, cfg=None):
       ⇒ 本函数就是补这个通道。
 
     结构（键语义**与 `_scene` 完全一致** —— 同一个 `scene.token()`、同一套轴序）：
-        `"_scene_engine": {"back=正逆光": {"film_render.halation.halation_strength": [80, 24, 0]}}`
+        `"_scene_engine": {"span=大": {"film_render.halation.halation_strength": [80, 24, 0]}}`
       · 值是**引擎参数的点路径**（如 `film_render.halation.halation_strength`）
       · `"<轴>=*"` = 该轴任意值都命中（兜底）
       · 轴序固定（`scene.AXES`），后面的盖前面的
@@ -256,64 +236,4 @@ def cache_key(stock, scene=None):
         except Exception:                                  # noqa: BLE001
             v = str(v)
         items.append((k, v))
-    # ★★ 09-29（C2）：把**解析出来的**「脸↔身体的差」也压进键。
-    #   为什么不能只靠上面那条 `skin_gap`（= 作者名字符串）：改的是 `_skin_gap.who` 里的
-    #   **数值**，作者名没变 ⇒ 上面那条一字不改 ⇒ **命中旧缓存 = "拧了没反应"第 4 类**。
-    try:
-        items.append(('_skin_gap_resolved', tuple(skin_gap_target(stock, scene) or ())))
-    except Exception:                                      # noqa: BLE001
-        items.append(('_skin_gap_resolved', None))
     return tuple(items)
-
-
-# ---------------------------------------------------------------------------
-# ★ 09-29：**脸 Lab 靶**（给 `facegain` 用）
-# ---------------------------------------------------------------------------
-def face_lab_target(stock, scene=None):
-    """把 `skin_L_abs` / `skin_C_abs` / `skin_hue` 转成 Lab 的 `(L*, a*, b*)` 绝对靶。
-
-    没这几项的预设 ⇒ 返回 `None`（`facegain` 自动不启用，**逐位同旧行为**）。
-    """
-    t = for_stock(stock, scene) or {}
-    L = t.get('skin_L_abs'); C = t.get('skin_C_abs'); H = t.get('skin_hue')
-    if L is None or C is None or H is None:
-        # 旧语义（相对量）也能给个近似：脸 L* 用 `skin_L_abs`，没有就没法做
-        return None
-    import math
-    h = math.radians(float(H))
-    return (float(L), float(C) * math.cos(h), float(C) * math.sin(h))
-
-
-# ---------------------------------------------------------------------------
-# ★★★★★ 09-29（C2）：**「脸 ↔ 可见身体皮肤」的差该是多少**
-# ---------------------------------------------------------------------------
-def skin_gap_target(stock, scene=None):
-    r"""身体闭环的靶：`(dL, dC, dH)`，语义 = **脸 − 身体**（`facegain` 转成身体的 Lab 靶）。
-
-    数字从哪来：`data/targets.json` 的 `_skin_gap.who[<作者>]` —— 由**这条预设挂的那位作者**
-    量出来（技能 §112 纪律 1）。预设条目里用 `"skin_gap": "<作者名>"` 指过来；
-    也可以直接写 `[dL, dC, dH]` 三个数当覆盖。
-
-    **没配 / 作者名查不到 ⇒ 返回 `None`** ⇒ `facegain` 不做身体闭环 ⇒ 逐位同旧行为。
-
-    ★ 为什么必须"按作者"而不是共用一份：`skin_L_abs` 那条教训（§5.4 口径错位）——
-      同一个"差"，増田是 dC +0.9、滨田是 +1.4、鹿井是 +0.2，而**我们当前挂的是増田**
-      ⇒ 拿别人的数来比会把账算错。
-    """
-    t = for_stock(stock, scene) or {}
-    who = t.get('skin_gap')
-    if not who:
-        return None
-    if isinstance(who, (list, tuple)) and len(who) == 3:
-        try:
-            return tuple(float(x) for x in who)
-        except Exception:                                  # noqa: BLE001
-            return None
-    d = (load().get('_skin_gap') or {}).get('who') or {}
-    v = d.get(str(who))
-    if not isinstance(v, dict):
-        return None
-    try:
-        return (float(v['dL']), float(v['dC']), float(v['dH']))
-    except Exception:                                      # noqa: BLE001
-        return None

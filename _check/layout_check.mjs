@@ -210,18 +210,9 @@ await page.addInitScript(() => {
         回落成 `BASE_NONE`「不套基准」⇒ 默认出图等于"什么都没套"，界面上还一支都选不中）。
        ⚠ 顺序也照 `config.BASE_TABLE` 抄：默认那支**故意不排第一个** ——
          只有这样才测得动"取的是 `isDefault` 那条"，而不是"腿短取 `list[0]`"。 */
-    /* ★★ 曝光风格（09-23）：三条档，靶值从大师真片量出来（引擎 tone.STYLES 是唯一出处）。
-       ★ 默认那档**故意不排第一个** —— 只有这样才测得动"取的是 isDefault 那条"，
-         而不是"腿短取 list[0]"（同老基准那条检查的用意）。
-       ⚠ 形状照 main.js 的 engine-styles → 引擎 /styles 抄：{ ok, items:[{name,desc,isDefault,L50,L5,L95}] } */
-    engineStyles: async () => ({
-      ok: true,
-      items: [
-        { name: '暗调', desc: '整张压下来、暗部厚，适合逆光和傍晚', L50: 40.5, L5: 8.7, L95: 90.9 },
-        { name: '高长调', desc: '整体亮、从暗到亮铺得开，通透明快', L50: 69.9, L5: 14.1, L95: 95.5 },
-        { name: '中性调', desc: '大师真片的中位水平，最稳的一条', L50: 58.8, L5: 10.8, L95: 93.7, isDefault: true },
-      ],
-    }),
+    /* ★ 09-29：**曝光风格（`engine-styles` → 引擎 `/styles`）整条通道删了** ——
+       影调层 `tone.py` 一起删的，前端那个选择器也没了 ⇒ mock 这边跟着删，
+       别再给一个不存在的通道造桩（造了就会骗过自检）。 */
     /* ★ 按目录存配方（`main.js` 的 `get-grade` / `set-grade`）。
        ⚠⚠ 这两个 mock **必须给**：`enterSession` 会调 `getGrade` 套回配方、
           「存到目录」会调 `setGrade` —— 漏一个就是**同步抛 TypeError**、
@@ -262,12 +253,11 @@ await page.addInitScript(() => {
            静态自检里的 paramStr 单测 + 端到端探针兜，别以为这里测到了全部。 */
       (window.__renderArgs = window.__renderArgs || []).push({
         id,
-        /* ★★ 09-23：调色台只剩两个选择器 ⇒ 只记这两样。
+        /* ★ 09-29：调色台只剩**胶片风格**一个选择器。
            断言的是"**界面选了，请求里就真的是它**"——
            只验界面上亮没亮是不够的：亮对了、请求里却没带，画面就是没变
            （"看着对、其实对不上"）。 */
         stock: opts && opts.stock,
-        style: opts && opts.style,
       });
       /* ★ 让 mock 渲染"真的花点时间" —— 只给「忙的时候发来的那一发会不会被丢掉」那条检查用：
          拖着滑杆时参数是**连续变化**的，而渲染要花时间；只有渲染真的花时间，
@@ -599,13 +589,9 @@ if (afterFirstRender) {
     const b = page.locator('[data-stock]').nth(1);
     if (await b.count()) await b.click();
   });
-  await noRender('换曝光风格', async () => {
-    const b = page.locator('[data-style]').first();
-    if (await b.count()) await b.click();
-  });
   /* ★★ 「导出成片」（09-15 SV 选「A」第 ② 项）：按钮 → 请求里带的东西对不对。
      钉三件：① 真的发出去了；② 带的是**出图源**（loadPath，绝对路径），不是身份键 rel；
-             ③ 带的是**两个选择器**（胶片风格 + 曝光风格），不自己写死尺寸。 */
+             ③ 带的是**胶片风格**（09-29 起没有曝光风格了），不自己写死尺寸。 */
   const exBtn = page.locator('button', { hasText: /^导出成片/ }).first();
   check('右栏有「导出成片」按钮（否则下面几条全是空转）', (await exBtn.count()) > 0);
   if (await exBtn.count()) {
@@ -619,10 +605,10 @@ if (afterFirstRender) {
     check('★ 导出带的是**出图源**（绝对路径的 loadPath），不是身份键 rel',
       /[\\/]/.test(String(e.src || '')), String(e.src || '(空)'),
       '`rel` 只是文件名（星级/归档/缩略图都按它索引）—— 拿它当出图源就是喂错文件');
-    check('★ 导出带的是**两个选择器**（不自己拼参数串、也不自己写死尺寸）',
-      !!e.stock && !!e.style && !('side' in e) && !('params' in e),
+    check('★ 导出带的是**胶片风格**（不自己拼参数串、也不自己写死尺寸；曝光风格已删）',
+      !!e.stock && e.style === undefined && !('side' in e) && !('params' in e),
       JSON.stringify(e),
-      '少一个 ⇒ 导出的和屏幕上那张不是同一张；写死尺寸 = 引擎改了工作分辨率前端不跟');
+      '少 stock ⇒ 导出的和屏幕上那张不是同一张；写死尺寸 = 引擎改了工作分辨率前端不跟');
   }
 }
 
@@ -790,24 +776,24 @@ console.log('\n[9] 状态记忆');
   const txt = await page.evaluate(() => document.body.innerText);
   check('★ 切一圈回来，星级还在（3★ 计数没变）', /3★\s*1/.test(txt), '',
     '切目录把星级弄丢了');
-  /* 切台再切回来：选的两个风格要还在（不是偷偷回默认）
-     ★ 09-23：滑杆删了 ⇒ 这条改成盯**两个选择器**的选中状态。
+  /* 切台再切回来：选的那支胶片风格要还在（不是偷偷回默认）
+     ★ 09-29：曝光风格删了 ⇒ 这条改成盯**胶片风格**的选中状态。
        同一条契约（状态记忆 / 单一状态源），只是量什么变了。 */
   const gradeTab2 = page.locator('button', { hasText: '调色台' }).first();
   if (await gradeTab2.count()) {
     await gradeTab2.click();
     await page.waitForTimeout(900);
   }
-  const styleNow = () => page.locator('[data-style][data-style-on="1"]')
-    .first().getAttribute('data-style').catch(() => null);
-  const vA = await styleNow();
+  const stockNow = () => page.locator('[data-stock][data-stock-on="1"]')
+    .first().getAttribute('data-stock').catch(() => null);
+  const vA = await stockNow();
   await pickTab.click();
   await page.waitForTimeout(500);
   await gradeTab2.click();
   await page.waitForTimeout(900);
-  const vB = await styleNow();
-  check('★ 切到选片台再回调色台，选的曝光风格还在', !!vA && vA === vB, `${vA} → ${vB}`,
-    '切一圈回来曝光风格偷偷回默认了');
+  const vB = await stockNow();
+  check('★ 切到选片台再回调色台，选的胶片风格还在', !!vA && vA === vB, `${vA} → ${vB}`,
+    '切一圈回来胶片风格偷偷回默认了');
 }
 
 /* ---------- 10. 错误路径（装载失败 / 引擎没起） ---------- */
@@ -889,20 +875,15 @@ console.log('\n[11] 恢复上次状态');
     nm || '(没读到)', `期望夹到 DSCF1039（40 张里的最后一张），实际 ${nm || '空'}`);
 }
 
-/* ---------- 13. 右栏：曝光风格的默认 / 换风格 / 恢复默认 / 存到目录 ---------- */
-/* ★ 09-23 起右栏只有两个选择器（胶片风格网格 + 曝光风格 chips），滑杆/相纸/基准全删。
-   这一组对着三件事：
-   ① **默认档必须由引擎给**：前端初值故意留空，`/styles` 里带 `isDefault` 的那条才是默认。
-      过去在这儿栽过同款（前端写死 `'all'`，引擎表里没有 ⇒ 静默回落、四支一支都不亮）。
-   ② 「恢复默认」「存到目录」两个按钮**必须真接上线**（曾经没有 onClick，点了什么都不发生）。
-   ③ 「存到目录」要是**只写不读**就是存了个寂寞 ⇒ 连"切走再回来，配方真套回来了"一起钉。 */
-console.log('\n[13] 右栏：曝光风格的默认 / 两个按钮 / 按目录存配方');
+/* ---------- 13. 右栏：两个按钮 / 按目录存配方 ---------- */
+/* ★ 09-29：**曝光风格随影调层一起删了** ⇒ 右栏只剩「胶片风格」一个选择器。这一组对着两件事：
+   ① 「恢复默认」「存到目录」两个按钮**必须真接上线**（「恢复默认」曾经连 onClick 都没有）；
+   ② 「存到目录」要是**只写不读**就是存了个寂寞 ⇒ 连"切走再回来，配方真套回来了"一起钉。 */
+console.log('\n[13] 右栏：两个按钮 / 按目录存配方');
 {
   /* ⚠ [10] 为了测"引擎没起"注入过 `__FAIL_HEALTH = true`（`addInitScript` 会**一直生效**）
      ⇒ 这里必须显式关掉**并整页重来**，否则右栏只剩一句「引擎未启动」，
-       这一组每条都测到空气（本组最容易写出"假绿"的地方）。
-     ★ 重开之后会按 `lastSession` 直接落进目录A（[11] 注入的那个配置）——
-       所以 `sessionName` 是有值的，「存到目录」才有地方存。 */
+       这一组每条都测到空气（本组最容易写出"假绿"的地方）。 */
   await page.addInitScript(() => { window.__FAIL_HEALTH = false; });
   await page.reload();
   await page.waitForTimeout(1800);
@@ -915,83 +896,70 @@ console.log('\n[13] 右栏：曝光风格的默认 / 两个按钮 / 按目录存
   await page.waitForTimeout(400);
   await goGrade();
   await page.waitForTimeout(400);
-  const chips = page.locator('[data-style]');
-  const nChip = await chips.count();
-  check('★ 右栏有曝光风格 chips（否则下面几条全是空转）', nChip >= 3, `${nChip} 档`);
-  /* ★★ 默认档**由引擎给**（mock 里 isDefault 那档故意排在最后）—— 这条同时证明
-     "读的是 isDefault"而不是"腿短取第一个"。 */
-  const onIdx = [];
-  for (let i = 0; i < nChip; i++) {
-    if ((await chips.nth(i).getAttribute('data-style-on')) === '1') onIdx.push(i);
-  }
-  check('★★ 恰好一档是选中的（不是 0 档、也不是多档同时亮）',
-    onIdx.length === 1, `选中的下标 ${JSON.stringify(onIdx)} / 共 ${nChip} 档`,
-    '0 档 ⇒ 界面上一个都不亮（画面已经在用了、还看不出来）；多档 ⇒ 状态写错');
-  check('★★ 选中的是**引擎标了 isDefault 的那一档**（不是列表第一档）',
-    onIdx.length === 1 && onIdx[0] === nChip - 1,
-    `选中第 ${onIdx[0] + 1} / ${nChip} 档`,
-    '腿短取 list[0] ⇒ 引擎换默认档后静默错位（mock 里默认那档故意排在最后）');
 
-  /* ★★ 换一档 ⇒ 请求里带的就是它（少这一条，界面选了、画面不动） */
-  const otherIdx = onIdx.length === 1 ? (onIdx[0] + 1) % nChip : 0;
-  const wantName = await chips.nth(otherIdx).getAttribute('data-style');
-  await chips.nth(otherIdx).click();
+  /* ★ 09-29：曝光风格那排 chips **必须没了**（留着就是"点了没反应"的死控件） */
+  const chips13 = page.locator('[data-style]');
+  check('★ 曝光风格 chips 确实拿掉了（影调层删了 ⇒ 不该还留着这个选择器）',
+    (await chips13.count()) === 0, `还剩 ${await chips13.count()} 个`);
+
+  /* ★ 胶片风格的选择器还在 */
+  const nStock = await page.locator('[data-stock]').count();
+  check('★ 右栏有胶片风格可选（否则下面几条全是空转）', nStock >= 3, `${nStock} 支`);
+  const stockOn13 = () => page.locator('[data-stock][data-stock-on="1"]').first()
+    .getAttribute('data-stock').catch(() => null);
+  const onCount13 = await page.locator('[data-stock][data-stock-on="1"]').count();
+  check('★★ 恰好一支胶片风格是选中的（不是 0 支、也不是多支同时亮）',
+    onCount13 === 1, `选中 ${onCount13} 支 / 共 ${nStock} 支`,
+    '0 支 ⇒ 界面上一个都不亮（画面已经在用了、还看不出来）；多支 ⇒ 状态写错');
+
+  /* ★★ 换一支 ⇒ 请求里带的就是它（少这一条，界面选了、画面不动） */
+  const cur0 = await stockOn13();
+  for (let i = 0; i < nStock; i++) {
+    const b = page.locator('[data-stock]').nth(i);
+    if ((await b.getAttribute('data-stock')) !== cur0) { await b.click(); break; }
+  }
   await page.waitForTimeout(250);
+  const wantStock = await stockOn13();
   const rBtn13 = page.locator('button', { hasText: /^渲染$/ }).first();
   if (await rBtn13.count()) { await rBtn13.click(); await page.waitForTimeout(1200); }
   const a13 = await page.evaluate(() => (window.__renderArgs || []).slice());
   const last13 = a13[a13.length - 1] || {};
-  check('★★ 渲染请求里带的曝光风格**就是刚选的那一档**',
-    last13.style === wantName, `请求 ${JSON.stringify(last13.style)} / 界面选的 ${wantName}`,
-    '界面选了、请求里还是旧的 ⇒ 画面不动，看着像"这一档没效果"');
-  check('★ 渲染请求里同时带着胶片风格（两个选择器都要进请求）',
-    !!last13.stock, JSON.stringify({ stock: last13.stock, style: last13.style }));
+  check('★★ 渲染请求里带的胶片风格**就是刚选的那支**',
+    last13.stock === wantStock, `请求 ${JSON.stringify(last13.stock)} / 界面选的 ${wantStock}`,
+    '界面选了、请求里还是旧的 ⇒ 画面不动');
+  check('★ 渲染请求里**不再带**曝光风格（影调层删了）',
+    last13.style === undefined, JSON.stringify({ stock: last13.stock, style: last13.style }),
+    '还在带 style ⇒ 前端还在读一个已经不存在的字段');
 
-  /* ★ 「恢复默认」：把曝光风格回引擎默认档，**胶片风格不动** */
-  const curStock13 = last13.stock;
+  /* ★ 「恢复默认」：这一版没有可恢复的调色项 —— 按钮在、点了**不动胶片风格** */
   const resetBtn13 = page.locator('button', { hasText: '恢复默认' }).first();
   check('右下角「恢复默认」在（否则下面这条是空转）', (await resetBtn13.count()) > 0);
   if (await resetBtn13.count()) {
+    const stockBefore = await stockOn13();
     await resetBtn13.click();
-    await page.waitForTimeout(400);
-    const onIdx2 = [];
-    for (let i = 0; i < nChip; i++) {
-      if ((await chips.nth(i).getAttribute('data-style-on')) === '1') onIdx2.push(i);
-    }
-    check('★ 点「恢复默认」⇒ 曝光风格回引擎默认那档（回到选中最后那一档）',
-      onIdx2.length === 1 && onIdx2[0] === nChip - 1, `选中的下标 ${JSON.stringify(onIdx2)}`,
-      '回默认没生效 ⇒ 用户以为回默认了，其实还在自己选的那一档');
-    const stockOn = await page.locator('[data-stock][data-stock-on="1"]').first()
-      .getAttribute('data-stock').catch(() => null);
-    check('★★ 「恢复默认」**不动胶片风格**（只把曝光风格回默认）',
-      stockOn === curStock13, `胶片风格 ${stockOn} / 之前 ${curStock13}`,
+    await page.waitForTimeout(500);
+    const stockAfter = await stockOn13();
+    check('★★ 「恢复默认」**不动胶片风格**（这一版没有可恢复的调色项）',
+      stockAfter === stockBefore, `胶片风格 ${stockAfter} / 之前 ${stockBefore}`,
       '顺手把胶片风格也抹了 ⇒ 用户莫名其妙换了个卷（那是"拍什么"，不是调出来的）');
   }
 
-  /* ★★ 「存到目录」：存了要**读回来** —— 切走再切回来，两档都得套回 */
+  /* ★★ 「存到目录」：存了要**读回来** —— 切走再切回来，那支胶片风格得套回 */
   const saveBtn = page.locator('button', { hasText: '存到目录' }).first();
   check('右下角「存到目录」在', (await saveBtn.count()) > 0);
   if (await saveBtn.count()) {
     /* ⚠ 上一段点过「恢复默认」⇒ 它弹的那条 toast 要 2 秒才消，而 toast 会**盖住**右下角
-       那两个按钮 ⇒ 直接点会打在 toast 上（点了没反应、还找不到原因）。等它消掉再点。 */
-    await page.waitForTimeout(2200);
-    await chips.nth(otherIdx).click({ force: true });   // 先挑一个**非默认**档，才测得动
-    await page.waitForTimeout(300);
+       ⇒ 等它消掉再点，否则点到 toast 上（这条当年红过一次）。 */
+    await page.waitForTimeout(2300);
     const beforeSave = await page.evaluate(() => window.__gradeSaves || 0);
-    await saveBtn.click({ force: true });
-    await page.waitForTimeout(700);
-    const saved = await page.evaluate(() => window.__grades || {});
-    const savedOne = Object.values(saved)[0] || {};
-    const toast13 = await page.evaluate(() => {
-      const t = document.body.innerText || '';
-      const i = t.indexOf('配方已存到');
-      return i >= 0 ? t.slice(i, i + 40).replace(/\n/g, ' ')
-        : (/还没进目录/.test(t) ? '（还没进目录，没地方存）' : '(没有提示)');
-    });
+    await saveBtn.click();
+    await page.waitForTimeout(800);
     const afterSave = await page.evaluate(() => window.__gradeSaves || 0);
+    const saved = await page.evaluate(() => window.__grades || {});
+    const savedOne = saved['目录A'] || {};
+    const toast13 = await page.locator('text=/已存|存到/').first().textContent().catch(() => '');
     const diag = await page.evaluate(() => {
-      const btns = [...document.querySelectorAll('button')];
-      const b = btns.filter((x) => (x.textContent || '').trim() === '存到目录');
+      const b = [...document.querySelectorAll('button')].filter((x) => x.textContent === '存到目录');
       return {
         apiSetGrade: typeof (window.api || {}).setGrade,
         n: b.length,
@@ -1002,12 +970,18 @@ console.log('\n[13] 右栏：曝光风格的默认 / 两个按钮 / 按目录存
       afterSave > beforeSave,
       `提示=${toast13}`,
       `按钮没接上线 / 没进目录（sessionName 空）⇒ 存了个寂寞。`
-      + `saves ${beforeSave}→${afterSave}；提示=${toast13}；__grades=${JSON.stringify(saved)}；diag=${JSON.stringify(diag)}`);
-    check('★ 存的是**两个选择器**（不是一堆滑杆值）',
-      !!savedOne.stock && !!savedOne.style && !savedOne.params,
+      + `saves ${beforeSave}→${afterSave}；__grades=${JSON.stringify(saved)}；diag=${JSON.stringify(diag)}`);
+    check('★ 存的是**胶片风格**（不是一堆滑杆值，也不是已经删掉的曝光风格）',
+      !!savedOne.stock && !savedOne.params && savedOne.style === undefined,
       JSON.stringify(savedOne),
-      '还在存 params ⇒ 老滑杆那套又回来了');
-    /* 切到另一个目录再切回来：进目录时 `enterSession` 会套回配方 */
+      '还在存 params / style ⇒ 老那套又回来了');
+
+    /* 为了测得动"真套回来"：先换一支**别的**，再切走再回来 */
+    for (let i = 0; i < nStock; i++) {
+      const b = page.locator('[data-stock]').nth(i);
+      if ((await b.getAttribute('data-stock')) !== wantStock) { await b.click(); break; }
+    }
+    await page.waitForTimeout(300);
     const goTheme13 = async (n) => {
       const b = page.locator('button', { hasText: n }).first();
       if (await b.count()) { await b.click(); await page.waitForTimeout(900); }
@@ -1019,13 +993,9 @@ console.log('\n[13] 右栏：曝光风格的默认 / 两个按钮 / 按目录存
     await goTheme13('目录A');
     const t2 = page.locator('button', { hasText: '调色台' }).first();
     if (await t2.count()) { await t2.click(); await page.waitForTimeout(900); }
-    const onIdx3 = [];
-    for (let i = 0; i < nChip; i++) {
-      if ((await chips.nth(i).getAttribute('data-style-on')) === '1') onIdx3.push(i);
-    }
-    check('★★ 切走再回来 ⇒ 存的那一档**真套回来了**（只写不读 = 存了个寂寞）',
-      onIdx3.length === 1 && onIdx3[0] === otherIdx,
-      `回来选中的下标 ${JSON.stringify(onIdx3)} / 存的是 ${otherIdx}`,
+    const backStock = await stockOn13();
+    check('★★ 切走再回来 ⇒ 存的那支胶片风格**真套回来了**（只写不读 = 存了个寂寞）',
+      backStock === wantStock, `回来是 ${backStock} / 存的是 ${wantStock}`,
       '存了不读 ⇒ 每次进目录都回默认，用户以为"没存上"');
   }
 }

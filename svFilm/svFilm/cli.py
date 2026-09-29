@@ -13,26 +13,23 @@ import json
 import os
 import sys
 
-from . import config as C, io, presets, tone
+from . import config as C, io, presets
 
 
 def _fmt_probe(res):
-    t = res.report.get('tone') or {}
-    return ('%-16s %-4s %-14s %-6s  L5 %5.1f  L50 %5.1f(靶%5.1f)  L95 %5.1f  '
-            '曝光%+.2fEV  %5.0fms' % (
+    g = res.report.get('grade') or {}
+    return ('%-16s %-4s %-14s  L50 %5.1f  场景 %-18s  %5.0fms' % (
                 res.sample.name, res.sample.kind,
                 (res.report.get('stock') or 'config默认'),
-                (res.report.get('style') or ''),
-                t.get('L5_out', 0), t.get('L50_out', 0), t.get('mid_L', 0),
-                t.get('L95_out', 0), t.get('ev_mid', 0),
+                float(g.get('L50_out', float('nan'))),
+                ((res.report.get('scene') or {}).get('key') or '-'),
                 res.report.get('ms', 0)))
 
 
 def cmd_probe(args):
     from . import pipeline
     for p in _expand(args.inputs, args.recursive):
-        res = pipeline.run(p, src=args.src, max_side=args.max_side,
-                           stock=args.stock, style=args.style)
+        res = pipeline.run(p, src=args.src, max_side=args.max_side, stock=args.stock)
         print(_fmt_probe(res))
     return 0
 
@@ -78,16 +75,9 @@ def cmd_calib(args):
     return 0
 
 
-def _gray_mid(disp):
-    import numpy as np
-    from . import color
-    return float(np.percentile(color.gray_of(disp), C.PCT_MID))
-
-
 def cmd_one(args):
     from . import pipeline
-    res = pipeline.run(args.input, src=args.src, max_side=args.max_side,
-                       stock=args.stock, style=args.style)
+    res = pipeline.run(args.input, src=args.src, max_side=args.max_side, stock=args.stock)
     out = args.out or (os.path.splitext(args.input)[0] + '_svFilm.jpg')
     res.save(out)
     print(res.summary())
@@ -100,16 +90,16 @@ def cmd_one(args):
 
 def _worker(t):
     from . import pipeline
-    src, max_side, outdir, p, stock, style = t
+    src, max_side, outdir, p, stock = t
     name = os.path.splitext(os.path.basename(p))[0]
     # 输出名带 _svFilm 后缀：不能叫 <名字>.jpg —— 那会和"相机直出同名 JPG"撞名字，
     # 下游一旦按"同名 JPG = 机内直出"去解读，就会把自己的产出当成相机底来看
-    suffix = '_svFilm' + (('_' + stock) if stock else '') + (('_' + style) if style else '')
+    suffix = '_svFilm' + (('_' + stock) if stock else '')
     out = os.path.join(outdir, name + suffix + '.jpg')
     if os.path.abspath(out) == os.path.abspath(p):
         return (p, None, '', '输出会覆盖输入，已跳过')
     try:
-        res = pipeline.run(p, src=src, max_side=max_side, stock=stock, style=style)
+        res = pipeline.run(p, src=src, max_side=max_side, stock=stock)
         res.save(out)
         return (p, out, res.summary(), None)
     except Exception as e:                                  # noqa: BLE001
@@ -180,7 +170,7 @@ def cmd_dir(args):
     sys.stdout.flush()
 
     from . import pipeline
-    tasks = [(args.src, args.max_side, args.out, p, args.stock, args.style) for p in ps]
+    tasks = [(args.src, args.max_side, args.out, p, args.stock) for p in ps]
     done = fail = 0
     if jobs == 1:
         for t in tasks:
@@ -211,20 +201,6 @@ def cmd_stocks(args):
         print('%-16s %-16s %s%s' % (n, lb, ds, flag))
     print('-' * 92)
     print('用法：--stock <风格名>；不指定 = config.STOCK（当前 %s）' % (C.STOCK or 'None'))
-    return 0
-
-
-def cmd_styles(args):
-    """列出三条曝光风格（靶值是从大师真片量出来的）。"""
-    print('%-8s %6s %6s %6s  %s' % ('曝光风格', '落点L50', '黑位L5', '亮部L95', '什么样子'))
-    print('-' * 92)
-    for n in tone.names():
-        d = tone.get(n)
-        flag = ' ←' if (args.style or C.STYLE) == n else ''
-        print('%-8s %6.1f %6.1f %6.1f  %s%s' % (n, d['mid_L'], d['black_L'], d['white_L'], d['desc'], flag))
-    print('-' * 92)
-    print('用法：--style <风格名>；不指定 = config.STYLE（当前 %s）' % (C.STYLE or 'None'))
-    print('出处：1144 张大师真片按各自中位亮度排序后取 P30/P50/P70 三档量出来的（见 tone.py）')
     return 0
 
 
@@ -264,22 +240,16 @@ def build_parser():
         p.add_argument('--max-side', type=int, default=None, dest='max_side')
         p.add_argument('--stock', default=None,
                        help='胶片风格：%s；不指定 = config.STOCK' % '/'.join(presets.names()))
-        p.add_argument('--style', default=None,
-                       help='曝光风格：%s；不指定 = config.STYLE' % '/'.join(tone.names()))
 
     ap.add_argument('--version', action='version', version='svFilm ' + C.VERSION)
 
     p = sub.add_parser('stocks', help='列出所有胶片风格（9 条预设）')
     p.add_argument('--stock', default=None)
     p.set_defaults(func=cmd_stocks)
-    p = sub.add_parser('styles', help='列出三条曝光风格（靶值来自大师真片）')
-    p.add_argument('--style', default=None)
-    p.set_defaults(func=cmd_styles)
 
     p = sub.add_parser('probe', help='只分析不写文件')
     p.add_argument('inputs', nargs='+')
     p.add_argument('--recursive', action='store_true')
-    p.add_argument('--after', action='store_true', help='同时打印出片后的数')
     common(p)
     p.set_defaults(func=cmd_probe)
 

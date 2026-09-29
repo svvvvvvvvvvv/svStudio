@@ -33,8 +33,6 @@ contextBridge.exposeInMainWorld('api', {
   engineHealth: () => ipcRenderer.invoke('engine-health'),
   engineStart: () => ipcRenderer.invoke('engine-start'),
   engineStocks: () => ipcRenderer.invoke('engine-stocks'),
-  /** 曝光风格（09-23）：三条档，唯一出处 = 引擎 */
-  engineStyles: () => ipcRenderer.invoke('engine-styles'),
   engineLoad: (paths) => ipcRenderer.invoke('engine-load', paths),
   engineBase: (id) => ipcRenderer.invoke('engine-base', id),
   engineRender: (id, opts) => ipcRenderer.invoke('engine-render', id, opts),

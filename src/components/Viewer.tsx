@@ -155,9 +155,8 @@ function SplitView() {
        ③ **跑完补发最新那一发** —— 忙的时候发来的不许丢（丢了画面就停在上一次）；
        ④ 出图中有可见反馈（旧图原地不动、也没有转圈 ⇒ 看着就像"没反应"）。 */
   const opts: RenderOpts = {
-    /* 两个选择器都在这里进请求。少一个 ⇒ 界面选了、画面不动。 */
+    /* 09-29：调色台只剩「胶片风格」一个选择器 —— 曝光风格随影调层一起删了。 */
     stock: grade.stock,
-    style: grade.style,
   };
   const wantOptsRef = useRef<RenderOpts>({});
   const doneTickRef = useRef(-1);

@@ -41,8 +41,6 @@ declare global {
       engineHealth: () => Promise<{ ok: boolean } & Record<string, any>>;
       engineStart: () => Promise<any>;
       engineStocks: () => Promise<{ ok?: boolean; items: Stock[]; error?: string }>;
-      /** ★★ 曝光风格（09-23）：三条档，靶值从大师真片量出来，引擎侧唯一出处。 */
-      engineStyles: () => Promise<{ ok?: boolean; items: Style[]; error?: string }>;
       engineLoad: (paths: string[]) => Promise<LoadResult>;
       engineBase: (id: string) => Promise<ImageResult>;
       engineRender: (id: string, opts: RenderOpts) => Promise<ImageResult>;
@@ -158,30 +156,6 @@ export interface Stock {
 }
 
 /**
- * ★★ 曝光风格（09-23 SV 重新划边界：调色台只剩两个选择器 —— 胶片风格 + 曝光风格）。
- *   三条档的靶是**从大师真片量出来的**（1144 张），唯一出处是引擎的 tone.STYLES
- *   ⇒ 前端**不许**自己写死档位名或数值。
- */
-export interface Style {
-  name: string;
-  desc?: string;
-  /** ★★ 引擎当前配置的默认档（config.STYLE）⇒ 前端只认它定初值 */
-  isDefault?: boolean;
-  /** 落点（整张中位亮度 L*）/ 黑位（L5）/ 亮部（L95）—— 给人话说明用。
-   *  ⚠ 只在「曝光风格作用在**引擎之前**」那套配置下才有（打绝对靶）。 */
-  L50?: number;
-  L5?: number;
-  L95?: number;
-  /** ★★ 「曝光风格作用在**引擎之后**」那套配置下的三个力度（相对量）——
-   *  **都是"往下搬多少"**：中位几档 / 亮部几个 L* / 黑位几个 L*。
-   *  数值来自鹿井 32 张成片的内容归一形状（见 svFilm/svFilm/tone.py 的 REL）。 */
-  evDown?: number;
-  hiDown?: number;
-  blDown?: number;
-}
-
-
-/**
  * ★★ 引擎侧返回形状的**唯一契约 = `main.js` 的 IPC 处理器**。
  *    别在这个文件里自己发明字段（09-15 踩过：前端读 `r.id` / `r.bytes` / `{stocks}`，
  *    而 main.js 实际给的是 `{items:[{id,…}]}` / `{image}` / `{items:[…]}`
@@ -215,8 +189,6 @@ export interface ImageResult {
 export interface RenderOpts {
   /** 胶片风格 = 9 条预设之一（名字必须来自 `/stocks`） */
   stock?: string;
-  /** 曝光风格 = 高长调 / 中性调 / 暗调 之一（名字必须来自 `/styles`） */
-  style?: string;
   [k: string]: any;
 }
 
@@ -229,8 +201,6 @@ export interface RenderResult {
 export interface GradeState {
   /** 胶片风格（9 条预设之一） */
   stock?: string;
-  /** 曝光风格（高长调 / 中性调 / 暗调） */
-  style?: string;
   [k: string]: any;
 }
 
@@ -239,7 +209,6 @@ export interface BatchOpts {
   dirPath: string;
   items: { rel: string }[];
   stock?: string;
-  style?: string;
   /** 长边像素。⚠ 不传默认 2048 —— 原图全尺寸一张 RAW 约 6 分半。 */
   side?: number;
 }
@@ -340,7 +309,6 @@ export const API = {
   engineHealth: () => api().engineHealth(),
   engineStart: () => api().engineStart(),
   engineStocks: () => api().engineStocks(),
-  engineStyles: () => api().engineStyles(),
   engineLoad: (paths: string[]) => api().engineLoad(paths),
   engineBase: (id: string) => api().engineBase(id),
   engineRender: (id: string, opts: RenderOpts) => api().engineRender(id, opts),

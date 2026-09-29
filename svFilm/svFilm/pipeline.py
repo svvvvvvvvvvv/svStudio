@@ -1,18 +1,15 @@
 # -*- coding: utf-8 -*-
-r"""编排 —— **两步**（09-23 SV 重新划边界之后）。
+r"""编排 —— 一条链跑完（09-29 `drop-tone-and-skin` 之后）。
 
-    svFilm：曝光风格（落点 + 反差，线性域）
-        ↓
-    spektrafilm：胶片风格（负片 / 相纸 / 颗粒 / 柔光 / 光晕 / 扫描）
+    解码 + 白平衡 + 护栏  →  判场景  →  胶片引擎(spektrafilm 0.3.4)
+        →  **颜色层（混色 → 分色）**  →  出图
 
-★ 为什么是这个顺序：曝光是"给胶片多少光"，是"曝光 → 显影 → 密度"这条因果链最前面的一环。
+★ 为什么是这个顺序：曝光/反差归**引擎**（"曝光 → 显影 → 密度"这条因果链的最前面一环）。
   反过来说：**在胶片之后改亮度 = 对印好的照片再翻拍调增益**，物理上不存在"冲好了再曝光"，
-  而且到显示域 + 8bit 就没有高光余量了。
+  而且到显示域就没有高光余量了。
 
-★ 为什么这里**没有**别的层了：
-  迭代期堆过「风格层 / 空间层（颗粒·黑柔·光晕）/ 局部肤色 / 降噪 / 成色基准 / 脸部锚点」，
-  但它们要么跟 spektrafilm 重复（我们自己手搓了一份简化版），要么属于"颜色"不属于"曝光影调"。
-  09-23 全部删掉 —— 那些事现在归 spektrafilm，或者归 Lightroom。
+★ 影调层（`tone.py`）/ 肤色层（`grade.skin()`）/ 认人认脸（`face.py` · `facegain.py` · `region.py`）
+  09-29 新分支 `drop-tone-and-skin` **整段删除**（不是关开关）—— 见 `config.py` 文件头。
 """
 from __future__ import annotations
 
@@ -23,7 +20,7 @@ from collections import OrderedDict
 
 import numpy as np
 
-from . import config as C, grade, io, presets, scene, tone
+from . import config as C, grade, io, presets, scene
 
 
 class Result:
@@ -42,16 +39,11 @@ class Result:
 
     def summary(self):
         r = self.report
-        t = r.get('tone') or {}
-        return ('{}  [{}]  胶片 {}  |  曝光 {}  |  落点 L*{:.1f}（靶 {:.1f}）'
-                '  黑位 {:.1f}  亮部 {:.1f}  |  曝光 {:+.2f}EV  反差 γ{:.2f}  |  {:.0f}ms'.format(
+        g = r.get('grade') or {}
+        return ('{}  [{}]  胶片 {}  |  落点 L*{:.1f}  |  {:.0f}ms'.format(
                     self.sample.name, self.sample.kind,
                     r.get('stock_label') or r.get('stock'),
-                    r.get('style'),
-                    t.get('L50_out', float('nan')), t.get('mid_L', float('nan')),
-                    t.get('L5_out', float('nan')), t.get('L95_out', float('nan')),
-                    t.get('ev', 0.0), t.get('g', 1.0),
-                    r['ms']))
+                    float(g.get('L50_out', float('nan'))), r['ms']))
 
 
 def _sample_uid(s):
@@ -110,16 +102,14 @@ class StageCache:
                         misses=self.misses, mb=round(mb, 1))
 
 
-def run(path, src=None, max_side=None, cfg=C, out=None, stock=None, style=None):
+def run(path, src=None, max_side=None, cfg=C, out=None, stock=None):
     """一次性：**解码 + 跑完整链**。常驻服务请用 `run_from`（跳过解码）。"""
     t0 = time.perf_counter()
     s = io.load(path, max_side or cfg.MAX_SIDE, src=src)
-    return run_from(s, cfg=cfg, stock=stock, style=style, out=out,
-                    t0=t0, path=path)
+    return run_from(s, cfg=cfg, stock=stock, out=out, t0=t0, path=path)
 
 
-def run_from(sample, cfg=C, stock=None, style=None, out=None,
-             t0=None, path=None, cache=None):
+def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None):
     r"""★ 从**已经 load 好的** sample 起跑 —— 常驻服务的入口。
 
     ⚠ 一份实现、两条入口：`run()` = `io.load()` + `run_from()` —— 不许各写一套。
@@ -133,186 +123,67 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
     if not presets.has(name):
         # ★ "名字不认得 ⇒ 静默走默认"是本项目最阴的一类坑（出现过三次）⇒ 当场说清楚
         raise KeyError('没有这个胶片风格: %s（可选：%s）' % (name, '、'.join(presets.names())))
-    style = tone.DEFAULT if style is None else str(style)
 
-    # 曝光风格作用在哪一段（见 config.TONE_AFTER_ENGINE）。缓存键要带上它，
-    # 否则改了开关、缓存里还是另一条路出来的那张（"拧了没反应"的经典长相）。
-    _after = bool(getattr(cfg, 'TONE_AFTER_ENGINE', False))
+    # ---- ★★★ 场景判据（09-26，「按场景分参数」的入口）----
+    #   · 场景 → **引擎参数覆盖**（`_scene_engine`）。当前只有一条**全局 `"*"`** →
+    #     `density_curves_morph`，它**无条件生效**，实测把跨度送到共识靶 81.87。
+    #   · `lin=s.lin` 只给「源头过曝」那一轴用：它**只能在解码后的线性域判**，
+    #     显示域那边早被重渲染压过了。
+    #   · 判不出来 ⇒ `None`，下游一个字段都不盖，**不崩**。
+    #   ⚠⚠ 09-29 修一个**真 bug**：原来场景是在**缓存键之后**才算的，而缓存键里又要用它
+    #      ⇒ 那时 `_sc` **还没定义** ⇒ `NameError` 被 `except` 吞掉 ⇒
+    #      「引擎 overrides / 靶」**从来没进过缓存键**（"拧了没反应"第 4 类，静默）。
+    #      现在把它挪到缓存键之前，键里那两项才真的生效。
+    try:
+        _sc = scene.classify(s.disp, cfg, lin=s.lin)
+    except Exception:                                        # noqa: BLE001
+        _sc = None
 
-    # ★ 脸增益的报告（`FACE_GAIN_ENABLE` 关着时恒为 `None`）。
-    #   先在这里初始化：缓存命中那条路不会再算它，但 `rep` 里照样要能看到"这张到底跑没跑脸增益"。
-    _fg = None
+    # ---- 场景 → 引擎参数覆盖（柔光 / 颗粒 / 光晕这类「质感」参数在引擎里）----
+    #   没配 `_scene_engine` ⇒ 空 dict ⇒ 逐位同旧行为。
+    _TS = None
+    try:
+        from . import targets as _TS
+        _ov = _TS.scene_engine(_sc, stock=name, cfg=cfg)
+    except Exception:                                  # noqa: BLE001
+        _ov = {}
+
     _ckey, _entry = None, None
     if cache is not None:
         # ★ 09-26：键里带上 **判据版本号**。场景是**这张图**的确定函数（同一张图永远同一套标签），
         #   所以不用把标签本身塞进键；但判据一改（`scene.VERSION` +1）就是另一套参数 ⇒ 必须作废。
         #   ⚠ `config.SCENE_*` 阈值改了不带版本号 ⇒ 同一进程内不会作废（config 都是进程内冻结的，无妨）。
-        # ★★ 09-27：**开关本身也必须进键**。原来只带了 `_after`（`TONE_AFTER_ENGINE`）
-        #   ⇒ 漏了 `GRADE_SCOPE` / `GRADE_ENABLE` / `TONE_ENABLE`：常驻进程里改了它们仍会命中
-        #   旧缓存，表现就是**"拧了没反应"**（和下面老路那段注释里说过的同一类坑）。
-        # ★★★ 09-29：**overrides 和靶也必须进键**。
-        #   原来只带了"判据版本号"（理由：场景是这张图的确定函数）—— 那个理由本身没错，
-        #   但漏了：`_scene` / `_scene_engine` 真正影响的是【靶】和【引擎 overrides】，
-        #   而这两样都不在键里 ⇒ 同一进程里改了靶/覆盖 ⇒ **仍命中旧缓存** ⇒
-        #   表现就是"拧了没反应"（今天在这上面栽了好几次：入口 A/B 三组一样、按场景覆盖不生效）。
-        _ov_key = tuple(sorted(
-            (k, tuple(v) if isinstance(v, list) else v) for k, v in ({}).items())) \
-            if False else None
+        # ★★ 09-27：**开关本身也必须进键**。漏了 `GRADE_ENABLE` ⇒ 常驻进程里改了它仍会命中
+        #   旧缓存，表现就是**"拧了没反应"**。
+        # ★★★ 09-29：**overrides 和靶也必须进键**（原来那两项因为 `_sc` 未定义而永远是 `None`）。
         try:
-            from . import targets as _TSk
-            _ov = _TSk.scene_engine(_sc, stock=name, cfg=cfg) if _sc else {}
             _ov_key = tuple(sorted((k, tuple(v) if isinstance(v, list) else str(v))
                                    for k, v in (_ov or {}).items()))
-            _tg_key = _TSk.cache_key(name, _sc)
+            _tg_key = _TS.cache_key(name, _sc)
         except Exception:                                  # noqa: BLE001
             _ov_key, _tg_key = None, None
-        _ckey = ('film', _sample_uid(s), name, style, getattr(cfg, 'MAX_SIDE', None), _after,
+        _ckey = ('film', _sample_uid(s), name, getattr(cfg, 'MAX_SIDE', None),
                  int(getattr(scene, 'VERSION', 0)),
-                 # ★★★★★ 09-29：**"认人/认脸"总闸进键** —— 它决定的不是"改多少"，
-                 #   而是**整条链跑哪几步**（关掉 ⇒ 不调 face.parse、不跑脸/身体的任何动作）
-                 #   ⇒ 不进键就是在常驻进程里"拧了没反应"第 4 类，而且这次更狠：
-                 #     画面会**整套**不同（少了脸/身体的动作）。
-                 bool(getattr(cfg, 'FACE_STEP_ENABLE', True)),
-                 str(getattr(cfg, 'GRADE_SCOPE', 'all')),
                  bool(getattr(cfg, 'GRADE_ENABLE', True)),
-                 bool(getattr(cfg, 'TONE_ENABLE', False)),
-                 # ★★ 09-29：**脸增益开关也进键**。它改的是出图本身（每张的负片 CMY 密度），
-                 #   不进键 ⇒ 常驻进程里把它一开，仍会命中"没开脸增益"的旧缓存
-                 #   （与上面 `GRADE_ENABLE` / `TONE_ENABLE` 同一类坑 —— "拧了没反应"第 4 类）。
-                 bool(getattr(cfg, 'FACE_GAIN_ENABLE', False)),
-                 # ★★ 09-29：**肤色层那三个"形状旋钮"也进键**。它们改的是掩膜形状
-                 #   （脸 ∪ 身体皮肤×`GRADE_SKIN_BODY_W`）和 L4 的修正量 = **直接改出图**。
-                 #   ⚠ 刚踩过：`GRADE_SKIN_BODY_W` 0.5→0.8，常驻进程里仍会命中旧缓存 ⇒
-                 #     又是"拧了没反应"（与上面 `GRADE_ENABLE` / `FACE_GAIN_ENABLE` 同类）。
-                 float(getattr(cfg, 'GRADE_SKIN_BODY_W', 0.5)),
-                 float(getattr(cfg, 'GRADE_SKIN_W_REF', 0.0)),
-                 float(getattr(cfg, 'GRADE_SKIN_FEATHER', 0.0)),
-                 # ★★ 09-29（B 清账）：**L4 那两个新键也进键** —— 同一类坑，先堵上。
-                 #   · `GRADE_SKIN_MEAS_FACE` 改的是「量」用哪张掩膜 ⇒ 改 `_aL/_cC/_cH` ⇒ 改修正量；
-                 #   · `SKIN_ABS_OWNER` 直接决定 L4 写不写脸的绝对靶。
-                 #   ⇒ 不进键的话，**以后把 `GRADE_ENABLE` 打开**时改这两个键会命中旧缓存
-                 #     = "拧了没反应"第 4 类（这条注释上面的历史就是这么来的）。
-                 bool(getattr(cfg, 'GRADE_SKIN_MEAS_FACE', True)),
-                 str(getattr(cfg, 'SKIN_ABS_OWNER', 'facegain')),
-                 # ★★★ 09-29（C2）：**身体闭环那一套也进键** —— 同一类坑第 N 次。
-                 #   · `FACE_GAIN_MASK_SRC` 换的是**掩膜来源**（很暗的 RAW ↔ 引擎基线）
-                 #     ⇒ 直接改"给哪里加密度" ⇒ 出图不同；
-                 #   · `SKIN_GAP_ENABLE` + 那一串 `SKIN_GAP_*` 旋钮改的是**身体闭环的动作/停止条件**；
-                 #   · 身体靶本身已由 `_tg_key`（`targets.cache_key` 里的 `_skin_gap_resolved`）覆盖。
-                 #   ⇒ 不进键的话，常驻进程里拧它们仍命中旧缓存 = "拧了没反应"。
-                 str(getattr(cfg, 'FACE_GAIN_MASK_SRC', 'decoded')),
-                 bool(getattr(cfg, 'SKIN_GAP_ENABLE', False)),
-                 float(getattr(cfg, 'SKIN_GAP_PROBE', 0.05)),
-                 float(getattr(cfg, 'SKIN_GAP_DAMP', 0.70)),
-                 float(getattr(cfg, 'SKIN_GAP_STEP', 0.10)),
-                 float(getattr(cfg, 'SKIN_GAP_TOTAL', 0.40)),
-                 int(getattr(cfg, 'SKIN_GAP_MAXIT', 4)),
-                 float(getattr(cfg, 'SKIN_GAP_STOP', 0.6)),
-                 float(getattr(cfg, 'SKIN_GAP_SIG_MAX_REL', 0.02)),
                  _ov_key, _tg_key)
         _entry = cache.get(_ckey)
 
     if _entry is not None:
         disp = _entry['disp']
-        t_info = dict(_entry['t_info'])
-        gk = float(_entry['gk'])
-        anc = dict(_entry['anc'])
-    elif _after:
-        # ========== 曝光风格作用在胶片引擎**之后**的成片上 ==========
-        # 引擎之前一个像素都不动：喂进去的就是 RAW 解码出来的场景线性（`io.load_raw`，
-        # 默认走 public 那条加载）。理由见 `config.TONE_AFTER_ENGINE` 那段注释 ——
-        # 在引擎之前调亮度，控制不了成片亮度（引擎的印相配平会把它抹平）。
-        # ⚠ 既然动作在之后，脸锚点 / 高光护栏这两道"引擎之前"的工序就不参与：
-        #   一个是给"自己标的真卷"校落点用的，另一个是给入口曲线兜高光用的。
-        #   新路（public 的加载）不做入口提亮 ⇒ 两道都无事可做。
-        #
-        # ★★★ 09-26 修一个漏：**人脸掩膜在「解码后」那张图上算一次**（同 `else` 分支的理由）。
-        #   链尾（胶片出图后）画面已经发白 ⇒ 分割模型认不出脸 ⇒ 掩膜空 ⇒ 后续静默失效。
-        #   老路 (`else`) 早就把这件事挪到解码后了，新路当时漏掉 ⇒ `grade` 是在**成片**上现算的。
-        #   实测同一批 12 张：解码后检出 12/12、引擎出图后只有 11/12（`DSCF1141` 就是丢在那一步）。
-        #   算一次、传下去，`grade` 里 region 与 L4 共用 ⇒ 顺带把重复的那次分割也省掉。
-        #   ⚠ 拿不到（模型缺失）⇒ `None`，下游自己降级，**不崩**。
-        _pz = None
-        # ★★★★★ 09-29 SV 裁定：**「认人/认脸」这一步已去掉**（总闸 `config.FACE_STEP_ENABLE`）。
-        #   关掉 ⇒ 这里**一次都不调** `face.parse` ⇒ 不跑 mediapipe、不跑 birefnet-portrait。
-        #   代价（如实）：`scene` 的 `back` / `shot` / `face` 三轴失效 —— 详见 `config.py` 那张清单，
-        #   结论是**对出图无影响**（用这三轴的 `_scene` 只改肤色层的旋钮，而肤色层也停了；
-        #   `_scene_engine` 那条 morph 走全局 `"*"`，无条件生效，跨度照样到靶）。
-        #   ⚠ 下游（`scene` / `grade` / `region`）都接受 `_pz=None` 并自己降级，不会崩。
-        if bool(getattr(cfg, 'FACE_STEP_ENABLE', True)):
-            try:
-                from . import face as _face
-                _pz = _face.parse(np.clip(s.disp, 0.0, 1.0))
-            except Exception:                                    # noqa: BLE001
-                _pz = None
-
-        # ★★★ 场景判据（09-26，「按场景分参数」的**入口**）
-        #   · 跟人脸掩膜**用同一张图、同一次解析**（`parsed=_pz`）—— 不重复算、也不会两张图。
-        #   · `lin=s.lin` 只给 `blown`（源头过曝）那一轴用：它**只能在解码后的线性域判**，
-        #     显示域那边早被重渲染压过了。
-        #   · 判不出来 ⇒ `None`，下游 `targets.for_stock(…, None)` 一个字段都不盖，**不崩**。
-        #
-        # ⚠⚠⚠ 09-27：**试过把它拆成两段（引擎前 `blown` + 引擎后 `classify_after`），又退回来了。**
-        #   为什么退：`scene` 的**阈值是按「解码域」标的**（`SCENE_EXP_DARK=18.5` 这种整张中位），
-        #   一旦改到**成片域**去量，`exp` / `span` **会全部错档**（实测出图 77% 像素变了）。
-        #   ⇒ **要切两段，必须先把那两个阈值按"成片域"重新标定**，那是**另一件事、要单独做**。
-        #   新函数已经备好（`scene.blown` / `scene.classify_after`），**标定完再切**。
-        try:
-            _sc = scene.classify(s.disp, _pz, cfg, lin=s.lin)
-        except Exception:                                        # noqa: BLE001
-            _sc = None
-
-        # ★★ 09-28：**场景 → 引擎参数覆盖**（柔光 / 颗粒 / 光晕这类「质感」参数在引擎里，
-        #   `_scene` 只够到后期层的靶 ⇒ 走这里喂给引擎）。没配 `_scene_engine` ⇒ 空 dict ⇒ 逐位同旧行为。
-        try:
-            from . import targets as _TS
-            _ov = _TS.scene_engine(_sc, stock=name, cfg=cfg)
-        except Exception:                                  # noqa: BLE001
-            _ov = {}
-        # ★★ 09-29：**脸增益**（可选）—— 在负片 CMY 密度上「只给脸加密度」，
-        #   闭环迭代到脸的 Lab 靶（ΔE00 达标）。为什么不能在测光上做：测光定的是**整张落点**
-        #   ⇒ 提脸必然推亮整张（实测 partial/median 把脸拉到 75~79 而整张也到 73~78）。
-        #   靶自动从 `targets` 读（`skin_L_abs/C_abs/hue`）⇒ **没这几项的预设自动不启用**。
-        _fg = None
-        if bool(getattr(cfg, 'FACE_GAIN_ENABLE', False)) and _pz is not None:
-            try:
-                from . import targets as _TF
-                _ft = _TF.face_lab_target(name, _sc)
-                if _ft:
-                    # ★★ 09-29（C2）：**身体闭环的靶**也在这里解析（`facegain` 不依赖 `targets`）。
-                    #   语义 = 脸 − 身体，按**挂着的作者**取（纪律 1）。没挂 ⇒ `None` ⇒ 只做脸那段。
-                    try:
-                        _gt = _TF.skin_gap_target(name, _sc)
-                    except Exception:                      # noqa: BLE001
-                        _gt = None
-                    disp, _fg = presets.render_with_face(
-                        s.lin, name, cfg, pz=_pz,
-                        target_L=_ft[0], target_a=_ft[1], target_b=_ft[2],
-                        overrides=(_ov or None), gap_target=_gt)
-            except Exception as _e:                            # noqa: BLE001
-                _fg = dict(applied=False, note='脸增益失败：%s' % str(_e)[:120])
-        if _fg is None:
-            disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg,
-                                  overrides=(_ov or None))
-        # ---- L1 影调（明度分布）----
-        # ★ 当前阶段可整体关掉（`config.TONE_ENABLE`）：只做胶片引擎时不要这一层。
-        if bool(getattr(cfg, 'TONE_ENABLE', True)):
-            disp, t_info = tone.settle_finished(disp, style, cfg, stock=name, scene=_sc)
-        else:
-            t_info = dict(applied=False, note='影调层已关（当前阶段只做胶片引擎）')
-        # ---- L2 分色 + L3 混色 + L4 肤色（颜色）----
+        g_info = dict(_entry['g_info'])
+    else:
+        # ========== 跑链 ==========
+        # 引擎之前一个像素都不动：喂进去的就是 RAW 解码出来的场景线性（`io.load_raw`）。
+        disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg, overrides=(_ov or None))
+        # ---- L2 分色 + L3 混色（颜色）----
         # ⚠ 这一层**不做曝光**（显示域乘增益 = 拉噪声 + 高光切白），只按亮度/色相加权染色。
-        # ★ 同样可整体关掉（`config.GRADE_ENABLE`）—— 关掉后脸也不碰。
+        # ★ 可整体关掉（`config.GRADE_ENABLE`）。
         if bool(getattr(cfg, 'GRADE_ENABLE', True)):
-            disp, g_info = grade.apply(disp, cfg, stock=name, parsed=_pz, scene=_sc)
+            disp, g_info = grade.apply(disp, cfg, stock=name, scene=_sc)
         else:
-            g_info = dict(applied=False, note='颜色层已关（当前阶段只做胶片引擎）')
-        t_info['grade'] = g_info
-        t_info['scene'] = (None if _sc is None else dict(_sc))
-        gk = 1.0
-        anc = dict(applied=False, note='曝光风格在引擎之后 ⇒ 不做脸锚点')
+            g_info = dict(applied=False, note='颜色层已关')
         if _ckey is not None:
-            cache.put(_ckey, disp=disp, t_info=t_info, gk=gk, anc=anc)
+            cache.put(_ckey, disp=disp, g_info=g_info)
 
     rep = dict(
         camera=s.cam,
@@ -321,11 +192,10 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         stock=name,
         stock_label=presets.label_of(name)[0],
         stock_desc=presets.label_of(name)[1],
-        style=style,
-        style_target=(dict(tone.rel_of(style)) if _after else dict(tone.get(style))),
-        tone=t_info,
-        anchor=anc,
-        face_gain=_fg,
+        # ★ 09-29：报告形状调整 —— 影调层没了 ⇒ `grade` / `scene` 直接挂在**根上**
+        #   （原来是塞在 `report['tone']` 里；`tone` 这个键随 `tone.py` 一起删了）。
+        grade=g_info,
+        scene=(None if _sc is None else dict(_sc)),
         stage_cache=dict(hit=bool(_entry is not None)),
         ms=(time.perf_counter() - t0) * 1000.0,
     )

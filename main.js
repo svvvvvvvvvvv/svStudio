@@ -1443,13 +1443,6 @@ ipcMain.handle('engine-stocks', async () => {
   const r = await engineGet('/stocks', 4000);
   return r.ok ? { ok: true, items: r.data } : r;
 });
-/** ★ 曝光风格（09-23）：高长调 / 中性调 / 暗调，靶值从大师真片量出来。
- *  ⚠ 唯一出处 = 引擎的 `tone.STYLES` ⇒ 主进程这边只做代理，不许自己写死档位名。
- *    默认哪一档由引擎在 `isDefault` 上标出来，前端只认它（同「初值由引擎给」那条规矩）。 */
-ipcMain.handle('engine-styles', async () => {
-  const r = await engineGet('/styles', 4000);
-  return r.ok ? { ok: true, items: r.data } : r;
-});
 ipcMain.handle('engine-load', async (e, paths) => {
   const qs = '?paths=' + encodeURIComponent((paths || []).join(','));
   // 解码一张 RAW 约 2~3 秒，一次可多张 ⇒ 给足时间
@@ -1467,8 +1460,6 @@ ipcMain.handle('engine-render', async (e, id, opts) => {
   const o = opts || {};
   const qs = '?id=' + encodeURIComponent(String(id)) +
     '&stock=' + encodeURIComponent(o.stock || '') +
-    /* ★ 曝光风格（09-23）：高长调 / 中性调 / 暗调，空串 = 引擎默认档。 */
-    '&style=' + encodeURIComponent(o.style || '') +
     '&side=' + encodeURIComponent(String(o.side || 700)) +
     '&fmt=jpg&q=' + encodeURIComponent(String(o.q || 92));
   // 换卷 6~7 秒，首次含模型加载更久
@@ -1517,8 +1508,7 @@ ipcMain.handle('export-image', async (e, payload) => {
   if (res.canceled || !res.filePath) return { ok: false, canceled: true };
   const qs = '?src=' + encodeURIComponent(src) +
     '&path=' + encodeURIComponent(res.filePath) +
-    '&stock=' + encodeURIComponent(p.stock || '') +
-    '&style=' + encodeURIComponent(p.style || '');
+    '&stock=' + encodeURIComponent(p.stock || '');
   const r = await engineGet('/export' + qs, 900000);
   return r.ok ? Object.assign({ ok: true }, r.data || {}) : r;
 });
@@ -1575,7 +1565,6 @@ ipcMain.handle('export-batch', async (e, payload) => {
     const qs = '?src=' + encodeURIComponent(path.join(dirPath, rawName)) +
       '&path=' + encodeURIComponent(outPath) +
       '&stock=' + encodeURIComponent(p.stock || '') +
-      '&style=' + encodeURIComponent(p.style || '') +
       (px ? '&side=' + encodeURIComponent(String(px)) : '');
     const r = await engineGet('/export' + qs, 3600000);
     const okOne = !!(r && r.ok && r.data && r.data.ok !== false);

@@ -158,12 +158,12 @@ const mainJsSrc = read('main.js');
 const storeSrc = read('src/store/useStore.ts');
 const viewerSrc = read('src/components/Viewer.tsx');
 const listChans = (mainJsSrc.match(/return r\.ok \? \{ ok: true, items:/g) || []).length;
-check('★ main.js 列表类通道返回 items（stocks/styles/load）', listChans >= 3, `${listChans} 处`);
+check('★ main.js 列表类通道返回 items（stocks/load）', listChans >= 2, `${listChans} 处`);
 const imgChans = (mainJsSrc.match(/ok: true, image:/g) || []).length;
 check('★ main.js 图片类通道返回 image（base/render/raw-url）', imgChans >= 3, `${imgChans} 处`);
 check(
   '★ useStore 读的是 .items（不是自造的 .stocks/.bases/.params）',
-  /s\?\.items/.test(storeSrc) && /y\?\.items/.test(storeSrc),
+  /s\?\.items/.test(storeSrc),
   '',
   '读错 key ⇒ 卷/基准/滑杆列表永远空'
 );
@@ -206,10 +206,10 @@ check('★ main.js 有 export-image 通道，且回来的是**文件路径**（�
 /* ★ 09-23：滑杆整套删了 ⇒ 主进程里那个 `paramStr`（参数串收口点）也一起删了。
    现在导出只带 stock + style 两个**字符串**，不存在"把对象编码成 [object Object]"那条坑。
    这条改成反向钉住：**不许**再出现 paramStr，也不许出现 `&params=`。 */
-check('★ 导出的请求只带 stock/style 两个字符串（paramStr 随滑杆一起删了）',
-  /export-image[\s\S]{0,3000}?'&style=' \+ encodeURIComponent\(p\.style \|\| ''\)/.test(mainJsSrc) &&
-    !/paramStr/.test(mainJsSrc) && !/&params=/.test(mainJsSrc),
-  '', '又出现参数对象 / paramStr ⇒ 说明有人把老滑杆那套捡回来了（09-15 那 23 根滑杆的坑）');
+check('★ 导出的请求只带 stock 一个字符串（paramStr / style 都删了）',
+  /export-image[\s\S]{0,3000}?'&stock=' \+ encodeURIComponent\(p\.stock \|\| ''\)/.test(mainJsSrc) &&
+    !/paramStr/.test(mainJsSrc) && !/&params=/.test(mainJsSrc) && !/&style=/.test(mainJsSrc),
+  '', '又出现参数对象 / paramStr / style ⇒ 有人把老那套（23 根滑杆、曝光风格）捡回来了');
 check('★ preload 暴露了 exportImage',
   /exportImage: \(payload\) => ipcRenderer\.invoke\('export-image'/.test(preloadSrc),
   '', '少了它 ⇒ 右栏那个按钮点了报 undefined');
@@ -244,22 +244,23 @@ const resetM = storeCode.match(/resetGrade: \(\) => \{[\s\S]*?\n  \},/);
 const toneSrc = exists('svFilm/svFilm/tone.py') ? read('svFilm/svFilm/tone.py') : '';
 const presetsSrc = exists('svFilm/svFilm/presets.py') ? read('svFilm/svFilm/presets.py') : '';
 
-/* ---------- [8] 调色台：只剩「胶片风格 + 曝光风格」两个选择器（09-23 SV 定的边界） ----------
-   ★★ 新边界：svFilm = 曝光 + 影调；spektrafilm = 胶片感。
-       ⇒ 迭代期的 23 根滑杆 / 相纸下拉 / 成色基准四档**全部删掉**。
-   ★ 这里钉的是**契约**：两个列表都由引擎给、默认档由引擎给、两个都进渲染请求、都不许写死名字。
+/* ---------- [8] 调色台：**只剩「胶片风格」一个选择器**（09-29 删掉曝光风格） ----------
+   ★★ 09-29 新分支 `drop-tone-and-skin`：影调层（`tone.py`）整段删掉 ⇒
+      曝光风格那个选择器 + `/styles` 接口 + `engineStyles` 通道**一起删**
+      （留一个"点了没反应"的死控件，正是本项目最忌的第 4 类坑）。
+   ★ 这里钉的是**契约**：列表由引擎给、胶片风格进渲染请求、曝光风格一点痕迹都不许剩。
    ⚠ 锚点一律用**剥掉注释**的源码 —— 注释里就会出现这些字，会骗过检查（踩过三次）。 */
-console.log('\n[8] 调色台：胶片风格 + 曝光风格（只有这两个选择器）');
-check('★ 引擎 /stocks 给胶片风格、/styles 给曝光风格（两个都在）',
-  /u\.path == '\/stocks'/.test(svcSrc) && /u\.path == '\/styles'/.test(svcSrc), '',
-  '少一个 ⇒ 界面上那一栏永远是空的（还不报错）');
+console.log('\n[8] 调色台：只剩「胶片风格」一个选择器');
+check('★ 引擎 /stocks 给胶片风格；`/styles` **已经删了**',
+  /u\.path == '\/stocks'/.test(svcSrc) && !/u\.path == '\/styles'/.test(svcSrc), '',
+  '影调层删了却还留着 /styles ⇒ 那条接口没人读，只会骗下一个人照它加回来');
 check('★ 滑杆 / 相纸 / 成色基准那三条路由确实删了（别留在接口上骗人）',
   !/u\.path == '\/params'/.test(svcSrc) && !/u\.path == '\/papers'/.test(svcSrc) &&
     !/u\.path == '\/bases'/.test(svcSrc), '',
   '界面删了、接口还在 ⇒ 下一个人照着接口又加回来一遍');
-check('★★ 三条曝光风格的靶是**从大师真片量出来的**那三个数（40.5 / 58.8 / 69.9）',
-  /40\.5/.test(toneSrc) && /58\.8/.test(toneSrc) && /69\.9/.test(toneSrc), '',
-  '数被改过 ⇒ 要么重新量，要么连「怎么量的」那段注释一起改，别只动数');
+check('★ 引擎里 **`tone.py` 整个删了**（不是关开关）',
+  !exists('svFilm/svFilm/tone.py'), '',
+  '文件还在 ⇒ 影调层随时会被接回链上（SV 要的是删掉）');
 check('★ 胶片风格是 9 条预设（不是几个名字抄几遍）',
   /for n in presets\.names\(\)/.test(svcSrc) && /C200过曝/.test(presetsSrc));
 check('★ 右栏**没有滑杆了**（Slider 一次都不许出现）',
@@ -268,45 +269,35 @@ check('★★ 右栏只允许批量出片那两个下拉（相纸 / 成色基准
   (gpCode.match(/<select/g) || []).length === (gpCode.match(/data-batch-(star|side)/g) || []).length &&
     !/相纸|成色基准/.test(gpCode),
   '', '多出来的下拉 ⇒ 老的那些「选了没反应」的开关又回来了');
-check('★ 两个选择器都有可断言的选中标记（不给布局自检去认颜色）',
-  /data-stock-on=/.test(gpCode) && /data-style-on=/.test(gpCode), '',
+check('★ 曝光风格那排按钮**整块删掉了**（不留"点了没反应"的死控件）',
+  !/data-style/.test(gpCode) && !/曝光风格/.test(gpCode), '',
+  '控件还在、接口没了 ⇒ 点了没反应（本项目第 4 类坑）');
+check('★ 胶片风格有可断言的选中标记（不给布局自检去认颜色）',
+  /data-stock-on=/.test(gpCode), '',
   '没有标记 ⇒ 布局自检只能去认颜色/边框，改皮肤就废');
-check('★★ 渲染请求里**两个都带上了**（少一个 = 界面选了、画面不动）',
-  /stock: grade\.stock/.test(viewerSrc) && /style: grade\.style/.test(viewerSrc), '',
-  '少了 style ⇒ 换曝光风格画面不变，看着像「这一档没效果」');
-check('★ main.js 把 style 转发进 /render（主进程没漏转发）',
-  /&style=/.test(mainJsSrc), '', '主进程没转发 ⇒ 引擎永远收到空档');
-check('★ preload / api / store 三边都齐（不是「接了半截」）',
-  /engineStyles: \(\) =>/.test(preload) && /engineStyles: \(\) =>/.test(apiTs) &&
-    /API\.engineStyles\(\)/.test(storeSrc), '',
-  '少一边 ⇒ 调用同步抛 TypeError，.catch 接不到');
+check('★★ 渲染请求里带着胶片风格（不带 = 界面选了、画面不动）',
+  /stock: grade\.stock/.test(viewerSrc) && !/style: grade\.style/.test(viewerSrc), '',
+  '还在读 `grade.style` ⇒ 那个字段已经随影调层删了');
+check('★ main.js **不再转发** style（引擎那边没这个参数了）',
+  !/&style=/.test(mainJsSrc) && !/'engine-styles'/.test(mainJsSrc), '',
+  '还转发 ⇒ 引擎收到一个没人认的参数（"接了半截"的样子）');
+check('★ preload / api / store 三边**都没了** engineStyles（删干净）',
+  !/engineStyles/.test(preload) && !/engineStyles/.test(apiTs) && !/engineStyles/.test(storeSrc), '',
+  '留一边 ⇒ 下一个人以为这个功能还在');
 
-console.log('\n[10] 曝光风格的默认 / 右栏两个按钮 / 按目录存配方');
-check('★ 引擎 /styles 标出了「哪一档是默认」（前端据此定初值）',
-  /isDefault=bool\(n == getattr\(C, 'STYLE', None\)\)/.test(svcSrc), '',
-  '引擎不给默认标志 ⇒ 前端只能自己猜，迟早又写出一个写死的名字');
-check('★ 三处取默认档都读引擎的 isDefault（加载时 / 进目录时 / 恢复默认时）',
-  (storeCode.match(/\.find\(\(x\) => x\.isDefault\)/g) || []).length >= 3, '',
-  '有一处没读 isDefault ⇒ 那条路径给的是「前端猜的名字」，而且常被别的路径兜住、看不出来');
-check('★ 曝光风格初值是空串（等引擎回来填），不是猜出来的名字',
-  /style: ''/.test(storeCode), '',
-  '初值写成某个名字 ⇒ 引擎档表里没有就静默回落（09-15 写死 all 那个坑的翻版）');
+console.log('\n[10] 右栏两个按钮 / 按目录存配方');
 check('★ 「恢复默认」「存到目录」两个按钮**都接上线了**（真 onClick）',
   /onClick=\{resetGrade\}/.test(gpCode) && /onClick=\{saveGradeToTheme\}/.test(gpCode), '',
   '没有 onClick = 死按钮（界面在、功能不在，最难自己发现）');
 check('★ 「存到目录」真的落盘 + 还**读回来**（只写不读 = 存了个寂寞）',
   /API\.setGrade\(name, get\(\)\.grade\)/.test(storeCode) && /API\.getGrade\(name\)/.test(storeCode), '',
   '只写不读 ⇒ 重启就没了，用户以为存上了');
-check('★ 没存过的目录回出厂（不把上一个目录的选择带过去）',
-  /stock: get\(\)\.grade\.stock, style: dfltName/.test(storeCode), '',
-  '沿用上一个目录的值 ⇒ 目录之间串味');
-check('★ 「恢复默认」**不动胶片风格**（只把曝光风格回默认）',
+check('★ 「恢复默认」**不动胶片风格**（09-29 起没有可恢复的调色项）',
   !!resetM && !/\bstock\b/.test(resetM[0]), '',
   '顺手把胶片风格也抹了 ⇒ 用户莫名其妙换了个卷（卷是「拍什么」，不是调出来的）');
-check('★ 进目录套回配方时要**校验档位名**（配置能被手改 / 被老版本写过）',
-  /list\.some\(\(x\) => x\.name === sy\)/.test(storeCode) &&
-    /style: known \? sy : dfltName/.test(storeCode), '',
-  '原样信任配置 ⇒ 存过一个引擎不认的名字就静默变默认档，界面一支都不亮');
+check('★ 进目录套回配方时只认胶片风格（老配置里的 `style` 字段直接忽略）',
+  /stock: String\(\(g as \{ stock\?: unknown \}\)\.stock/.test(storeCode), '',
+  '还在读 `style` ⇒ 那个字段已经随影调层删了');
 
 console.log('\n[11] 大图：一律「适应」+ 视图三档（A / A|B / B）');
 const viewerCode = read('src/components/Viewer.tsx').replace(/\/\*[\s\S]*?\*\//g, '');

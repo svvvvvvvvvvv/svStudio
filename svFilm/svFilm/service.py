@@ -29,9 +29,8 @@ $PY -m svFilm.service --port 8800 --cache 40
 |---|---|---|
 | GET | `/health` | `{ok, cached, version}` |
 | GET | `/stocks` | **胶片风格**列表（9 条预设：name/label/desc） |
-| GET | `/styles` | **曝光风格**列表（高长调 / 中性调 / 暗调） |
 | GET | `/load?paths=a,b&side=700` | **同步**载入并缓存（慢，1.9 s/张；前端分批调） |
-| GET | `/render?id=3&stock=Portra400薄荷&style=中性调&side=700` | 出图（直接返回图片字节） |
+| GET | `/render?id=3&stock=Portra400薄荷&side=700` | 出图（直接返回图片字节） |
 | GET | `/stats?id=3` | 只出数字，不出图（调参时看指标用） |
 | GET | `/list` | 当前缓存里有什么 |
 """
@@ -49,7 +48,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import numpy as np
 
 from . import config as C
-from . import io, pipeline, presets, tone
+from . import io, pipeline, presets
 
 VERSION = 'svstudio-1'
 DEFAULT_PORT = 8765
@@ -194,7 +193,7 @@ def _want_side(side):
     return max(16, min(req, cap)), None, req
 
 
-def _render_bytes(i, stock, style, side, fmt, quality):
+def _render_bytes(i, stock, side, fmt, quality):
     """出图。
 
     ★★ 09-15 修一个真 bug：`side` 以前是**收下就扔**（文档写的是"前端要别的尺寸得
@@ -209,9 +208,6 @@ def _render_bytes(i, stock, style, side, fmt, quality):
       ⚠ 换尺寸**不复用**别的尺寸那份 Sample —— 尺寸不同，颗粒/锐化/降噪的**相对**效果
         都不一样（实测同一块平坦区的颗粒：2048/3000/原图 = 0.63/0.77/1.87），
         复用就是拿小尺寸的像素冒充大尺寸。
-
-    `style` = 曝光风格（高长调 / 中性调 / 暗调）。空 = 用 `config.STYLE`。
-      ⚠ 胶片风格与曝光风格**互相独立**：9 条 × 3 档 = 27 种组合，都能出。
     """
     row = _cache_get(i)
     if not row:
@@ -224,8 +220,7 @@ def _render_bytes(i, stock, style, side, fmt, quality):
         s = _ensure_decoded(i, row)       # ★ 解码阶段参数改了要重新解码（见 _decode_sig）
     else:
         s, _ms = _load_one(row.get('path'), want)      # ★ 换尺寸 = 重新解码
-    r = pipeline.run_from(s, stock=stock or None, style=style or None,
-                          cache=_STAGES[0])
+    r = pipeline.run_from(s, stock=stock or None, cache=_STAGES[0])
     disp = np.clip(r.disp, 0.0, 1.0)
     arr = (disp * 255.0 + 0.5).astype(np.uint8)
     info = {'ms': round(r.report.get('ms', 0)),
@@ -251,7 +246,7 @@ def _render_bytes(i, stock, style, side, fmt, quality):
     return buf.getvalue(), info
 
 
-def _export_one(i, out_path, stock, style, side, quality, src_path=None):
+def _export_one(i, out_path, stock, side, quality, src_path=None):
     r"""★ 导出**成片**（09-15 SV 选「A」第 ② 项）：把渲染结果写成真照片文件。
 
     为什么这件事由引擎做（而不是把 base64 交给前端让它写）：
@@ -302,7 +297,7 @@ def _export_one(i, out_path, stock, style, side, quality, src_path=None):
     try:
         # ★ 按导出尺寸重新解码 + 重新跑（`_load_one` 自带"路径+尺寸+入口签名"那一层缓存）
         s, _ms = _load_one(src, side)
-        r = pipeline.run_from(s, stock=stock or None, style=style or None, cache=None)
+        r = pipeline.run_from(s, stock=stock or None, cache=None)
     except MemoryError:
         # 原图尺寸要 ~13 GB（65% 在"胶片出图"那一大段）。内存不够时**说清楚**，
         # 别让它冒一个 numpy 的 `_ArrayMemoryError` 让人看不懂。
@@ -356,26 +351,25 @@ def _base_bytes(i, fmt='jpg', quality=92, side=None):
     return buf.getvalue(), info
 
 
-def _stats_of(i, stock, style=None):
+def _stats_of(i, stock):
     row = _cache_get(i)
     if not row:
         return {'error': 'id 不在缓存里'}
     s = _ensure_decoded(i, row)           # ★ 解码阶段参数改了要重新解码
-    r = pipeline.run_from(s, stock=stock or None, style=style or None,
-                          cache=_STAGES[0])
+    r = pipeline.run_from(s, stock=stock or None, cache=_STAGES[0])
     from . import color
     lab = color.to_lab(np.clip(r.disp, 0, 1))
     L = lab[..., 0]
     Cc = np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2)
-    t = r.report.get('tone') or {}
+    g = r.report.get('grade') or {}
+    sc = r.report.get('scene') or {}
     return dict(ms=round(r.report.get('ms', 0)),
-                stock=r.report.get('stock'), style=r.report.get('style'),
-                # ★ 曝光这一道**实打实做到哪了**（不是请求里那个）—— 一眼看出
-                #   "靶是多少 / 实际到多少"，免得画面跟预期不一样却查不出原因。
-                L5=round(float(t.get('L5_out', 0)), 1),
-                L50=round(float(t.get('L50_out', 0)), 1),
-                L95=round(float(t.get('L95_out', 0)), 1),
-                ev=round(float(t.get('ev_mid', 0)), 2),
+                stock=r.report.get('stock'),
+                # ★ 场景判据那三根轴（`scene.py`）—— 一眼看出这张被分到哪一档
+                scene=sc.get('key'),
+                # ★ 颜色层**实打实做到哪了**（不是请求里那个）——
+                #   一眼看出"落点 / 彩度到多少"，免得画面跟预期不一样却查不出原因。
+                L50=round(float(g.get('L50_out', 0)), 1),
                 L50_measured=round(float(np.median(L)), 1),
                 b=round(float(np.median(lab[..., 2])), 2),
                 c50=round(float(np.median(Cc)), 2))
@@ -434,26 +428,6 @@ class _H(BaseHTTPRequestHandler):
                 return self._json([dict(name=n, label=presets.label_of(n)[0],
                                         desc=presets.label_of(n)[1], engine=True)
                                    for n in presets.names()])
-            if u.path == '/styles':
-                # ★ 曝光风格列表。**默认哪一档由引擎给**（`config.STYLE`）——
-                #   前端不许自己写死档位名。
-                # ⚠ 两套语义按 `config.TONE_AFTER_ENGINE` 走：
-                #   动作在引擎之后 ⇒ 每档是**三套力度**（压曝光 / 压高光 / 提阴影），
-                #   动作在引擎之前 ⇒ 每档是**三个绝对靶**（从大师真片量出来的 L5/L50/L95）。
-                if bool(getattr(C, 'TONE_AFTER_ENGINE', False)):
-                    return self._json([
-                        dict(name=n, desc=tone.rel_of(n)['desc'],
-                             isDefault=bool(n == getattr(C, 'STYLE', None)),
-                             evDown=tone.rel_of(n)['ev_down'],
-                             hiDown=tone.rel_of(n)['hi_down'],
-                             blDown=tone.rel_of(n)['bl_down'])
-                        for n in tone.names()])
-                return self._json([dict(name=n, desc=tone.get(n)['desc'],
-                                        isDefault=bool(n == getattr(C, 'STYLE', None)),
-                                        L50=tone.get(n)['mid_L'],
-                                        L5=tone.get(n)['black_L'],
-                                        L95=tone.get(n)['white_L'])
-                                   for n in tone.names()])
             if u.path in ('/', '/index.html') and _WEB[0]:
                 # ★ 可选：把工作台的静态页 serve 出来（路径由 `--web` 给，**不写死** ⇒ 边界不破）
                 fp = os.path.join(_WEB[0], 'index.html')
@@ -508,7 +482,7 @@ class _H(BaseHTTPRequestHandler):
                 return self._img(b, info['mime'], info)
             if u.path == '/render':
                 b, info = _render_bytes(int(q.get('id') or 0), q.get('stock'),
-                                        q.get('style'), q.get('side'),
+                                        q.get('side'),
                                         (q.get('fmt') or 'jpg').lower(),
                                         q.get('q') or 92)
                 if b is None:
@@ -521,7 +495,7 @@ class _H(BaseHTTPRequestHandler):
                 #   ⚠ 写盘要时间：2048 长边十来秒、**原图尺寸 ~6 分半**（RAW）⇒ 前端超时要放宽。
                 _sv = (q.get('side') or '').strip()
                 info2, err2 = _export_one(int(q.get('id') or 0), q.get('path'),
-                                          q.get('stock'), q.get('style'),
+                                          q.get('stock'),
                                           int(_sv) if _sv else None,
                                           q.get('q') or C.JPEG_QUALITY,
                                           src_path=q.get('src'))
@@ -529,8 +503,7 @@ class _H(BaseHTTPRequestHandler):
                     return self._json(err2, 404)
                 return self._json(info2)
             if u.path == '/stats':
-                return self._json(_stats_of(int(q.get('id') or 0), q.get('stock'),
-                                            q.get('style')))
+                return self._json(_stats_of(int(q.get('id') or 0), q.get('stock')))
             return self._json({'error': 'no such path', 'path': u.path}, 404)
         except Exception as e:                                    # noqa: BLE001
             return self._json({'error': '%s: %s' % (type(e).__name__, str(e)[:200])}, 500)

@@ -8,20 +8,19 @@ r"""**评分卡** —— 每次改动都对着**同一套指标**打分，别只
     而问题在暗段（整张 40~50，我们脸 53 vs 大师 67）—— **13.8 格被平均掉了**。
 ⇒ 冻结一套指标，**每改一次全量打分 + 留档**，"改一个坏一个"才会变成看得见的趋势线。
 
-## 七项打分 + 一项只看不打分
+## 打分项 + 只看不打分
 ★ 只有**不变量**才配当"靶"（铁律 ①）。**落点是内容量，不设靶**，只报出来。
+
 | 指标 | 为什么它可以当靶 |
 |---|---|
-| 跨度 L95−L5 | 09-24 证明它跨场景恒定（鹿井 514 张三组都是 82.6） |
-| 彩中位 / 彩P90 | 按内容归一之后才可比 → 这里彩P90 用绝对彩度（大师 730 块实测稳定） |
-| 中调 Δb\* | 相对整张中位，跨场景可比 |
-| 脸 L\* / 脸彩度 | 09-26 实测：跨整张亮度只漂 ±2~5 ⇒ **不变量** |
-| 脸色相 | 两个独立来源（鹿井 51.8° / 小红书 54.8°）几乎同一个数 |
-| ~~落点 L50~~ | ⚠ **绑内容 + 绑曝光，不是风格** ⇒ 只报，不打分 |
+| 跨度 L95−L5 | 09-24 证明它跨场景恒定（鹿井 514 张三组都是 82.6）|
+
+⚠ 09-29 新分支 `drop-tone-and-skin`：原来打分的「脸 L\* / 脸彩度 / 脸色相」三项
+  随**肤色层 / 认人认脸**一起删除（那三项要靠 `face.py` 取脸掩膜）。
 
 ## 用法
   python -m svFilm.scorecard <成片目录> [--stock 卷名] [--tag 说明] [--log 文件.jsonl]
-目录里放**出好的成片 JPG**；打分口径 = 在成片上取脸掩膜（跟人的眼睛一致）。
+目录里放**出好的成片 JPG**。
 """
 from __future__ import annotations
 
@@ -36,7 +35,7 @@ import time
 import numpy as np
 from PIL import Image
 
-from . import color, face, targets
+from . import color, targets
 
 # 只报不打分的那一项（列在这里是为了让"不打分"这件事**显式**）
 NO_TARGET = ('L50',)
@@ -44,7 +43,7 @@ SIDE = 1600
 
 
 def measure(path, side=SIDE):
-    """一张成片的八项。脸掩膜**从成片本身取**（跟 SV 眼睛看到的一致）。"""
+    """一张成片的六项（都在**成片本身**上量 —— 跟眼睛看到的一致）。"""
     im = Image.open(path).convert('RGB')
     im.thumbnail((side, side), Image.LANCZOS)
     d = np.ascontiguousarray(np.asarray(im, np.uint8).astype(np.float64) / 255.0)
@@ -53,20 +52,10 @@ def measure(path, side=SIDE):
     Cc = np.hypot(a, b)
     Lm, bm = float(np.median(L)), float(np.median(b))
     mid = (L >= np.percentile(L, 25.0)) & (L <= np.percentile(L, 75.0))
-    out = dict(L50=Lm, span=float(np.percentile(L, 95.0) - np.percentile(L, 5.0)),
-               C50=float(np.median(Cc)), C90=float(np.percentile(Cc, 90.0)),
-               mid_db=float(b[mid].mean() - bm), clip=float(
-                   (d.min(axis=-1) >= 254.0 / 255.0).mean() * 100.0), skin_n=0)
-    fs = (face.parse(d).get('masks') or {}).get('face_skin')
-    if fs is not None:
-        sel = np.asarray(fs) > 0.5
-        out['skin_n'] = int(sel.sum())
-        if sel.sum() > 200:
-            out['skinL'] = float(np.median(L[sel]))
-            out['skinC'] = float(np.median(Cc[sel]))
-            out['skinH'] = float(np.degrees(np.arctan2(float(np.median(b[sel])),
-                                                       float(np.median(a[sel])))) % 360.0)
-    return out
+    return dict(L50=Lm, span=float(np.percentile(L, 95.0) - np.percentile(L, 5.0)),
+                C50=float(np.median(Cc)), C90=float(np.percentile(Cc, 90.0)),
+                mid_db=float(b[mid].mean() - bm),
+                clip=float((d.min(axis=-1) >= 254.0 / 255.0).mean() * 100.0))
 
 
 # ★★★ 只给**有明确实测来源**的项打分；其它项一律只报不打分。
@@ -94,10 +83,7 @@ def targets_of(stock):
         return float(v) if isinstance(v, (int, float)) else float('nan')
 
     return {
-        'span':  (g('span'), '跨度 L95−L5', 1.0),
-        'skinL': (g('skin_L_abs'), '脸 L*', 1.0),
-        'skinC': (g('skin_C_abs'), '脸彩度', 1.0),
-        'skinH': (g('skin_hue'), '脸色相', 1.0),
+        'span': (g('span'), '跨度 L95−L5', 1.0),
     }
 
 
@@ -122,22 +108,21 @@ def main(argv=None):
             print('  跳过 %s: %s' % (os.path.basename(p), str(e)[:50]))
         if i % 20 == 0:
             print('  %d/%d' % (i, len(ps)), flush=True)
-    face_rows = [r for r in rows if r.get('skin_n', 0) > 200]
 
-    def med(k, rs=None):
-        v = [r[k] for r in (rs if rs is not None else rows) if r.get(k) is not None]
+    def med(k):
+        v = [r[k] for r in rows if r.get(k) is not None]
         return float(_st.median(v)) if v else float('nan')
 
     tgt = targets_of(a.stock)
     print()
-    print('评分卡 · %s · %d 张（有脸 %d） · 卷 %s' % (a.folder, len(rows), len(face_rows), a.stock))
+    print('评分卡 · %s · %d 张 · 卷 %s' % (a.folder, len(rows), a.stock))
     if a.tag:
         print('说明：%s' % a.tag)
     print('%-12s %-9s %-9s %-9s %s' % ('指标', '实测', '靶', '离靶', '加权'))
     total = 0.0
     rec = {}
     for k, (tv, zh, w) in tgt.items():
-        mv = med(k, face_rows if k.startswith('skin') else rows)
+        mv = med(k)
         if not np.isfinite(mv) or not np.isfinite(tv):
             print('%-12s %-9s %-9s %-9s %s' % (zh, '—', tv, '—', '（样本不够）'))
             continue
@@ -154,7 +139,7 @@ def main(argv=None):
         with open(a.log, 'a', encoding='utf-8') as f:
             f.write(json.dumps(dict(t=time.strftime('%Y-%m-%d %H:%M'), folder=a.folder,
                                     stock=a.stock, tag=a.tag, n=len(rows),
-                                    n_face=len(face_rows), total=round(total, 2),
+                                    total=round(total, 2),
                                     m={k: round(v, 3) for k, v in rec.items()},
                                     L50=round(med('L50'), 2), clip=round(med('clip'), 3)),
                                ensure_ascii=False) + '\n')

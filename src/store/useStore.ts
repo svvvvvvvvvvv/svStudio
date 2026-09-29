@@ -4,7 +4,6 @@ import {
   Photo,
   Session,
   Stock,
-  Style,
   GradeState,
 } from '../api';
 
@@ -60,8 +59,6 @@ interface AppState {
 
   /* ---- 调色台 ---- */
   stocks: Stock[];
-  /** ★★ 曝光风格（09-23）：三条档，靶值从大师真片量出来，唯一出处 = 引擎 `/styles`。 */
-  styles: Style[];
   engineOk: boolean;
   engineMsg: string;
   grade: GradeState;
@@ -114,9 +111,9 @@ interface AppState {
   loadEngine: () => Promise<void>;
   ensureEngine: () => Promise<boolean>;
   setGrade: (patch: Partial<GradeState>) => void;
-  /** 右栏「恢复默认」：曝光风格回引擎默认档；**不动胶片风格**；不自动出图 */
+  /** 右栏「恢复默认」：09-29 起曝光风格已删 ⇒ 没有可恢复的项；**不动胶片风格**；不自动出图 */
   resetGrade: () => void;
-  /** 右栏「存到目录」：把当前胶片风格 + 曝光风格写进 `config.grades[目录名]`（进目录时自动套回） */
+  /** 右栏「存到目录」：把当前胶片风格写进 `config.grades[目录名]`（进目录时自动套回） */
   saveGradeToTheme: () => Promise<void>;
   /** ★★ 导出成片（09-15 SV 选「A」第 ② 项）：引擎渲染完**直接写盘**（EXIF 走 `io.save`）。
    *  尺寸/质量由**引擎**定（前端不写死）；真实尺寸用回来的 `w/h` 显示。 */
@@ -171,14 +168,11 @@ export const useStore = create<AppState>((set, get) => ({
   toast: '',
 
   stocks: [],
-  styles: [],
   engineOk: false,
   engineMsg: '',
-  /* ★★ 曝光风格的初值**故意留空**：真正的默认由引擎给（`/styles` 里带 `isDefault` 的那条，
-     见下面 loadEngine）。09-15 踩过一模一样的坑：这里写死 'all'，而引擎的基准表里
-     根本没有 'all' ⇒ 静默回落，界面上一支都选不中（还看不出哪里不对）。
-     ⚠ 规矩：**前端不许自己发明初值**。 */
-  grade: { stock: 'Portra400薄荷', style: '' },
+  /* ★ 09-29：**曝光风格随影调层一起删了**（引擎那边 `tone.py` 整段删掉、`/styles` 接口也没了）。
+     调色台现在只有一个选择器：**胶片风格**。 */
+  grade: { stock: 'Portra400薄荷' },
   renderBusy: false,
   renderTick: 0,
 
@@ -397,32 +391,18 @@ export const useStore = create<AppState>((set, get) => ({
        ⚠ 不加这一步「存到目录」就是**只写不读**（存了个寂寞），正是本项目最忌的
          "看着对、其实对不上"；也所以它没有单独一个按钮的必要 —— 存了就得用上。
        ⚠ 只改状态、**不出图**（沿用"只有两个触发点"的规矩）。 */
-    const list = get().styles;
-    const dfltName = (list.find((x) => x.isDefault) || list[0])?.name ?? '';
     try {
       const g = await API.getGrade(name);
       if (g && typeof g === 'object') {
-        /* ★★ 存过的配方**也要校验再套**，不能原样信。
-           这份配置是"人能手改、老版本也写过"的东西（老版连 `base`/`paper`/`params` 都存过，
-           那些字段 09-23 随新边界一起删了）。名字不认得就回引擎默认档**并且说出来**，
-           绝不静默 —— 静默的代价是"界面上一支都不亮、还看不出哪里不对"。 */
-        const sy = String((g as { style?: unknown }).style ?? '');
-        const known = !!sy && list.some((x) => x.name === sy);
+        /* ★★ 存过的配方**也要校验再套**，不能原样信（这一份是"人能手改、老版本也写过"的东西）。
+           ⚠ 09-29：**曝光风格随影调层一起删了** —— 老配置里那个 `style` 字段直接忽略。
+           没存过 ⇒ 保持当前状态（**不**"回上一个目录的值"，那样目录之间会互相串味）。
+           ⚠ 胶片风格**不动**（它是"这张要弄成什么"，不是调出来的；同 resetGrade 的规矩）。 */
         set({
           grade: {
             stock: String((g as { stock?: unknown }).stock ?? get().grade.stock ?? ''),
-            style: known ? sy : dfltName,
           },
         });
-        if (!known && list.length && sy) {
-          get().showToast(`「${name}」存的曝光风格引擎不认（${sy}），已回默认`);
-        }
-      } else {
-        /* 没存过 ⇒ **回出厂**（曝光风格回引擎默认档）。
-           为什么不"保持上一个目录的值"：那样目录之间会**互相串味**，
-           正是本项目最忌的那类"看着对、其实对不上"。
-           ⚠ 胶片风格**不动**（它是"这张要弄成什么"，不是调出来的；同 resetGrade 的规矩）。 */
-        set({ grade: { stock: get().grade.stock, style: dfltName } });
       }
     } catch {
       /* 读不到就当没存过，不吵 */
@@ -468,7 +448,7 @@ export const useStore = create<AppState>((set, get) => ({
     }, 2000);
   },
 
-  /** 拉引擎元数据（胶片风格 9 条 + 曝光风格 3 档）+ 探活。服务没起时 ok=false，不白屏。 */
+  /** 拉引擎元数据（胶片风格 9 条）+ 探活。服务没起时 ok=false，不白屏。 */
   loadEngine: async () => {
     try {
       const h = await API.engineHealth();
@@ -476,24 +456,9 @@ export const useStore = create<AppState>((set, get) => ({
         set({ engineOk: false, engineMsg: '引擎未启动' });
         return;
       }
-      // ★ main.js 给的键是 items（不是 stocks/styles）—— 09-15 名字对不上过一次，
-      //   两个列表会永远是空的，风格全不显示。
-      const [s, y] = await Promise.all([API.engineStocks(), API.engineStyles()]);
-      const styleList: Style[] = y?.items || [];
-      set({
-        engineOk: true,
-        engineMsg: '',
-        stocks: s?.items || [],
-        styles: styleList,
-      });
-      /* ★ 曝光风格的初值**由引擎给**：当前值不在列表里（首次 = 空串；或引擎改了档）
-         => 取引擎标了 isDefault 的那条；引擎万一没标，退到第一条。
-         ⚠ **这里不许出现任何写死的档位名** —— 写死就会在引擎改配置后静默错位。 */
-      const cur = get().grade.style;
-      if (styleList.length && !styleList.some((x) => x.name === cur)) {
-        const dflt = styleList.find((x) => x.isDefault) || styleList[0];
-        set({ grade: { ...get().grade, style: dflt.name } });
-      }
+      // ★ main.js 给的键是 items（不是 stocks）—— 09-15 名字对不上过一次，列表会永远是空的。
+      const s = await API.engineStocks();
+      set({ engineOk: true, engineMsg: '', stocks: s?.items || [] });
     } catch {
       set({ engineOk: false, engineMsg: '引擎未启动' });
     }
@@ -529,17 +494,11 @@ export const useStore = create<AppState>((set, get) => ({
     set({ grade: { ...get().grade, ...patch } });
   },
 
-  /* ★ 右栏「恢复默认」（09-15 接上 —— 之前这个按钮**没有 onClick**，点了什么都不发生）：
-     只清「调出来的东西」= 23 根滑杆全清（引擎自动回到它自己 `config` 里的出厂值）+
-     基准回引擎默认那支 + **相纸回这一卷的配套纸**。
-     ⚠ **不动卷**：卷（Portra400薄荷 / C200青蓝…）是"这张要弄成什么"，不是调出来的，
-     被「恢复默认」顺手抹掉会很意外。
-     ⚠ 也不自动出图 —— 沿用 SV 定的"只有两个触发点"（右栏「渲染」/ 切进调色台）。 */
+  /* ★ 右栏「恢复默认」。
+     ⚠ 09-29：**曝光风格随影调层一起删了** ⇒ 现在没有"调出来的东西"可清
+     （胶片风格本就不该被清 —— 它是"这张要弄成什么"，不是调出来的）。按钮留着只为不动别处的接线。 */
   resetGrade: () => {
-    const list = get().styles;
-    const dflt = list.find((x) => x.isDefault) || list[0];
-    set({ grade: { ...get().grade, style: dflt?.name ?? '' } });
-    get().showToast('曝光风格已回默认（胶片风格没动）—— 点「渲染」看效果');
+    get().showToast('这一版没有可恢复的调色项（胶片风格没动）');
   },
 
   /* ★ 右栏「存到目录」（09-15 接上）：一个目录一份配方，写进 `config.grades[目录名]`。
@@ -591,7 +550,6 @@ export const useStore = create<AppState>((set, get) => ({
       const r = await API.exportImage({
         src: p.loadPath,
         stock: st.grade.stock,
-        style: st.grade.style,
       });
       if (r?.canceled) return;         // 用户自己取消 ⇒ 不提示（这不是错误）
       if (r?.ok) {
@@ -634,7 +592,6 @@ export const useStore = create<AppState>((set, get) => ({
         dirPath: st.sessionPath,
         items: list.map((p) => ({ rel: p.rel })),
         stock: st.grade.stock,
-        style: st.grade.style,
         side: st.batchSide,
       });
       if (r?.ok) {

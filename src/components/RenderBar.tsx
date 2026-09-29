@@ -36,7 +36,7 @@ export function RenderBar() {
           : renderBusy
             ? '出图中…'
             : hasPhoto
-              ? '改完胶片风格 / 曝光风格，点右栏「渲染」出图'
+              ? '改完胶片风格，点右栏「渲染」出图'
               : '调色台只列已打星（★≥1）的片子 —— 先去选片台打星'}
       </Text>
 

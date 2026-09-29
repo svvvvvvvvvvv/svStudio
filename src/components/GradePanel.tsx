@@ -37,9 +37,10 @@ function FilmIcon({ name, size = 40 }: { name: string; size?: number }) {
 }
 
 /**
- * 调色台右栏 —— 只有两个选择器：
+ * 调色台右栏 —— 只有一个选择器：
  *   · **胶片风格**（9 条预设）→ spektrafilm：负片 / 相纸 / 颗粒 / 柔光 / 光晕
- *   · **曝光风格**（高长调 / 中性调 / 暗调）→ svFilm：整张多亮、黑位到哪、白位到哪
+ *
+ * ★ 09-29：**曝光风格随影调层一起删了**（引擎 `tone.py` 整段删、`/styles` 接口也没了）。
  *
  * 渲染触发点只有两个：这里的「渲染」按钮、切进调色台。改风格不会自动出图。
  */
@@ -57,7 +58,6 @@ const selStyle: React.CSSProperties = {
 
 export function GradePanel() {
   const stocks = useStore((s) => s.stocks);
-  const styles = useStore((s) => s.styles);
   const batchMinStar = useStore((s) => s.batchMinStar);
   const batchSide = useStore((s) => s.batchSide);
   const batchRunning = useStore((s) => s.batchRunning);
@@ -75,7 +75,6 @@ export function GradePanel() {
   const requestRender = useStore((s) => s.requestRender);
 
   const curStock = grade.stock || '';
-  const curStyle = grade.style || '';
 
   if (!engineOk) {
     return (
@@ -159,62 +158,7 @@ export function GradePanel() {
         </Text>
       </div>
 
-      {/* ---- ② 曝光风格（三条档，一横排 chip） ---- */}
-      <div>
-        <Text
-          size="1"
-          weight="bold"
-          style={{ color: 'var(--text-dim)', letterSpacing: 1 }}
-        >
-          曝光风格
-        </Text>
-        <Flex gap="1" mt="2" wrap="wrap">
-          {styles.map((b) => {
-            const on = curStyle === b.name;
-            return (
-              <button
-                key={b.name}
-                data-style={b.name}
-                data-style-on={on ? '1' : '0'}
-                onClick={() => setGrade({ style: b.name })}
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'flex-start',
-                  gap: 2,
-                  padding: '6px 10px',
-                  borderRadius: 'var(--r-md)',
-                  border: on ? '1px solid var(--accent)' : '1px solid var(--line)',
-                  background: on ? 'rgba(10,132,255,.10)' : 'rgba(255,255,255,.03)',
-                  color: on ? 'var(--accent)' : 'var(--text-dim)',
-                  cursor: 'pointer',
-                  fontSize: 12,
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                <span>{b.name}</span>
-                {typeof b.L50 === 'number' && (
-                  <span style={{ fontSize: 10, opacity: 0.7 }}>
-                    中位 {b.L50.toFixed(0)} · 暗 {b.L5?.toFixed(0)} · 亮{' '}
-                    {b.L95?.toFixed(0)}
-                  </span>
-                )}
-                {typeof b.evDown === 'number' && (
-                  <span style={{ fontSize: 10, opacity: 0.7 }}>
-                    中位 ↓{b.evDown.toFixed(2)} 档 · 亮部 ↓{b.hiDown?.toFixed(0)} · 黑位 ↓
-                    {b.blDown?.toFixed(0)}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </Flex>
-        <Text size="1" style={{ color: 'var(--text-dim)', marginTop: 6 }}>
-          {styles.find((b) => b.name === curStyle)?.desc || ''}
-        </Text>
-      </div>
-
-      {/* ---- ③ 渲染 / 导出 ---- */}
+      {/* ---- ② 渲染 / 导出 ---- */}
       <div>
         <Button
           size="2"
@@ -268,7 +212,7 @@ export function GradePanel() {
           size="1"
           style={{ color: 'var(--text-faint)', marginTop: 4, display: 'block' }}
         >
-          用上面的胶片风格 + 曝光风格，把这个目录里的片全出一遍，写进
+          用上面的胶片风格，把这个目录里的片全出一遍，写进
           「调色待验收」子目录。打星的「同步星级」会把成片搬进星级桶。
         </Text>
         <Flex gap="2" mt="2" align="center">
@@ -330,7 +274,7 @@ export function GradePanel() {
           size="1"
           variant="ghost"
           onClick={resetGrade}
-          title="曝光风格回引擎默认档（胶片风格不动）"
+          title="这一版没有可恢复的调色项（胶片风格不动）"
         >
           恢复默认
         </Button>
