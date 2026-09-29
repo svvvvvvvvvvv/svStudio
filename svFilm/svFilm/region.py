@@ -63,15 +63,21 @@ def masks(disp, cfg=None, parsed=None):
             person = np.clip(np.asarray(_pp, np.float64), 0.0, 1.0)
             src = 'given'
     if person is None:                                # ② 没有就直接算（单独调本函数时）
-        try:
-            from . import face as _F
-            r = _F.parse(d)
-            mk = (r or {}).get('masks') or {}
-            if mk.get('person') is not None:
-                person = np.clip(np.asarray(mk['person'], np.float64), 0.0, 1.0)
-                src = 'face'
-        except Exception:                                              # noqa: BLE001
-            person = None
+        # ★★ 09-29：总闸 `FACE_STEP_ENABLE=False` ⇒ **这里也不许补算"人"掩膜**
+        #   （否则"认人"从后门回来，SV 裁定的"去掉"就没做到）。
+        from . import config as _C
+        if bool(getattr(cfg or _C, 'FACE_STEP_ENABLE', True)):
+            try:
+                from . import face as _F
+                r = _F.parse(d)
+                mk = (r or {}).get('masks') or {}
+                if mk.get('person') is not None:
+                    person = np.clip(np.asarray(mk['person'], np.float64), 0.0, 1.0)
+                    src = 'face'
+            except Exception:                                          # noqa: BLE001
+                person = None
+        else:
+            src = 'off(认人已停用)'
     if person is None:
         person = np.zeros((H, W), np.float64)
 

@@ -155,6 +155,10 @@ def scene_engine(scene, stock=None, cfg=None):
 
     ⚠⚠ **写错路径会当场报错**（`presets._render_locked` 里那个"字段路径走不通"）——
       这是**故意**的：静默不命中才是灾难。
+    ★★ 09-29（晚）：上面说的"全局 `"*"`"是**第一层兜底**；**再往下一层**是
+      `_stock_engine[<预设名>]`（**按预设**的基值，合并顺序 预设基值 → `"*"` → 按轴覆盖）。
+      为什么要有它：三条大师预设的**跨度/色偏本来就分得开**（靶 82.1 / 77.7 / 75.3），
+      一份全局值贴不住三条 —— 见 §标定。
     ⚠ **默认没这个键 ⇒ 返回空 dict ⇒ 逐位同旧行为**（机制先建好，数值后面调研）。
 
     @param scene {dict}  `scene.classify()` 的输出（`None` ⇒ 只吃全局兜底 `"*"`）
@@ -166,15 +170,29 @@ def scene_engine(scene, stock=None, cfg=None):
         scene = {}
     d = load()
     ov = d.get('_scene_engine') or {}
-    if not ov:
-        return out
-    # ★★★ 09-29：**先应用全局兜底 `"*"`**。
+    # ★★★★ 09-29（晚）：三层合并，**越具体越靠后**（后面盖前面）：
+    #   ① `_scene_engine["*"]`   —— **全局默认**（所有预设、所有场景都吃）
+    #   ② `_stock_engine[预设]`  —— **按预设的基值**（比全局具体）
+    #   ③ `_scene_engine["<轴>=…"]` —— **按场景的覆盖**（最具体，最后叠）
+    #   为什么必须加第 ② 层：09-29 晚标定实测 —— 三条大师预设**彼此分得开**
+    #     （跨度靶 鹿井 82.1 / 増田 77.7 / 滨田 75.3，色偏方向也不同）
+    #   ⇒ **一份全局值贴不住三条**。原「影调层/颜色层」本来就是**按预设**给靶的
+    #     （`targets.json` 的 `sh_abs` / `hi_abs`），这里把同一件事补回给引擎。
+    #   ⚠ 顺序**不能反**：若把 `"*"` 放在后面，预设基值会被全局值**静默盖掉**
+    #     （表现 = "明明写了却不生效"，正是本文件最怕的那类坑）。
+    #   ⚠ 默认没有 `_stock_engine` 这个键 ⇒ `out` 为空 ⇒ **行为与加它之前逐位相同**。
+    # --- ① 全局 `"*"`（无条件生效的兜底）---
     #   为什么要有：`"<轴>=*"` 只有在**该轴判出了值**时才命中（轴为 None 时整轴跳过）。
     #   而现实里"判不出光位"很常见（画面里没主体/人检不出）⇒ 那些片会一条都不命中。
     #   ⇒ `"*"` 是**无条件**的兜底（所有片都吃），后面的按轴覆盖再叠上去。
     _base = ov.get('*')
     if isinstance(_base, dict):
         out.update(_base)
+    # --- ② 按预设的基值 ---
+    _st = (d.get('_stock_engine') or {}).get(stock) if stock else None
+    if isinstance(_st, dict):
+        out.update(_st)
+    # --- ③ 按场景轴的覆盖 ---
     try:
         from . import scene as _S
         _tok, _axes = _S.token, _S.AXES
@@ -238,6 +256,13 @@ def cache_key(stock, scene=None):
         except Exception:                                  # noqa: BLE001
             v = str(v)
         items.append((k, v))
+    # ★★ 09-29（C2）：把**解析出来的**「脸↔身体的差」也压进键。
+    #   为什么不能只靠上面那条 `skin_gap`（= 作者名字符串）：改的是 `_skin_gap.who` 里的
+    #   **数值**，作者名没变 ⇒ 上面那条一字不改 ⇒ **命中旧缓存 = "拧了没反应"第 4 类**。
+    try:
+        items.append(('_skin_gap_resolved', tuple(skin_gap_target(stock, scene) or ())))
+    except Exception:                                      # noqa: BLE001
+        items.append(('_skin_gap_resolved', None))
     return tuple(items)
 
 
@@ -257,3 +282,38 @@ def face_lab_target(stock, scene=None):
     import math
     h = math.radians(float(H))
     return (float(L), float(C) * math.cos(h), float(C) * math.sin(h))
+
+
+# ---------------------------------------------------------------------------
+# ★★★★★ 09-29（C2）：**「脸 ↔ 可见身体皮肤」的差该是多少**
+# ---------------------------------------------------------------------------
+def skin_gap_target(stock, scene=None):
+    r"""身体闭环的靶：`(dL, dC, dH)`，语义 = **脸 − 身体**（`facegain` 转成身体的 Lab 靶）。
+
+    数字从哪来：`data/targets.json` 的 `_skin_gap.who[<作者>]` —— 由**这条预设挂的那位作者**
+    量出来（技能 §112 纪律 1）。预设条目里用 `"skin_gap": "<作者名>"` 指过来；
+    也可以直接写 `[dL, dC, dH]` 三个数当覆盖。
+
+    **没配 / 作者名查不到 ⇒ 返回 `None`** ⇒ `facegain` 不做身体闭环 ⇒ 逐位同旧行为。
+
+    ★ 为什么必须"按作者"而不是共用一份：`skin_L_abs` 那条教训（§5.4 口径错位）——
+      同一个"差"，増田是 dC +0.9、滨田是 +1.4、鹿井是 +0.2，而**我们当前挂的是増田**
+      ⇒ 拿别人的数来比会把账算错。
+    """
+    t = for_stock(stock, scene) or {}
+    who = t.get('skin_gap')
+    if not who:
+        return None
+    if isinstance(who, (list, tuple)) and len(who) == 3:
+        try:
+            return tuple(float(x) for x in who)
+        except Exception:                                  # noqa: BLE001
+            return None
+    d = (load().get('_skin_gap') or {}).get('who') or {}
+    v = d.get(str(who))
+    if not isinstance(v, dict):
+        return None
+    try:
+        return (float(v['dL']), float(v['dC']), float(v['dH']))
+    except Exception:                                      # noqa: BLE001
+        return None

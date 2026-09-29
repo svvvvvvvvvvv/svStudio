@@ -37,10 +37,15 @@ r"""二次调色（胶片引擎**之后**的颜色层）—— **L2 分色 + L3 
 """
 from __future__ import annotations
 
+import os
+
 import numpy as np
 
 from . import color
 from . import config as C
+
+# ★ 09-29 晚：`split()` 闭环诊断开关（`SV_SPLIT_DEBUG=1`）。默认关 ⇒ 零成本。
+_DBG = bool(os.environ.get('SV_SPLIT_DEBUG'))
 
 
 # ---------------------------------------------------------------------------
@@ -112,58 +117,194 @@ def _tgt_of(stock, scene):
 # ---------------------------------------------------------------------------
 # L2 分色：按亮度段把 a*/b* 往靶收
 # ---------------------------------------------------------------------------
-def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
-    """**L2 分色** —— 只改 a*/b*（暗/中/高各一段 + 最深阴影）。
+def _bm(v, mask):
+    """带内 **median**（不是 mean —— 口径见 `split()` 的说明）。"""
+    import numpy as np
+    return float(np.median(v[mask])) if bool(mask.any()) else 0.0
 
-    ★ 口径全部是「**相对整张中位**」（`sh_abs` / `hi_abs` / `mid_abs`）。
-    ★ 逐图往靶收（不是加固定偏移）：固定偏移跟测值不是 1:1，换条预设就失准。
-    ★ 限幅：靶里 `split_limit` 优先，否则 config 的 `GRADE_SPLIT_LIMIT`。
+
+def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
+    """**L2 分色** —— 按亮度把 a*/b* 往靶收（**逐图 1:1 收敛**）。
+
+    ## ★★★ 09-29 晚：模型从「三个颜色轮」换成「一条按亮度走的修正曲线」
+
+    ### 原模型为什么不可能对（**结构性**的，不是力度问题）
+    原来用三根权重（暗轮 `w_sh` / 亮轮 `w_hi` / 中轮 `w_mid = 1 − w_sh − w_hi`），
+    而观测量是「分带 median − 整张 median」。后果：
+      · 三根权重**和为 1** ⇒ "给全图同时加常数"这个方向对观测量**完全不可见**
+        ⇒ 3 个旋钮只剩 **2 个可见自由度**；
+      · 而靶给了 **3 个数**（暗 / 亮 / 中）⇒ **数学上不可能同时对上**；
+      · 更糟：`(暗轮 + 亮轮)` 的共同方向增益只有 **0.07**（实测）⇒ 求解出 D ≈ **±25 格**，
+        画面会被推花。三色轮自己的 2×2 也是病态的（cond 11~23）。
+      ⇒ 这是"**模型少了维度**"，任何"调力度"都救不了。证据见
+        `_debug/_split_probe.py`（口径错 10 倍）、`_split_opt.py`（三色轮 D≈22~60）、
+        `_split_reach.py`（12 档自由场**可达**，残差 ~0 ⇒ 问题在参数化）。
+
+    ### 新模型：按**亮度秩**走的修正曲线（12 个节点，最小曲率）
+      ① 每个像素的亮度换成**秩** `r ∈ [0,1]`（等频 ⇒ 内容归一，与分带口径同源）；
+      ② 12 个节点 `j` 上的**帽函数** `hat_j(r) = max(0, 1 − |r·12 − 0.5 − j|)`（`Σ_j hat_j ≡ 1`）；
+      ③ 求节点值 `c`（a* / b* 各一组）让三个带的观测量落靶：
+         `min ‖c‖² + μ‖Δ²c‖²  s.t.  J·c = (goal − cur)`（KKT）
+         —— 一句话「**用最平滑的那条曲线落靶**」；μ 项同时把"常数"这个空方向压掉。
+      ④ `J` **数值实测**（给每个节点打一记 `h` 格、看三个带各动多少），**不猜解析式**
+         （解析式错了一倍，是之前发散的另一半根源）。
+      ⑤ 迭代 + **回溯**（新点残差没变小就减半）+ 场幅上限 ⇒ 单调、不发散。
+
+    ★ 实测（3 图 × 2 通道，`_debug/_split_minfield.py`，含**非线性复核**）：
+      残差从旧模型的 **−5.9 / −7.9 格**（滨田暗部）降到 **≤ 1.1 格**；
+      所需场幅度 **3.9 ~ 12.2 格**。代价 = 这一层由"3 个旋钮"变成"一条逐图拟合的曲线"。
+
+    ## 口径（不改）
+    · 观测量 = 「暗带 `L≤P20` / 亮带 `L≥P80` / 中带 `P25~P75` 的 **median** − **整张 median**」
+      —— 与 `targets.json` 的 `sh_abs / hi_abs / mid_abs` **同一把尺子**（B 尺）。
+    · 只追「最多补 `_lim` 格」那一段：差得更多的部分**不是风格差、是内容差**。
+    · `GRADE_DEEP_A/B`（最暗部推色）当**常数偏移**加在基线上，不参与闭环。
     @returns {(a, b, dict)} 新的 a/b + 本段报告（不改 L）
     """
-    w_sh, w_hi, w_deep = _sh_hi_weights(L, cfg)
-    Lm, am, bm = m['Lm'], m['am'], m['bm']
+    import numpy as np
+    # ★ 09-29 深夜：分色**单段开关**。`False` ⇒ 这一段原样返回（混色/肤色照跑）。
+    #   用途：落地后万一画面"分色过火"，一键回退这一段而不动别的层。
+    #   ⚠ 返回的 key 必须齐 —— `apply()` 会读 `d_sh` / `d_hi`（缺了当场 KeyError，08-29 栽过）。
+    if not bool(getattr(cfg, 'GRADE_SPLIT_ENABLE', True)):
+        return a, b, dict(applied=False, split_model='off', split_iters=0,
+                          d_sh=(0.0, 0.0), d_hi=(0.0, 0.0), d_mid=(0.0, 0.0),
+                          d_deep=(0.0, 0.0), split_limit=0.0,
+                          split_resid=[0.0] * 6,
+                          split_field=(0.0, 0.0, 0.0, 0.0),
+                          tgt_sh=[0.0, 0.0], tgt_hi=[0.0, 0.0], tgt_mid=[0.0, 0.0])
+    _p20, _p80 = np.percentile(L, 20.0), np.percentile(L, 80.0)
+    _p25, _p75 = np.percentile(L, 25.0), np.percentile(L, 75.0)
+    msh, mhi = L <= _p20, L >= _p80
+    mmid = (L >= _p25) & (L <= _p75)
+    _bands = (msh, mhi, mmid)
+
     _lim = float((tg or {}).get('split_limit')
                  if (tg or {}).get('split_limit') is not None
-                 else getattr(cfg, 'GRADE_SPLIT_LIMIT', 2.5))
+                 else getattr(cfg, 'GRADE_SPLIT_LIMIT', 5.0))
+    _n = max(int(getattr(cfg, 'GRADE_SPLIT_NODES', 12) or 12), 4)
+    _lc = float(getattr(cfg, 'GRADE_SPLIT_CURV', 1.0) or 0.0)
+    _reg = float(getattr(cfg, 'GRADE_SPLIT_REG', 0.02) or 0.0)
+    _wmid = float(getattr(cfg, 'GRADE_SPLIT_MIDW', 0.30) or 0.0)
+    _rng = float(getattr(cfg, 'GRADE_SPLIT_RANGE', 8.0) or 0.0)
+    _IT = int(getattr(cfg, 'GRADE_SPLIT_ITERS', 4) or 4)
+    _h = 0.5
+    _deep_a = float(getattr(cfg, 'GRADE_DEEP_A', 0.0))
+    _deep_b = float(getattr(cfg, 'GRADE_DEEP_B', 0.0))
+    w_deep = _sh_hi_weights(L, cfg)[2]
+
+    # ---- 靶 ----
     if tg and tg.get('sh_abs'):
-        _p25, _p90 = np.percentile(L, 25.0), np.percentile(L, 90.0)
-        _msh, _mhi = L <= _p25, L >= _p90
-        cur = (float(a[_msh].mean() - am), float(b[_msh].mean() - bm),
-               float(a[_mhi].mean() - am), float(b[_mhi].mean() - bm))
-        tgt = (float(tg['sh_abs'][0]), float(tg['sh_abs'][1]),
-               float(tg['hi_abs'][0]), float(tg['hi_abs'][1]))
-        d4 = [float(np.clip(tgt[i] - cur[i], -_lim, _lim)) for i in range(4)]
-        sha, shb, hia, hib = d4
+        t_sh = (float(tg['sh_abs'][0]), float(tg['sh_abs'][1]))
+        t_hi = (float(tg['hi_abs'][0]), float(tg['hi_abs'][1]))
     else:
-        sha, shb = float(getattr(cfg, 'GRADE_SH_A', 0.0)), float(getattr(cfg, 'GRADE_SH_B', 0.0))
-        hia, hib = float(getattr(cfg, 'GRADE_HI_A', 0.0)), float(getattr(cfg, 'GRADE_HI_B', 0.0))
-    dpa, dpb = float(getattr(cfg, 'GRADE_DEEP_A', 0.0)), float(getattr(cfg, 'GRADE_DEEP_B', 0.0))
-    # ★ 09-24：**中间调**那一段也能收（原来只有 w_sh / w_hi 两段，L 的 25%~75% **没人管**）。
-    #   量鹿井时发现问题恰恰在中间调 —— 他几乎中性，而我们中调 b* 比整张中位高 10 格以上
-    #   ⇒ 肤色落在这一段，观感就是"发黄发暖"。
+        t_sh = (float(getattr(cfg, 'GRADE_SH_A', 0.0)), float(getattr(cfg, 'GRADE_SH_B', 0.0)))
+        t_hi = (float(getattr(cfg, 'GRADE_HI_A', 0.0)), float(getattr(cfg, 'GRADE_HI_B', 0.0)))
     _mid = (tg or {}).get('mid_abs')
-    mma = mmb = 0.0
-    if _mid:
-        _p25m, _p75m = np.percentile(L, 25.0), np.percentile(L, 75.0)
-        _mm = (L >= _p25m) & (L <= _p75m)
-        if bool(_mm.any()):
-            mma = float(np.clip(float(_mid[0]) - (float(a[_mm].mean()) - am), -_lim, _lim))
-            mmb = float(np.clip(float(_mid[1]) - (float(b[_mm].mean()) - bm), -_lim, _lim))
-    w_mid = np.clip(1.0 - w_sh - w_hi, 0.0, 1.0)
-    # ★★★ 09-28：**中调权重归一化**（和肤色层 `GRADE_SKIN_W_REF` 同一招）。
-    #   为什么：`w_sh`/`w_hi` 的过渡带**各占 0.75 个 span** ⇒ 合起来 1.5 span
-    #   ⇒ **把中调 `w_mid` 挤得只剩一点点**（实测全图中位 0.000、中调区均值 0.231）
-    #   ⇒ 实测后果：`mid_abs[0]` 从 0.77 改到 **−6**、限幅开到 12，中 a* 只挪了 0.67。
-    #   **设 1.0 = 关**（逐位回老行为）。
-    _wmid_ref = float(getattr(cfg, 'GRADE_SPLIT_W_REF', 1.0) or 1.0)
-    if _wmid_ref < 1.0 - 1e-9:
-        w_mid = np.minimum(w_mid / max(_wmid_ref, 1e-6), 1.0)
-    da2 = sha * w_sh + hia * w_hi + dpa * w_deep + mma * w_mid
-    db2 = shb * w_sh + hib * w_hi + dpb * w_deep + mmb * w_mid
-    info = dict(d_sh=(float(sha), float(shb)), d_hi=(float(hia), float(hib)),
-                d_deep=(float(dpa), float(dpb)), d_mid=(float(mma), float(mmb)),
-                split_limit=_lim)
-    return a + da2, b + db2, info
+    t_md = (float(_mid[0]), float(_mid[1])) if _mid else (0.0, 0.0)
+    tgt = np.array([[t_sh[0], t_hi[0], t_md[0]], [t_sh[1], t_hi[1], t_md[1]]], np.float64)
+
+    def _cur(av, bv):
+        """观测量（自归一化）：分带 median − **整张** median。"""
+        _am, _bmm = float(np.median(av)), float(np.median(bv))
+        return np.array([[_bm(av, mt) - _am for mt in _bands],
+                         [_bm(bv, mt) - _bmm for mt in _bands]], np.float64)
+
+    # ---- 亮度秩 + 帽函数基（等频 ⇒ 内容归一）----
+    _flat = np.asarray(L, np.float64).ravel()
+    _rk = np.empty(_flat.size, np.float64)
+    _rk[np.argsort(_flat, kind='stable')] = np.arange(_flat.size, dtype=np.float64) / \
+        max(_flat.size - 1, 1)
+    _uu = (_rk * _n - 0.5).reshape(L.shape)
+    W = [np.clip(1.0 - np.abs(_uu - j), 0.0, 1.0) for j in range(_n)]
+
+    a_base = a + _deep_a * w_deep
+    b_base = b + _deep_b * w_deep
+    c0 = _cur(a_base, b_base)
+    goal = c0 + np.clip(tgt - c0, -_lim, _lim)
+
+    def _apply(base_arr, cvec):
+        f = np.zeros_like(base_arr, np.float64)
+        for j in range(_n):
+            f += cvec[j] * W[j]
+        return base_arr + f, f
+
+    def _jac(bav, bbv):
+        J = np.zeros((2, 3, _n), np.float64)
+        ca, cb = _cur(bav, bbv)
+        for j in range(_n):
+            J[0, :, j] = (_cur(bav + _h * W[j], bbv)[0] - ca[0]) / _h
+            J[1, :, j] = (_cur(bav, bbv + _h * W[j])[1] - cb[1]) / _h
+        return J
+
+    # ★ 加权岭回归的代价项：`λI + λc·Δ²ᵀΔ²`
+    #   · `λI` 把"整体平移"这个**空方向**压掉（三根帽函数和为 1 ⇒ 加常数对观测量不可见）；
+    #   · `λc·Δ²ᵀΔ²` 让曲线**尽量平滑**（实测同样落靶，平滑解的场幅从 35 格降到 4~12 格）。
+    _D2 = np.zeros((_n - 2, _n), np.float64)
+    for _i in range(_n - 2):
+        _D2[_i, _i], _D2[_i, _i + 1], _D2[_i, _i + 2] = 1.0, -2.0, 1.0
+    H = _reg * np.eye(_n) + _lc * (_D2.T @ _D2)
+    # ★ 观测权重：**中调那行降权** —— 它的观测量是内容主导的（靶跨张 IQR ≥4），
+    #   精确追它会把场推到 12 格；降权后由优化器自己权衡"值不值"。
+    Lam = np.diag([1.0, 1.0, _wmid])
+
+    C = np.zeros((2, _n), np.float64)
+    a2, b2 = a_base, b_base
+    iters, prev = 0, float(np.max(np.abs(goal - c0)))
+    for _ in range(max(_IT, 1)):
+        iters += 1
+        if prev < 0.03:
+            break
+        r = goal - _cur(a2, b2)
+        J = _jac(a2, b2)
+        Cnew = C.copy()
+        for ch in (0, 1):
+            _A = J[ch].T @ Lam @ J[ch] + H
+            try:
+                step = np.linalg.solve(_A, J[ch].T @ Lam @ r[ch])
+            except Exception:                                  # noqa: BLE001
+                step = np.linalg.lstsq(_A, J[ch].T @ Lam @ r[ch], rcond=None)[0]
+            _fs = float(step.max() - step.min())
+            if _rng and _fs > _rng:                       # 单轮步长封顶（按场幅算）
+                step = step * (_rng / _fs)
+            Cnew[ch] = C[ch] + 0.8 * step
+            if _rng:
+                _cr = float(Cnew[ch].max() - Cnew[ch].min())
+                if _cr > _rng:
+                    Cnew[ch] = Cnew[ch] * (_rng / _cr)
+        # ★ 回溯（保单调）：新点残差没变小 ⇒ 步长减半重来
+        _best = None
+        for _bt in range(4):
+            _at, _fa = _apply(a_base, Cnew[0])
+            _btx, _fb = _apply(b_base, Cnew[1])
+            _et = float(np.max(np.abs(goal - _cur(_at, _btx))))
+            if _et <= prev + 1e-6 or _bt == 3:
+                _best = (Cnew, _at, _btx, _et)
+                break
+            Cnew = 0.5 * (C + Cnew)
+        C, a2, b2, prev = _best
+        if _DBG:
+            _fa = _apply(a_base, C[0])[1]
+            print('[split] it%d err=%.3f  a场[%.2f,%.2f]  b场[%.2f,%.2f]'
+                  % (iters, prev, float(_fa.min()), float(_fa.max()),
+                     float(_apply(b_base, C[1])[1].min()), float(_apply(b_base, C[1])[1].max())))
+
+    _fa = _apply(a_base, C[0])[1]
+    _fb = _apply(b_base, C[1])[1]
+    info = dict(d_sh=(float(_bm(_fa, msh)), float(_bm(_fb, msh))),
+                d_hi=(float(_bm(_fa, mhi)), float(_bm(_fb, mhi))),
+                d_mid=(float(_bm(_fa, mmid)), float(_bm(_fb, mmid))),
+                d_deep=(_deep_a, _deep_b),
+                split_limit=_lim, split_model='curve',
+                split_nodes=_n, split_curv=_lc, split_reg=_reg, split_midw=_wmid,
+                split_range=_rng,
+                split_iters=iters,
+                split_field=(round(float(_fa.min()), 3), round(float(_fa.max()), 3),
+                             round(float(_fb.min()), 3), round(float(_fb.max()), 3)),
+                split_resid=[round(float(v), 3) for v in (tgt - _cur(a2, b2)).ravel()],
+                split_curve_a=[round(float(v), 3) for v in C[0]],
+                split_curve_b=[round(float(v), 3) for v in C[1]],
+                tgt_sh=list(t_sh), tgt_hi=list(t_hi), tgt_mid=list(t_md))
+    return a2, b2, info
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +438,9 @@ def skin(disp, L, a, b, tg, cfg, parsed):
     info['skin_limit_l'] = _lim_l
 
     _pzr = parsed
-    if _pzr is None:
+    # ★★ 09-29：总闸 `FACE_STEP_ENABLE=False` ⇒ **不许从后门自己补算掩膜**
+    #   （否则"认人/认脸"又回来了，而 SV 已裁定去掉它）。
+    if _pzr is None and bool(getattr(cfg, 'FACE_STEP_ENABLE', True)):
         try:                                    # 没传进来就自己算一遍（单独调用时的老行为）
             from . import face as _F
             _pzr = _F.parse(np.clip(disp, 0.0, 1.0))
@@ -518,10 +661,13 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
     _scope = str(getattr(cfg, 'GRADE_SCOPE', 'all')).lower()
     _a0, _b0, _L0 = a.copy(), b.copy(), L.copy()
 
+    # ---- L3 混色 ----  ★★ 09-29 **换序**：混色在前、分色在后。
+    #   为什么：`mix()` 把 a*/b* 整体乘以一个系数（`sat` 那一套）。分色若在它前面，
+    #   刚加进去的带偏移会被一起缩掉（实测 sat=0.69 ⇒ 缩 31%；`mix` 还会把暗部 a 推回 +0.97）。
+    #   ⇒ 分色必须是**最后一个动 a*/b* 的人**。这也是 LR 的面板顺序（HSL/Color Mixer → Color Grading）。
+    L, a, b, i3 = mix(disp, L, a, b, tg, cfg, _pz, m)
     # ---- L2 分色 ----
     a, b, i2 = split(L, a, b, tg, cfg, m)
-    # ---- L3 混色 ----
-    L, a, b, i3 = mix(disp, L, a, b, tg, cfg, _pz, m)
     if _scope not in ('all', 'color'):
         a, b, L = _a0, _b0, _L0          # scope='skin' ⇒ 分色/混色不生效（只报告）
     # ---- L4 肤色 ----
@@ -534,6 +680,13 @@ def apply(disp, cfg=C, stock=None, parsed=None, scene=None):
                 a_med_in=m['am'], b_med_in=m['bm'],
                 d_sh=i2['d_sh'], d_hi=i2['d_hi'], target=(i2['d_sh'][0], i2['d_sh'][1],
                                                           i2['d_hi'][0], i2['d_hi'][1]),
+                # ★ 09-29 晚：把分色那层的**自检字段**透出来（`apply()` 原先只透 d_sh/d_hi，
+                #   结果外部脚本读 `report['grade']['split_resid']` 永远是 None --
+                #   排查"到底落没落靶"时白跑了一轮真渲染）。纯新增键，不改任何行为。
+                split_model=i2.get('split_model'), split_iters=i2.get('split_iters'),
+                split_resid=i2.get('split_resid'), split_field=i2.get('split_field'),
+                split_limit=i2.get('split_limit'),
+                tgt_sh=i2.get('tgt_sh'), tgt_hi=i2.get('tgt_hi'), tgt_mid=i2.get('tgt_mid'),
                 c_gain=i3['c_gain'], stock=stock,
                 skin_dL=i4['skin_dL'], skin_dC=i4['skin_dC'], skin_dH=i4['skin_dH'],
                 skin_mask=i4['skin_mask'],

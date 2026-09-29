@@ -168,6 +168,11 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
             _ov_key, _tg_key = None, None
         _ckey = ('film', _sample_uid(s), name, style, getattr(cfg, 'MAX_SIDE', None), _after,
                  int(getattr(scene, 'VERSION', 0)),
+                 # ★★★★★ 09-29：**"认人/认脸"总闸进键** —— 它决定的不是"改多少"，
+                 #   而是**整条链跑哪几步**（关掉 ⇒ 不调 face.parse、不跑脸/身体的任何动作）
+                 #   ⇒ 不进键就是在常驻进程里"拧了没反应"第 4 类，而且这次更狠：
+                 #     画面会**整套**不同（少了脸/身体的动作）。
+                 bool(getattr(cfg, 'FACE_STEP_ENABLE', True)),
                  str(getattr(cfg, 'GRADE_SCOPE', 'all')),
                  bool(getattr(cfg, 'GRADE_ENABLE', True)),
                  bool(getattr(cfg, 'TONE_ENABLE', False)),
@@ -189,6 +194,21 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
                  #     = "拧了没反应"第 4 类（这条注释上面的历史就是这么来的）。
                  bool(getattr(cfg, 'GRADE_SKIN_MEAS_FACE', True)),
                  str(getattr(cfg, 'SKIN_ABS_OWNER', 'facegain')),
+                 # ★★★ 09-29（C2）：**身体闭环那一套也进键** —— 同一类坑第 N 次。
+                 #   · `FACE_GAIN_MASK_SRC` 换的是**掩膜来源**（很暗的 RAW ↔ 引擎基线）
+                 #     ⇒ 直接改"给哪里加密度" ⇒ 出图不同；
+                 #   · `SKIN_GAP_ENABLE` + 那一串 `SKIN_GAP_*` 旋钮改的是**身体闭环的动作/停止条件**；
+                 #   · 身体靶本身已由 `_tg_key`（`targets.cache_key` 里的 `_skin_gap_resolved`）覆盖。
+                 #   ⇒ 不进键的话，常驻进程里拧它们仍命中旧缓存 = "拧了没反应"。
+                 str(getattr(cfg, 'FACE_GAIN_MASK_SRC', 'decoded')),
+                 bool(getattr(cfg, 'SKIN_GAP_ENABLE', False)),
+                 float(getattr(cfg, 'SKIN_GAP_PROBE', 0.05)),
+                 float(getattr(cfg, 'SKIN_GAP_DAMP', 0.70)),
+                 float(getattr(cfg, 'SKIN_GAP_STEP', 0.10)),
+                 float(getattr(cfg, 'SKIN_GAP_TOTAL', 0.40)),
+                 int(getattr(cfg, 'SKIN_GAP_MAXIT', 4)),
+                 float(getattr(cfg, 'SKIN_GAP_STOP', 0.6)),
+                 float(getattr(cfg, 'SKIN_GAP_SIG_MAX_REL', 0.02)),
                  _ov_key, _tg_key)
         _entry = cache.get(_ckey)
 
@@ -213,11 +233,18 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
         #   算一次、传下去，`grade` 里 region 与 L4 共用 ⇒ 顺带把重复的那次分割也省掉。
         #   ⚠ 拿不到（模型缺失）⇒ `None`，下游自己降级，**不崩**。
         _pz = None
-        try:
-            from . import face as _face
-            _pz = _face.parse(np.clip(s.disp, 0.0, 1.0))
-        except Exception:                                        # noqa: BLE001
-            _pz = None
+        # ★★★★★ 09-29 SV 裁定：**「认人/认脸」这一步已去掉**（总闸 `config.FACE_STEP_ENABLE`）。
+        #   关掉 ⇒ 这里**一次都不调** `face.parse` ⇒ 不跑 mediapipe、不跑 birefnet-portrait。
+        #   代价（如实）：`scene` 的 `back` / `shot` / `face` 三轴失效 —— 详见 `config.py` 那张清单，
+        #   结论是**对出图无影响**（用这三轴的 `_scene` 只改肤色层的旋钮，而肤色层也停了；
+        #   `_scene_engine` 那条 morph 走全局 `"*"`，无条件生效，跨度照样到靶）。
+        #   ⚠ 下游（`scene` / `grade` / `region`）都接受 `_pz=None` 并自己降级，不会崩。
+        if bool(getattr(cfg, 'FACE_STEP_ENABLE', True)):
+            try:
+                from . import face as _face
+                _pz = _face.parse(np.clip(s.disp, 0.0, 1.0))
+            except Exception:                                    # noqa: BLE001
+                _pz = None
 
         # ★★★ 场景判据（09-26，「按场景分参数」的**入口**）
         #   · 跟人脸掩膜**用同一张图、同一次解析**（`parsed=_pz`）—— 不重复算、也不会两张图。
@@ -252,10 +279,16 @@ def run_from(sample, cfg=C, stock=None, style=None, out=None,
                 from . import targets as _TF
                 _ft = _TF.face_lab_target(name, _sc)
                 if _ft:
+                    # ★★ 09-29（C2）：**身体闭环的靶**也在这里解析（`facegain` 不依赖 `targets`）。
+                    #   语义 = 脸 − 身体，按**挂着的作者**取（纪律 1）。没挂 ⇒ `None` ⇒ 只做脸那段。
+                    try:
+                        _gt = _TF.skin_gap_target(name, _sc)
+                    except Exception:                      # noqa: BLE001
+                        _gt = None
                     disp, _fg = presets.render_with_face(
                         s.lin, name, cfg, pz=_pz,
                         target_L=_ft[0], target_a=_ft[1], target_b=_ft[2],
-                        overrides=(_ov or None))
+                        overrides=(_ov or None), gap_target=_gt)
             except Exception as _e:                            # noqa: BLE001
                 _fg = dict(applied=False, note='脸增益失败：%s' % str(_e)[:120])
         if _fg is None:

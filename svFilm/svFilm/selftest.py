@@ -84,11 +84,18 @@ def _pure_engine_same(res, sample, style=None):
     ov = _TS.scene_engine(_sc, stock=res.report['stock'], cfg=C) or None
     stock = res.report['stock']
     fg = res.report.get('face_gain') or {}
-    ft = _TS.face_lab_target(stock) if fg.get('applied') else None
+    # ★★ 09-29（C2）：判"这张到底动没动"要看 `any_applied` —— 身体那一段可以**单独**动
+    #   （脸本来就在靶上 ⇒ 脸 0 轮，身体照样被拉）。只看 `applied` 会把它当成"没动"。
+    _moved = bool(fg.get('applied') or fg.get('any_applied'))
+    ft = _TS.face_lab_target(stock) if _moved else None
     if ft:
         from . import face as _face
         pz = _face.parse(np.clip(sample.disp, 0.0, 1.0))
-        _kw = dict(pz=pz, target_L=ft[0], target_a=ft[1], target_b=ft[2], overrides=ov)
+        # ★★ 09-29（C2）：**身体闭环也是"引擎这一步"的一部分** ⇒ 参照物必须带上它的靶，
+        #   否则拿"只做脸那段"的图去比"脸+身体两段"的图，差的就全是第二段（这条检查会假红）。
+        _gt = _TS.skin_gap_target(stock, _sc)
+        _kw = dict(pz=pz, target_L=ft[0], target_a=ft[1], target_b=ft[2], overrides=ov,
+                   gap_target=_gt)
         b = np.asarray(presets.render_with_face(lin, stock, C, **_kw)[0])
         c = np.asarray(presets.render_with_face(lin, stock, C, **_kw)[0])
     else:
@@ -113,8 +120,9 @@ def _main():
         ('靶按预设分组', t_targets),
         ('肤色层：真脸掩膜 / 空窗口 / 三件事', t_skin),
         ('可调键：config 里真的接上了（防"假旋钮"）', t_config_keys),
+        ('★★★★★ 去掉「认人/认脸」：一次都不调 / 没后门 / 不丢跨度', t_no_face_step),
         ('人脸掩膜：算在解码后 / 只算一次 / 报告不说谎', t_mask_contract),
-        ('脸增益：转正后只动脸 / 没脸不动 / ΔE00 是真尺子', t_facegain),
+        ('脸增益（**已停用**，代码保留）：只动脸 / 没脸不动 / ΔE00 是真尺子', t_facegain),
         ('场景判据：六轴 / 只在线性域判过曝 / 覆盖只加不减', t_scene),
         ('契约：曝光在胶片之前 + 名字不认得要报错', t_contract),
         ('段缓存：同参数命中、换风格不命中', t_cache),
@@ -660,8 +668,18 @@ def t_facegain():
     check('config.FACE_GAIN_ENABLE 这个键真的在', hasattr(C, 'FACE_GAIN_ENABLE'),
           '当前 %r' % getattr(C, 'FACE_GAIN_ENABLE', None),
           '缺它 ⇒ 代码里 `getattr(cfg, …)` 永远取那个字面默认')
-    check('★ 脸增益**转正**了（默认开）', bool(getattr(C, 'FACE_GAIN_ENABLE', False)),
-          '7 张实测脸 ΔE00 0.67~1.32（判据 ≤3.0）')
+    # ★★★★★ 09-29 SV 裁定：**去掉「认人/认脸」这一步** ⇒ 这一格的判据**反过来**了
+    #   （原来是"转正了、默认开"；现在要钉的是"已停用、默认关、**代码还在**"）。
+    check('★★★★★ 「认人/认脸」总闸 `FACE_STEP_ENABLE` 在、且默认**关**',
+          hasattr(C, 'FACE_STEP_ENABLE') and not bool(getattr(C, 'FACE_STEP_ENABLE', True)),
+          'FACE_STEP_ENABLE=%r' % getattr(C, 'FACE_STEP_ENABLE', '★ 缺键'),
+          '缺它 / 开着 ⇒ 每张白付 0.8~7 秒（mediapipe / birefnet）+ 多出脸与身体的动作')
+    check('★★★★ 脸增益**已停用**（默认关；代码保留、不删）',
+          not bool(getattr(C, 'FACE_GAIN_ENABLE', False)),
+          'SV 原话：「去掉认人认脸的相关步骤 肤色层和这个肤色增益 跑的太慢了也没有达到我想要的效果」')
+    check('★★★★ 身体闭环**已停用**（默认关；代码保留、不删）',
+          not bool(getattr(C, 'SKIN_GAP_ENABLE', False)),
+          '随总闸一起停 —— 它是挂在脸增益第二段上的')
     check('★★ 两个"摆着看的"旧键已清干净（`FACE_GAIN_MIN_PX` / `FACE_GAIN_SKIP_BODY_ONLY`）',
           not hasattr(C, 'FACE_GAIN_MIN_PX') and not hasattr(C, 'FACE_GAIN_SKIP_BODY_ONLY'),
           '掩膜下限现在叫 FACE_GAIN_MIN_MASK_PX=%r' % getattr(C, 'FACE_GAIN_MIN_MASK_PX', None),
@@ -759,6 +777,130 @@ def t_facegain():
           'ΔE00 %.2f · ΔE76 %.2f · 尺子 %s' % (_d00, _e76, facegain._DE_METRIC[0]),
           '两者相等 ⇒ `colour.delta_E` 抛了、`except` 把它静默换成欧氏（报出来的"ΔE00"是假数）')
 
+    # ==================================================================
+    # ★★★ 09-29（C2）：**第二段闭环（身体）+ 掩膜来源**的契约
+    # ==================================================================
+    _gap_keys = ('SKIN_GAP_ENABLE', 'SKIN_GAP_PROBE', 'SKIN_GAP_DAMP', 'SKIN_GAP_STEP',
+                 'SKIN_GAP_TOTAL', 'SKIN_GAP_MAXIT', 'SKIN_GAP_STOP', 'SKIN_GAP_SIG_MAX_REL',
+                 'SKIN_GAP_MIN_PX', 'SKIN_GAP_MIN_MEAS_PX')
+    check('★★ 掩膜来源键在、取值合法',
+          str(getattr(C, 'FACE_GAIN_MASK_SRC', '')).lower() in ('baseline', 'decoded'),
+          '当前 %r' % getattr(C, 'FACE_GAIN_MASK_SRC', None),
+          '键缺 / 拼错 ⇒ `apply` 里 `getattr` 永远取字面默认 ⇒ 掩膜又回到 RAW 上算，'
+          '白裙子 / 游乐设施又被当皮肤（实测 +54% / +89%）')
+    check('★★★ 掩膜来源**默认**是可信输入（`baseline` = 引擎出图，不是在很暗的 RAW 上算）',
+          str(getattr(C, 'FACE_GAIN_MASK_SRC', '')).lower() == 'baseline',
+          '当前 %r' % getattr(C, 'FACE_GAIN_MASK_SRC', None),
+          'C1 三点定级顺手查出的真账：同一张成片换掩膜量，「脸↔身体的差」能从 −12.99 变 −0.30')
+    check('★★ 身体闭环那一套键都在（`SKIN_GAP_*`）',
+          all(hasattr(C, k) for k in _gap_keys),
+          '缺：%s' % [k for k in _gap_keys if not hasattr(C, k)],
+          '缺一个 ⇒ 那一项静默退回 `facegain` 里的兜底值 ⇒ 改 config 没反应（第 4 类坑）')
+    _sg = targets.skin_gap_target(_PRESET) if hasattr(targets, 'skin_gap_target') else None
+    check('★ 这条预设的**身体靶**解析得出 `(dL, dC, dH)`（挂在作者身上）',
+          _sg is None or (len(tuple(_sg)) == 3 and all(np.isfinite(_sg))),
+          '%s ⇒ %r' % (_PRESET, _sg),
+          '解析不出 ⇒ 身体闭环静默不启用（"改了没反应"）')
+
+    # ---- 掩膜来源：'baseline' 真的会去重算；拿不到 ⇒ 回退老来源且不崩 ----
+    from . import face as _face_mod
+    _src_keep = str(getattr(C, 'FACE_GAIN_MASK_SRC', 'decoded'))
+    _parse_orig = _face_mod.parse
+    _lin_t = _lin_from_disp(_gray_img(seed=83))
+    _fs_syn = np.zeros((h, w), np.float64)
+    _fs_syn[60:110, 90:150] = 1.0                 # 3000 px 的"脸"
+    _sk_syn = np.zeros((h, w), np.float64)
+    _sk_syn[h // 2:, :] = 1.0                     # 21600 px 的"全身皮肤"
+    _pz_syn = {'masks': {'face_skin': _fs_syn, 'skin': _sk_syn}}
+    _pz_none = {'masks': {'face_skin': np.zeros((h, w), np.float64),
+                          'skin': np.zeros((h, w), np.float64)}}
+    _ft_t = targets.face_lab_target(_PRESET)
+    try:
+        C.FACE_GAIN_MASK_SRC = 'baseline'
+        _face_mod.parse = lambda _d: _pz_syn                       # 假装基线上认得出
+        _o1, _g1 = presets.render_with_face(_lin_t, _PRESET, C, pz=_pz_none,
+                                            target_L=_ft_t[0], target_a=_ft_t[1], target_b=_ft_t[2])
+        check('★★★ 掩膜来源 = `baseline` ⇒ `apply` **自己重算掩膜**（不用调用方给的那张）',
+              str(_g1.get('mask_src')) == 'baseline' and int(_g1.get('mask_px') or 0) > 0
+              and bool(_g1.get('applied')),
+              'mask_src=%r · mask_px=%s · applied=%s' % (_g1.get('mask_src'), _g1.get('mask_px'),
+                                                         _g1.get('applied')),
+              '调用方给的是**很暗的 RAW**上算的那张 ⇒ 拿它决定"给哪里加密度"就是在给白裙子加密度')
+        _face_mod.parse = lambda _d: (_ for _ in ()).throw(RuntimeError('模拟模型缺失'))
+        _o2, _g2 = presets.render_with_face(_lin_t, _PRESET, C, pz=_pz_syn,
+                                            target_L=_ft_t[0], target_a=_ft_t[1], target_b=_ft_t[2])
+        check('★★ 基线上分不出来 ⇒ **回退老来源**（不崩、报告里写明为什么）',
+              str(_g2.get('mask_src') or '').startswith('decoded(回退') and bool(_g2.get('applied')),
+              'mask_src=%r · applied=%s' % (_g2.get('mask_src'), _g2.get('applied')),
+              '回退不写理由 ⇒ 以后只看到"动了但结果怪"，查不到掩膜到底是哪来的')
+    finally:
+        _face_mod.parse = _parse_orig
+        C.FACE_GAIN_MASK_SRC = _src_keep
+
+    # ---- 身体闭环：给靶 ⇒ 身体往靶走、**脸不动**；不给 ⇒ 逐位同旧行为 ----
+    # ★★★★★ 09-29 SV 裁定后，生产默认是 `SKIN_GAP_ENABLE=False`（身体闭环随认人一起停）。
+    #   但**代码保留了、没删** ⇒ 机制契约必须继续验 ⇒ 本段**显式把开关打开来跑**，跑完还原。
+    #   （上面那三条"默认关、代码保留"的判据已经把生产口径钉住了。）
+    _gap_keep = bool(getattr(C, 'SKIN_GAP_ENABLE', False))
+    C.SKIN_GAP_ENABLE = True
+    try:
+        C.FACE_GAIN_MASK_SRC = 'decoded'                  # 这一组量"闭环本身"，掩膜用给定的
+        _ob, _gb = presets.render_with_face(_lin_t, _PRESET, C, pz=_pz_syn,
+                                            target_L=_ft_t[0], target_a=_ft_t[1], target_b=_ft_t[2])
+        _og, _gg = presets.render_with_face(_lin_t, _PRESET, C, pz=_pz_syn,
+                                            target_L=_ft_t[0], target_a=_ft_t[1], target_b=_ft_t[2],
+                                            gap_target=(2.1, 0.9, -3.6))
+        check('★ 没给 `gap_target` ⇒ **不做第二段**（报告里写明理由、出图逐位同旧行为）',
+              not _gb.get('body_applied') and 'skin_gap' in str(_gb.get('body_note') or '')
+              and int(_gb.get('body_px') or 0) == 0,
+              'body_applied=%s · note=%r' % (_gb.get('body_applied'), _gb.get('body_note')),
+              '没挂靶还硬做 ⇒ 就是在给身体瞎掰；不写理由 ⇒ 看不出为什么没做')
+        _drift = _gg.get('body_face_drift')
+        _norm0 = float(np.linalg.norm(np.asarray(_gg.get('body_target'), np.float64)
+                                      - np.asarray(_gg.get('body_before'), np.float64)))
+        _norm1 = float(np.linalg.norm(np.asarray(_gg.get('body_err'), np.float64)))
+        check('★★★ 给了 `gap_target` ⇒ 身体**真的被推到靶附近**（误差变小、密度在限内）',
+              bool(_gg.get('body_applied')) and int(_gg.get('body_px') or 0) >= int(C.SKIN_GAP_MIN_MEAS_PX)
+              and float(_gg.get('body_delta_absmax') or 0) <= float(C.SKIN_GAP_TOTAL) + 1e-9
+              and _norm1 < _norm0 - 0.3,
+              '身体 px %s · 累计密度 %s（|max| %s）· 误差 %.2f → %.2f · 轮数 %s'
+              % (_gg.get('body_px'), _gg.get('body_delta'), _gg.get('body_delta_absmax'),
+                 _norm0, _norm1, _gg.get('body_iters')),
+              '推不动 ⇒ 拿脸的响应矩阵去推身体（实测响应可差 8 倍）；超限还继续 ⇒ "硬掰"')
+        check('★★★ 第二段**脸一个像素都不动**（作用范围只在 `skin − face_skin`）',
+              _drift is not None and float(np.abs(np.asarray(_drift, np.float64)).max()) < 1.0,
+              '脸漂移(L/C/H) %s ｜ 身体自己动了 %s' % (_drift, _gg.get('body_delta')),
+              '脸被带偏 ⇒ 两段闭环互相打架 ⇒ 上一段的靶白定（1772 实测过 −1.9）')
+        check('★ 报告里有 `any_applied`（身体可以**单独**动 ⇒ 判"动没动"不能只看 `applied`）',
+              bool(_gg.get('any_applied'))
+              and bool(_gg.get('any_applied')) == bool(_gg.get('applied') or _gg.get('body_applied')),
+              'any_applied=%s ｜ applied=%s ｜ body_applied=%s'
+              % (_gg.get('any_applied'), _gg.get('applied'), _gg.get('body_applied')),
+              '只看 `applied` ⇒ "脸 0 轮、身体动了"的那种张会被当成"没动"，'
+              '参照物/缓存判据全对不上（`_pure_engine_same` 就靠它）')
+        _ob2, _ = presets.render_with_face(_lin_t, _PRESET, C, pz=_pz_syn,
+                                           target_L=_ft_t[0], target_a=_ft_t[1], target_b=_ft_t[2])
+        _noise2 = float(np.max(np.abs(np.asarray(_ob2) - np.asarray(_ob))))
+        _og2, _gg2 = None, None
+        try:
+            C.SKIN_GAP_ENABLE = False
+            _og2, _gg2 = presets.render_with_face(
+                _lin_t, _PRESET, C, pz=_pz_syn, target_L=_ft_t[0], target_a=_ft_t[1],
+                target_b=_ft_t[2], gap_target=(2.1, 0.9, -3.6))
+        finally:
+            C.SKIN_GAP_ENABLE = True                     # ← 本段开头把开关打开了，这里还原到"打开"
+        _dd = float(np.max(np.abs(np.asarray(_og2) - np.asarray(_ob))))
+        check('★ `SKIN_GAP_ENABLE=False` ⇒ 第二段**整段不跑**（出图回到"没有第二段"那张）',
+              not _gg2.get('body_applied') and '关着' in str(_gg2.get('body_note') or '')
+              and _dd <= max(3.0 * _noise2, 5e-3),
+              'body_applied=%s · note=%r · 与"没有第二段"那张的最大差 %.3g（引擎自噪声 %.3g）'
+              % (_gg2.get('body_applied'), _gg2.get('body_note'), _dd, _noise2),
+              '关了还动（超出引擎自身噪声）⇒ 开关是摆着看的'
+              '（本项目已经栽过好几类的"拧了没反应"）')
+    finally:
+        C.FACE_GAIN_MASK_SRC = _src_keep
+        C.SKIN_GAP_ENABLE = _gap_keep                 # ★ 还原生产口径（默认关）
+
     # ---- ③④ 端到端（走的是生产同一条 `presets.render_with_face`） ----
     # ★★ 端到端必须用**接近真实比例**的掩膜（脸框 30x36 ≈ 2.5% 画幅）。
     #   羽化 σ = √(掩膜面积)/6 ⇒ **掩膜铺满画幅时，羽化会把整张都盖上**，"真·掩膜外"
@@ -783,31 +925,39 @@ def t_facegain():
     if not ft or float(_out.mean()) <= 0.20:
         return
 
-    base = np.asarray(presets.render(lin, _PRESET, C))
-    noise = float(np.max(np.abs(base - np.asarray(presets.render(lin, _PRESET, C)))))
-    out, gi = presets.render_with_face(lin, _PRESET, C, pz=pzF, target_L=ft[0],
-                                       target_a=ft[1], target_b=ft[2])
-    check('★ 有靶 ⇒ 报告说它真的动了（applied + 迭代轮数）',
-          bool(gi.get('applied')) and gi.get('de00') is not None,
-          'iters=%s · ΔE00=%s · 真脸 %s px' % (gi.get('iters'), gi.get('de00'), gi.get('face_px')),
-          '没动 ⇒ 整段闭环是空转的，而报告里还写着"开了"')
-    _de0 = facegain._de00(np.asarray(gi['lab_before'], np.float64),
-                          np.asarray(gi['target'], np.float64))
-    check('★ 收敛：ΔE00 真的变小（不是乱动）',
-          gi.get('de00') is not None and float(gi['de00']) < _de0 - 0.5,
-          'ΔE00 %.2f → %.2f（%s 轮）' % (_de0, float(gi['de00'] or _de0), gi.get('iters')),
-          '没变小 ⇒ 响应矩阵不是这一版标定的那个 / 掩膜与迭代用的不是同一个')
-    _d = np.abs(np.asarray(out) - base).max(axis=-1)
-    _din, _dout = float(_d[_in].mean()), float(_d[_out].max())
-    check('★★ 只动脸：掩膜内明显变动、**真·掩膜外**一动没动',
-          _din > 0.02 and _dout <= max(5.0 * noise, 5e-3),
-          '掩膜内均 %.4f · 真外 max %.4f · 引擎自噪声 %.4f' % (_din, _dout, noise),
-          '真外也动 ⇒ 这个"局部层"在污染整张（当年 L4 就是这么坏事的）')
-    out2, gi2 = presets.render_with_face(lin, _PRESET, C, pz=pzF)          # 不给靶
-    check('★ 没有靶 ⇒ 走普通 `render`（不启用，逐位同旧行为）',
-          not gi2.get('applied')
-          and float(np.max(np.abs(np.asarray(out2) - base))) <= max(noise * 2.5, 5e-3),
-          'applied=%s' % gi2.get('applied'))
+    # ★★ 09-29（C2）：这一组量的是**闭环本身**（给定掩膜 ⇒ 迭代到靶），
+    #   所以把掩膜来源钉成 `decoded`（= 用我传进去的 `pzF`）。
+    #   "来源 = baseline 时会去重算 / 拿不到会回退" 是上面那两条单独的契约。
+    _src_e2e = str(getattr(C, 'FACE_GAIN_MASK_SRC', 'decoded'))
+    C.FACE_GAIN_MASK_SRC = 'decoded'
+    try:
+        base = np.asarray(presets.render(lin, _PRESET, C))
+        noise = float(np.max(np.abs(base - np.asarray(presets.render(lin, _PRESET, C)))))
+        out, gi = presets.render_with_face(lin, _PRESET, C, pz=pzF, target_L=ft[0],
+                                           target_a=ft[1], target_b=ft[2])
+        check('★ 有靶 ⇒ 报告说它真的动了（applied + 迭代轮数）',
+              bool(gi.get('applied')) and gi.get('de00') is not None,
+              'iters=%s · ΔE00=%s · 真脸 %s px' % (gi.get('iters'), gi.get('de00'), gi.get('face_px')),
+              '没动 ⇒ 整段闭环是空转的，而报告里还写着"开了"')
+        _de0 = facegain._de00(np.asarray(gi['lab_before'], np.float64),
+                              np.asarray(gi['target'], np.float64))
+        check('★ 收敛：ΔE00 真的变小（不是乱动）',
+              gi.get('de00') is not None and float(gi['de00']) < _de0 - 0.5,
+              'ΔE00 %.2f → %.2f（%s 轮）' % (_de0, float(gi['de00'] or _de0), gi.get('iters')),
+              '没变小 ⇒ 响应矩阵不是这一版标定的那个 / 掩膜与迭代用的不是同一个')
+        _d = np.abs(np.asarray(out) - base).max(axis=-1)
+        _din, _dout = float(_d[_in].mean()), float(_d[_out].max())
+        check('★★ 只动脸：掩膜内明显变动、**真·掩膜外**一动没动',
+              _din > 0.02 and _dout <= max(5.0 * noise, 5e-3),
+              '掩膜内均 %.4f · 真外 max %.4f · 引擎自噪声 %.4f' % (_din, _dout, noise),
+              '真外也动 ⇒ 这个"局部层"在污染整张（当年 L4 就是这么坏事的）')
+        out2, gi2 = presets.render_with_face(lin, _PRESET, C, pz=pzF)          # 不给靶
+        check('★ 没有靶 ⇒ 走普通 `render`（不启用，逐位同旧行为）',
+              not gi2.get('applied')
+              and float(np.max(np.abs(np.asarray(out2) - base))) <= max(noise * 2.5, 5e-3),
+              'applied=%s' % gi2.get('applied'))
+    finally:
+        C.FACE_GAIN_MASK_SRC = _src_e2e
 
 
 def t_targets():
@@ -820,11 +970,21 @@ def t_targets():
           targets.for_stock('C200过曝')['own'] is False
           and targets.for_stock('C200过曝')['black_shape'] is not None)
     b, z = targets.for_stock('Pro400H清风'), targets.for_stock('Portra400薄荷')
+    # ★★ 09-29 晚：`sh_abs / hi_abs` **换了口径**（「分带 median − 整张 median」，见
+    #   `targets.json` 的 `_split_abs_note`）⇒ 数值比老口径小约 6 倍（老 ~−9 ⇒ 新 ~−1）。
+    #   老判据 `|暗Δa 差| > 1.0` 是**旧量纲**下调的阈值；在新量纲下"差 1.0 格"已经相当于
+    #   两条预设的暗部 chroma 靶差一个数量级 —— **阈值过时，不是靶被复制了**。
+    #   这条契约的本意只是「**不是把同一个文件复制了两份**」（一个文件一个靶）⇒ 改成：
+    #   黑位差 > 1.0（**影调量纲、本轮没换口径**，照旧）+ 分色四项里**最大的一项**差 > 0.25
+    #   （0.25 远高于 JSON 浮点噪声、又远低于 1 格的感知量级，正好是"查重"该有的尺度）。
+    _sp = [abs(b['sh_abs'][i] - z['sh_abs'][i]) for i in range(2)] \
+        + [abs(b['hi_abs'][i] - z['hi_abs'][i]) for i in range(2)]
     check('★★ 两条预设的靶**真的不一样**（一个文件一个靶，不是复制）',
-          abs(b['black_shape'] - z['black_shape']) > 1.0
-          and abs(b['sh_abs'][0] - z['sh_abs'][0]) > 1.0,
-          '黑位 %.1f vs %.1f · 暗Δa %+.2f vs %+.2f'
-          % (b['black_shape'], z['black_shape'], b['sh_abs'][0], z['sh_abs'][0]))
+          abs(b['black_shape'] - z['black_shape']) > 1.0 and max(_sp) > 0.25,
+          '黑位 %.1f vs %.1f · 分色最大差 %.2f（暗Δa %+.2f vs %+.2f / 亮Δa %+.2f vs %+.2f）'
+          % (b['black_shape'], z['black_shape'], max(_sp),
+             b['sh_abs'][0], z['sh_abs'][0], b['hi_abs'][0], z['hi_abs'][0]),
+          '两条预设的靶一模一样 ⇒ 多半是把同一个文件复制了两份（靶没分开）')
     check('★★ tone / grade 都接受 stock 参数（靶能传下去）',
           'stock' in __import__('inspect').signature(tone.settle_finished).parameters
           and 'stock' in __import__('inspect').signature(__import__('svFilm.grade', fromlist=['x']).apply).parameters)
@@ -886,6 +1046,11 @@ def t_grade():
     #   ⇒ `t_mask_contract` / `t_contract` 里那些 `else`（"关掉"分支）全部错位变红
     #   —— 4 条老账里有 3 条是这么来的。**开关必须成对还原**。
     _ge0 = bool(getattr(C, 'GRADE_ENABLE', True))
+    # ★★★ 09-29：**彩度守恒那条契约的前提是 `GRADE_SAT=1.0`**（"只重新分配、不改总量"）。
+    #   本会话把默认改成 0.72（落地 A）⇒ 契约**前提变了**、旧写法没显式设它 ⇒ 必然假红
+    #   （实测 33.65 → 23.42 = −30.4%，正好是 ×0.72 的量级，**不是 bug**）。
+    #   ⇒ 按纪律：**在这里显式把它设成 1.0 来跑**（跑完还原），判据数字一个字不改。
+    _sat0 = float(getattr(C, 'GRADE_SAT', 1.0))
     C.GRADE_SCOPE = 'all'
     # ① 关掉 ⇒ 逐位不变（不能"说关还偷偷动一点"）
     C.GRADE_ENABLE = False
@@ -940,6 +1105,7 @@ def t_grade():
     #   ⚠ 原来归一系数取的是**彩色像素**的中位、却乘到**所有**像素上 ⇒ 灰像素被多乘一次
     #     ⇒ 整张彩度虚涨 46%、画面发飘（SV 一眼看出脸崩了）。
     #   ⚠ 不能用灰图测（灰图 C=0，比值没意义）⇒ 造一张**有颜色**的确定性测试图
+    C.GRADE_SAT = 1.0                  # ★ 09-29：契约前提（只重新分配）——显式设，跑完还原
     _rng = np.random.RandomState(51)
     _c = np.stack([_rng.rand(96, 96) * 0.55 + 0.22 for _ in range(3)], -1)
     _c[..., 1] = np.clip(_c[..., 1] * 1.05, 0, 1)      # 偏彩（不是灰）
@@ -952,6 +1118,7 @@ def t_grade():
           abs(_m1 / max(_m0, 1e-6) - 1.0) < 0.08,
           '整张彩度中位 %.2f → %.2f（%+.1f%%）' % (_m0, _m1, 100 * (_m1 / max(_m0, 1e-6) - 1)),
           '涨太多 ⇒ 归一的系数算错了基准（别拿彩色子集的中位去乘所有像素）')
+    C.GRADE_SAT = _sat0                # ★ 09-29：还原到进来时的值（别把 0.72 落成 1.0）
 
     check('报告里带着"动了多少"（能自查，不用读图）',
           bool(info.get('applied')) and 'd_sh' in info and 'c_gain' in info)
@@ -1034,6 +1201,80 @@ def t_config_keys():
           'TONE_REL 没被读到 ⇒ 三套力度只能改源码')
 
 
+def t_no_face_step():
+    """★★★★★ 09-29 SV 裁定：**去掉「认人 / 认脸」这一步** —— 四件事必须钉死。
+
+    SV 原话：「去掉认人认脸的相关步骤 肤色层和这个肤色增益 **跑的太慢了也没有达到我想要的效果**」
+    ⇒ 关掉 `config.FACE_STEP_ENABLE` 之后：
+
+      ① 整条链**一次都不调** `face.parse`（不跑 mediapipe、不跑 birefnet-portrait）
+         —— 这是"慢"的主因之一，0.8~7 秒/张；
+      ② **后门也堵上** —— `grade.apply` / `region.masks` 在"没传 parsed"时**不许自己补算**
+         （否则把 `GRADE_ENABLE` 一开，"认人"又静默回来了）；
+      ③ 关掉它**不该**把"跨度到靶"弄丢 —— `_scene_engine` 那条全局兜底 `"*"`
+         （`density_curves_morph` ＝ 当前把跨度送到共识靶 81.9 的**唯一手段**）必须照旧命中；
+      ④ `scene` 该降级的**如实降级**（`back`/`shot`/`face` 为空），该活的照样活（`exp`/`span`）。
+    """
+    from . import face as _face, grade, pipeline, region, scene, targets as _TS
+
+    check('★ 总闸默认关', not bool(getattr(C, 'FACE_STEP_ENABLE', True)),
+          'FACE_STEP_ENABLE=%r' % getattr(C, 'FACE_STEP_ENABLE', '★ 缺键'))
+
+    calls = []
+    _orig = _face.parse
+    _step0 = bool(getattr(C, 'FACE_STEP_ENABLE', True))
+    _ge0 = bool(getattr(C, 'GRADE_ENABLE', False))
+
+    def _spy(d):
+        calls.append(tuple(np.asarray(d).shape[:2]))
+        return None                       # ★ 不真跑模型：本组只数"有没有被调"
+
+    _face.parse = _spy
+    try:
+        # ① 整条链
+        s = _mk_sample(_gray_img(seed=91))
+        try:
+            pipeline.cache.clear()
+        except Exception:                                        # noqa: BLE001
+            pass
+        calls.clear()
+        pipeline.run_from(s, stock=_PRESET, style='中性调')
+        check('★★★★★ 总闸关 ⇒ 整条链**一次都不调** `face.parse`',
+              len(calls) == 0, '调了 %d 次：%s' % (len(calls), calls[:3]),
+              '还在调 ⇒ SV 裁定的"去掉"没做到；每张白付 0.8 秒（mediapipe）~ 7 秒（birefnet）')
+
+        # ② 后门
+        _img = np.asarray(_gray_img(seed=92), np.float64)
+        calls.clear()
+        region.masks(_img, C)                                    # 直接调（旧行为：没给就自己算）
+        C.GRADE_ENABLE = True                                    # 故意开起来，逼它走那条老分支
+        grade.apply(_img, C, stock=_PRESET, parsed=None)
+        check('★★★★ **没有后门**：`region.masks` / `grade.apply`（没传 parsed）也不许自己补算掩膜',
+              len(calls) == 0, '调了 %d 次：%s' % (len(calls), calls[:3]),
+              '后门开着 ⇒ 以后把 GRADE_ENABLE 打开时，"认人"又静默回来，白付一次分割')
+        C.GRADE_ENABLE = _ge0
+
+        # ③④ 场景：该降级的降级，该活的活
+        _sc = scene.classify_after(_img, None, C)
+        check('★★ 总闸关 ⇒ `back`（光位）/ `shot`（景别）为空、`face`（脸可见度）= none',
+              _sc.get('back') is None and _sc.get('shot') is None and _sc.get('face') == 'none',
+              'back=%r ｜ shot=%r ｜ face=%r' % (_sc.get('back'), _sc.get('shot'), _sc.get('face')),
+              '这是**如实降级**，不是崩 —— 用这三轴的地方只有 `_scene` 那两条（改肤色层旋钮）')
+        check('★★ 但 `exp` / `span` 照旧有值（它们用整张统计，不碰掩膜）',
+              _sc.get('exp') is not None and _sc.get('span') is not None,
+              'exp=%r ｜ span=%r' % (_sc.get('exp'), _sc.get('span')))
+        _ov = _TS.scene_engine(_sc, stock=_PRESET, cfg=C)
+        _mo = (_ov or {}).get('print_render.density_curves_morph.active')
+        check('★★★★★ `_scene_engine` 的全局兜底 `"*"` 仍然命中（那条 morph ＝ 跨度到靶的唯一手段）',
+              bool(_mo), 'morph.active=%r ｜ 本次覆盖键 %s' % (_mo, list((_ov or {}).keys())[:4]),
+              '它靠全局 "*" 生效、**不依赖任何轴** ⇒ 关掉认人**不该**把跨度弄丢；'
+              '红了说明"跨度 81.87 到靶"这件事被这一步带走了')
+    finally:
+        _face.parse = _orig
+        C.FACE_STEP_ENABLE = _step0
+        C.GRADE_ENABLE = _ge0
+
+
 def t_mask_contract():
     """★★★ 09-26 人脸掩膜的三条契约（都是拿真图实测出来的坑）。
 
@@ -1056,6 +1297,14 @@ def t_mask_contract():
         calls.append((tuple(a.shape), float(np.median(a))))
         return _orig(d)
 
+    # ★★★★★ 09-29 SV 裁定后，生产默认是 `FACE_STEP_ENABLE=False`（认人整段不进链）⇒
+    #   这一组"按图去重 / 只喂解码后那张"的契约在**默认口径下是空转的**（一次都不调，`_n_dec=0`）。
+    #   但**代码保留了、没删** ⇒ 机制契约必须继续验。⇒ 本组**显式把总闸打开来跑**，
+    #   跑完在 `finally` 里还原。这样两种状态都钉住：
+    #     · 默认关 ⇒ 见上面 `t_no_face_step`（一次都不调 / 没后门 / 不丢跨度）；
+    #     · 一旦有人把总闸打开 ⇒ 本组保证"掩膜算一次、喂的是解码后那张"仍然成立。
+    _step_keep = bool(getattr(C, 'FACE_STEP_ENABLE', True))
+    C.FACE_STEP_ENABLE = True
     _face.parse = _spy
     try:
         # ① 传进来的 `parsed` 必须被**复用**（不许再调一遍分割）
@@ -1074,18 +1323,35 @@ def t_mask_contract():
                   gi.get('applied') is False and gi.get('skin_mask_src') is None,
                   str(gi.get('note')))
 
-        # ② 跑整条链：只算一次，而且喂的是**解码后**那张图
+        # ② 跑整条链：**解码后那张只算一次**，而且喂的是**解码后**那张图。
+        #    ★★★ 09-29（C2）：`FACE_GAIN_MASK_SRC='baseline'` 时 `facegain` 会**再算一份** ——
+        #      那一份是**引擎基线**，和"解码后"是**两张不同的图** ⇒ 不是"重复算"，
+        #      是"给另一张图算一份"。所以这里的判据从"总共 1 次"改成**按图去重**：
+        #      · 解码后那张 **恰好 1 次**（老契约不变）；
+        #      · 引擎基线那张 **最多 1 次**，且**只在脸增益开着 + 来源=baseline + 有脸靶**时才有。
         s = _mk_sample(_gray_img(seed=77))
         calls.clear()
         r = pipeline.run_from(s, stock=_PRESET, style='中性调')
         got = list(calls)
-        check('★★ 整条链只算**一次**人脸掩膜（修复前是两次）',
-              len(got) == 1, '算了 %d 次' % len(got),
-              '>1 ⇒ 还在重复算；0 ⇒ 这道工序整个没跑，掩膜会退回色相窗')
-        check('★★★ 掩膜喂的是**解码后**那张图，不是胶片引擎的成片',
-              bool(got) and abs(got[0][1] - float(np.median(s.disp))) < 1e-9,
-              '喂进去那张的中位 %.4f ；解码后那张 %.4f' % (
-                  (got[0][1] if got else float('nan')), float(np.median(s.disp))),
+        _med = [c[1] for c in got]
+        _m0 = float(np.median(s.disp))
+        _n_dec = sum(1 for m in _med if abs(m - _m0) < 1e-9)
+        _fg_on = bool(getattr(C, 'FACE_GAIN_ENABLE', False))
+        _src = str(getattr(C, 'FACE_GAIN_MASK_SRC', 'decoded')).lower()
+        try:
+            from . import targets as _TS
+            _ft_on = bool(_TS.face_lab_target(_PRESET))
+        except Exception:                                        # noqa: BLE001
+            _ft_on = False
+        _want = 1 + (1 if (_fg_on and _src == 'baseline' and _ft_on) else 0)
+        check('★★★ 人脸掩膜**按图去重**：解码后那张 1 次 + 引擎基线那张（C2 新加）0~1 次',
+              _n_dec == 1 and len(got) <= _want,
+              '共 %d 次（期望 ≤%d）｜ 其中解码后 %d 次 ｜ 中位 %s'
+              % (len(got), _want, _n_dec, [round(m, 4) for m in _med]),
+              '解码后 >1 ⇒ 还在重复算（白付 273 ms/次）；总量 >%d ⇒ 有第三次冗余分割' % _want)
+        check('★★★ 喂进去的**第一份**是**解码后**那张图，不是胶片引擎的成片',
+              _n_dec == 1 and abs(_med[0] - _m0) < 1e-9,
+              '第一份喂进去的中位 %.4f ；解码后那张 %.4f' % (_med[0] if _med else float('nan'), _m0),
               '喂成片 ⇒ 链尾发白、分割认不出脸（老路专门避开这件事，'
               '新路 09-26 之前又撞上了）')
         _gi2 = ((r.report.get('tone') or {}).get('grade') or {})
@@ -1122,6 +1388,7 @@ def t_mask_contract():
               '每线程检测器尺寸键：%s' % sorted(getattr(_face._DET_TLS, 'det', {}) or {}))
     finally:
         _face.parse = _orig
+        C.FACE_STEP_ENABLE = _step_keep          # ★ 还原生产口径（默认关）—— 别把总闸留在我这儿
 
 
 def t_scene():
@@ -1263,8 +1530,19 @@ def t_contract():
         check('★ 影调层关掉（`TONE_ENABLE=False`）⇒ 报告里如实写明"没跑这一层"',
               t.get('applied') is False and '关' in str(t.get('note') or ''),
               str(t.get('note')))
+        # ★★ 09-29：这条契约的本意是「**影调层**关掉后没有别的层再偷偷动像素」——
+        #   它的前提是**颜色层也关着**。本会话把 `GRADE_ENABLE` 默认打开（落地 A）⇒
+        #   带着它出图必然 ≠ 纯引擎（**不是 bug，是契约前提变了**）。
+        #   ⇒ 按纪律：**在检查里显式把颜色层关掉来比**（比完还原到进来时的值），
+        #     契约与判据数字原样保留 —— 这样"影调层关着"这条契约在任何默认值下都还被钉着。
+        _ge_k = bool(getattr(C, 'GRADE_ENABLE', True))
+        C.GRADE_ENABLE = False
+        try:
+            _r_pure = pipeline.run_from(_mk_sample(_gray_img(seed=17)), stock=_PRESET, style='暗调')
+        finally:
+            C.GRADE_ENABLE = _ge_k
         check('★★ 关掉影调层 ⇒ 出图**就是纯引擎输出**（后两层不许偷偷动像素）',
-              _pure_engine_same(r, _mk_sample(_gray_img(seed=17)), '暗调'),
+              _pure_engine_same(_r_pure, _mk_sample(_gray_img(seed=17)), '暗调'),
               '与"只跑 presets.render"的差超出了引擎自身噪声',
               '关了这一层却还在改像素 ⇒ 开关没接对')
     else:
