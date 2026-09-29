@@ -124,18 +124,28 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
         # ★ "名字不认得 ⇒ 静默走默认"是本项目最阴的一类坑（出现过三次）⇒ 当场说清楚
         raise KeyError('没有这个胶片风格: %s（可选：%s）' % (name, '、'.join(presets.names())))
 
+    # ---- ★★ 「人在哪」（`person.py`）—— **只给光位那一轴用**（~0.3 s/张）----
+    #   09-29：认人 / 认脸整套删掉了，但**光位**要判（判据是"主体 vs 它身后的背景"）
+    #   ⇒ 只把"人物整体位置"这一件事留下（SV：不要高开销那条，只要低开销的粗位置）。
+    #   ⚠ 拿不到（模型 / 依赖缺）⇒ `None` ⇒ 光位**弃权**（写 `-`），**其余三根轴照常、不崩**。
+    try:
+        from . import person as _per
+        _pz = _per.person(s.disp)
+    except Exception:                                        # noqa: BLE001
+        _pz = None
+
     # ---- ★★★ 场景判据（09-26，「按场景分参数」的入口）----
     #   · 场景 → **引擎参数覆盖**（`_scene_engine`）。当前只有一条**全局 `"*"`** →
     #     `density_curves_morph`，它**无条件生效**，实测把跨度送到共识靶 81.87。
     #   · `lin=s.lin` 只给「源头过曝」那一轴用：它**只能在解码后的线性域判**，
-    #     显示域那边早被重渲染压过了。
+    #     显示域那边早被重渲染压过了。`person=_pz` 只给「光位」那一轴用。
     #   · 判不出来 ⇒ `None`，下游一个字段都不盖，**不崩**。
     #   ⚠⚠ 09-29 修一个**真 bug**：原来场景是在**缓存键之后**才算的，而缓存键里又要用它
     #      ⇒ 那时 `_sc` **还没定义** ⇒ `NameError` 被 `except` 吞掉 ⇒
     #      「引擎 overrides / 靶」**从来没进过缓存键**（"拧了没反应"第 4 类，静默）。
     #      现在把它挪到缓存键之前，键里那两项才真的生效。
     try:
-        _sc = scene.classify(s.disp, cfg, lin=s.lin)
+        _sc = scene.classify(s.disp, cfg, lin=s.lin, person=_pz)
     except Exception:                                        # noqa: BLE001
         _sc = None
 

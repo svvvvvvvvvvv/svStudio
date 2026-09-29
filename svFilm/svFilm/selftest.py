@@ -90,11 +90,12 @@ def _main():
         ('直方图（LR 画法：亮度 + RGB 叠加 + 5 个区）', t_hist),
         ('靶按预设分组', t_targets),
         ('可调键：config 里真的接上了（防"假旋钮"）', t_config_keys),
-        ('场景判据：三轴 / 只在线性域判过曝 / 覆盖只加不减', t_scene),
+        ('场景判据：四轴 / 只在线性域判过曝 / 覆盖只加不减', t_scene),
         ('契约：颜色层在引擎之后 + 名字不认得要报错', t_contract),
         ('段缓存：同参数命中、换风格不命中', t_cache),
         ('服务：路由只剩该有的那几条', t_routes),
         ('★★★★★ 删层纪律：影调层 / 肤色层 / 认人认脸 **真的删了**', t_dropped_layers),
+        ('★ 「人在哪」+ 光位：**只用低开销那条** / 判不出要弃权', t_person_light),
     ]
     for title, fn in groups:
         print('[%s]' % title)
@@ -281,13 +282,15 @@ def t_dropped_layers():
         check('★ 模块 `svFilm.%s` 已经删掉（import 不进来）' % m, _ok, '',
               '还在 ⇒ 影调层 / 肤色层 / 认人那套随时会被接回链上')
 
-    _bad = [k for k in dir(C) if k.startswith(('TONE_', 'FACE_', 'SKIN_', 'PERSON_',
-                                               'GRADE_SKIN_', 'ANCHOR_', 'SCENE_BACK_',
-                                               'SCENE_SHOT_'))]
+    # ★ 09-29 晚：`PERSON_*` / `SCENE_BACK_*` **不在这个黑名单里** ——
+    #   它们是**重新加回来**的光位判据（只用低开销的"人在哪"，见 `t_person_light`）。
+    _bad = [k for k in dir(C) if k.startswith(('TONE_', 'FACE_', 'SKIN_',
+                                               'GRADE_SKIN_', 'ANCHOR_', 'SCENE_SHOT_'))]
     _bad += [k for k in ('STYLE', 'PRESET_MID_SHIFT', 'TARGET_BLACK_FLOOR_L',
                          'TARGET_HI_FLOOR_L', 'GRADE_REGION_SCOPE', 'GRADE_SCOPE')
              if hasattr(C, k)]
-    check('★★ config 里那几个键一个都不剩', not _bad, '还剩: %s' % (_bad or '无'),
+    check('★★ config 里那几个键一个都不剩（`PERSON_*` / `SCENE_BACK_*` 例外：光位加回来了）',
+          not _bad, '还剩: %s' % (_bad or '无'),
           '留着就是"没人读的开关"—— 改了没反应（本项目第 4 类坑）')
 
     _src = '\n'.join(l.split('#')[0] for l in
@@ -301,6 +304,85 @@ def t_dropped_layers():
     _ssrc = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               'service.py'), encoding='utf-8').read()
     check('★ 服务里 `/styles` 路由确实删了', "u.path == '/styles'" not in _ssrc)
+
+
+# ---------------------------------------------------------------------------
+# 2.5 「人在哪」+ 光位：**只用低开销那条**（09-29 晚，SV 拍板加回来）
+# ---------------------------------------------------------------------------
+
+def t_person_light():
+    r"""光位（`back` 轴）—— 判据只用 `person.py` 那个 **~0.3 s 的粗"人在哪"**。
+
+    SV 原话：「人识别就不要用那个性能开销太高的，用之前那个性能开销特别低的，
+    一两秒就能迅速地算出人物整体位置，现在**只需要一个人物整体位置**来辅助判断光位」
+    ⇒ 这组钉两件事：
+      ① **只用低开销那条** —— 源码里不许出现人脸检测 / birefnet / onnxruntime；
+      ② **判据本身对** —— 逆光判得出、顺光判得出、**判不出时弃权**（不许硬给"顺平光"）。
+    """
+    import inspect
+    import re as _re
+
+    from . import person as _pmod
+    from . import scene
+
+    # ⑤ ★★★ 只做"人在哪"：源码里（**剥掉注释与文档串之后**）不许有人脸检测 / birefnet
+    _raw = inspect.getsource(_pmod)
+    _code = _re.sub(r'r?"""[\s\S]*?"""', '', _raw)
+    _code = '\n'.join(l.split('#')[0] for l in _code.splitlines())
+    _bad = [n for n in ('FaceDetector', 'yunet', 'YuNet', 'birefnet', 'onnxruntime',
+                        'face_skin', 'landmark', 'FaceLandmarker') if n in _code]
+    check('★★★ `person.py` **只做人在哪**：不许有人脸检测 / birefnet / onnxruntime',
+          not _bad, '命中: %s' % (_bad or '无'),
+          '又把高开销那条接回来了 ⇒ SV 明确不要那个开销')
+    check('★ 低开销那条 = mediapipe `selfie_multiclass`（输入固定 256×256）',
+          'selfie_multiclass' in _code and 'SEG_SIDE = 256' in _code,
+          '模型 = %s' % os.path.basename(_pmod.SELFIE))
+    check('★ 模型文件在仓库里（不靠 pip / 不靠下载）', os.path.exists(_pmod.SELFIE),
+          _pmod.SELFIE)
+
+    # ---- 光位判据：合成图（不需要 mediapipe，直接喂假掩膜）----
+    H, W = 120, 160
+    d = np.full((H, W, 3), 0.25)
+    d[: H // 3] = 0.95                                  # 上方一大片亮 ⇒ 光在背后
+    person = np.zeros((H, W), np.float64)
+    person[H // 2:, W // 3: 2 * W // 3] = 1.0           # 主体在下方中间（够 SCENE_BACK_MIN_SUB_PX）
+    L = color.to_lab(d)[..., 0]
+
+    _b1, _r1 = scene._light_position(d, L, person, C)
+    check('★★ 最亮在上面、主体在下面 ⇒ 判成逆光（正逆光 / 侧逆光）',
+          _b1 in ('正逆光', '侧逆光'),
+          'back=%s  hi_on_sub=%.2f hi_gap=%.1f' % (_b1, _r1['hi_on_sub'], _r1['hi_gap']),
+          '判成顺平光 ⇒ 主判据（最亮那块在不在主体身上）没接上')
+
+    d2 = np.full((H, W, 3), 0.2)
+    p2 = np.zeros((H, W), np.float64)
+    p2[H // 3: 2 * H // 3, W // 3: 2 * W // 3] = 1.0
+    d2[H // 3: 2 * H // 3, W // 3: 2 * W // 3] = 0.95   # 最亮的就是主体自己
+    _b2, _r2 = scene._light_position(d2, color.to_lab(d2)[..., 0], p2, C)
+    check('★ 最亮的就是主体自己 ⇒ 顺平光（光打在主体上）', _b2 == '顺平光',
+          'back=%s  hi_on_sub=%.2f' % (_b2, _r2['hi_on_sub']))
+
+    _b3, _ = scene._light_position(d, L, None, C)
+    check('★★★ 没有"人在哪"⇒ 光位**弃权**（返回 None，不许硬判"顺平光"）', _b3 is None,
+          '', '硬判 ⇒ 下游会照着一个假标签去改参数')
+    tiny = np.zeros((H, W), np.float64)
+    tiny[0:8, 0:8] = 1.0
+    _b4, _ = scene._light_position(d, L, tiny, C)
+    check('★★ 主体太小 ⇒ 同样**弃权**（`SCENE_BACK_MIN_SUB_PX` 兜着）', _b4 is None,
+          '主体 %d px' % int(tiny.sum()))
+
+    # ---- `classify`：不给 person ⇒ 只有光位那一位是 '-'，其余照常 ----
+    sc = scene.classify(d, C)
+    _parts = sc['key'].split('|')
+    check('★★ 不给"人在哪" ⇒ 只有光位弃权（`-`），exp / span / overwhite 照常',
+          sc['back'] is None and _parts[3] == '-' and sc['exp'] and sc['span'],
+          'key=%s' % sc['key'])
+    sc2 = scene.classify(d, C, person=person)
+    check('★ 给了"人在哪" ⇒ key 里光位那一位不再是 `-`',
+          sc2['key'].split('|')[3] != '-', 'key=%s' % sc2['key'])
+    check('★ 光位判据的 raw 里带着诊断量（事后标定阈值用）',
+          all(k in sc2['raw'] for k in ('hi_on_sub', 'hi_gap', 'hi_cx', 'bg_sub', 'person_pct')),
+          'raw 键: %s' % sorted(sc2['raw'].keys())[:8])
 
 
 # ---------------------------------------------------------------------------
