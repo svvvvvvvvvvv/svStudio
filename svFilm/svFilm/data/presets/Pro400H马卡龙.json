@@ -28,6 +28,7 @@
     ]
   },
   "load_raw": {
+    "_note_load_raw": "★ 09-29 裁定：**这一段在本链上是死键，一个字节都不读**。`presets._apply()` 只读 input_image / grain / preflashing / halation / couplers / glare / special / simulation；引擎里读 `white_balance` / `temperature` / `tint` / `lens_correction` 的地方是 `spektrafilm/utils/raw_file_processor.py`（处理**真实 RAW 文件**那条路），而我们喂进去的是**已经解码好的场景线性** ⇒ 这四个键在预设里**改了没反应**（本项目第 4 类坑「假旋钮」）。而且 10 条预设里它们**全是同一组值**（custom / 5200 / 1.0 / false）⇒ 连信息量都没有。★★ **整张冷暖基准的真实落点 = 印相端校色滤片**：`simulation.print_y_filter_shift`（冷暖主旋钮，Y 越大越暖）/ `simulation.print_m_filter_shift`（绿↔品红）。负片→印相体系里「白平衡」**本来就是印相滤片**。现在 10 条预设**各不相同**（Y 3~13、M −4~+2）⇒ 逐预设的冷暖基准**早就在跑**，⇒ 这一档**不需要另开**；要调冷暖请改那两个，**别改这里**。",
     "white_balance": "custom",
     "temperature": 5200.0,
     "tint": 1.0,
@@ -95,10 +96,11 @@
       67.0
     ],
     "halation_strength": [
-      40.0,
-      12.0,
+      1.5,
+      0.5,
       0.0
     ],
+    "_note_halation_strength": "★★ 09-29：光晕**幅度**（物理量）40/12/0 → 1.5/0.5/0。依据两处独立出处：① 公开 GUI 滑杆「Halation 幅度 %」tooltip 明写「红通道典型值：**弱 AH 2-8，无 AH 8-25**」，人像提示又写「**R 通道 1.5 = 现代彩色负片的物理值；拍人别超 8，超了脸上高光泛红**」；② 引擎 `_HALATION_PRESETS[(\"still\",\"strong\")]` 给的也正是 1.5/0.5/0（强 AH（现代彩色负片，红通道 1.5））。⇒ 原来的 40 是「完全无抗晕层」上限(25) 的 26.7 倍、人像上限(8) 的 5.0 倍，**一开机就在过火档**。★ `halation_amount`（GUI 滑杆「Halation 强度」，**1.0 = 物理默认**）**保留原作值 1.2 不动** —— 它是**用户风格旋钮**，而 `C200透明` 等预设**唯一**的风格区别就是它。（我先试过把它一起归到 1.0：结果那两条预设变成**逐位相同**、自检当场红 ⇒ 撤回。）⇒ 本条的**总力度 = 卷物理值 × 1.2**。",
     "halation_first_sigma_um": [
       65.0,
       65.0,

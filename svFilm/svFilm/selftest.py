@@ -180,6 +180,66 @@ def t_presets():
           '%.4f vs %.1f' % (p.film_render.halation.halation_strength[0] * 100.0,
                             d['halation']['halation_strength'][0]),
           '`apply_stocks_specifics=True` 会按卷的抗晕层把它冲回出厂 ⇒ 必须保持 False')
+
+    # ★★ 09-29：**光晕幅度 = 该卷自己的物理值**（不是"10 条一个数"，更不许在过火档）。
+    #   两处**独立**出处，互相印证：
+    #     ① 公开 GUI（`spektrafilm_gui/widget_specs.py`）滑杆「Halation 幅度 %」tooltip：
+    #        **红通道典型值：弱 AH 2-8，无 AH 8-25**；人像提示：
+    #        **"R 通道 1.5 = 现代彩色负片的物理值；拍人别超 8，超了脸上高光泛红"**。
+    #     ② 引擎 `_HALATION_PRESETS[(use, antihalation)]`：strong 0.015 / weak 0.08 / no 0.30。
+    #   两边**逐档对上** ⇒ 期望值按**卷的 profile 标签**取（标签是引擎/胶卷给的外部真值）。
+    #   ⚠ 我们原来的 40% 是「完全无抗晕层」上限(25) 的 1.6 倍、**人像上限(8) 的 5 倍**
+    #     ⇒ 一开机就在过火档。
+    #   ★ `halation_amount`（GUI 滑杆「Halation 强度」，1.0=物理默认）**不钉**：
+    #     它是**用户风格旋钮**，`C200透明`(1.4) / `C200过曝`(1.2) / `Pro400H马卡龙`(1.2)
+    #     正是用它做风格区分的（`C200透明` 的**唯一**区别就是它）。
+    #     ⚠ 我 09-29 先试过把它一起归到 1.0 —— **结果 `C200透明` 与 `C200青蓝` 变成逐位相同**，
+    #       `t_preset_differs` 当场红 ⇒ 撤回，只改幅度。**这条注释是给"以后想动它的人"的护栏。**
+    #   ⇒ 用户拍板（09-29）：幅度**改成卷的物理值**。要改这个数，先把依据写进
+    #     `效果debug\2026-09-29\调研与设计_光晕与白平衡.md`，再回来改这里。
+    _PHYS = {'strong': (1.5, 0.5, 0.0), 'weak': (8.0, 2.0, 0.0), 'no': (30.0, 10.0, 1.5)}
+    _bad, _seen = [], []
+    for n in ns:
+        _pp = presets.digested(n)
+        _tag = str(getattr(_pp.film.info, 'antihalation', '') or '')
+        _exp = _PHYS.get(_tag)
+        _got = tuple(round(float(v) * 100.0, 4)
+                     for v in _pp.film_render.halation.halation_strength)
+        _amt = float(_pp.film_render.halation.halation_amount)
+        _seen.append('%s %s=%.1f%%×%.1f' % (n, _tag, _got[0], _amt))
+        if _exp is None or _got != _exp:
+            _bad.append('%s[%s] 幅度%s（期望 %s）' % (n, _tag, _got, _exp))
+    check('★★ 光晕幅度 = 该卷自己的物理值（按抗晕层标签取）', not _bad,
+          '；'.join(_bad) if _bad else ' / '.join(_seen),
+          '人像提示原话「拍人别超 8，超了脸上高光泛红」⇒ 过火档会让人像高光泛红；'
+          '要改先回 `调研与设计_光晕与白平衡.md` 写清依据')
+    # ★ 倍率**必须留在合理带内**（不是 1.0，但也不许回到过火档：GUI 人像提示 1.2~1.3 是上限）
+    check('★ 光晕强度倍率留在带内（1.0~1.4，不回到过火档）',
+          all(1.0 - 1e-9 <= float(presets.digested(n).film_render.halation.halation_amount) <= 1.4 + 1e-9
+              for n in ns),
+          ' / '.join('%.1f' % float(presets.digested(n).film_render.halation.halation_amount) for n in ns),
+          'GUI 人像提示：「halation_amount 人像最容易翻车的一根：1.2~1.3 是上限；2 以上脸上高光泛红」')
+
+    # ★★ 09-29：**「整张冷暖基准」的落点 = 印相端校色滤片**（负片→印相体系里"白平衡"本来就是它）。
+    #   钉两件事：① 这个落点**真通电**（`_apply` 读进 params，不是又一组假旋钮）；
+    #            ② 它**不是常量**（10 条不全同）—— 否则"逐预设的冷暖基准"就是句空话。
+    #   ⚠ 同一支卷的几条**允许相同**（C200 三条都是 y=3/m=2）：那是同一底片的同一次印相配平。
+    _wb, _wbb = [], []
+    for n in ns:
+        _q = presets.digested(n)
+        _sim = presets.load_raw(n)['simulation']
+        _wb.append((round(float(_q.enlarger.y_filter_shift), 3),
+                    round(float(_q.enlarger.m_filter_shift), 3)))
+        _wbb.append((round(float(_sim['print_y_filter_shift']), 3),
+                     round(float(_sim['print_m_filter_shift']), 3)))
+    check('★ 整张冷暖基准落在印相滤片上（Y/M **真进 params**，不是假旋钮）', _wb == _wbb,
+          ' / '.join('%s y=%.1f m=%.1f' % (n[4:] if len(n) > 4 else n, w[0], w[1])
+                     for n, w in zip(ns, _wb))[:160],
+          'JSON 写了但 params 里不是那个数 ⇒ 又是一组"改了没反应"的假旋钮')
+    check('★ 而且它**不是常量**（10 条的冷暖基准不全同）', len(set(_wb)) >= 2,
+          '%d 种组合' % len(set(_wb)),
+          '全同 ⇒ "逐预设的冷暖基准"是句空话；改冷暖请改 `simulation.print_y_filter_shift`'
+          '（映射见 §`_note_load_raw`），别去动 `load_raw` 那三个死键')
     check('配平基准钉死成 public 那一对（不跟 vendor 版本漂）',
           abs(float(p.enlarger.y_filter_neutral) - float(C.PRESET_NEUTRAL_Y)) < 1e-9
           and abs(float(p.enlarger.m_filter_neutral) - float(C.PRESET_NEUTRAL_M)) < 1e-9,
