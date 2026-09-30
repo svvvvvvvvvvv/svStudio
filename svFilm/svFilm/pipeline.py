@@ -189,7 +189,9 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
         # ⚠ 这一层**不做曝光**（显示域乘增益 = 拉噪声 + 高光切白），只按亮度/色相加权染色。
         # ★ 可整体关掉（`config.GRADE_ENABLE`）。
         if bool(getattr(cfg, 'GRADE_ENABLE', True)):
-            disp, g_info = grade.apply(disp, cfg, stock=name, scene=_sc)
+            # ★★ 09-30 晚：把「人在哪」一起喂进去 —— L3 的「人物区域整体提亮」要用它
+            #   （`person_dl`）。拿不到 ⇒ None ⇒ **那一块不生效**（弃权），不崩。
+            disp, g_info = grade.apply(disp, cfg, stock=name, scene=_sc, person=_pz)
         else:
             g_info = dict(applied=False, note='颜色层已关')
         if _ckey is not None:

@@ -683,6 +683,45 @@ def t_grade():
           _m1 > _m2 + 0.2,
           '暖画面中调目标 %+.2f ｜ 冷画面 %+.2f' % (_m1, _m2),
           '两者相同 ⇒ md 曲线没接进去；方向反了 ⇒ 单调化方向写错了（中调是**递增**）')
+    # ★★ 09-30 晚：**「人物区域整体提亮」（`person_dl`）** —— 两条硬规矩。
+    #   ⚠ 判据必须用**差分对照**：grade 本来就一直在动（混色+分色），
+    #     拿"输出 vs 输入"比会把 grade 的正常动作算进来（第一版就是这么写错的，当场红）。
+    #     正确做法 = 固定同一条链，**只翻 `person_dl`**，看差在哪。
+    from . import targets as _TGT              # ⚠ 本函数作用域里只有 `_T`，没有 `targets`
+    import numpy as _np2
+    _img = _np2.stack([_np2.full((96, 96), 0.35)] * 3, -1)
+    _img[..., 0] = 0.62                                       # 偏红的一块，保证有彩度
+    _pmask = _np2.zeros((96, 96))
+    _pmask[24:72, 24:72] = 1.0                                # 中间一块当"人"
+    _tg0 = _TGT.for_stock('Portra400薄荷')
+    _orig = _TGT.for_stock
+
+    def _run(pdl, pz):
+        _TGT.for_stock = lambda name, s2=None, _t=dict(_tg0, person_dl=pdl): dict(
+            _t, stock=name, _scene_hits=[])
+        try:
+            return grade.apply(_img, C, stock='Portra400薄荷', person=pz)
+        finally:
+            _TGT.for_stock = _orig
+
+    _o0, _i0 = _run(8.0, None)          # 有 person_dl、但**没有掩膜**
+    _o1, _i1 = _run(0.0, None)          # 关掉 person_dl
+    _a0, _ia = _run(8.0, _pmask)        # 有掩膜
+    _a1, _ia1 = _run(0.0, _pmask)
+    _L = lambda z: color.to_lab(_np2.asarray(z, _np2.float64))[..., 0]        # noqa: E731
+    _d_nomask = float(_np2.max(_np2.abs(_np2.asarray(_o0) - _np2.asarray(_o1))))
+    check('★★★ `person_dl` 写了、但 `person=None` ⇒ **一点不生效**（弃权，不许退化成全局）',
+          _i0.get('person_on') is False and _d_nomask < 1e-9,
+          'person_on=%r ｜ 翻 person_dl 后的最大差 %.3g' % (_i0.get('person_on'), _d_nomask),
+          '没掩膜也动了 ⇒ 又变成"整张提亮"，早晚出割裂')
+    _dk = _L(_a0) - _L(_a1)             # 只翻 person_dl 造成的 L* 差
+    _d_in = float(_np2.median(_dk[30:66, 30:66]))
+    _d_out = float(_np2.max(_np2.abs(_dk[0:12, 0:12])))
+    check('★★★ 给了掩膜 ⇒ 只有**人身上**被抬起来、掩膜外**一点不动**',
+          _ia.get('person_on') is True and _d_in > 3.0 and _d_out < 1e-6,
+          '人身上 ΔL*=%.2f ｜ 掩膜外 ΔL*=%.3g ｜ person_pct=%r'
+          % (_d_in, _d_out, _ia.get('person_pct')),
+          '掩膜外也动 ⇒ 掩膜没乘上（会污染背景）；人身上没动 ⇒ 没接进去')
     C.GRADE_ENABLE = _ge0
 
 
@@ -699,7 +738,8 @@ def t_config_keys():
     for k in ('GRADE_ENABLE', 'GRADE_SAT', 'GRADE_SPLIT_ENABLE', 'GRADE_SPLIT_LIMIT',
               'GRADE_SPLIT_ITERS', 'GRADE_SPLIT_NODES', 'GRADE_SPLIT_RANGE',
               'GRADE_C_MIN', 'GRADE_SH_A', 'GRADE_SH_B', 'GRADE_HI_A', 'GRADE_HI_B',
-              'GRADE_DEEP_A', 'GRADE_DEEP_B', 'SPEK_PE_SHIFT'):
+              'GRADE_DEEP_A', 'GRADE_DEEP_B', 'SPEK_PE_SHIFT',
+              'GRADE_PERSON_W', 'GRADE_PERSON_DL'):
         check('config.%s 这个键真的在（不是 getattr 的裸默认）' % k,
               hasattr(C, k), '当前 %r' % getattr(C, k, None),
               '缺它 ⇒ 代码里 `getattr(cfg, …)` 永远取那个字面默认，'

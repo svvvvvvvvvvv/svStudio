@@ -347,11 +347,24 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
 # ---------------------------------------------------------------------------
 # L3 混色：按色相带改彩度（+ 带内亮度偏移）
 # ---------------------------------------------------------------------------
-def mix(L, a, b, tg, cfg, m):
-    """**L3 混色** —— 只改彩度（总量 + 按色相分配）+ 色相带内的少量亮度。
+def mix(L, a, b, tg, cfg, m, person=None):
+    """**L3 混色** —— 只改彩度（总量 + 按色相分配）+ 色相带内的少量亮度 + **人物区域的整体提亮**。
 
     ★ 灰色像素不动（`live` 窗）—— 否则会把中性轴一起推偏（digitalFilm 那条教训）。
     ★ 最后**归一**（把整张彩度中位拉回 "总量 × sat"）⇒ 「形状归曲线、总量归 sat」。
+
+    ## ★★ 09-30 晚新增：**按"人在哪"加权**（`person=`）
+    为什么：SV 原话「不要算那个脸 去拉亮度，之前做过会很割裂」——
+      **脸上的局部提亮会在脸↔脖子↔手臂之间出断层**（L4 肤色层当年就是这么被否掉的）。
+      ⇒ 改成**整个"人物区域"一起抬**：掩膜来自 `person.py`（`selfie_multiclass` 的「1 − 背景」，
+      本来就在跑的那一次前向，**零额外成本**），软掩膜 ⇒ 边界天然羽化。
+    · `GRADE_PERSON_W`（默认 1.0）= **人掩膜的权重**：
+      `1.0` ⇒ 只动人身上；`0.0` ⇒ 退化成全局（= 加这个参数之前的行为，用于反例关）。
+    · `person_dl`（靶字段，按预设）或 `GRADE_PERSON_DL`（config 兜底）= **整个人物区抬多少 L\\***。
+      **不经过 `live` 窗**（暗衣服也要一起抬，否则人身上半亮半暗更割裂）。
+      ⚠ `person=None`（检不出人 / 调用方没传）⇒ **这块不生效**（弃权），不许偷偷退化成全局。
+    · `band_dl`（靶字段，12 个色相带）= 在 `BANDS` 写死的 `dL` 之上**再加**的量
+      —— 与 `band_gain`（彩度）成对；用于"单独提亮橙色亮度"。
     @returns {(L, a, b, dict)} 新的 L/a/b + 本段报告
     """
     Lm, am, bm = m['Lm'], m['am'], m['bm']
@@ -361,10 +374,19 @@ def mix(L, a, b, tg, cfg, m):
     live = _ramp(Cc, cmin * 0.6, cmin * 1.4)
     kc = np.zeros_like(Cc)
     dl = np.zeros_like(Cc)
+    # ★★ 三个"按色相带"的靶字段（都是**加在 `BANDS` 写死的基线之上**的偏移）：
+    #   · `band_gain` = **该大师的风格**（按大师那批图量出来的，如沉褐 10 带全 >0）
+    #   · `band_dk`   = **我们的修正**（彩度）—— 与 `band_gain` **分开存**，否则会把
+    #     "风格"和"修 bug"搅在一起、换个预设就被覆盖掉（`for_stock` 是 preset 盖 `_default`）。
+    #   · `band_dl`   = **我们的修正**（亮度）—— "像 HSL 一样单独提亮橙色亮度"就写这儿。
     _bg = (tg or {}).get('band_gain') or [0.0] * 12
+    _bk = (tg or {}).get('band_dk') or [0.0] * 12
+    _bd = (tg or {}).get('band_dl') or [0.0] * 12
     for bi, (center, half, k, dL) in enumerate(BANDS):
         # ★ 色相带增益 = 预设自带的那份（按大师量出来的），没有专属靶就是 0
         k = k + float(_bg[bi]) if bi < len(_bg) else k
+        k = k + float(_bk[bi]) if bi < len(_bk) else k
+        dL = dL + float(_bd[bi]) if bi < len(_bd) else dL
         w = _band_weight(H, center, half) * live
         kc += w * k
         dl += w * dL
@@ -373,6 +395,21 @@ def mix(L, a, b, tg, cfg, m):
     scale = np.where(over > 0.45, 0.45 / np.maximum(over, 1e-6), 1.0)
     kc = kc * scale
     dl = np.clip(dl * scale, -6.0, 8.0)
+
+    # ---- ★★ 人物区域整体提亮（人掩膜）----
+    # 放在 `dl` 的裁剪**之后**：否则大剂量的"抬人"会被那个 ±6/+8 的裁剪吃掉。
+    _pz, _pdl = None, 0.0
+    _pv = (tg or {}).get('person_dl')
+    _pdl = float(_pv) if _pv is not None else float(getattr(cfg, 'GRADE_PERSON_DL', 0.0) or 0.0)
+    if person is not None:
+        _pw = float(getattr(cfg, 'GRADE_PERSON_W', 1.0) or 0.0)
+        _pm = np.clip(np.asarray(person, np.float64), 0.0, 1.0)
+        if _pm.shape != L.shape:                    # 尺寸对不上 ⇒ 最近邻缩（掩膜本来就软）
+            _iy = (np.arange(L.shape[0]) * _pm.shape[0] / max(L.shape[0], 1)).astype(np.int32)
+            _ix = (np.arange(L.shape[1]) * _pm.shape[1] / max(L.shape[1], 1)).astype(np.int32)
+            _pm = _pm[np.clip(_iy, 0, _pm.shape[0] - 1)][:, np.clip(_ix, 0, _pm.shape[1] - 1)]
+        _pz = _pw * _pm + (1.0 - _pw)
+    _lift = (_pdl * _pz) if (_pz is not None and _pdl) else None
 
     newC = np.maximum(Cc * (1.0 + kc), 0.0)
     # ★★ 09-26：**彩度压缩曲线**（压中低彩度、保住高彩度）。
@@ -400,10 +437,19 @@ def mix(L, a, b, tg, cfg, m):
     a2 = a * (newC / nz)
     b2 = b * (newC / nz)
     # 亮度偏移：只作用在有颜色的地方（灰区不动）
-    L2 = np.clip(L + dl * live, 0.0, 100.0)
+    # ★★ 09-30 晚：`_lift` 是"整个人物区域"的提亮 —— **不乘 `live`**（暗衣服也要抬），
+    #   但要乘人掩膜（人外一点不动）⇒ 不会出现"人身上半亮半暗"或"背景被一起抬"的割裂。
+    L2 = np.clip(L + dl * live + (_lift if _lift is not None else 0.0), 0.0, 100.0)
     info = dict(c_gain=[(c, (k + (_bg[i] if i < len(_bg) else 0.0)))
                         for i, (c, _, k, _) in enumerate(BANDS)],
-                sat=_sat, dL_bands=(float(np.min(dl)), float(np.max(dl))))
+                sat=_sat, dL_bands=(float(np.min(dl)), float(np.max(dl))),
+                # ★★ 09-30 晚：「人物区域整体提亮」到底生没生效 —— 只在报告里说清楚，
+                #   排查时不用去翻图（`person_on=False` = 没传掩膜 ⇒ 这块**没生效**，弃权）。
+                person_on=bool(_pz is not None and _pdl),
+                person_dl=float(_pdl),
+                person_w=float(getattr(cfg, 'GRADE_PERSON_W', 1.0) or 0.0),
+                person_pct=(round(float((np.asarray(person) > 0.5).mean() * 100), 2)
+                            if person is not None else None))
     return L2, a2, b2, info
 
 
@@ -432,10 +478,13 @@ def gamut(L, a, b):
 # ---------------------------------------------------------------------------
 # 主入口（**编排，自己不写任何量**）
 # ---------------------------------------------------------------------------
-def apply(disp, cfg=C, stock=None, scene=None):
+def apply(disp, cfg=C, stock=None, scene=None, person=None):
     """在**成片**（显示域）上做 L2 分色 + L3 混色。
 
     `scene`：`scene.classify(...)` 的结果 —— **只用来取靶**（`targets._scene` 覆盖）。
+    `person`：**"人在哪"的软掩膜**（`person.py` 的输出，0~1，与 `disp` 同尺寸）——
+      只给 L3 的「人物区域整体提亮」用（`person_dl`）。`None` ⇒ **那块不生效**（弃权）。
+      ⚠ 不给默认值退化成全局：没有掩膜就别动，否则又变成"整张提亮"。
 
     ★★★ 09-28 拆分：本函数**只做编排**，两段各自是纯函数（见文件头那张表）。
     @returns {(numpy.ndarray, dict)} 出图 + 报告（能自查动了多少）
@@ -453,7 +502,7 @@ def apply(disp, cfg=C, stock=None, scene=None):
     #   为什么：`mix()` 把 a*/b* 整体乘以一个系数（`sat` 那一套）。分色若在它前面，
     #   刚加进去的带偏移会被一起缩掉（实测 sat=0.69 ⇒ 缩 31%；`mix` 还会把暗部 a 推回 +0.97）。
     #   ⇒ 分色必须是**最后一个动 a*/b* 的人**。这也是 LR 的面板顺序（HSL/Color Mixer → Color Grading）。
-    L, a, b, i3 = mix(L, a, b, tg, cfg, m)
+    L, a, b, i3 = mix(L, a, b, tg, cfg, m, person=person)
     # ---- L2 分色 ----
     a, b, i2 = split(L, a, b, tg, cfg, m)
     # ---- 色域映射 ----
@@ -477,6 +526,8 @@ def apply(disp, cfg=C, stock=None, scene=None):
                 curve_x=i2.get('curve_x'),
                 tgt_sh=i2.get('tgt_sh'), tgt_hi=i2.get('tgt_hi'), tgt_mid=i2.get('tgt_mid'),
                 c_gain=i3['c_gain'], stock=stock,
+                person_on=i3.get('person_on'), person_dl=i3.get('person_dl'),
+                person_w=i3.get('person_w'), person_pct=i3.get('person_pct'),
                 # ★ 09-26：这一张命中了哪几条**场景覆盖**（`targets._scene`）——
                 #   空 = 一条都没命中（= 跟加场景之前逐位相同）。
                 scene_hits=list((tg or {}).get('_scene_hits') or []),
