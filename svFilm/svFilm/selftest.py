@@ -424,7 +424,7 @@ def t_hist():
     from . import hist
 
     # ① 四条曲线：长度 256、0~1、无 NaN
-    c, sh_c, hi_c = hist.channels(_gray_img(seed=31))
+    c, clip = hist.channels(_gray_img(seed=31))
     check('★ 四条直方图曲线（亮度 + R/G/B）：各 256 bin、落在 0~1、无 NaN',
           len(c) == 4 and all(len(x) == 256 for x in c)
           and all(np.all(np.isfinite(x)) and x.min() >= 0.0 and x.max() <= 1.0 + 1e-9 for x in c),
@@ -433,7 +433,7 @@ def t_hist():
           float(np.max(np.abs(c[0] - c[1]))) > 0.01)
     # ★ 纵轴必须是**固定口径**（满格 = 单档占画面 YMAX_RATIO），不是按每张图自己的最大值
     g = np.asarray(_gray_img(seed=31), np.float64)
-    ys = hist._luma(g).astype(np.int32).ravel()
+    ys = hist._codes(hist._luma(g) / 255.0).ravel()   # ★ 用实现自己的口径复算（四舍五入）
     cnt = np.bincount(ys, minlength=256).astype(np.float64)
     want = (cnt.max() / (cnt.sum() * hist.YMAX_RATIO)) ** hist.Y_GAMMA
     got = float(np.max(hist.channels(g)[0][0]))      # [0]=四条曲线, [0][0]=亮度那条
@@ -444,24 +444,52 @@ def t_hist():
     check('★ 同一张图喂两次峰值完全一样（口径稳定）',
           abs(float(np.max(hist.channels(g)[0][0])) - got) < 1e-12)
 
-    # ② 裁切：全黑 ⇒ 阴影裁切亮；全白 ⇒ 高光裁切亮；中间灰 ⇒ 都不亮
-    _, a_bk, b_bk = hist.channels(np.zeros((32, 32, 3)))
-    _, a_wh, b_wh = hist.channels(np.ones((32, 32, 3)))
-    _, a_gy, b_gy = hist.channels(np.full((32, 32, 3), 0.5))
-    check('★ 全黑 ⇒ 阴影裁切三角要亮（LR 里那个左上的蓝三角）', a_bk > 0.9, '%.3f' % a_bk)
-    check('★ 全白 ⇒ 高光裁切三角要亮（右上的红三角）', b_wh > 0.9, '%.3f' % b_wh)
-    check('中间灰 ⇒ 两个三角都不亮', a_gy < 5e-4 and b_gy < 5e-4,
-          '%.4f / %.4f' % (a_gy, b_gy))
+    # ② 端点（裁切）：全黑 ⇒ 阴影端亮；全白 ⇒ 高光端亮；中间灰 ⇒ 都不亮
+    bk = hist.channels(np.zeros((32, 32, 3)))[1]
+    wh = hist.channels(np.ones((32, 32, 3)))[1]
+    gy = hist.channels(np.full((32, 32, 3), 0.5))[1]
+    check('★ 全黑 ⇒ 阴影端要亮（LR 里那个左上的三角）', bk['lo']['any'] > 0.9,
+          '%.3f' % bk['lo']['any'])
+    check('★ 全白 ⇒ 高光端要亮（右上的三角）', wh['hi']['any'] > 0.9, '%.3f' % wh['hi']['any'])
+    check('★ 全白 ⇒ 三个通道都到端点（`which` 应为 R+G+B）', wh['hi']['which'] == 'R+G+B',
+          wh['hi']['which'])
+    check('中间灰 ⇒ 两个三角都不亮',
+          gy['lo']['any'] < 5e-4 and gy['hi']['any'] < 5e-4,
+          '%.4f / %.4f' % (gy['lo']['any'], gy['hi']['any']))
 
-    # ③ 出图：尺寸对、别炸
+    # ③ ★★★ 09-30 修的漏洞：老判据数 `luma == 255`（= 三通道同时 255 = 纯白），
+    #   会把"只有单通道到端点"整类漏掉。实测代价：鹿井参照的蓝通道裁了 0.227%，
+    #   老判据报 0.000%（三角根本不亮）。这一条就是防它回退。
+    _b = np.zeros((16, 16, 3)); _b[..., 0] = 0.6; _b[..., 1] = 0.6; _b[..., 2] = 1.0
+    _sb = hist.clip_stats(_b)
+    _old = float((hist._codes(hist._luma(_b) / 255.0) == 255).mean())
+    check('★★ 只有蓝通道到端点时必须报出来（老"纯白"判据会漏成 0）',
+          _sb['hi']['which'] == 'B' and _sb['hi']['any'] > 0.9 and _old == 0.0,
+          'which=%s any=%.2f  老判据=%.4f' % (_sb['hi']['which'], _sb['hi']['any'], _old))
+    check('★ 端点的颜色 = 被裁通道的混色（R+G→黄、三个→白、没有→灰）',
+          hist._clip_tint('R+G') == (255, 255, 151)
+          and hist._clip_tint('R+G+B') == (255, 255, 255)
+          and hist._clip_tint('') == hist.TRI_OFF,
+          '%s / %s' % (hist._clip_tint('R+G'), hist._clip_tint('R+G+B')))
+    check('★ 档位是四舍五入（与 `color.display_to_u8` 同口径，不是截断）',
+          int(hist._codes(np.array([254.6 / 255.0]))[0]) == 255
+          and int(hist._codes(np.array([254.4 / 255.0]))[0]) == 254)
+
+    # ④ 出图：尺寸对、别炸
     im = hist.draw(_gray_img(seed=33), w=400, h=160, title='自检')
     check('画得出来、尺寸对', im.size == (400, 160), str(im.size))
+    im_w = hist.waveform(_gray_img(seed=33), w=400, h=180, title='自检')
+    check('★ 波形图也画得出来（横轴＝画面左右，纵轴＝亮度）', im_w.size == (400, 180),
+          str(im_w.size))
     pn = hist.panel(_gray_img(seed=35), w=400, title='自检')
     check('缩略图 + 直方图 一体也画得出来', pn.size[0] == 400 and pn.size[1] > 160, str(pn.size))
-    st = hist.stack([(None, '参照', c, (sh_c, hi_c))], w=400)
+    pnw = hist.panel(_gray_img(seed=35), w=400, title='自检', mode='wave')
+    check('★ 一体版换波形图也画得出来（`mode="wave"`）', pnw.size[0] == 400 and pnw.size[1] > 160,
+          str(pnw.size))
+    st = hist.stack([(None, '参照', c, clip)], w=400)
     check('★ 只喂曲线（画"一组片的平均直方图"）也画得出来', st.size == (400, 240), str(st.size))
 
-    # ④ 命令行入口别断（`python -m svFilm.hist` 以后要常用）
+    # ⑤ 命令行入口别断（`python -m svFilm.hist` 以后要常用）
     check('命令行入口在（`python -m svFilm.hist`）', callable(hist._main))
 
 
