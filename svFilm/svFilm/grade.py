@@ -211,14 +211,30 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
         _xa, _xb = float(np.median(a)), float(np.median(b))
 
         def _look(key, x, fb):
+            """查曲线；**没配/配得不全 ⇒ 回落 `fb`（点靶）**，并回报"到底用没用上"。
+
+            ★★ 09-30 晚：返回两个值 —— 第二个就是给 `_cv_used` 的。
+              老写法**只要配了 `_curves` 就报"四条都在用"**，某条缺了也照样报
+              ⇒ 排查"曲线到底生效没有"时会误判（§148 栽过同类坑）。
+            """
             e = _cv.get(key) or {}
             xs, ys = e.get('x') or [], e.get('y') or []
             if len(xs) < 2 or len(xs) != len(ys):
-                return float(fb)
-            return float(np.interp(x, [float(v) for v in xs], [float(v) for v in ys]))
-        t_sh = (_look('sh_a', _xa, t_sh[0]), _look('sh_b', _xb, t_sh[1]))
-        t_hi = (_look('hi_a', _xa, t_hi[0]), _look('hi_b', _xb, t_hi[1]))
-        _cv_used = ['sh_a', 'sh_b', 'hi_a', 'hi_b']
+                return float(fb), False
+            return float(np.interp(x, [float(v) for v in xs], [float(v) for v in ys])), True
+
+        # ★★ 09-30 晚：**中间调也走曲线**。
+        #   为什么：与 `targets.json` **同一把尺子**下的三位大师实测 ——
+        #   「中 Δa / 中 Δb」是**唯一"该动态却还固定"**的两条（鹿井 IQR 2.47 / 4.42），
+        #   且中 Δa 的最强预测子（整张 a*，**+0.72**）比已做成曲线的暗 Δa（−0.60）**还强**。
+        #   ⇒ 不把它一起动态，分色就永远在这两段上"按同一个数"。
+        _v, u = _look('sh_a', _xa, t_sh[0]);  t_sh = (_v, t_sh[1]);  _cv_used += ['sh_a'] * u
+        _v, u = _look('sh_b', _xb, t_sh[1]);  t_sh = (t_sh[0], _v);  _cv_used += ['sh_b'] * u
+        _v, u = _look('hi_a', _xa, t_hi[0]);  t_hi = (_v, t_hi[1]);  _cv_used += ['hi_a'] * u
+        _v, u = _look('hi_b', _xb, t_hi[1]);  t_hi = (t_hi[0], _v);  _cv_used += ['hi_b'] * u
+        if _cv.get('md_a') or _cv.get('md_b'):
+            _v, u = _look('md_a', _xa, t_md[0]);  t_md = (_v, t_md[1]);  _cv_used += ['md_a'] * u
+            _v, u = _look('md_b', _xb, t_md[1]);  t_md = (t_md[0], _v);  _cv_used += ['md_b'] * u
     tgt = np.array([[t_sh[0], t_hi[0], t_md[0]], [t_sh[1], t_hi[1], t_md[1]]], np.float64)
 
     def _cur(av, bv):

@@ -647,9 +647,17 @@ def t_grade():
     check('★★ 没配曲线的路径 ⇒ `split_curve_used` 为空（向后兼容，仍走点靶）',
           not _i_nc.get('split_curve_used'),
           'curve_used=%r' % (_i_nc.get('split_curve_used'),))
-    check('★★ 配了曲线的预设 ⇒ 曲线靶被读到（4 条）',
-          len(_i_wc.get('split_curve_used') or []) == 4,
+    check('★★ 配了曲线的预设 ⇒ 曲线靶被读到（薄荷 5 条：sh_b / hi_a / hi_b / md_a / md_b）',
+          len(_i_wc.get('split_curve_used') or []) == 5,
           'curve_used=%r  tgt_sh=%r' % (_i_wc.get('split_curve_used'), _i_wc.get('tgt_sh')))
+    # ★★ 09-30 晚：`_cv_used` **按实际查到的报**（老写法只要配了 `_curves` 就一律报 4 条，
+    #   某条缺了也照样报 ⇒ 排查"曲线到底生效没有"时会误判）。清风已删掉无信号的 sh_a/sh_b
+    #   ⇒ 它只该报 hi_a/hi_b 两条。
+    _o_qc, _i_qc = grade.apply(_c, C, stock='Pro400H清风')
+    check('★ `_cv_used` 按实际查到的报（清风只剩 hi_a/hi_b ⇒ 2 条，不是"一律 4 条"）',
+          len(_i_qc.get('split_curve_used') or []) == 2,
+          'curve_used=%r' % (_i_qc.get('split_curve_used'),),
+          '仍报 4 条 ⇒ 又回到"缺了也不说"的老口径')
 
     # 自变量在起作用：造两张整张 b* 差很远的图（一暖一冷），曲线给的目标必须不同
     _warm = np.stack([np.full((64, 64), 0.62), np.full((64, 64), 0.56),
@@ -666,6 +674,15 @@ def t_grade():
           '暖画面目标 %+.2f ｜ 冷画面目标 %+.2f ｜ x=%s / %s'
           % (_d1, _d2, _i1.get('curve_x'), _i2.get('curve_x')),
           '两者相同 ⇒ 曲线没被用上（自变量没接进去）')
+    # ★★ 09-30 晚：**中间调也走曲线**（`md_a/md_b`）—— 它是"唯一该动态却还固定"的那两条
+    #   （同一把尺子下：鹿井 中Δa IQR 2.47 相关 +0.72、中Δb IQR 4.42 相关 +0.60）。
+    #   方向 = **递增**（画面越黄 ⇒ 中调相对越黄），与暗/亮带的递减相反 ⇒ 这里单独钉。
+    _m1 = float((_i1.get('tgt_mid') or [0, 0])[1])
+    _m2 = float((_i2.get('tgt_mid') or [0, 0])[1])
+    check('★★★ 中调靶也随画面走（`md_b`）：暖画面的中调目标 > 冷画面（方向与暗带相反）',
+          _m1 > _m2 + 0.2,
+          '暖画面中调目标 %+.2f ｜ 冷画面 %+.2f' % (_m1, _m2),
+          '两者相同 ⇒ md 曲线没接进去；方向反了 ⇒ 单调化方向写错了（中调是**递增**）')
     C.GRADE_ENABLE = _ge0
 
 
