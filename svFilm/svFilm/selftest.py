@@ -636,6 +636,38 @@ def t_grade():
           % (float(np.max(np.abs(_o_nosp - _o_sp))), _i_nosp.get('split_model')),
           '两者完全一样 ⇒ 分色没被真的跳过（那个单段开关是摆着看的）')
 
+    # ⑥ ★★ 09-30：**靶可以是「内容曲线」** —— 目标随画面自身的色偏查表，不再是常数。
+    #   为什么：大师**自己那批图**的暗部 Δb 的 IQR 就有 4~8 格 ⇒ 固定点靶不可达。
+    #   两条断言：
+    #     · 配了 `_curves` 的预设 ⇒ `split_curve_used` 非空；没配 ⇒ 空（**向后兼容**）
+    #     · 自变量真的在起作用 ⇒ 两张"整张 b*"不同的图，查出来的目标不同
+    C.GRADE_ENABLE = True
+    _o_nc, _i_nc = grade.apply(_c, C)                       # 不传 stock ⇒ 全局靶（无曲线）
+    _o_wc, _i_wc = grade.apply(_c, C, stock='Portra400薄荷')  # 薄荷配了曲线
+    check('★★ 没配曲线的路径 ⇒ `split_curve_used` 为空（向后兼容，仍走点靶）',
+          not _i_nc.get('split_curve_used'),
+          'curve_used=%r' % (_i_nc.get('split_curve_used'),))
+    check('★★ 配了曲线的预设 ⇒ 曲线靶被读到（4 条）',
+          len(_i_wc.get('split_curve_used') or []) == 4,
+          'curve_used=%r  tgt_sh=%r' % (_i_wc.get('split_curve_used'), _i_wc.get('tgt_sh')))
+
+    # 自变量在起作用：造两张整张 b* 差很远的图（一暖一冷），曲线给的目标必须不同
+    _warm = np.stack([np.full((64, 64), 0.62), np.full((64, 64), 0.56),
+                      np.full((64, 64), 0.30)], -1)
+    _cool = np.stack([np.full((64, 64), 0.35), np.full((64, 64), 0.55),
+                      np.full((64, 64), 0.68)], -1)
+    _o1, _i1 = grade.apply(_warm, C, stock='Portra400薄荷')
+    _o2, _i2 = grade.apply(_cool, C, stock='Portra400薄荷')
+    _d1 = float((_i1.get('tgt_sh') or [0, 0])[1])
+    _d2 = float((_i2.get('tgt_sh') or [0, 0])[1])
+    # 方向：**画面越黄（整张 b* 越高）⇒ 目标越蓝（Δb 越负）** —— 两位大师实测都单调。
+    check('★★★ 曲线靶真的随画面走：暖画面 vs 冷画面 ⇒ 暗部 Δb 的目标不同（且暖画面更蓝）',
+          _d2 > _d1 + 0.2,
+          '暖画面目标 %+.2f ｜ 冷画面目标 %+.2f ｜ x=%s / %s'
+          % (_d1, _d2, _i1.get('curve_x'), _i2.get('curve_x')),
+          '两者相同 ⇒ 曲线没被用上（自变量没接进去）')
+    C.GRADE_ENABLE = _ge0
+
 
 def t_config_keys():
     """★★ 09-26：**可调参数只在 `config.py`** —— 防"假旋钮"。

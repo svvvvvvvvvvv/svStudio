@@ -189,6 +189,14 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
     w_deep = _sh_hi_weights(L, cfg)[2]
 
     # ---- 靶 ----
+    # ★★ 09-30：靶可以配「内容曲线」—— 目标不再是常数，而是**按画面自身的色偏查**。
+    #   为什么：三位大师**自己那批图**的暗部 Δb 的 IQR 就有 4~8 格（固定点靶不可达，
+    #   追它只会"按下这张、浮起那张"）；而「画面越黄 ⇒ 分带相对越蓝」两位大师都**单调**
+    #   （鹿井侧相关 −0.75），物理上也通（画面黄的多 ⇒ 阴影接的天光相对重）。
+    #   自变量 = **整张 a*/b* 的 median**：a 轴查整张 a*、b 轴查整张 b*
+    #   （实测交叉项不相关：all_b 对 暗Δa 只有 −0.09）。
+    #   没配 `_curves` 的预设 ⇒ **行为与以前逐位相同**（仍走 `sh_abs/hi_abs` 的点靶）。
+    _cv = (tg or {}).get('_curves') or {}
     if tg and tg.get('sh_abs'):
         t_sh = (float(tg['sh_abs'][0]), float(tg['sh_abs'][1]))
         t_hi = (float(tg['hi_abs'][0]), float(tg['hi_abs'][1]))
@@ -197,6 +205,20 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
         t_hi = (float(getattr(cfg, 'GRADE_HI_A', 0.0)), float(getattr(cfg, 'GRADE_HI_B', 0.0)))
     _mid = (tg or {}).get('mid_abs')
     t_md = (float(_mid[0]), float(_mid[1])) if _mid else (0.0, 0.0)
+
+    _cv_used = []
+    if _cv:
+        _xa, _xb = float(np.median(a)), float(np.median(b))
+
+        def _look(key, x, fb):
+            e = _cv.get(key) or {}
+            xs, ys = e.get('x') or [], e.get('y') or []
+            if len(xs) < 2 or len(xs) != len(ys):
+                return float(fb)
+            return float(np.interp(x, [float(v) for v in xs], [float(v) for v in ys]))
+        t_sh = (_look('sh_a', _xa, t_sh[0]), _look('sh_b', _xb, t_sh[1]))
+        t_hi = (_look('hi_a', _xa, t_hi[0]), _look('hi_b', _xb, t_hi[1]))
+        _cv_used = ['sh_a', 'sh_b', 'hi_a', 'hi_b']
     tgt = np.array([[t_sh[0], t_hi[0], t_md[0]], [t_sh[1], t_hi[1], t_md[1]]], np.float64)
 
     def _cur(av, bv):
@@ -299,7 +321,10 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
                 split_resid=[round(float(v), 3) for v in (tgt - _cur(a2, b2)).ravel()],
                 split_curve_a=[round(float(v), 3) for v in C[0]],
                 split_curve_b=[round(float(v), 3) for v in C[1]],
-                tgt_sh=list(t_sh), tgt_hi=list(t_hi), tgt_mid=list(t_md))
+                tgt_sh=list(t_sh), tgt_hi=list(t_hi), tgt_mid=list(t_md),
+                # ★ 09-30：这一张**实际用的曲线靶**（没配 `_curves` ⇒ 空，走老的点靶）
+                split_curve_used=_cv_used,
+                curve_x=(round(float(np.median(a)), 2), round(float(np.median(b)), 2)))
     return a2, b2, info
 
 
@@ -429,6 +454,11 @@ def apply(disp, cfg=C, stock=None, scene=None):
                 split_model=i2.get('split_model'), split_iters=i2.get('split_iters'),
                 split_resid=i2.get('split_resid'), split_field=i2.get('split_field'),
                 split_limit=i2.get('split_limit'),
+                # ★ 09-30：把「曲线靶」那两项也透出来（`apply()` 是**显式列举**要透传的键，
+                #   新加的键不透 ⇒ 外部脚本读 `report['grade']['split_curve_used']`
+                #   永远是 None，排查"曲线到底生效没有"时白跑一轮真渲染 —— §148 栽过同类坑）。
+                split_curve_used=i2.get('split_curve_used'),
+                curve_x=i2.get('curve_x'),
                 tgt_sh=i2.get('tgt_sh'), tgt_hi=i2.get('tgt_hi'), tgt_mid=i2.get('tgt_mid'),
                 c_gain=i3['c_gain'], stock=stock,
                 # ★ 09-26：这一张命中了哪几条**场景覆盖**（`targets._scene`）——
