@@ -168,11 +168,25 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
                           split_resid=[0.0] * 6,
                           split_field=(0.0, 0.0, 0.0, 0.0),
                           tgt_sh=[0.0, 0.0], tgt_hi=[0.0, 0.0], tgt_mid=[0.0, 0.0])
-    _p20, _p80 = np.percentile(L, 20.0), np.percentile(L, 80.0)
-    _p25, _p75 = np.percentile(L, 25.0), np.percentile(L, 75.0)
-    msh, mhi = L <= _p20, L >= _p80
-    mmid = (L >= _p25) & (L <= _p75)
-    _bands = (msh, mhi, mmid)
+    # ★★★ 09-30 晚：**约束带 3 → 5**（预设配了 `zone_abs` 时）。
+    #   老的三带 = 「暗 P≤20 / 亮 P≥80 / 中 P25~P75」，而 SV 在 LR 直方图上看的是 **5 格**：
+    #   观感上的「阴影段」落在 P20 与 P50 之间 ⇒ **三个带谁也不管它**（§163/§167 已锁定）。
+    #   实测：白平衡修对之后，残余的偏色恰好就在阴影段（R−B 比鹿井暖 6 格）。
+    #   `zone_abs` 的两个新增带（P20~P40 阴影 / P60~P80 次高光）= 眼睛真正看到偏色的那两段。
+    #   ⚠ 没配 `zone_abs` 的预设 ⇒ **逐位走老的三带**（向后兼容，`selftest` 有断言）。
+    _z5 = (tg or {}).get('zone_abs')
+    _nz = 0
+    if isinstance(_z5, (list, tuple)) and len(_z5) == 2 \
+            and min(len(_z5[0]), len(_z5[1])) == 5:
+        _nz = 5
+        _qs = np.percentile(L, [0.0, 20.0, 40.0, 60.0, 80.0, 100.0])
+        _bands = tuple((L >= _qs[_i]) & (L <= _qs[_i + 1]) for _i in range(5))
+    else:
+        _p20, _p80 = np.percentile(L, 20.0), np.percentile(L, 80.0)
+        _p25, _p75 = np.percentile(L, 25.0), np.percentile(L, 75.0)
+        msh, mhi = L <= _p20, L >= _p80
+        mmid = (L >= _p25) & (L <= _p75)
+        _bands = (msh, mhi, mmid)
 
     _lim = float((tg or {}).get('split_limit')
                  if (tg or {}).get('split_limit') is not None
@@ -232,10 +246,26 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
         _v, u = _look('sh_b', _xb, t_sh[1]);  t_sh = (t_sh[0], _v);  _cv_used += ['sh_b'] * u
         _v, u = _look('hi_a', _xa, t_hi[0]);  t_hi = (_v, t_hi[1]);  _cv_used += ['hi_a'] * u
         _v, u = _look('hi_b', _xb, t_hi[1]);  t_hi = (t_hi[0], _v);  _cv_used += ['hi_b'] * u
-        if _cv.get('md_a') or _cv.get('md_b'):
+        # ⚠ 5 带模式下 md 的曲线在**下面**（换 `tgt` 那一列的代码）里查、在那里记账；
+        #   这里再记一次就会出现**重复的 `md_a`/`md_b`**（冒烟时实测到，已修）。
+        if _nz != 5 and (_cv.get('md_a') or _cv.get('md_b')):
             _v, u = _look('md_a', _xa, t_md[0]);  t_md = (_v, t_md[1]);  _cv_used += ['md_a'] * u
             _v, u = _look('md_b', _xb, t_md[1]);  t_md = (t_md[0], _v);  _cv_used += ['md_b'] * u
-    tgt = np.array([[t_sh[0], t_hi[0], t_md[0]], [t_sh[1], t_hi[1], t_md[1]]], np.float64)
+    if _nz == 5:
+        tgt = np.array(_z5, np.float64)
+        # 5 带模式下「中调」那一列（index 2）仍然走**内容曲线**（`md_a`/`md_b`）——
+        # 它是 §163 里唯一"该动态却还固定"过的那一条，不要因为扩带把它丢回去。
+        if _cv:
+            _v, u = _look('md_a', float(np.median(a)), float(tgt[0, 2]))
+            tgt[0, 2] = _v; _cv_used += ['md_a'] * u
+            _v, u = _look('md_b', float(np.median(b)), float(tgt[1, 2]))
+            tgt[1, 2] = _v; _cv_used += ['md_b'] * u
+            # ★★ 报告字段 `tgt_mid` 必须**跟着走** —— 它原来只反映老的三带靶 `t_md`，
+            #   5 带模式下不更新的话，外部（含 `selftest`）读 `report['grade']['tgt_mid']`
+            #   永远是那个固定值 ⇒ **"曲线到底生效没有"根本查不出来**（自检当场红给我看）。
+            t_md = (float(tgt[0, 2]), float(tgt[1, 2]))
+    else:
+        tgt = np.array([[t_sh[0], t_hi[0], t_md[0]], [t_sh[1], t_hi[1], t_md[1]]], np.float64)
 
     def _cur(av, bv):
         """观测量（自归一化）：分带 median − **整张** median。"""
@@ -263,7 +293,7 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
         return base_arr + f, f
 
     def _jac(bav, bbv):
-        J = np.zeros((2, 3, _n), np.float64)
+        J = np.zeros((2, len(_bands), _n), np.float64)
         ca, cb = _cur(bav, bbv)
         for j in range(_n):
             J[0, :, j] = (_cur(bav + _h * W[j], bbv)[0] - ca[0]) / _h
@@ -279,7 +309,10 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
     H = _reg * np.eye(_n) + _lc * (_D2.T @ _D2)
     # ★ 观测权重：**中调那行降权** —— 它的观测量是内容主导的（靶跨张 IQR ≥4），
     #   精确追它会把场推到 12 格；降权后由优化器自己权衡"值不值"。
-    Lam = np.diag([1.0, 1.0, _wmid])
+    # ⚠ 维度必须跟着 `_bands` 走（写死 3 ⇒ 5 带时矩阵形状对不上，当场崩）
+    _wz = [1.0, 1.0, _wmid, 1.0, 1.0] if _nz == 5 else [1.0, 1.0, _wmid]
+    assert len(_wz) == len(_bands)
+    Lam = np.diag(_wz)
 
     C = np.zeros((2, _n), np.float64)
     a2, b2 = a_base, b_base
@@ -324,9 +357,15 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
 
     _fa = _apply(a_base, C[0])[1]
     _fb = _apply(b_base, C[1])[1]
-    info = dict(d_sh=(float(_bm(_fa, msh)), float(_bm(_fb, msh))),
-                d_hi=(float(_bm(_fa, mhi)), float(_bm(_fb, mhi))),
-                d_mid=(float(_bm(_fa, mmid)), float(_bm(_fb, mmid))),
+    # ⚠ 老代码直接引 `msh/mhi/mmid` 三个变量 —— 5 带模式下它们不存在（名字换成了元组）。
+    #   ⇒ 一律按 `_bands` 取：首 = 暗、尾 = 亮、中 = 中间那个（3 带时即原来的 mmid）。
+    _b0, _b1, _bc = _bands[0], _bands[-1], _bands[len(_bands) // 2]
+    info = dict(d_sh=(float(_bm(_fa, _b0)), float(_bm(_fb, _b0))),
+                d_hi=(float(_bm(_fa, _b1)), float(_bm(_fb, _b1))),
+                d_mid=(float(_bm(_fa, _bc)), float(_bm(_fb, _bc))),
+                split_zones=_nz,
+                d_zones=[(round(float(_bm(_fa, _b)), 3), round(float(_bm(_fb, _b)), 3))
+                         for _b in _bands],
                 d_deep=(_deep_a, _deep_b),
                 split_limit=_lim, split_model='curve',
                 split_nodes=_n, split_curv=_lc, split_reg=_reg, split_midw=_wmid,
@@ -524,6 +563,9 @@ def apply(disp, cfg=C, stock=None, scene=None, person=None):
                 #   永远是 None，排查"曲线到底生效没有"时白跑一轮真渲染 —— §148 栽过同类坑）。
                 split_curve_used=i2.get('split_curve_used'),
                 curve_x=i2.get('curve_x'),
+                # ★ 09-30 晚：扩带那两个新键 —— `apply()` 是**显式列举**透传的，
+                #   不登记的话外部读 `report['grade']['split_zones']` 永远是 None（§148 同类坑）。
+                split_zones=i2.get('split_zones'), d_zones=i2.get('d_zones'),
                 tgt_sh=i2.get('tgt_sh'), tgt_hi=i2.get('tgt_hi'), tgt_mid=i2.get('tgt_mid'),
                 c_gain=i3['c_gain'], stock=stock,
                 person_on=i3.get('person_on'), person_dl=i3.get('person_dl'),

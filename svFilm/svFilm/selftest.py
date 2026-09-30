@@ -683,6 +683,24 @@ def t_grade():
           _m1 > _m2 + 0.2,
           '暖画面中调目标 %+.2f ｜ 冷画面 %+.2f' % (_m1, _m2),
           '两者相同 ⇒ md 曲线没接进去；方向反了 ⇒ 单调化方向写错了（中调是**递增**）')
+    # ★★★ 09-30 晚：**约束带 3 → 5**（预设配了 `zone_abs` 时）。
+    #   为什么钉：扩带是"眼睛看到的那两段（阴影/次高光）终于有人管"的关键，
+    #   而它**只在配了 `zone_abs` 时生效** —— 一旦哪天 targets.json 的字段名写错，
+    #   `split()` 会**静默退回三带**、画面照旧 ⇒ 必须当场红。
+    check('★★★ 配了 `zone_abs` 的预设 ⇒ 分色走**五个带**（并且报告里带 5 段位移）',
+          int(_i_wc.get('split_zones') or 0) == 5 and len(_i_wc.get('d_zones') or []) == 5,
+          'split_zones=%r  d_zones=%r' % (_i_wc.get('split_zones'), _i_wc.get('d_zones')),
+          '还是 3 ⇒ `zone_abs` 没读到（字段名/JSON 路径写错了，会静默退回老行为）')
+    import numpy as _np5
+    from . import targets as _T5
+    _img5 = _np5.stack([_np5.full((64, 64), 0.35)] * 3, -1)
+    _img5[..., 0] = 0.60
+    _o5, _i5 = grade.apply(_img5, C, stock='C200透明')      # 这条预设**没有** `zone_abs`
+    check('★★★ 没配 `zone_abs` 的预设 ⇒ **逐位走老三带**（向后兼容）',
+          int(_i5.get('split_zones') or 0) == 0 and len(_i5.get('d_zones') or []) == 3,
+          'split_zones=%r  len(d_zones)=%d' % (_i5.get('split_zones'),
+                                               len(_i5.get('d_zones') or [])),
+          '没配也走了 5 带 ⇒ 兼容分支坏了')
     # ★★ 09-30 晚：**「人物区域整体提亮」（`person_dl`）** —— 两条硬规矩。
     #   ⚠ 判据必须用**差分对照**：grade 本来就一直在动（混色+分色），
     #     拿"输出 vs 输入"比会把 grade 的正常动作算进来（第一版就是这么写错的，当场红）。
