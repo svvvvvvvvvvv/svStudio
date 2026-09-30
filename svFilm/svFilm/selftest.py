@@ -647,15 +647,19 @@ def t_grade():
     check('★★ 没配曲线的路径 ⇒ `split_curve_used` 为空（向后兼容，仍走点靶）',
           not _i_nc.get('split_curve_used'),
           'curve_used=%r' % (_i_nc.get('split_curve_used'),))
+    # ⚠ 09-30 深夜：`split_curve_used` **现在还会带五段曲线的 `z*` 键**（`_zone_curves`）——
+    #   判"旧口径那几条"时必须**先滤掉 `z` 前缀**，否则条数永远对不上（自检当场红过）。
+    _old_cv = lambda z: [k for k in (z.get('split_curve_used') or []) if not k.startswith('z')]
+    _zs_cv = lambda z: [k for k in (z.get('split_curve_used') or []) if k.startswith('z')]
     check('★★ 配了曲线的预设 ⇒ 曲线靶被读到（薄荷 5 条：sh_b / hi_a / hi_b / md_a / md_b）',
-          len(_i_wc.get('split_curve_used') or []) == 5,
+          len(_old_cv(_i_wc)) == 5,
           'curve_used=%r  tgt_sh=%r' % (_i_wc.get('split_curve_used'), _i_wc.get('tgt_sh')))
     # ★★ 09-30 晚：`_cv_used` **按实际查到的报**（老写法只要配了 `_curves` 就一律报 4 条，
     #   某条缺了也照样报 ⇒ 排查"曲线到底生效没有"时会误判）。清风已删掉无信号的 sh_a/sh_b
     #   ⇒ 它只该报 hi_a/hi_b 两条。
     _o_qc, _i_qc = grade.apply(_c, C, stock='Pro400H清风')
     check('★ `_cv_used` 按实际查到的报（清风只剩 hi_a/hi_b ⇒ 2 条，不是"一律 4 条"）',
-          len(_i_qc.get('split_curve_used') or []) == 2,
+          len(_old_cv(_i_qc)) == 2,
           'curve_used=%r' % (_i_qc.get('split_curve_used'),),
           '仍报 4 条 ⇒ 又回到"缺了也不说"的老口径')
 
@@ -669,6 +673,12 @@ def t_grade():
     _d1 = float((_i1.get('tgt_sh') or [0, 0])[1])
     _d2 = float((_i2.get('tgt_sh') or [0, 0])[1])
     # 方向：**画面越黄（整张 b* 越高）⇒ 目标越蓝（Δb 越负）** —— 两位大师实测都单调。
+    # ★★★ 09-30 深夜新增：**五段靶走的是"按画面查的曲线"**（`_zone_curves`）——
+    #   没有它，五段靶会**静默退回固定值**（画面看不出报错，只是"那一段又不动了"）。
+    check('★★★ 五段靶走"按画面查的曲线"（`_zone_curves` 命中 6 条 z*）',
+          len(_zs_cv(_i_wc)) == 6,
+          'z* 命中=%r' % (_zs_cv(_i_wc),),
+          '一条都没命中 ⇒ `_zone_curves` 没读到（字段名/路径错了），五段靶静默退回固定值')
     check('★★★ 曲线靶真的随画面走：暖画面 vs 冷画面 ⇒ 暗部 Δb 的目标不同（且暖画面更蓝）',
           _d2 > _d1 + 0.2,
           '暖画面目标 %+.2f ｜ 冷画面目标 %+.2f ｜ x=%s / %s'

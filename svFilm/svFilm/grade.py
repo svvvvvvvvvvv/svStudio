@@ -264,6 +264,29 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
             #   5 带模式下不更新的话，外部（含 `selftest`）读 `report['grade']['tgt_mid']`
             #   永远是那个固定值 ⇒ **"曲线到底生效没有"根本查不出来**（自检当场红给我看）。
             t_md = (float(tgt[0, 2]), float(tgt[1, 2]))
+
+        # ★★★★ 09-30 深夜：**五段靶也做成"按画面查的曲线"**（= SV 说的"动态预设参数"）。
+        #   为什么非做不可：`th=0.74` 之后**逐张**的白点段 R−B 是
+        #   −27.0 / −14.8 / −4.2 / +9.1 / +9.4 / +25.9（**跨度 53 格**），而鹿井的目标是 **+3.0**
+        #   ⇒ **一个全局固定值绝对扛不住**。
+        #   而它明显与「整张色偏」同向（1665 整张b*+6.5 ⇒ 白点+26；1289 整张b*−5.5 ⇒ 白点−27）
+        #   ⇒ 走 `_curves` 那条老路：自变量 = **整张 a\*/b\***，因变量 = **该段自己的** Δa/Δb。
+        #   ⚠ **只收 |r| ≥ 0.40 的段**（`_j1_zonecurves.py` 逐段标定）——
+        #     阴影 Δb（+0.20）、次高光 Δa（+0.16）等**没信号**的段**留在固定靶上**，
+        #     不许硬套一条噪声曲线（§164.5 的规矩）。
+        _zcv = (tg or {}).get('_zone_curves') or {}
+        if _zcv:
+            _xza, _xzb = float(np.median(a)), float(np.median(b))
+            for _zi in range(len(_bands)):
+                for _ai, _xv in ((0, _xza), (1, _xzb)):
+                    _key = 'z%d_%s' % (_zi, 'a' if _ai == 0 else 'b')
+                    _e = _zcv.get(_key) or {}
+                    _xs, _ys = _e.get('x') or [], _e.get('y') or []
+                    if len(_xs) >= 2 and len(_xs) == len(_ys):
+                        tgt[_ai, _zi] = float(np.interp(_xv, [float(v) for v in _xs],
+                                                        [float(v) for v in _ys]))
+                        _cv_used += [_key]
+            t_md = (float(tgt[0, 2]), float(tgt[1, 2]))     # 中调那格可能被上面改过
     else:
         tgt = np.array([[t_sh[0], t_hi[0], t_md[0]], [t_sh[1], t_hi[1], t_md[1]]], np.float64)
 
@@ -566,6 +589,8 @@ def apply(disp, cfg=C, stock=None, scene=None, person=None):
                 # ★ 09-30 晚：扩带那两个新键 —— `apply()` 是**显式列举**透传的，
                 #   不登记的话外部读 `report['grade']['split_zones']` 永远是 None（§148 同类坑）。
                 split_zones=i2.get('split_zones'), d_zones=i2.get('d_zones'),
+                # ★ 09-30 深夜：五段曲线（`_zone_curves`）实际命中了几条 —— 见 `split_curve_used`
+                zone_curves_used=[k for k in (i2.get('split_curve_used') or []) if k.startswith('z')],
                 tgt_sh=i2.get('tgt_sh'), tgt_hi=i2.get('tgt_hi'), tgt_mid=i2.get('tgt_mid'),
                 c_gain=i3['c_gain'], stock=stock,
                 person_on=i3.get('person_on'), person_dl=i3.get('person_dl'),
