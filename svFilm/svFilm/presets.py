@@ -221,7 +221,11 @@ def _apply(p, d, cfg):
     p.enlarger.print_exposure = float(si['print_exposure'])
     p.enlarger.print_exposure_compensation = bool(si['print_exposure_compensation'])
     p.enlarger.y_filter_shift = float(si['print_y_filter_shift'])
-    p.enlarger.m_filter_shift = float(si['print_m_filter_shift'])
+    # ★ 10-08：**统一加一点品红**（底座补偿）。为什么不去动 `neutral`、为什么是 +8、
+    #   以及它**对预闪不生效**这件事，全部写在 `config.PRESET_FILTER_M_TRIM` 上面那段。
+    #   ⚠ 它是**全局**的（10 条预设都吃），而每条预设自己的 `shift` 身份仍然保留。
+    p.enlarger.m_filter_shift = float(si['print_m_filter_shift']) + float(
+        getattr(cfg, 'PRESET_FILTER_M_TRIM', 0.0))
     p.enlarger.preflash_exposure = float(pf['exposure'])
     p.enlarger.preflash_y_filter_shift = float(pf['y_filter_shift'])
     p.enlarger.preflash_m_filter_shift = float(pf['m_filter_shift'])

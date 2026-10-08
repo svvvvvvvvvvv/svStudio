@@ -213,6 +213,10 @@ def t_presets():
     #   钉两件事：① 这个落点**真通电**（`_apply` 读进 params，不是又一组假旋钮）；
     #            ② 它**不是常量**（10 条不全同）—— 否则"逐预设的冷暖基准"就是句空话。
     #   ⚠ 同一支卷的几条**允许相同**（C200 三条都是 y=3/m=2）：那是同一底片的同一次印相配平。
+    #   ★ 10-08 追加：params 里的 m shift = `JSON print_m_filter_shift` **+ `PRESET_FILTER_M_TRIM`**
+    #     （印相品红底座补偿，见 `config.py` 同名常量与 `presets.py` 接线处的注释）。
+    #     ⇒ 断言必须按「JSON 原值 + 剂量」比，否则那条会红 —— 红的是**断言的算法**，不是接线。
+    _trim = float(getattr(C, 'PRESET_FILTER_M_TRIM', 0.0))
     _wb, _wbb = [], []
     for n in ns:
         _q = presets.digested(n)
@@ -220,11 +224,12 @@ def t_presets():
         _wb.append((round(float(_q.enlarger.y_filter_shift), 3),
                     round(float(_q.enlarger.m_filter_shift), 3)))
         _wbb.append((round(float(_sim['print_y_filter_shift']), 3),
-                     round(float(_sim['print_m_filter_shift']), 3)))
+                     round(float(_sim['print_m_filter_shift']) + _trim, 3)))
     check('★ 整张冷暖基准落在印相滤片上（Y/M **真进 params**，不是假旋钮）', _wb == _wbb,
           ' / '.join('%s y=%.1f m=%.1f' % (n[4:] if len(n) > 4 else n, w[0], w[1])
                      for n, w in zip(ns, _wb))[:160],
-          'JSON 写了但 params 里不是那个数 ⇒ 又是一组"改了没反应"的假旋钮')
+          'JSON 写了但 params 里不是那个数 ⇒ 又是一组"改了没反应"的假旋钮；'
+          '注意 m 端要比 `JSON + PRESET_FILTER_M_TRIM`（底座补偿）')
     check('★ 而且它**不是常量**（10 条的冷暖基准不全同）', len(set(_wb)) >= 2,
           '%d 种组合' % len(set(_wb)),
           '全同 ⇒ "逐预设的冷暖基准"是句空话；改冷暖请改 `simulation.print_y_filter_shift`'
