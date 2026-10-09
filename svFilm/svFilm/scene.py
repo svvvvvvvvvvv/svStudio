@@ -56,9 +56,10 @@ import numpy as np
 from . import color
 from . import config as C
 
-VERSION = 6                          # ★ 换判据就要 +1（缓存键带它）
+VERSION = 7                          # ★ 换判据就要 +1（缓存键带它）
 #   6（10-09）：光位判据的「贴边 ⇒ 弃权」守卫改成**单向**（原先对 `E_bg`/`E_tb` 误用 `abs`，
 #              把"方向相反、证据明确"的片子当"贴边"弃权）。实测弃权率 50%→33~40%（鹿井）、71%→49%（我们）。
+#   7（10-09）：`SCENE_BACK_MARGIN` 0.35 → **0.15**（标定，SV 定）⇒ 弃权再降到 **19%/17%/24%**。
 AXES = ('exp', 'span', 'back', 'overwhite')
 
 _EXP_ORDER = ('暗', '正常', '亮')
