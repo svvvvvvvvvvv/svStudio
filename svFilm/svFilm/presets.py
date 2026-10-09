@@ -347,6 +347,22 @@ def _apply(p, d, cfg):
 
 
 _PARAMS_SIG = [None]          # 上次建缓存用的 config 指纹（变了就整体作废）
+_PARAMS_FSIG = {}             # 预设名 -> 该预设文件的指纹（mtime_ns, size）
+
+
+def _file_sig(name):
+    r"""★ 10-09：**预设文件本身的指纹**（`os.stat` 的 mtime_ns + size）。
+
+    为什么必须有：老版本的缓存键是 `(预设名, config 指纹)`—— **不含预设文件内容**。
+    后果（10-09 实测咬到）：**在一次会话里改了预设 JSON，程序察觉不到**，用的还是旧参数，
+    必须重启进程才生效 ⇒ 又一次"改了没反应"，而且它**会静默污染所有测量**
+    （我按相纸 A 量了一套数、又按相纸 B 量，两次结果一模一样，就是这个原因）。
+    """
+    try:
+        st = os.stat(path_of(name))
+        return (st.st_mtime_ns, st.st_size)
+    except Exception:                                  # noqa: BLE001
+        return None
 
 
 def _params_for(name, cfg):
@@ -372,7 +388,13 @@ def _params_for(name, cfg):
     with _LOCK:
         if _PARAMS_SIG[0] != _sig:
             _PARAMS.clear()                            # config 变了 ⇒ 老参数对象全部作废
+            _PARAMS_FSIG.clear()
             _PARAMS_SIG[0] = _sig
+        # ★ 10-09：**预设文件变了也要作废**（见 `_file_sig` 的注释）
+        _fs = _file_sig(name)
+        if _PARAMS_FSIG.get(name) != _fs:
+            _PARAMS.pop(name, None)
+            _PARAMS_FSIG[name] = _fs
         p = _PARAMS.get(name)
         if p is not None:
             return p
@@ -391,6 +413,7 @@ def clear_cache():
     留作显式口子：改了引擎级开关、又想在同进程里立刻看到效果时调它。"""
     with _LOCK:
         _PARAMS.clear()
+        _PARAMS_FSIG.clear()
         _PARAMS_SIG[0] = None
 
 

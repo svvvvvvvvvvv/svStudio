@@ -280,6 +280,22 @@ GRADE_BAND_SOFTMAX_HI = 1.6     # 衰减区间：从 P75 到 P75×1.6 线性退�
 #     现在 1.02；实测到 1.12 仍 clip 0.0000%）**并且**要注意这批样张本身镜面少（内容因素）。
 
 GRADE_CHROMA_CAP = 0.80
+
+# ★★★ 10-09：**扫描仪段补偿**（`scan_film=True` 时用；默认关 ⇒ 对现有预设逐位无影响）。
+#   为什么需要：上游 `color_reference.py` 在"扫负片"这条路**故意不做黑白校正**
+#   （两处写死 `return`，注释 "do not correct negative film scans"）——
+#   因为负片没有绝对的黑白参考，那是由**冲扫流程与扫描仪软件**定的。
+#   ⇒ 后果：`io.scan_film=True` 时引擎输出没被锚定。合成图实测（无补偿）：
+#     纯白 → L*32（RGB≈109）· 中灰 b* **+27**（严重偏黄）⇒ 画面塌掉。
+#   ⇒ 本组键实现"真实扫描仪对负片做的那三件事"里的后两件：
+#     ② 按片基定黑白点（片基是未曝光边缘、**中性灰**）
+#     ③ **每通道**自动色阶（片基密度每通道不同 ⇒ 必须分开拉，否则偏色）
+#   详细说明见 `svFilm/scanfx.py` 的模块 docstring。**不动 vendored 的 spektrafilm。**
+SCANFIX_ENABLE = False          # ← 打开才生效
+SCANFIX_MODE = 'per_channel'    # 'per_channel'（模拟片基中性）| 'luma'（单条亮度拉伸）
+SCANFIX_LO = 0.5                # 黑点取哪个分位（%）
+SCANFIX_HI = 99.5               # 白点取哪个分位（%）
+SCANFIX_CLIP = 0.0              # 拉伸后统一压一点，避免噪声顶成纯白（0 = 不压）
 #   ★★ 09-29 深夜落地：三条大师预设的 sat **写在 `targets.json` 条目里**（靶优先于本键）
 #      ⇒ 本键只对**走 `_default` 的另 7 条预设**生效。
 #   取值依据（09-29 标定②③）：① `_default` 的 who = 「鹿井 + 小红书」，与鹿井同源；
