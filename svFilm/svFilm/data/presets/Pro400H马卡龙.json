@@ -1,217 +1,218 @@
 {
-  "_note_neutral_migration": "★ 10-08 迁移（底座换源，画面不变）：中性滤片从\"硬编码 0.3.2 常数\"（Y 51.423 / M 50.713）改成 **引擎数据库按 (相纸, 光源, 底片) 查出的值**（`config.PRESET_NEUTRAL_FROM_DB=True`、`PRESET_FILTER_M_TRIM=0`）。因为 `neutral` 与 `shift` 是**同一根 CC 轴**，这里把本条的 shift 重表成「旧总量 − 新中性」⇒ **总滤片量逐条不变，画面不变**（实测 18% 灰 Δa*/Δb*/ΔL = 0.00）。旧 shift：m=1.0 / y=8.0 → 新：m=11.559 / y=8.688。⚠ 别把新 shift 当成\"风格值\"去调——它是\"扣掉正确中性后的余量\"，真正的冷暖身份要看**总量**（= 中性 + shift）。",
-  "input_image": {
-    "upscale_factor": 1.0,
-    "crop": false,
-    "crop_center": [
-      0.5,
-      0.5
-    ],
-    "crop_size": [
-      0.1,
-      0.1
-    ],
-    "input_color_space": "ProPhoto RGB",
-    "apply_cctf_decoding": false,
-    "spectral_upsampling_method": "hanatos2025",
-    "apply_hanatos2025_adaptation_window": true,
-    "apply_hanatos2025_adaptation_surface": false,
-    "spectral_gaussian_blur": 0.0,
-    "filter_uv": [
-      0.0,
-      410.0,
-      8.0
-    ],
-    "filter_ir": [
-      0.0,
-      675.0,
-      15.0
-    ]
-  },
-  "load_raw": {
-    "_note_load_raw": "★ 09-29 裁定：**这一段在本链上是死键，一个字节都不读**。`presets._apply()` 只读 input_image / grain / preflashing / halation / couplers / glare / special / simulation；引擎里读 `white_balance` / `temperature` / `tint` / `lens_correction` 的地方是 `spektrafilm/utils/raw_file_processor.py`（处理**真实 RAW 文件**那条路），而我们喂进去的是**已经解码好的场景线性** ⇒ 这四个键在预设里**改了没反应**（本项目第 4 类坑「假旋钮」）。而且 10 条预设里它们**全是同一组值**（custom / 5200 / 1.0 / false）⇒ 连信息量都没有。★★ **整张冷暖基准的真实落点 = 印相端校色滤片**：`simulation.print_y_filter_shift`（冷暖主旋钮，Y 越大越暖）/ `simulation.print_m_filter_shift`（绿↔品红）。负片→印相体系里「白平衡」**本来就是印相滤片**。现在 10 条预设**各不相同**（Y 3~13、M −4~+2）⇒ 逐预设的冷暖基准**早就在跑**，⇒ 这一档**不需要另开**；要调冷暖请改那两个，**别改这里**。",
-    "white_balance": "custom",
-    "temperature": 5200.0,
-    "tint": 1.0,
-    "lens_correction": false
-  },
-  "grain": {
-    "active": true,
-    "sublayers_active": false,
-    "particle_area_um2": 1.2,
-    "particle_scale": [
-      1.0,
-      1.0,
-      1.0
-    ],
-    "particle_scale_layers": [
-      2.5,
-      1.0,
-      0.5
-    ],
-    "density_min": [
-      0.07,
-      0.08,
-      0.12
-    ],
-    "uniformity": [
-      0.97,
-      0.97,
-      0.99
-    ],
-    "blur": 0.65,
-    "blur_dye_clouds_um": 1.0,
-    "micro_structure": [
-      0.2,
-      30
-    ],
-    "_note_grain_size": "★★★ 09-30：**修 bug + 定档**，并**按 SV 的目检回退过头的那一版**。① **修 bug**：`presets._apply` 一直写 `g.agx_particle_area_um2`（0.3.2 的旧名字），而 vendor 0.3.4 的 `model/grain.py` 读的是 `grain.particle_area_um2` ⇒ 我们设的值**从来没生效过**（vendor 实读 schema 默认 0.2）；`particle_scale` / `scale_layers` 同病。铁证：按两个名字各 override 同一个值，带 `agx_` 那档和基线**一个数都不差**。自检当初验的也是带前缀那个名字 ⇒ 一起绿（\"验错对象\"）。② **定档**：`particle_area_um2 = 1.2`、`particle_scale = [1,1,1]`（单色，SV 选的观感）。★ **1.2 的出处 = 作者自己的示例** `spektrafilm/examples/run_simulation.py:38`（GUI / schema 开箱默认 0.2）。⚠ **曾经定过 48，被 SV 一眼否掉**：48 是为了在 1600 长边下把\"微反差\"顶到鹿井中位，但它是作者示例的 **40 倍**，成片颗粒明显过大。⇒ 记下这条教训：**不要为了追一个统计量去堆风格参数**；\"我们比大师平\"该由**约束/补偿层**解决（测光策略 / 印相预闪 / 关印放柔光），不是靠把颗粒调大。见技能 §137、§138。③ `sublayers_active` 仍是 False ⇒ `particle_scale_layers` 不参与（作者示例是 True，待议）。"
-  },
-  "preflashing": {
-    "exposure": 0.0,
-    "y_filter_shift": 0.0,
-    "m_filter_shift": 0.0
-  },
-  "halation": {
-    "active": true,
-    "scatter_amount": 0.9,
-    "scatter_spatial_scale": 1.0,
-    "halation_amount": 1.2,
-    "halation_spatial_scale": 1.0,
-    "boost_ev": 0.0,
-    "protect_ev": 4.0,
-    "boost_range": 0.3,
-    "scatter_core_um": [
-      2.2,
-      2.0,
-      1.6
-    ],
-    "scatter_tail_um": [
-      9.3,
-      9.7,
-      9.1
-    ],
-    "scatter_tail_weight": [
-      78.0,
-      65.0,
-      67.0
-    ],
-    "halation_strength": [
-      1.5,
-      0.5,
-      0.0
-    ],
-    "_note_halation_strength": "★★ 09-29：光晕**幅度**（物理量）40/12/0 → 1.5/0.5/0。依据两处独立出处：① 公开 GUI 滑杆「Halation 幅度 %」tooltip 明写「红通道典型值：**弱 AH 2-8，无 AH 8-25**」，人像提示又写「**R 通道 1.5 = 现代彩色负片的物理值；拍人别超 8，超了脸上高光泛红**」；② 引擎 `_HALATION_PRESETS[(\"still\",\"strong\")]` 给的也正是 1.5/0.5/0（强 AH（现代彩色负片，红通道 1.5））。⇒ 原来的 40 是「完全无抗晕层」上限(25) 的 26.7 倍、人像上限(8) 的 5.0 倍，**一开机就在过火档**。★ `halation_amount`（GUI 滑杆「Halation 强度」，**1.0 = 物理默认**）**保留原作值 1.2 不动** —— 它是**用户风格旋钮**，而 `C200透明` 等预设**唯一**的风格区别就是它。（我先试过把它一起归到 1.0：结果那两条预设变成**逐位相同**、自检当场红 ⇒ 撤回。）⇒ 本条的**总力度 = 卷物理值 × 1.2**。",
-    "halation_first_sigma_um": [
-      65.0,
-      65.0,
-      65.0
-    ],
-    "halation_n_bounces": 3,
-    "halation_bounce_decay": 0.5,
-    "halation_renormalize": true
-  },
-  "couplers": {
-    "active": true,
-    "amount": 0.7,
-    "inhibition_samelayer": 1.0,
-    "inhibition_interlayer": 1.3,
-    "gamma_samelayer_rgb": [
-      0.34,
-      0.32,
-      0.27
-    ],
-    "gamma_interlayer_r_to_gb": [
-      0.35,
-      0.3
-    ],
-    "gamma_interlayer_g_to_rb": [
-      0.15,
-      0.35
-    ],
-    "gamma_interlayer_b_to_rg": [
-      0.17,
-      0.23
-    ],
-    "diffusion_size_um": 60.0,
-    "_note_diffusion": "★★★ 09-30 **重测后保留 60，但依据换掉**（值不动）。\n①**方向是对的**（DSCF1289，长边 2048 = `cfg.MAX_SIDE`，单调）：\n  扩散 0 → 2 → 10 → 20 → 40 → 60 → 80：\n   局部对比  1.99 → 2.08 → 2.19 → 2.48 → 3.06 → **3.33** → 3.41\n   边缘锐度  11.9 → 12.4 → 12.8 → 13.9 → 15.8 → **17.0** → 17.6（最陡 1% 边的梯度中位）\n   微反差    0.435→ 0.442→ 0.466→ 0.522→ 0.592→ **0.603**→ 0.603\n  ⇒ 三个量**全部随扩散单调上升**，符合 README「couplers 空间扩散 ⇒ 提高局部对比和感知锐度」。\n②**60 落在收益递减的拐点**：40→60 局部对比 +8.7%，60→80 只 +2.4%；\n  **微反差在 60 与 80 完全相同（0.603）⇒ 已饱和** ⇒ 60 是合理取值，加到 80 没意义。\n⚠ **旧的「60 正中靶 1.10」这个数无法复核**：那是另一次会话另一把尺子的口径\n  （今天同一定义的局部对比在 60 时是 **3.33**，不是 1.10）⇒ **禁止跨会话比数**。\n  ⇒ 本条的【依据改为】「**方向单调 + 60 是饱和拐点**」，**不再引用 1.10**。\n③只动这一维：颗粒几乎不受影响（0.244→0.252），亮部层次也几乎不动（0.241→0.235）。\n④⚠ 本条是**风格层**（反差力度）⇒ 按 §138 三层设计**不随场景变**。"
-  },
-  "glare": {
-    "active": true,
-    "percent": 0.03,
-    "roughness": 0.7,
-    "blur": 0.5
-  },
-  "special": {
-    "film_channel_swap": [
-      0,
-      1,
-      2
-    ],
-    "film_gamma_factor": 0.99,
-    "print_channel_swap": [
-      0,
-      1,
-      2
-    ],
-    "print_gamma_factor": 0.93
-  },
-  "simulation": {
-    "film_stock": "fujifilm_pro_400h",
-    "film_format_mm": 36.0,
-    "camera_lens_blur_um": 0.0,
-    "camera_diffusion_filter_active": false,
-    "camera_diffusion_filter_family": "glimmerglass",
-    "camera_diffusion_filter_strength": 0.25,
-    "camera_diffusion_filter_spatial_scale": 1.0,
-    "camera_diffusion_filter_halo_warmth": 0.0,
-    "camera_diffusion_filter_core_intensity": 1.0,
-    "camera_diffusion_filter_core_size": 1.0,
-    "camera_diffusion_filter_halo_intensity": 1.0,
-    "camera_diffusion_filter_halo_size": 1.0,
-    "camera_diffusion_filter_bloom_intensity": 1.0,
-    "camera_diffusion_filter_bloom_size": 1.0,
-    "exposure_compensation_ev": 0.0,
-    "auto_exposure": true,
-    "auto_exposure_method": "center_weighted",
-    "print_paper": "fujifilm_crystal_archive_typeii",
-    "print_illuminant": "TH-KG3",
-    "print_exposure": 0.44,
-    "print_exposure_compensation": true,
-    "print_y_filter_shift": 8.688,
-    "print_m_filter_shift": 11.559,
-    "diffusion_filter_active": true,
-    "diffusion_filter_family": "glimmerglass",
-    "diffusion_filter_strength": 0.25,
-    "diffusion_filter_spatial_scale": 1.0,
-    "diffusion_filter_halo_warmth": 0.0,
-    "diffusion_filter_core_intensity": 1.0,
-    "diffusion_filter_core_size": 1.0,
-    "diffusion_filter_halo_intensity": 1.0,
-    "diffusion_filter_halo_size": 1.0,
-    "diffusion_filter_bloom_intensity": 1.0,
-    "diffusion_filter_bloom_size": 1.0,
-    "scan_lens_blur": 0.25,
-    "scan_white_correction": false,
-    "scan_white_level": 0.98,
-    "scan_black_correction": true,
-    "scan_black_level": 0.065,
-    "scan_unsharp_mask": [
-      0.3,
-      0.3
-    ],
-    "output_color_space": "sRGB",
-    "saving_color_space": "sRGB",
-    "saving_cctf_encoding": true,
-    "auto_preview": true,
-    "scan_film": false,
-    "_note_unsharp_back": "★★★ 09-29：1.5/2.0 → **0.3/0.3（回原值）**。SV：「锐化太狠了，要重新考虑」。为什么退：**「局部对比」的正解是 couplers 的空间扩散**（README 明说「让 couplers 扩散 ⇒ 提高局部对比和感知锐度」）—— 实测扩散 10→60 把局部对比从 1.01 拉到 **1.10（正中靶）**。⇒ 锐化是【补】（数字）、couplers 是【治】（物理）；两个都开就过火。⚠ 要再调就调 `couplers.diffusion_size_um`，别再靠锐化。"
-  },
-  "display": {
-    "use_display_transform": true,
-    "gray_18_canvas": true,
-    "white_padding": 0.03,
-    "preview_max_size": 1200,
-    "output_interpolation": "spline36"
-  }
+ "_note_neutral_migration": "★ 10-08 迁移（底座换源，画面不变）：中性滤片从\"硬编码 0.3.2 常数\"（Y 51.423 / M 50.713）改成 **引擎数据库按 (相纸, 光源, 底片) 查出的值**（`config.PRESET_NEUTRAL_FROM_DB=True`、`PRESET_FILTER_M_TRIM=0`）。因为 `neutral` 与 `shift` 是**同一根 CC 轴**，这里把本条的 shift 重表成「旧总量 − 新中性」⇒ **总滤片量逐条不变，画面不变**（实测 18% 灰 Δa*/Δb*/ΔL = 0.00）。旧 shift：m=1.0 / y=8.0 → 新：m=11.559 / y=8.688。⚠ 别把新 shift 当成\"风格值\"去调——它是\"扣掉正确中性后的余量\"，真正的冷暖身份要看**总量**（= 中性 + shift）。",
+ "input_image": {
+  "upscale_factor": 1.0,
+  "crop": false,
+  "crop_center": [
+   0.5,
+   0.5
+  ],
+  "crop_size": [
+   0.1,
+   0.1
+  ],
+  "input_color_space": "ProPhoto RGB",
+  "apply_cctf_decoding": false,
+  "spectral_upsampling_method": "hanatos2025",
+  "apply_hanatos2025_adaptation_window": true,
+  "apply_hanatos2025_adaptation_surface": false,
+  "spectral_gaussian_blur": 0.0,
+  "filter_uv": [
+   0.0,
+   410.0,
+   8.0
+  ],
+  "filter_ir": [
+   0.0,
+   675.0,
+   15.0
+  ]
+ },
+ "load_raw": {
+  "_note_load_raw": "★ 09-29 裁定：**这一段在本链上是死键，一个字节都不读**。`presets._apply()` 只读 input_image / grain / preflashing / halation / couplers / glare / special / simulation；引擎里读 `white_balance` / `temperature` / `tint` / `lens_correction` 的地方是 `spektrafilm/utils/raw_file_processor.py`（处理**真实 RAW 文件**那条路），而我们喂进去的是**已经解码好的场景线性** ⇒ 这四个键在预设里**改了没反应**（本项目第 4 类坑「假旋钮」）。而且 10 条预设里它们**全是同一组值**（custom / 5200 / 1.0 / false）⇒ 连信息量都没有。★★ **整张冷暖基准的真实落点 = 印相端校色滤片**：`simulation.print_y_filter_shift`（冷暖主旋钮，Y 越大越暖）/ `simulation.print_m_filter_shift`（绿↔品红）。负片→印相体系里「白平衡」**本来就是印相滤片**。现在 10 条预设**各不相同**（Y 3~13、M −4~+2）⇒ 逐预设的冷暖基准**早就在跑**，⇒ 这一档**不需要另开**；要调冷暖请改那两个，**别改这里**。",
+  "white_balance": "custom",
+  "temperature": 5200.0,
+  "tint": 1.0,
+  "lens_correction": false
+ },
+ "grain": {
+  "active": true,
+  "sublayers_active": false,
+  "particle_area_um2": 1.2,
+  "particle_scale": [
+   1.0,
+   1.0,
+   1.0
+  ],
+  "particle_scale_layers": [
+   2.5,
+   1.0,
+   0.5
+  ],
+  "density_min": [
+   0.07,
+   0.08,
+   0.12
+  ],
+  "uniformity": [
+   0.97,
+   0.97,
+   0.99
+  ],
+  "blur": 0.65,
+  "blur_dye_clouds_um": 1.0,
+  "micro_structure": [
+   0.2,
+   30
+  ],
+  "_note_grain_size": "★★★ 09-30：**修 bug + 定档**，并**按 SV 的目检回退过头的那一版**。① **修 bug**：`presets._apply` 一直写 `g.agx_particle_area_um2`（0.3.2 的旧名字），而 vendor 0.3.4 的 `model/grain.py` 读的是 `grain.particle_area_um2` ⇒ 我们设的值**从来没生效过**（vendor 实读 schema 默认 0.2）；`particle_scale` / `scale_layers` 同病。铁证：按两个名字各 override 同一个值，带 `agx_` 那档和基线**一个数都不差**。自检当初验的也是带前缀那个名字 ⇒ 一起绿（\"验错对象\"）。② **定档**：`particle_area_um2 = 1.2`、`particle_scale = [1,1,1]`（单色，SV 选的观感）。★ **1.2 的出处 = 作者自己的示例** `spektrafilm/examples/run_simulation.py:38`（GUI / schema 开箱默认 0.2）。⚠ **曾经定过 48，被 SV 一眼否掉**：48 是为了在 1600 长边下把\"微反差\"顶到鹿井中位，但它是作者示例的 **40 倍**，成片颗粒明显过大。⇒ 记下这条教训：**不要为了追一个统计量去堆风格参数**；\"我们比大师平\"该由**约束/补偿层**解决（测光策略 / 印相预闪 / 关印放柔光），不是靠把颗粒调大。见技能 §137、§138。③ `sublayers_active` 仍是 False ⇒ `particle_scale_layers` 不参与（作者示例是 True，待议）。"
+ },
+ "preflashing": {
+  "exposure": 0.0,
+  "y_filter_shift": 0.0,
+  "m_filter_shift": 0.0
+ },
+ "halation": {
+  "active": true,
+  "scatter_amount": 0.9,
+  "scatter_spatial_scale": 1.0,
+  "halation_amount": 1.2,
+  "halation_spatial_scale": 1.0,
+  "boost_ev": 0.0,
+  "protect_ev": 4.0,
+  "boost_range": 0.3,
+  "scatter_core_um": [
+   2.2,
+   2.0,
+   1.6
+  ],
+  "scatter_tail_um": [
+   9.3,
+   9.7,
+   9.1
+  ],
+  "scatter_tail_weight": [
+   78.0,
+   65.0,
+   67.0
+  ],
+  "halation_strength": [
+   1.5,
+   0.5,
+   0.0
+  ],
+  "_note_halation_strength": "★★ 09-29：光晕**幅度**（物理量）40/12/0 → 1.5/0.5/0。依据两处独立出处：① 公开 GUI 滑杆「Halation 幅度 %」tooltip 明写「红通道典型值：**弱 AH 2-8，无 AH 8-25**」，人像提示又写「**R 通道 1.5 = 现代彩色负片的物理值；拍人别超 8，超了脸上高光泛红**」；② 引擎 `_HALATION_PRESETS[(\"still\",\"strong\")]` 给的也正是 1.5/0.5/0（强 AH（现代彩色负片，红通道 1.5））。⇒ 原来的 40 是「完全无抗晕层」上限(25) 的 26.7 倍、人像上限(8) 的 5.0 倍，**一开机就在过火档**。★ `halation_amount`（GUI 滑杆「Halation 强度」，**1.0 = 物理默认**）**保留原作值 1.2 不动** —— 它是**用户风格旋钮**，而 `C200透明` 等预设**唯一**的风格区别就是它。（我先试过把它一起归到 1.0：结果那两条预设变成**逐位相同**、自检当场红 ⇒ 撤回。）⇒ 本条的**总力度 = 卷物理值 × 1.2**。",
+  "halation_first_sigma_um": [
+   65.0,
+   65.0,
+   65.0
+  ],
+  "halation_n_bounces": 3,
+  "halation_bounce_decay": 0.5,
+  "halation_renormalize": true
+ },
+ "couplers": {
+  "active": true,
+  "amount": 0.7,
+  "inhibition_samelayer": 1.0,
+  "inhibition_interlayer": 1.3,
+  "gamma_samelayer_rgb": [
+   0.34,
+   0.32,
+   0.27
+  ],
+  "gamma_interlayer_r_to_gb": [
+   0.35,
+   0.3
+  ],
+  "gamma_interlayer_g_to_rb": [
+   0.15,
+   0.35
+  ],
+  "gamma_interlayer_b_to_rg": [
+   0.17,
+   0.23
+  ],
+  "diffusion_size_um": 60.0,
+  "_note_diffusion": "★★★ 09-30 **重测后保留 60，但依据换掉**（值不动）。\n①**方向是对的**（DSCF1289，长边 2048 = `cfg.MAX_SIDE`，单调）：\n  扩散 0 → 2 → 10 → 20 → 40 → 60 → 80：\n   局部对比  1.99 → 2.08 → 2.19 → 2.48 → 3.06 → **3.33** → 3.41\n   边缘锐度  11.9 → 12.4 → 12.8 → 13.9 → 15.8 → **17.0** → 17.6（最陡 1% 边的梯度中位）\n   微反差    0.435→ 0.442→ 0.466→ 0.522→ 0.592→ **0.603**→ 0.603\n  ⇒ 三个量**全部随扩散单调上升**，符合 README「couplers 空间扩散 ⇒ 提高局部对比和感知锐度」。\n②**60 落在收益递减的拐点**：40→60 局部对比 +8.7%，60→80 只 +2.4%；\n  **微反差在 60 与 80 完全相同（0.603）⇒ 已饱和** ⇒ 60 是合理取值，加到 80 没意义。\n⚠ **旧的「60 正中靶 1.10」这个数无法复核**：那是另一次会话另一把尺子的口径\n  （今天同一定义的局部对比在 60 时是 **3.33**，不是 1.10）⇒ **禁止跨会话比数**。\n  ⇒ 本条的【依据改为】「**方向单调 + 60 是饱和拐点**」，**不再引用 1.10**。\n③只动这一维：颗粒几乎不受影响（0.244→0.252），亮部层次也几乎不动（0.241→0.235）。\n④⚠ 本条是**风格层**（反差力度）⇒ 按 §138 三层设计**不随场景变**。"
+ },
+ "glare": {
+  "active": true,
+  "percent": 0.03,
+  "roughness": 0.7,
+  "blur": 0.5
+ },
+ "special": {
+  "film_channel_swap": [
+   0,
+   1,
+   2
+  ],
+  "film_gamma_factor": 0.99,
+  "print_channel_swap": [
+   0,
+   1,
+   2
+  ],
+  "print_gamma_factor": 0.93
+ },
+ "simulation": {
+  "film_stock": "fujifilm_pro_400h",
+  "film_format_mm": 36.0,
+  "camera_lens_blur_um": 0.0,
+  "camera_diffusion_filter_active": false,
+  "camera_diffusion_filter_family": "glimmerglass",
+  "camera_diffusion_filter_strength": 0.25,
+  "camera_diffusion_filter_spatial_scale": 1.0,
+  "camera_diffusion_filter_halo_warmth": 0.0,
+  "camera_diffusion_filter_core_intensity": 1.0,
+  "camera_diffusion_filter_core_size": 1.0,
+  "camera_diffusion_filter_halo_intensity": 1.0,
+  "camera_diffusion_filter_halo_size": 1.0,
+  "camera_diffusion_filter_bloom_intensity": 1.0,
+  "camera_diffusion_filter_bloom_size": 1.0,
+  "exposure_compensation_ev": 0.0,
+  "auto_exposure": true,
+  "auto_exposure_method": "center_weighted",
+  "print_paper": "fujifilm_crystal_archive_typeii",
+  "print_illuminant": "TH-KG3",
+  "print_exposure": 0.44,
+  "print_exposure_compensation": true,
+  "print_y_filter_shift": 8.688,
+  "print_m_filter_shift": 11.559,
+  "diffusion_filter_active": true,
+  "diffusion_filter_family": "glimmerglass",
+  "diffusion_filter_strength": 0.25,
+  "diffusion_filter_spatial_scale": 1.0,
+  "diffusion_filter_halo_warmth": 0.0,
+  "diffusion_filter_core_intensity": 1.0,
+  "diffusion_filter_core_size": 1.0,
+  "diffusion_filter_halo_intensity": 1.0,
+  "diffusion_filter_halo_size": 1.0,
+  "diffusion_filter_bloom_intensity": 1.0,
+  "diffusion_filter_bloom_size": 1.0,
+  "scan_lens_blur": 0.25,
+  "scan_white_correction": false,
+  "scan_white_level": 0.98,
+  "scan_black_correction": true,
+  "scan_black_level": 0.0,
+  "scan_unsharp_mask": [
+   0.3,
+   0.3
+  ],
+  "output_color_space": "sRGB",
+  "saving_color_space": "sRGB",
+  "saving_cctf_encoding": true,
+  "auto_preview": true,
+  "scan_film": false,
+  "_note_unsharp_back": "★★★ 09-29：1.5/2.0 → **0.3/0.3（回原值）**。SV：「锐化太狠了，要重新考虑」。为什么退：**「局部对比」的正解是 couplers 的空间扩散**（README 明说「让 couplers 扩散 ⇒ 提高局部对比和感知锐度」）—— 实测扩散 10→60 把局部对比从 1.01 拉到 **1.10（正中靶）**。⇒ 锐化是【补】（数字）、couplers 是【治】（物理）；两个都开就过火。⚠ 要再调就调 `couplers.diffusion_size_um`，别再靠锐化。",
+  "_note_scan_black": "★★★★ 10-09：**`scan_black_level` 0.045 → 0.0**（开闸，让最深的暗部真的贴到黑）。缘由：出图链路 `color_reference.black_white_xyz_correction` 对 Y 做 `clip(m·y+q,0,1)`，把\"参考黑\"映射到 `black_level`；0.045 ⇒ 参考黑落在 sRGB 0.045（≈11.5/255）⇒ 只有比相纸最黑还黑的像素才到得了 0 ⇒ 表现就是\"暗部够不着黑\"。★ 两个 correction 开关都是 True（链条通电），所以这个值真的在用。12 张实测（我们那批，长边 1440，成片口径）：L1 均 18.6→9.4（−9.2）· L5 均 23.2→15.7（−7.5）· **L50 均只 −0.3**（整张几乎不动）· 高光裁 均 +0.002%（不变）· 阴影裁 均 0.111%→0.758%（12/12 有，最大 5.88% = 一张黑衣服夜景）。判据 = L1 变化 ÷ L50 变化 ≈ **30 倍** ⇒ **纯端点动作**，不是\"把整张挪暗\"。⚠ 注意 `scan_white_level` 不动；⚠ 曾试过同时抬 `density_curves_morph` ⇒ L50 掉 11 格（整张压暗）= 过头，不采用。"
+ },
+ "display": {
+  "use_display_transform": true,
+  "gray_18_canvas": true,
+  "white_padding": 0.03,
+  "preview_max_size": 1200,
+  "output_interpolation": "spline36"
+ }
 }
