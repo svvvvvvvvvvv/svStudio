@@ -38,6 +38,44 @@ def _pct(a, q):
     return float(np.percentile(a, q))
 
 
+def chroma_blur(rgb, cfg):
+    r"""★★★ 10-09：**扫描色度模糊** —— 补上真实胶片扫描的"色度被模糊"这一层。
+
+    ## 为什么（用户点破「没有质感」，尺子库量出来的第一条）
+    新增的尺子「**色度/亮度 锐度比**」（高通 σ=1.5px 的色度能量 ÷ 亮度能量）：
+        鹿井大师 **0.60** ｜ 我们 **1.03** ｜ 用户的 LR **0.94** ｜ 相机直出 0.71
+    ⇒ **我们的色度比大师锐 70%。**
+    真实扫描链里色度分辨率天然低于亮度（CCD 的色度采样、扫描软件的色度降噪、
+    冲印机的色度处理）⇒ **"胶片质感"里包含"色度更柔"这一层，而我们完全没有。**
+
+    ## 做法
+    在 **CIELAB 的 a*/b* 上**做高斯模糊（亮度 L* 不动）⇒ 只动色度、不动细节。
+    ★ σ 用**画面宽度的比例**表示（`CHROMA_BLUR_W`），与分辨率无关 ——
+      否则换渲染尺寸数值就变了（这是本项目 `lc` 已经吃过一次亏的地方）。
+
+    默认关（`CHROMA_BLUR_ENABLE=False`）⇒ 对现有行为逐位无影响。
+    """
+    if not bool(getattr(cfg, 'CHROMA_BLUR_ENABLE', False)):
+        return rgb
+    w_rel = float(getattr(cfg, 'CHROMA_BLUR_W', 0.004) or 0.0)
+    if w_rel <= 0.0:
+        return rgb
+    import sys as _sys
+    _here = _sys.modules[__name__].__package__
+    _color = __import__(_here + '.color', fromlist=['x'])
+    a = np.asarray(rgb, np.float64)
+    lab = _color.to_lab(np.clip(a, 0.0, 1.0))
+    try:
+        from scipy.ndimage import gaussian_filter
+    except Exception:                                                      # noqa: BLE001
+        return rgb
+    sig = max(0.3, w_rel * a.shape[1])
+    lab[..., 1] = gaussian_filter(lab[..., 1], sig, mode='nearest')
+    lab[..., 2] = gaussian_filter(lab[..., 2], sig, mode='nearest')
+    out = _color.from_lab(np.clip(lab, [0.0, -128.0, -128.0], [100.0, 127.0, 127.0]))
+    return np.clip(out, 0.0, 1.0)
+
+
 def auto_levels(rgb, cfg, mask=None):
     """每通道自动色阶（模拟扫描仪的负片转正）。`rgb` 为 0~1 display-referred。
 

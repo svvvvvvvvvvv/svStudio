@@ -477,7 +477,24 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=
     #   但只要 `overrides` 一上就立刻变成真竞态）。
     #   ★ 粒度为**每个预设一把锁**：不同预设仍可并行，只有同名预设串行（本来就该串行，它们共用一个对象）。
     with _lock_of(name):
-        return _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides)
+        return _post_scan(
+        _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides), cfg)
+
+
+def _post_scan(out, cfg):
+    r"""★ 10-09：**扫描段后处理**（在颜色层之前、引擎之后）。
+
+    目前只有一件：`scanfx.chroma_blur` —— **扫描色度模糊**。
+    为什么放在这里（而不是让调用方自己做）：**保证所有调用方一致** ——
+    尺子库实测（747 张大师，统一口径）「色度/亮度锐度比」：大师 **0.60**、我们 **0.99**
+    ⇒ 真实扫描链的色度分辨率天然低于亮度，**这一层属于"扫描"，不属于调用方**。
+    默认关（`CHROMA_BLUR_ENABLE=False`）⇒ 对既有行为**逐位无影响**。
+    """
+    try:
+        from . import scanfx
+        return scanfx.chroma_blur(out, cfg)
+    except Exception:                                                      # noqa: BLE001
+        return out
 
 
 def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
