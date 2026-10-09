@@ -165,13 +165,73 @@ def scene_engine(scene, stock=None, cfg=None):
     #   为什么要有：`"<轴>=*"` 只有在**该轴判出了值**时才命中（轴为 None 时整轴跳过）。
     #   而现实里"判不出光位"很常见（画面里没主体/人检不出）⇒ 那些片会一条都不命中。
     #   ⇒ `"*"` 是**无条件**的兜底（所有片都吃），后面的按轴覆盖再叠上去。
+    # ---- ★★ 10-09：`{"by": <程度量>, "delta": Δ}` —— **连续调制**（替代"档位"驱动动作）----
+    #   为什么要它（§194 体检的结论）：`{"add": Δ}` 是**阶跃**（命中就加、不命中不加），
+    #   而"离散档 + 动态参数"必然出问题 —— 判据一改（必然会发生），同一组片就**整档跳**
+    #   （10-09 实测：把"逆光族"从 154 张改到 98 张 ⇒ 那 56 张的 gamma 会整档跳 0.2），
+    #   与「一组片像同一天/同一卷」直接冲突。
+    #   ⇒ `{"by": "deg_x", "delta": Δ}` 的语义 = **在基线之上再加 Δ × 程度量**（程度量 0~1）。
+    #   ★ 三条性质：① **连续**（没有台阶）；② **耐判据换代**（量只平滑移动，不会整批换人）；
+    #     ③ **弃权 = 安全侧**（程度量拿不到 ⇒ 乘 0 ⇒ **什么都不加**，绝不瞎加）。
+    #   ⚠ 程度量来自 `scene.classify()` 的 `raw['light']`（`scene.DEGREES`）；**不是**轴档位。
+    #   ⚠ `{"add": Δ}` 的老契约**一字不动**（基准必须已在前面的层里）。
+    def _deg(_name):
+        try:
+            return float(((scene.get('raw') or {}).get('light') or {}).get(_name) or 0.0)
+        except Exception:                                  # noqa: BLE001
+            return 0.0
+
+    _tok, _axes, _add, _bykeys = None, None, {}, set()
+    try:
+        from . import scene as _S
+        _tok, _axes = _S.token, _S.AXES
+    except Exception:                                      # noqa: BLE001
+        _tok, _axes = (lambda a, v: str(v)), tuple(scene.keys())
+
+    def _acc(_d, _v):
+        r"""累加 Δ：**标量配标量、列表配列表**（形状不一致 ⇒ **当场抛**）。
+
+        ★ 为什么必须形状一致：光晕幅度 `film_render.halation.halation_strength` 是
+          **每通道一个值**（引擎里是 0~1 的元组，如 `(0.08, 0.02, 0.0)`）。给它加一个**标量**
+          会**默默改掉 R:G:B 比例**（10-09 自检第一版就写了标量 Δ，被自己的断言抓住了）——
+          这正是"看着生效了、其实改的是另一件事"。
+        """
+        if _v is None:
+            return _d                      # 第一次累加（`_d` 的形状就是基准形状）
+        if _d is None:
+            return _v
+        if isinstance(_d, list) or isinstance(_v, list):
+            if not (isinstance(_d, list) and isinstance(_v, list) and len(_d) == len(_v)):
+                raise TypeError('{"add"/"by"} 的 Δ 与已累加的 Δ 形状不一致：%r vs %r'
+                                % (_d, _v))
+            return [a + b for a, b in zip(_d, _v)]
+        return float(_d) + float(_v)
+
+    def _absorb(_blk):
+        """吃掉一层：`{"add":Δ}` / `{"by":deg,"delta":Δ}` ⇒ 累进 `_add`；其余 ⇒ 直接覆盖。"""
+        for _kk, _vv in _blk.items():
+            if not isinstance(_vv, dict):
+                out[_kk] = _vv
+            elif len(_vv) == 1 and 'add' in _vv:
+                _add[_kk] = _acc(_vv['add'], _add.get(_kk))
+            elif len(_vv) == 2 and 'by' in _vv and 'delta' in _vv:
+                _dd = _vv['delta']
+                if isinstance(_dd, list):
+                    _dd = [float(x) * _deg(_vv['by']) for x in _dd]
+                else:
+                    _dd = float(_dd) * _deg(_vv['by'])
+                _add[_kk] = _acc(_dd, _add.get(_kk))
+                _bykeys.add(_kk)
+            else:
+                out[_kk] = _vv
+    # --- ① 全局 `"*"`（无条件生效的兜底）---
     _base = ov.get('*')
     if isinstance(_base, dict):
-        out.update(_base)
+        _absorb(_base)
     # --- ② 按预设的基值 ---
     _st = (d.get('_stock_engine') or {}).get(stock) if stock else None
     if isinstance(_st, dict):
-        out.update(_st)
+        _absorb(_st)
     # --- ③ 按场景轴的覆盖 ---
     #   ★★ 10-08：**新增可叠加的 `{"add": Δ}` 约定**。
     #   为什么需要（实测发现的机制缺口）：原来这里是 `out.update(blk)` ⇒
@@ -185,32 +245,44 @@ def scene_engine(scene, stock=None, cfg=None):
     #   ⚠ **向后兼容**：现有数据里没有任何 `{"add": ...}` ⇒ 行为与改之前逐位相同
     #     （`{"mul": k}` 是另一套语义："按预设基值乘"，在下面单独解析，不受影响）。
     #   ⚠ 加法只对**数值型**基准生效；基准不是数、或该键此前没人设过 ⇒ 忽略并记进报告。
-    _tok, _axes, _add = None, None, {}
-    try:
-        from . import scene as _S
-        _tok, _axes = _S.token, _S.AXES
-    except Exception:                                      # noqa: BLE001
-        _tok, _axes = (lambda a, v: str(v)), tuple(scene.keys())
+    #   （`_tok` / `_axes` / `_add` / `_bykeys` 与 `_absorb()` 已在上面备好。）
     for _ax in _axes:
         _v = scene.get(_ax)
         if _v is None:
             continue
         for _k in ('%s=%s' % (_ax, _tok(_ax, _v)), '%s=*' % _ax):
             _blk = ov.get(_k)
-            if not isinstance(_blk, dict):
-                continue
-            for _kk, _vv in _blk.items():
-                if isinstance(_vv, dict) and 'add' in _vv and len(_vv) == 1:
-                    _add[_kk] = _add.get(_kk, 0.0) + float(_vv['add'])
-                else:
-                    out[_kk] = _vv
-    for _kk, _d in _add.items():
-        _cur = out.get(_kk)
-        if isinstance(_cur, (int, float)) and not isinstance(_cur, bool):
-            out[_kk] = float(_cur) + _d
-        # 基准不是数值 ⇒ 说明该键此前没人设过（写错了）⇒ **忽略**。
-        # ⚠ 这里**不动调用方的 `scene` 字典**（那会很无礼）；改成由 `selftest` 静态校验：
-        #   `targets.json` 里每个 `{"add": ...}` 的键**必须**在 `"*"` 层里有数值基准。
+            if isinstance(_blk, dict):
+                _absorb(_blk)
+    # ---- 累加：`{"add"}` 的基准必须已在前面的层里（**老契约不变**）；
+    #      `{"by"}` 允许落到**预设基线**（典型用法就是"在预设幅度上调"，见下）----
+    if _add:
+        _P = None
+        for _kk, _d in _add.items():
+            _cur = out.get(_kk)
+            if _cur is None and _kk in _bykeys and stock:
+                # ★ 10-09：`{"by": …}` 调的多半是**预设里的那个基线**（如光晕幅度 `halation.halation_strength`），
+                #   它不在 `out` 里 ⇒ 必须能取到，否则这条调制会"看着写了却不生效"。
+                #   ⚠ 路径走不通 ⇒ **当场抛**（写错了要立刻知道，别静默）
+                from . import presets as _PR
+                if _P is None:
+                    if cfg is None:
+                        from . import config as cfg
+                    _P = _PR._params_for(stock, cfg)
+                _cur = getattr(*_PR._walk(_P, _kk))
+            if isinstance(_cur, (int, float)) and not isinstance(_cur, bool):
+                if not isinstance(_d, (int, float)) or isinstance(_d, bool):
+                    raise TypeError('`%s` 的基准是数、Δ 却是 %r（形状要一致）' % (_kk, _d))
+                out[_kk] = float(_cur) + float(_d)
+            elif isinstance(_cur, (list, tuple)):
+                # ★ 光晕这类是**每通道一个值**的列表（R/G/B 各一个幅度）⇒ **逐通道**加
+                if not (isinstance(_d, list) and len(_d) == len(_cur)):
+                    raise TypeError('`%s` 的基准长 %d、Δ 却是 %r（要逐通道给）'
+                                    % (_kk, len(_cur), _d))
+                out[_kk] = [float(x) + float(y) for x, y in zip(_cur, _d)]
+            # 基准不是数值/列表 ⇒ 说明该键此前没人设过（写错了）⇒ **忽略**（老契约）。
+            # ⚠ 这里**不动调用方的 `scene` 字典**（那会很无礼）；改成由 `selftest` 静态校验：
+            #   `targets.json` 里每个 `{"add": ...}` 的键**必须**在 `"*"` 层里有数值基准。
     # ---- ★ 解析 `{"mul": k}`（乘性系数 → 绝对量）----
     if stock and any(isinstance(v, dict) and 'mul' in v for v in out.values()):
         from . import presets as _PR

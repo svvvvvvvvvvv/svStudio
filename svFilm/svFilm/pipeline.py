@@ -137,9 +137,9 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
     #   ⚠ 拿不到（模型 / 依赖缺）⇒ `None` ⇒ 光位**弃权**（写 `-`），**其余三根轴照常、不崩**。
     try:
         from . import person as _per
-        _pz = _per.person(s.disp)
+        _pz, _pface = _per.person_face(s.disp)
     except Exception:                                        # noqa: BLE001
-        _pz = None
+        _pz, _pface = None, None
 
     # ---- ★★★ 场景判据（09-26，「按场景分参数」的入口）----
     #   · 场景 → **引擎参数覆盖**（`_scene_engine`）。当前只有一条**全局 `"*"`** →
@@ -152,7 +152,7 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
     #      「引擎 overrides / 靶」**从来没进过缓存键**（"拧了没反应"第 4 类，静默）。
     #      现在把它挪到缓存键之前，键里那两项才真的生效。
     try:
-        _sc = scene.classify(s.disp, cfg, lin=s.lin, person=_pz)
+        _sc = scene.classify(s.disp, cfg, lin=s.lin, person=_pz, face=_pface)
     except Exception:                                        # noqa: BLE001
         _sc = None
 

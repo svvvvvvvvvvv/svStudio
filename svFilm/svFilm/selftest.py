@@ -339,6 +339,7 @@ def _main():
         ('★ 「人在哪」+ 光位：**只用低开销那条** / 判不出要弃权', t_person_light),
         ('★★★★★ 10-08 评审防复发：接线断了必须有人喊（缓存键/透传/报告同形）', t_review_1008),
         ('★★★★★ 每个 GRADE_* 键都要真能改变输出（扰动测试，防"拧了没反应"）', t_knob_effect),
+        ('★★★★★ 连续调制 `{"by":…}` + **光位不驱动影调**（10-09）', t_by_modulation),
     ]
     for title, fn in groups:
         print('[%s]' % title)
@@ -790,6 +791,105 @@ def t_targets():
               __import__('svFilm.grade', fromlist=['x']).apply).parameters)
 
 
+
+
+def t_by_modulation():
+    r"""★★★ 10-09 新增：**连续调制** `{"by": <程度量>, "delta": Δ}` + **"光位不驱动影调"**这条设计约束。
+
+    这一组守两件性质相反的事：
+      ① **新机制对**：`{"by": d, "delta": Δ}` 必须**连续**（d=0/0.25/0.5/1 线性）、
+         必须能落到**预设基线**（典型用法就是调光晕幅度这种"预设里的值"）、
+         且**拿不到程度量 ⇒ 什么都不加**（弃权 = 安全侧，这条最关键）。
+      ② **旧毛病不许回来**：`_scene_engine` 里 **`back=` 轴块不许再出现影调参数**
+         （`print_render.density_curves_morph.*`）。为什么钉这条 —— 10-09 体检结论：
+         "离散档 + 动态参数 = 阶跃"，而且它解释力几乎全来自 `E_bg` **同义反复**
+         （φ 见 `效果debug/2026-10-09/1009_光位分组体系_体检与设计.html` 与技能 §194）。
+         ⚠ 这条断言是**故意的**：以后谁想再把光位接回影调，会当场红，逼他先看那段证据。
+    """
+    from . import config as _C
+    from . import presets as _PR
+    from . import scene as _S
+    from . import targets
+
+    d = targets.load()
+    se = d.get('_scene_engine') or {}
+
+    # ---- ① 静态：`{"by": …}` 的名字必须是 `scene.DEGREES` 里的 ----
+    bad_name = []
+    for k, blk in se.items():
+        if k.startswith('_') or not isinstance(blk, dict):
+            continue
+        for kk, vv in blk.items():
+            if isinstance(vv, dict) and 'by' in vv and vv.get('by') not in _S.DEGREES:
+                bad_name.append('%s→%s' % (k, vv.get('by')))
+    check('★★ `targets.json` 里每个 `{"by": …}` 用的都是 `scene.DEGREES` 里的名字',
+          not bad_name, '非法: %s' % (bad_name or '无'),
+          '名字写错 ⇒ `_deg()` 恒返回 0 ⇒ 调制**静默失效**（这正是本项目最怕的那类坑）')
+
+    # ---- ② ★★★ 设计约束：光位不许驱动影调 ----
+    off = []
+    for k, blk in se.items():
+        if not (isinstance(k, str) and k.startswith('back=') and isinstance(blk, dict)):
+            continue
+        off += ['%s.%s' % (k, kk) for kk in blk if 'density_curves_morph' in kk]
+    check('★★★ `back=`（光位）轴块里**没有任何影调参数**（"光位不驱动影调"）',
+          not off, '命中: %s' % (off or '无'),
+          '光位→影调 已被证伪（同义反复 + 阶跃，§194）⇒ 要加回来先读那段证据')
+
+    # ---- ③ 机制：注入一条 `{"by": ...}`（调**预设基线**、**逐通道** Δ），跑完还原 ----
+    #   ⚠ 两个坑都是这条自检自己抓出来的：
+    #     ① `back=*` 只在 **`back` 判出来**时命中（`_v is None ⇒ continue`）⇒
+    #        **要"无条件"调制必须写进 `"*"` 层**，不能写 `back=*`；
+    #     ② 光晕幅度在引擎里是 **0~1 的元组**（预设 JSON 的 8/2/0 是 ×100 过的）
+    #        ⇒ Δ 必须**逐通道给列表**，给标量会默默改掉 R:G:B 比例。
+    key = 'film_render.halation.halation_strength'
+    base = list(getattr(*_PR._walk(_PR._params_for('Ultramax400沉褐', _C), key)))
+    delta = [0.04, 0.02, 0.0]
+    star = d.setdefault('_scene_engine', {}).setdefault('*', {})
+    assert key not in star, '预计 `"*"` 层里没有这个键'
+    star[key] = {'by': 'deg_back', 'delta': list(delta)}
+
+    def _run(deg, hit=True):
+        sc = {'back': ('侧光' if hit else None),
+              'raw': {'light': ({'deg_back': deg} if deg is not None else {})}}
+        return targets.scene_engine(sc, stock='Ultramax400沉褐', cfg=_C).get(key)
+
+    try:
+        got = [_run(x) for x in (0.0, 0.25, 0.5, 1.0)]
+        want = [[b + dd * x for b, dd in zip(base, delta)] for x in (0.0, 0.25, 0.5, 1.0)]
+        check('★★★ `{"by": …}` **连续**：d=0/0.25/0.5/1 ⇒ 逐通道 = 基线 + d·Δ',
+              all(all(abs(a - b) < 1e-9 for a, b in zip(g, w)) for g, w in zip(got, want)),
+              '基线 %s ⇒ %s' % (base, [list(g) for g in got]),
+              '不是线性 ⇒ 没做成"连续插值"（还是阶跃）')
+        check('★★ `"*"` 层里的 `{"by": …}` **无条件生效**（光位判不出来时也照调）',
+              _run(1.0, hit=False) == want[-1],
+              'back=None 时 %s（应 %s）' % (_run(1.0, hit=False), want[-1]),
+              '写进 `back=*` 而不是 `"*"` ⇒ 判不出光位的那批片会漏掉（轴为 None 整轴跳过）')
+        check('★★★ 程度量**拿不到** ⇒ 什么都不加（弃权 = 安全侧，绝不瞎加）',
+              _run(None) == base, '%s（应 == 基线 %s）' % (_run(None), base),
+              '缺程度量还硬加 ⇒ 判不出光位时会乱改画面')
+        try:
+            star[key] = {'by': 'deg_back', 'delta': 0.04}      # ← 故意给标量
+            _run(1.0)
+            _bad = False
+        except TypeError:
+            _bad = True
+        check('★★ 基准是"逐通道列表"时给**标量 Δ** ⇒ **当场抛**（不许默默改 R:G:B 比例）',
+              _bad, '标量 Δ 被 %s' % ('拒绝' if _bad else '接受了'),
+              '静默接受 ⇒ 悄悄改掉三通道比例（自检第一版就踩了这个）')
+        # 老契约不许破：`{"add"}` 的基准必须在前面的层里（否则忽略，不半生效）
+        star.pop(key, None)
+        se2 = d['_scene_engine'].setdefault('span=平', {})
+        se2[key] = {'add': list(delta)}
+        try:
+            check('★★ 老契约不变：`{"add"}` 的基准不在前面的层里 ⇒ **忽略**（不半生效）',
+                  targets.scene_engine({'span': '平', 'back': None, 'raw': {}},
+                                       stock='Ultramax400沉褐', cfg=_C).get(key) is None,
+                  '（`{"add"}` 只在基准已存在时生效 —— 与 `{"by"}` 不同，见 docstring）')
+        finally:
+            se2.pop(key, None)
+    finally:
+        star.pop(key, None)
 
 
 def t_grade():

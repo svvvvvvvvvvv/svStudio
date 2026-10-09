@@ -303,6 +303,13 @@ def _light_position(d, L, person, cfg):
 
 LIGHT_LABELS = ('正逆光', '侧逆光', '侧光', '面光/顺平光')
 
+# ★★ 10-09：**给"动作"用的连续程度量**（名字进 `raw['light']`，`targets.scene_engine` 的
+#   `{"by": <名字>, "delta": Δ}` 按它插值）。
+#   ⚠⚠ **离散分级（`back`）与这两条是两回事**：分级只描述"光位"，而**动作**该按量取 ——
+#      §194 体检的结论是"拿离散分组驱动影调"解释力几乎全来自 `E_bg` 同义反复、且是阶跃
+#      ⇒ 动作改用连续量（0~1），既没有阶跃，也不会因判据换代而整批跳。
+DEGREES = ('deg_back', 'deg_side', 'deg_front', 'deg_source', 'deg_reflect')
+
 
 def _ramp(v, hi, lo=0.0):
     r"""把量 `v` 线性映射到 0~1（`lo` 处 0、`hi` 处 1，两端夹住）。
@@ -581,6 +588,25 @@ def light_evidence(d, L, person=None, face=None, cfg=C):
     out['deg_back'], out['deg_side'] = round(deg_back, 3), round(deg_side, 3)
     out['conf'] = round(max(deg_back, deg_side, deg_front), 3)
     out['deg_front'] = round(deg_front, 3)
+
+    # ---- ⑤ ★★ 两条**给"动作"用的连续量**（不是光位分类；不参与上面的分级）----
+    #   · `deg_source` = **画面里有"独立强光源"的程度** ⇒ 光晕 / 柔光 该不该给。
+    #     ★ 两个分量都是本工程**已标定**的口径，不新拍阈值：
+    #       ① `spike / E_span` = **「光源 vs 渐变」**（v3 的立身之本，本身就是相对量 ⇒ 跨域可比）；
+    #       ② 显示域过曝面积占比（TU Delft NAO 的"≥2% 像素被 clip 即开门"那一档）。
+    #     ⚠⚠ **实测（本批素材）：这条通道基本不动** —— `spike/span` 到得了阈值的 **0%**、
+    #       `has_src` **0%**、显示域过曝 我们 **0%** / 鹿井 10%（中位 0.10%）。
+    #       ⇒ **通道建好，数值等有"强光源"的素材再标定**（别拿 0 覆盖率的信号去定幅度）。
+    #   · `deg_reflect` = **反射光 / 底光程度**（画面下亮）——
+    #     人民日报对「脚光」的定义原文就是「**如水面的反光**」；实测鹿井 **19%** ≥0.5、我们 9%。
+    #     ⚠ 目前**只输出、不驱动任何参数**（还没有可靠的动作对应）。
+    _src_rel = spike / max(e_span, 1e-6)
+    out['deg_source'] = round(_soft_or([
+        (1.0, _ramp(_src_rel, 2.0 * float(getattr(cfg, 'SCENE_BACK_SPIKE_REL', 0.30)))),
+        (0.5, _ramp(ev['clip_pct'], float(getattr(cfg, 'SCENE_LIGHT_SRC_CLIP_HI', 3.0)))),
+    ]), 3)
+    out['deg_reflect'] = round(_ramp(e_tb, 2.0 * ts), 3)
+    ev['src_rel'] = round(_src_rel, 3)
 
     # ---- 判决：三个程度量**取最大**（不是"逆光优先"）+ 只在"全弱"时看结构 ----
     #   ★★ 10-09 自检修的第二个缺陷：原先只比较 `deg_back` 与 `deg_side`，
