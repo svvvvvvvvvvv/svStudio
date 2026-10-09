@@ -177,7 +177,10 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
     _z5 = (tg or {}).get('zone_abs')
     _nz = 0
     if isinstance(_z5, (list, tuple)) and len(_z5) == 2 \
-            and min(len(_z5[0]), len(_z5[1])) == 5:
+            and len(_z5[0]) == 5 and len(_z5[1]) == 5:
+        # ⚠ 10-08：必须**两侧都恰好 5 列**。老写法 `min(len(_z5[0]), len(_z5[1])) == 5`
+        #   挡不住"比 5 长"⇒ 写成 6 列时 `tgt` 是 (2,6) 而 `_bands` 是 5，
+        #   后面 `Lam`/`J` 的矩阵运算形状不匹配当场崩（或更糟：广播出静默错解）。
         _nz = 5
         _qs = np.percentile(L, [0.0, 20.0, 40.0, 60.0, 80.0, 100.0])
         _bands = tuple((L >= _qs[_i]) & (L <= _qs[_i + 1]) for _i in range(5))
@@ -304,8 +307,13 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
     _uu = (_rk * _n - 0.5).reshape(L.shape)
     W = [np.clip(1.0 - np.abs(_uu - j), 0.0, 1.0) for j in range(_n)]
 
-    a_base = a + _deep_a * w_deep
-    b_base = b + _deep_b * w_deep
+    # ★★ 10-08：`GRADE_DEEP_A/B` **不进闭环** —— 按本函数 docstring 的语义修。
+    #   老代码把它加进 `a_base/b_base` 再让优化器去落靶，而 `goal = c0 + clip(tgt-c0)`
+    #   在 `|tgt-c0| ≤ _lim` 时**恒等于 `tgt`** ⇒ 拟合出的曲线把它原样抵消。
+    #   实测兑现率只有 **a 20% / b 52%**（最暗带 / 最底 10%），也就是"这根旋钮只兑现两成"。
+    #   现在：**在原点之上拟合，拟合完再叠加**（叠加见函数末尾）。
+    a_base = a
+    b_base = b
     c0 = _cur(a_base, b_base)
     goal = c0 + np.clip(tgt - c0, -_lim, _lim)
 
@@ -334,18 +342,31 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
     #   精确追它会把场推到 12 格；降权后由优化器自己权衡"值不值"。
     # ⚠ 维度必须跟着 `_bands` 走（写死 3 ⇒ 5 带时矩阵形状对不上，当场崩）
     _wz = [1.0, 1.0, _wmid, 1.0, 1.0] if _nz == 5 else [1.0, 1.0, _wmid]
-    assert len(_wz) == len(_bands)
+    # ⚠ 10-08：原来是 `assert`（`-O` 会关掉）⇒ 生产路径上不许有 assert，改显式抛。
+    if len(_wz) != len(_bands):
+        raise ValueError('split 内部维度不一致：_wz=%d _bands=%d' % (len(_wz), len(_bands)))
     Lam = np.diag(_wz)
 
     C = np.zeros((2, _n), np.float64)
     a2, b2 = a_base, b_base
+    # ★★ 10-08：**雅可比复用**（`GRADE_SPLIT_REUSE_JAC`，默认 True）。
+    #   为什么能复用：`_bands` 只由 `L` 决定，而 `split()` **从不改 L** ⇒ 观测量对 (a,b)
+    #   的灵敏度在迭代中几乎不变。而重算一次要 24 次 `_cur`（每次 12 个 median），
+    #   实测占 `split` 墙钟 ~45%。⇒ 第 1 轮算一次并复用；**卡住时自动重算再试一次**。
+    _reuse_jac = bool(getattr(cfg, 'GRADE_SPLIT_REUSE_JAC', True))
+    _J, _j_stale = None, False
     iters, prev = 0, float(np.max(np.abs(goal - c0)))
     for _ in range(max(_IT, 1)):
         iters += 1
         if prev < 0.03:
             break
         r = goal - _cur(a2, b2)
-        J = _jac(a2, b2)
+        if (not _reuse_jac) or _J is None or _j_stale:
+            # ⚠ `not _reuse_jac` 这一项不能省 —— 漏了它 ⇒ "关闭复用"那一档也会走复用，
+            #   于是 A/B 两臂跑的是同一套（实测两臂逐位相同、时间也一样，就是这个 bug）。
+            _J = _jac(a2, b2)
+            _j_stale = False
+        J = _J
         Cnew = C.copy()
         for ch in (0, 1):
             _A = J[ch].T @ Lam @ J[ch] + H
@@ -362,15 +383,25 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
                 if _cr > _rng:
                     Cnew[ch] = Cnew[ch] * (_rng / _cr)
         # ★ 回溯（保单调）：新点残差没变小 ⇒ 步长减半重来
+        # ★ 10-08：老代码在最后一次回溯时**无条件接受**（`or _bt == 3`）⇒ 可能越走越差，
+        #   与"保单调"的注释相反。现在：记住最好的候选；**一点没变好就保留原点并收工**。
         _best = None
         for _bt in range(4):
             _at, _fa = _apply(a_base, Cnew[0])
             _btx, _fb = _apply(b_base, Cnew[1])
             _et = float(np.max(np.abs(goal - _cur(_at, _btx))))
-            if _et <= prev + 1e-6 or _bt == 3:
-                _best = (Cnew, _at, _btx, _et)
+            if _best is None or _et < _best[3]:
+                _best = (Cnew.copy(), _at, _btx, _et)
+            if _et <= prev + 1e-6:
                 break
             Cnew = 0.5 * (C + Cnew)
+        if _best[3] >= prev - 1e-9:          # 没有更好
+            if _reuse_jac and not _j_stale:
+                # ★ 10-08：雅可比可能是**过时**的 ⇒ 重算一次再给一轮机会，
+                #   还不行才收工（这样"复用"不会把本来能收敛的情况挡住）。
+                _j_stale = True
+                continue
+            break
         C, a2, b2, prev = _best
         if _DBG:
             _fa = _apply(a_base, C[0])[1]
@@ -403,6 +434,9 @@ def split(L, a, b, tg, cfg, m):                                # noqa: ARG001
                 # ★ 09-30：这一张**实际用的曲线靶**（没配 `_curves` ⇒ 空，走老的点靶）
                 split_curve_used=_cv_used,
                 curve_x=(round(float(np.median(a)), 2), round(float(np.median(b)), 2)))
+    # ★ 10-08：最暗部推色**在拟合之后**叠加（不进闭环，也不进上面的 `split_resid`）
+    a2 = a2 + _deep_a * w_deep
+    b2 = b2 + _deep_b * w_deep
     return a2, b2, info
 
 
@@ -444,17 +478,56 @@ def mix(L, a, b, tg, cfg, m, person=None):
     _bg = (tg or {}).get('band_gain') or [0.0] * 12
     _bk = (tg or {}).get('band_dk') or [0.0] * 12
     _bd = (tg or {}).get('band_dl') or [0.0] * 12
+    # ★★ 10-08：窗的归一方式（`GRADE_BAND_NORM`）。求和 → 平均（单位分解）。
+    #   见 `config` 同名键的注释：10 带 / ±34° 重叠过多 ⇒ 相邻带会互相抵消
+    #   （实测"给 135° 下 +5.9° 它不动"）。默认 **关**（保持已批准的观感；
+    #   打开必须重新标定 `band_gain`/`band_dk`/`band_dl`）。
+    _bnorm = bool(getattr(cfg, 'GRADE_BAND_NORM', False))
+    # ★★ 10-08：**内容感知的彩度衰减**（`GRADE_BAND_SOFTMAX`，默认关）。
+    #   见 `config` 同名键的长注释。一句话：`band_gain` 是**绝对乘性**的，不看
+    #   "这个色相带本来有多浓" ⇒ 实测黄色游乐场那 5 张（橙带已 23~28，而大师 P75 只有 17.3）
+    #   被推到 38~48，视觉上 = **把黄挤成了橙**。
+    #   规则：**只衰减正增益**，且当该带彩度中位超过「大师 P75」时按比例退到 0。
+    #   ⚠ 只碰正增益 ⇒ "内容本来就浓、而我们的增益本来就是负的"那些带（如绿叶 135°）
+    #     **完全不受影响** —— 这正是不能用"绝对天花板"的原因（试过，会洗掉绿叶）。
+    _soft = bool(getattr(cfg, 'GRADE_BAND_SOFTMAX', False))
+    _smx = list((tg or {}).get('band_soft_max') or [])
+    _sm_hi = float(getattr(cfg, 'GRADE_BAND_SOFTMAX_HI', 1.6) or 1.6)
+    _fade = [1.0] * len(BANDS)
+    if _soft and len(_smx) >= len(BANDS):
+        for _bi, (_c, _h, _k0, _d0) in enumerate(BANDS):
+            _m = np.abs(((H - _c + 180.0) % 360.0) - 180.0) <= _h
+            if int(_m.sum()) < 64:
+                continue
+            _cur = float(np.median(Cc[_m]))
+            _lo = float(_smx[_bi])
+            if _lo > 0.0 and _cur > _lo:
+                _fade[_bi] = max(0.0, 1.0 - (_cur - _lo) / max(_lo * (_sm_hi - 1.0), 1e-6))
+    _wsum = np.zeros_like(Cc)
     for bi, (center, half, k, dL) in enumerate(BANDS):
         # ★ 色相带增益 = 预设自带的那份（按大师量出来的），没有专属靶就是 0
         k = k + float(_bg[bi]) if bi < len(_bg) else k
         k = k + float(_bk[bi]) if bi < len(_bk) else k
         dL = dL + float(_bd[bi]) if bi < len(_bd) else dL
+        if k > 0.0 and _fade[bi] < 1.0:          # ★ 内容感知衰减（只作用于正增益）
+            k = k * _fade[bi]
         w = _band_weight(H, center, half) * live
         kc += w * k
         dl += w * dL
+        _wsum += w
+    if _bnorm:
+        _safe = _wsum > 1e-6
+        _den = np.where(_safe, _wsum, 1.0)
+        kc = np.where(_safe, kc / _den, kc)
+        dl = np.where(_safe, dl / _den, dl)
     # 软归一：多个带重叠时不把增益叠爆
+    # ⚠ 10-08：上限**做成旋钮**（`GRADE_CHROMA_CAP`）。它其实是「单像素彩度增益的硬上限」
+    #   （`over > cap ⇒ ×cap/over`）—— 原来写死 0.45 ⇒ 最多 ×1.45。
+    #   实测：要够到鹿井的 45° 橙带（差 −4.2 格）时，`band_gain` 顶到 +1.2 也上不去，
+    #   因为瓶颈就是这里。想调"彩度能推到多浓"请改这个键，别去硬堆 `band_gain`（会被它压回来）。
+    _cap = float(getattr(cfg, 'GRADE_CHROMA_CAP', 0.45) or 0.0)
     over = np.maximum(kc, 0.0)
-    scale = np.where(over > 0.45, 0.45 / np.maximum(over, 1e-6), 1.0)
+    scale = np.where(over > _cap, _cap / np.maximum(over, 1e-6), 1.0)
     kc = kc * scale
     dl = np.clip(dl * scale, -6.0, 8.0)
 
@@ -495,15 +568,67 @@ def mix(L, a, b, tg, cfg, m, person=None):
                  else getattr(cfg, 'GRADE_SAT', 1.0))
     _m0 = float(np.median(Cc))
     _m1 = float(np.median(newC))
-    newC = newC * (_sat * _m0 / max(_m1, 1e-6)) if _m1 > 1e-6 else newC
+    # ★ 10-08：老写法在近纯灰图（`_m1 ≈ 0`）上**直接跳过 `_sat`** ⇒ "整体彩度总闸"在那张图上
+    #   完全失效（自检只验了"不崩"、没验"生效"）。现在退化时仍乘 `_sat`。
+    newC = newC * (_sat * _m0 / _m1) if _m1 > 1e-6 else newC * _sat
     a2 = a * (newC / nz)
     b2 = b * (newC / nz)
     # 亮度偏移：只作用在有颜色的地方（灰区不动）
     # ★★ 09-30 晚：`_lift` 是"整个人物区域"的提亮 —— **不乘 `live`**（暗衣服也要抬），
     #   但要乘人掩膜（人外一点不动）⇒ 不会出现"人身上半亮半暗"或"背景被一起抬"的割裂。
+    # ⚠ 10-08 说明（**数值未改，只是写明**）：`dl` 在累加时已经乘过一次 `live`
+    #   （上面 `w = _band_weight(H, center, half) * live`），这里又乘一次
+    #   ⇒ 亮度偏移实际是 **`live²`** 窗（彩度 `kc` 只用了 `live` 一次）。
+    #   平方更贴合本段契约「亮度偏移只作用在有颜色的地方（灰区不动）」——
+    #   所以**保留**；但要改回"一次窗"只需把这里的 `live` 换成 `np.sqrt(live)` 或
+    #   在累加处去掉 `live`。别当成没看见。
     L2 = np.clip(L + dl * live + (_lift if _lift is not None else 0.0), 0.0, 100.0)
-    info = dict(c_gain=[(c, (k + (_bg[i] if i < len(_bg) else 0.0)))
-                        for i, (c, _, k, _) in enumerate(BANDS)],
+
+    # ================= ★★ 10-08：色相带**色相**旋转（补上 LR HSL 的第三根轴）=================
+    # 【为什么补】`mix()` 原来只有 LR HSL 三根里的两根：饱和度(`band_gain`/`band_dk`)、
+    #   明亮度(`band_dl`)。**缺"色相"** —— 而"色相"恰恰是修肤色的主刀
+    #   （肤色发红/发紫/发黄全靠它，多篇 LR 教程一致：橙色带色相微调 + 降饱和 + 提明度）。
+    # 【为什么这是"不用识别"的正解】色相带是**按颜色**分的：肤色落在 45° 带（11°~79°）。
+    #   转这一带 = 改肤色色相，而**不需要知道脸在哪**。代价与 LR 完全一样：
+    #   同色的木头/砖墙/橙衣会一起走。这是可接受的（LR 用户天天这么干），
+    #   但要**如实知道**它按色相、不按语义。
+    # ⚠ 与 `zone_abs`（按**亮度**带的 a/b 偏移）分工不同：那根动"该亮度段的整张"，
+    #   这根动"该色相带的那些像素"。修肤色要用**这一根**。
+    _bh = (tg or {}).get('band_hue') or [0.0] * len(BANDS)
+    _hmax = float(getattr(cfg, 'GRADE_HUE_MAX', 8.0) or 0.0)
+    kh = np.zeros_like(Cc)
+    _bh_used = []
+    for _bi, (_c0h, _hh, _kh, _dh) in enumerate(BANDS):
+        _h_i = float(_bh[_bi]) if _bi < len(_bh) else 0.0
+        if abs(_h_i) < 1e-9:
+            continue
+        _w_h = _band_weight(H, _c0h, _hh) * live
+        kh += _w_h * _h_i
+        _bh_used.append(round(_h_i, 2))
+    if bool(np.any(kh)):
+        kh = np.clip(kh, -_hmax, _hmax)
+        _rad = np.radians(kh)
+        _ca, _sa = np.cos(_rad), np.sin(_rad)
+        a3 = a2 * _ca - b2 * _sa
+        b3 = a2 * _sa + b2 * _ca
+        a2, b2 = a3, b3
+    _hue_i = dict(band_hue_used=_bh_used,
+                  band_hue_max=round(float(np.max(np.abs(kh))) if bool(np.any(kh)) else 0.0, 3),
+                  band_hue_cap=_hmax, band_norm=bool(_bnorm),
+                  band_softmax=bool(_soft), band_fade=[round(float(v), 3) for v in _fade])
+    # ★★ 10-08：`c_gain` 口径修正 —— 老报告只给 `k + band_gain`，**漏了 `band_dk`
+    #   （我们自己的修正）与软窗 `live`、软归一 `scale`**，而读者会把它当成"该带实际乘了多少"
+    #   ⇒ 按报告调剂量必然过冲（实测差 2~3 倍）。现在两个量都给：
+    #     `c_gain` = 标称偏移；`c_gain_effective` = **带中心处的实际乘子**。
+    _nom, _eff = [], []
+    for _i, (_c0b, _hb, _kb, _dLb) in enumerate(BANDS):
+        _n_i = _kb + (float(_bg[_i]) if _i < len(_bg) else 0.0) \
+                   + (float(_bk[_i]) if _i < len(_bk) else 0.0)
+        _ctr = np.abs(((H - _c0b + 180.0) % 360.0) - 180.0) <= _hb * 0.35
+        _w_ctr = float(np.median((live * scale)[_ctr])) if bool(_ctr.any()) else 0.0
+        _nom.append((_c0b, round(_n_i, 4)))
+        _eff.append((_c0b, round(_n_i * _w_ctr, 4)))
+    info = dict(c_gain=_nom, c_gain_effective=_eff,
                 sat=_sat, dL_bands=(float(np.min(dl)), float(np.max(dl))),
                 # ★★ 09-30 晚：「人物区域整体提亮」到底生没生效 —— 只在报告里说清楚，
                 #   排查时不用去翻图（`person_on=False` = 没传掩膜 ⇒ 这块**没生效**，弃权）。
@@ -511,7 +636,8 @@ def mix(L, a, b, tg, cfg, m, person=None):
                 person_dl=float(_pdl),
                 person_w=float(getattr(cfg, 'GRADE_PERSON_W', 1.0) or 0.0),
                 person_pct=(round(float((np.asarray(person) > 0.5).mean() * 100), 2)
-                            if person is not None else None))
+                            if person is not None else None),
+                **_hue_i)
     return L2, a2, b2, info
 
 
@@ -540,6 +666,25 @@ def gamut(L, a, b):
 # ---------------------------------------------------------------------------
 # 主入口（**编排，自己不写任何量**）
 # ---------------------------------------------------------------------------
+# ★★ 10-08：整层关闭时的报告**骨架** —— 键必须与"开着"那条路**同形**。
+#   老代码只给 `dict(applied=False)` ⇒ 同一份报告契约两种形状，下游 `.get` 语义会飘
+#   （`service._stats_of` 读 `L50_out` 时一条路拿默认值、另一条拿真值，排查时误导）。
+#   `selftest.t_report_passthrough` 断言两个分支的键集合一致。
+_DISABLED_REPORT = dict(
+    split_model='off', split_iters=0, split_zones=0, split_limit=0.0,
+    split_nodes=0, split_curv=0.0, split_reg=0.0, split_midw=0.0, split_range=0.0,
+    d_sh=(0.0, 0.0), d_hi=(0.0, 0.0), d_mid=(0.0, 0.0), d_deep=(0.0, 0.0),
+    d_zones=[], split_resid=[], split_field=(0.0, 0.0, 0.0, 0.0),
+    split_curve_a=[], split_curve_b=[], split_curve_used=[], zone_curves_used=[],
+    curve_x=None, tgt_sh=[0.0, 0.0], tgt_hi=[0.0, 0.0], tgt_mid=[0.0, 0.0],
+    c_gain=[], c_gain_effective=[], sat=0.0, dL_bands=(0.0, 0.0),
+    person_on=False, person_dl=0.0, person_w=0.0, person_pct=None,
+    # ★ 10-08：色相带旋转（HSL 第三根轴）+ 窗归一 + 内容感知衰减 —— 与 `mix()` 返回的那份**必须同集**
+    band_hue_used=[], band_hue_max=0.0, band_hue_cap=0.0, band_norm=False,
+    band_softmax=False, band_fade=[],
+)
+
+
 def apply(disp, cfg=C, stock=None, scene=None, person=None):
     """在**成片**（显示域）上做 L2 分色 + L3 混色。
 
@@ -552,7 +697,13 @@ def apply(disp, cfg=C, stock=None, scene=None, person=None):
     @returns {(numpy.ndarray, dict)} 出图 + 报告（能自查动了多少）
     """
     if not bool(getattr(cfg, 'GRADE_ENABLE', False)):
-        return np.clip(np.asarray(disp, np.float64), 0.0, 1.0), dict(applied=False)
+        # ★ 10-08：**同形**报告（见 `_DISABLED_REPORT` 的注释）
+        _off = dict(_DISABLED_REPORT)
+        _off.update(applied=False, stock=stock, L50_in=None, L50_out=None,
+                    a_med_in=None, b_med_in=None, target=(0.0, 0.0, 0.0, 0.0),
+                    scene_hits=[], scene=None,
+                    note='GRADE_ENABLE=False：整层关闭，下面是占位同形值')
+        return np.clip(np.asarray(disp, np.float64), 0.0, 1.0), _off
 
     tg = _tgt_of(stock, scene)
     d = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
@@ -570,31 +721,22 @@ def apply(disp, cfg=C, stock=None, scene=None, person=None):
     # ---- 色域映射 ----
     out = gamut(L, a, b)
 
-    info = dict(applied=True,
+    # ★★ 10-08：**改成白名单合并**，不再手抄透传清单。
+    #   为什么：这份清单**已经漏过两次**（`split_resid`/`split_curve_used` 一轮，
+    #   `d_mid`/`d_deep`/`split_curve_a/b` + 5 个 `split_*` 调参这一轮），而每次漏的代价
+    #   都是"白跑一轮真渲染 + 误判旋钮没生效"。现在 `split()`/`mix()` 返回的**每一个**
+    #   自检键都自动出现在报告里 —— 新增键不可能再漏（`selftest` 有断言守着）。
+    #   顺序：先 `i3`（mix）再 `i2`（split）⇒ 同名键以 split 为准；最后覆盖顶层语义键。
+    info = dict(i3)
+    info.update(i2)
+    info.update(applied=True,
+                note=None,          # ★ 10-08：与"关整层"那条路保持**完全同形**（键集合相等）
                 L50_in=m['Lm'], L50_out=float(np.median(color.to_lab(out)[..., 0])),
                 a_med_in=m['am'], b_med_in=m['bm'],
-                d_sh=i2['d_sh'], d_hi=i2['d_hi'], target=(i2['d_sh'][0], i2['d_sh'][1],
-                                                          i2['d_hi'][0], i2['d_hi'][1]),
-                # ★ 09-29 晚：把分色那层的**自检字段**透出来（`apply()` 原先只透 d_sh/d_hi，
-                #   结果外部脚本读 `report['grade']['split_resid']` 永远是 None --
-                #   排查"到底落没落靶"时白跑了一轮真渲染）。纯新增键，不改任何行为。
-                split_model=i2.get('split_model'), split_iters=i2.get('split_iters'),
-                split_resid=i2.get('split_resid'), split_field=i2.get('split_field'),
-                split_limit=i2.get('split_limit'),
-                # ★ 09-30：把「曲线靶」那两项也透出来（`apply()` 是**显式列举**要透传的键，
-                #   新加的键不透 ⇒ 外部脚本读 `report['grade']['split_curve_used']`
-                #   永远是 None，排查"曲线到底生效没有"时白跑一轮真渲染 —— §148 栽过同类坑）。
-                split_curve_used=i2.get('split_curve_used'),
-                curve_x=i2.get('curve_x'),
-                # ★ 09-30 晚：扩带那两个新键 —— `apply()` 是**显式列举**透传的，
-                #   不登记的话外部读 `report['grade']['split_zones']` 永远是 None（§148 同类坑）。
-                split_zones=i2.get('split_zones'), d_zones=i2.get('d_zones'),
-                # ★ 09-30 深夜：五段曲线（`_zone_curves`）实际命中了几条 —— 见 `split_curve_used`
-                zone_curves_used=[k for k in (i2.get('split_curve_used') or []) if k.startswith('z')],
-                tgt_sh=i2.get('tgt_sh'), tgt_hi=i2.get('tgt_hi'), tgt_mid=i2.get('tgt_mid'),
-                c_gain=i3['c_gain'], stock=stock,
-                person_on=i3.get('person_on'), person_dl=i3.get('person_dl'),
-                person_w=i3.get('person_w'), person_pct=i3.get('person_pct'),
+                target=(i2['d_sh'][0], i2['d_sh'][1], i2['d_hi'][0], i2['d_hi'][1]),
+                stock=stock,
+                zone_curves_used=[k for k in (i2.get('split_curve_used') or [])
+                                  if k.startswith('z')],
                 # ★ 09-26：这一张命中了哪几条**场景覆盖**（`targets._scene`）——
                 #   空 = 一条都没命中（= 跟加场景之前逐位相同）。
                 scene_hits=list((tg or {}).get('_scene_hits') or []),

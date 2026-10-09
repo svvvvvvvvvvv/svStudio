@@ -1,4 +1,5 @@
 {
+  "_note_neutral_migration": "★ 10-08 迁移（底座换源，画面不变）：中性滤片从\"硬编码 0.3.2 常数\"（Y 51.423 / M 50.713）改成 **引擎数据库按 (相纸, 光源, 底片) 查出的值**（`config.PRESET_NEUTRAL_FROM_DB=True`、`PRESET_FILTER_M_TRIM=0`）。因为 `neutral` 与 `shift` 是**同一根 CC 轴**，这里把本条的 shift 重表成「旧总量 − 新中性」⇒ **总滤片量逐条不变，画面不变**（实测 18% 灰 Δa*/Δb*/ΔL = 0.00）。旧 shift：m=-1.0 / y=6 → 新：m=6.145 / y=4.889。⚠ 别把新 shift 当成\"风格值\"去调——它是\"扣掉正确中性后的余量\"，真正的冷暖身份要看**总量**（= 中性 + shift）。",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -177,8 +178,8 @@
     "print_illuminant": "TH-KG3",
     "print_exposure": 0.44,
     "print_exposure_compensation": true,
-    "print_y_filter_shift": 6,
-    "print_m_filter_shift": -1.0,
+    "print_y_filter_shift": 4.889,
+    "print_m_filter_shift": 6.145,
     "diffusion_filter_active": true,
     "diffusion_filter_family": "pro_mist",
     "diffusion_filter_strength": 0.25,

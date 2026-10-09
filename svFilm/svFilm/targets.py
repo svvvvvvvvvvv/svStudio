@@ -173,6 +173,19 @@ def scene_engine(scene, stock=None, cfg=None):
     if isinstance(_st, dict):
         out.update(_st)
     # --- ③ 按场景轴的覆盖 ---
+    #   ★★ 10-08：**新增可叠加的 `{"add": Δ}` 约定**。
+    #   为什么需要（实测发现的机制缺口）：原来这里是 `out.update(blk)` ⇒
+    #     **后匹配的轴赢，不是叠加**。而 `scene.AXES` 顺序是 `exp|span|back|overwhite`
+    #     ⇒ `back` 会盖掉 `span=平`。
+    #   而实测（用户自己 45 张）：`span=平` 与 `back=逆光` 是**两个独立且效果相加**的因子 ——
+    #     `正逆光+平` 跨度 69.77（缺 −11.9）· `正逆光+正常` 74.62 · `侧逆光+平` 74.57 ·
+    #     `顺平光+正常` 83.65 ⇒ 组内单调，两个因子都要补，**盖掉就少补一个**。
+    #   ⇒ 用法：`{"print_render.density_curves_morph.gamma_factor": {"add": 0.07}}`
+    #     语义 = "在**前面所有层（含 `*` 与更早的轴）算出的值**之上再加 0.07"。
+    #   ⚠ **向后兼容**：现有数据里没有任何 `{"add": ...}` ⇒ 行为与改之前逐位相同
+    #     （`{"mul": k}` 是另一套语义："按预设基值乘"，在下面单独解析，不受影响）。
+    #   ⚠ 加法只对**数值型**基准生效；基准不是数、或该键此前没人设过 ⇒ 忽略并记进报告。
+    _tok, _axes, _add = None, None, {}
     try:
         from . import scene as _S
         _tok, _axes = _S.token, _S.AXES
@@ -184,8 +197,20 @@ def scene_engine(scene, stock=None, cfg=None):
             continue
         for _k in ('%s=%s' % (_ax, _tok(_ax, _v)), '%s=*' % _ax):
             _blk = ov.get(_k)
-            if isinstance(_blk, dict):
-                out.update(_blk)
+            if not isinstance(_blk, dict):
+                continue
+            for _kk, _vv in _blk.items():
+                if isinstance(_vv, dict) and 'add' in _vv and len(_vv) == 1:
+                    _add[_kk] = _add.get(_kk, 0.0) + float(_vv['add'])
+                else:
+                    out[_kk] = _vv
+    for _kk, _d in _add.items():
+        _cur = out.get(_kk)
+        if isinstance(_cur, (int, float)) and not isinstance(_cur, bool):
+            out[_kk] = float(_cur) + _d
+        # 基准不是数值 ⇒ 说明该键此前没人设过（写错了）⇒ **忽略**。
+        # ⚠ 这里**不动调用方的 `scene` 字典**（那会很无礼）；改成由 `selftest` 静态校验：
+        #   `targets.json` 里每个 `{"add": ...}` 的键**必须**在 `"*"` 层里有数值基准。
     # ---- ★ 解析 `{"mul": k}`（乘性系数 → 绝对量）----
     if stock and any(isinstance(v, dict) and 'mul' in v for v in out.values()):
         from . import presets as _PR
@@ -194,7 +219,13 @@ def scene_engine(scene, stock=None, cfg=None):
             if not (isinstance(_v, dict) and 'mul' in _v):
                 continue
             if _p is None:
-                _p = _PR._params_for(stock, cfg) if cfg is not None else _PR._params_for(stock)
+                # ★ 10-08：老写法在 `cfg is None` 时调 `_PR._params_for(stock)` ——
+                #   而那个签名是 `(name, cfg)` **没有默认值** ⇒ 必然 `TypeError`，
+                #   还会被上层 `except` 吞成 `_ov = {}`（= 全局 `"*"` 整批静默失效）。
+                #   按本文件 docstring 的签名，`cfg=None` 是**合法调用方式** ⇒ 回落模块 config。
+                if cfg is None:
+                    from . import config as cfg
+                _p = _PR._params_for(stock, cfg)
             _b = getattr(*_PR._walk(_p, _k))       # ⚠ 路径走不通 ⇒ 抛，别吞
             _m = float(_v['mul'])
             if isinstance(_b, (list, tuple)):

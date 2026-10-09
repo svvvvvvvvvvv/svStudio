@@ -82,6 +82,247 @@ def _pure_engine_same(res, sample, style=None):
     return diff <= max(noise * 2.5, 5e-3)
 
 
+def t_review_1008():
+    r"""★★★ 10-08 代码评审后的**防复发**断言。
+
+    这一组守的都是"接线断了但没人发现"的一类 —— 项目里已经栽过三次
+    （`agx_particle_*` 字段改名、`print_render.density_curve_gamma` 被删、
+    `service._DECODE_SIG_KEYS` 靠的 `ENTRY_*` 前缀被删光）。
+    它们的共同点是：**没有任何东西会报错**。
+    """
+    import numpy as _np
+    from . import config as C, grade, presets, service, targets
+
+    # 造一张**各亮度段都非空**的合成图（纯随机图会让分带掩膜退化，测不出东西）
+    _yy = _np.mgrid[0:64, 0:64][0] / 63.0
+    _d = _np.clip(_yy[..., None].repeat(3, 2) * 0.7 + 0.15
+                  + 0.02 * _np.random.RandomState(0).rand(64, 64, 3), 0.0, 1.0)
+
+    # ---- ① 报告同形：关整层 vs 开着，键集合必须一致 ----
+    _on = grade.apply(_d, C, stock='Ultramax400沉褐', scene=None, person=None)[1]
+    _keep = C.GRADE_ENABLE
+    C.GRADE_ENABLE = False
+    try:
+        _off = grade.apply(_d, C, stock='Ultramax400沉褐', scene=None, person=None)[1]
+    finally:
+        C.GRADE_ENABLE = _keep
+    _miss = sorted(set(_on) ^ set(_off))
+    check('★★★ 关颜色层时报告与开着时**键集合完全相同**', not _miss,
+          '开着 %d 键 / 关着 %d 键；差异: %s' % (len(_on), len(_off), _miss or '无'),
+          '两种形状 ⇒ 下游 `.get(key, 默认)` 一条路拿默认值、一条路拿真值，排查时误导')
+
+    # ---- ② 白名单合并透传：split()/mix() 的每个自检键都要在 apply() 报告里 ----
+    _r = _np.random.RandomState(1)
+    _L2 = _r.rand(64, 64) * 60.0 + 20.0
+    _a2 = _r.rand(64, 64) * 10.0 - 5.0
+    _b2 = _r.rand(64, 64) * 10.0 - 5.0
+    _tg = targets.for_stock('Ultramax400沉褐', None)
+    _m = dict(Lm=float(_np.median(_L2)), am=float(_np.median(_a2)), bm=float(_np.median(_b2)))
+    _i2 = grade.split(_L2, _a2, _b2, _tg, C, _m)[2]
+    _i3 = grade.mix(_L2, _a2, _b2, _tg, C, _m)[3]
+    _miss2 = sorted((set(_i2) | set(_i3)) - set(_on))
+    check('★★★ 分色/混色返回的**每个**自检键都进了 `apply()` 报告（白名单合并）',
+          not _miss2, '缺: %s' % (_miss2 or '无'),
+          '这份手抄透传清单已经漏过两次（`split_resid` 一轮、'
+          '`d_mid`/`d_deep`/`split_curve_a/b` 一轮），每次代价都是"白跑一轮真渲染"')
+
+    # ---- ③ band_gain 长度：不足会**静默跳过**那几个色相带 ----
+    _nb = len(grade.BANDS)
+    _badb = [n for n in presets.names()
+             if len(((targets.for_stock(n, None) or {}).get('band_gain')) or [0] * _nb) < _nb]
+    check('★★ 每条预设的 `band_gain` 长度 ≥ 色相带数（%d）' % _nb, not _badb,
+          '不足: %s' % (_badb or '无'),
+          '不足时 `grade.mix` 用 `if bi < len(_bg)` **静默跳过**，不报错也不进报告')
+
+    # ---- ④ 解码签名不能再是空的（`ENTRY_*` 那次的教训）----
+    _gone = [k for k in service._DECODE_SIG_KEYS if not hasattr(C, k)]
+    check('★★★ 解码签名有键、且键真的在 config 里', bool(service._DECODE_SIG_KEYS) and not _gone,
+          '键=%s 缺=%s' % (list(service._DECODE_SIG_KEYS), _gone or '无'),
+          '老写法靠 `ENTRY_` 前缀取键，前缀被删光后恒为空 ⇒ 机制静默失效、无人发现')
+
+    # ---- ⑤ 段缓存键必须覆盖**全部** GRADE_*（"拧了没反应"的根）----
+    _sig = dict(C.key_signature(C))
+    _gk = [k for k in dir(C) if k.startswith('GRADE_')]
+    _missg = [k for k in _gk if k not in _sig]
+    check('★★★ 段缓存键覆盖**全部** `GRADE_*`（%d 个）' % len(_gk), not _missg,
+          '漏: %s' % (_missg or '无'),
+          '漏了就"拧了没反应"——`GRADE_SPLIT_ENABLE` 的注释恰恰承诺"一键回退这一段"')
+
+    # ---- ⑥ 印相中灰配平必须**显式钉住**，不许吃 vendor 的 schema 默认 ----
+    _p = presets.digested('Ultramax400沉褐', C)
+    check('★★ `normalize_print_exposure` / `print_exposure_compensation` 显式钉为 True',
+          bool(_p.enlarger.normalize_print_exposure)
+          and bool(_p.enlarger.print_exposure_compensation),
+          'norm=%s comp=%s' % (_p.enlarger.normalize_print_exposure,
+                               _p.enlarger.print_exposure_compensation),
+          '它是整张落点的命门；吃默认值 ⇒ 换 vendor 版本会**静默位移一档亮度**')
+
+    # ---- ⑧ 可叠加的轴覆盖（`{"add": Δ}`）：数据自洽 + 组合行为正确 ----
+    #   ★ 10-08：`targets.scene_engine` 原来用 `out.update(blk)` ⇒ **后匹配的轴赢、不叠加**。
+    #     而 `span=平` 与 `back=逆光` 实测是**两个相加的因子** ⇒ 必须能叠。已加 `{"add": Δ}` 约定。
+    _d = targets.load()
+    _se = _d.get('_scene_engine') or {}
+    _star = _se.get('*') or {}
+    _bad_add = []
+    for _k, _blk in _se.items():
+        if not isinstance(_blk, dict):
+            continue
+        for _kk, _vv in _blk.items():
+            if isinstance(_vv, dict) and 'add' in _vv:
+                _b = _star.get(_kk)
+                if not isinstance(_b, (int, float)) or isinstance(_b, bool):
+                    _bad_add.append('%s.%s（基准 %r）' % (_k, _kk, _b))
+    check('★★★ 每个 `{"add": Δ}` 轴覆盖的键在 `"*"` 层里都有**数值基准**',
+          not _bad_add, '有问题: %s' % (_bad_add or '无'),
+          '加法需要一个数值底。没有底 ⇒ 该 add 会被静默忽略（"写了没反应"），'
+          '所以必须静态钉住：**要叠加的键，先在 `"*"` 里给基准值**')
+    _GN = 'print_render.density_curves_morph.gamma_factor'
+    _g1 = targets.scene_engine({'span': '平', 'exp': None, 'back': None, 'overwhite': None},
+                               stock='Ultramax400沉褐', cfg=C).get(_GN)
+    _g2 = targets.scene_engine({'span': None, 'exp': None, 'back': None, 'overwhite': None},
+                               stock='Ultramax400沉褐', cfg=C).get(_GN)
+    check('★★ 只用 `span=平` 时确实命中（其余轴为 None 也不受影响）',
+          _g1 is not None and _g2 is not None and abs(float(_g1) - float(_g2)) > 1e-9,
+          'span=平 → %s ／ 无 span → %s' % (_g1, _g2),
+          '这是"逐场景参数真的接线了"的最小证据')
+    # ★ **证明叠加真的生效**：临时往 `_scene_engine` 里塞一个 `back=正逆光` 的 `{"add": Δ}`，
+    #   断言"两轴同时命中 = 两轴各自之和"。跑完还原（与 `t_scene` 注入 `_scene` 同一手法）。
+    #   ⚠ 不这么做的话，"支持叠加"就只是注释里的一句话 —— 本项目最恨"说了没接上"。
+    _inj = {'print_render.density_curves_morph.gamma_factor': {'add': 0.07}}
+    try:
+        _se['back=正逆光'] = dict(_inj)
+        _a = float(targets.scene_engine({'span': '平', 'exp': None, 'back': '正逆光',
+                                         'overwhite': None}, stock='Ultramax400沉褐',
+                                        cfg=C).get(_GN))
+        _b = float(targets.scene_engine({'span': None, 'exp': None, 'back': '正逆光',
+                                         'overwhite': None}, stock='Ultramax400沉褐',
+                                        cfg=C).get(_GN))
+    finally:
+        _se.pop('back=正逆光', None)
+    check('★★★ 两轴同时命中时**真的叠加**（注入 {"add":0.07} 验证，跑完还原）',
+          abs(_a - (float(_g1) + 0.07)) < 1e-9 and abs(_b - (float(_g2) + 0.07)) < 1e-9,
+          'span=平+正逆光 %.4f（应 %.4f）／ 只正逆光 %.4f（应 %.4f）'
+          % (_a, float(_g1) + 0.07, _b, float(_g2) + 0.07),
+          '`span=平` 与 `back=逆光` 实测是**相加的两个因子**（组内单调：正逆光+平 69.77 < '
+          '正逆光+正常 74.62 < 正逆光+大 78.09）⇒ 原来的 `out.update()` 让后匹配的轴**盖掉**'
+          '前面的 ⇒ 会少补一个因子。这条断言钉住"叠加不许退化成覆盖"')
+
+    # ---- ⑦ config 真的进了 `_params_for` 的键（否则第一次调用者的 cfg 永久污染）----
+    _v0 = float(presets.digested('Ultramax400沉褐', C).enlarger.m_filter_shift)
+    _t0 = C.PRESET_FILTER_M_TRIM
+    C.PRESET_FILTER_M_TRIM = _t0 + 3.0
+    try:
+        _v1 = float(presets.digested('Ultramax400沉褐', C).enlarger.m_filter_shift)
+    finally:
+        C.PRESET_FILTER_M_TRIM = _t0
+        presets.clear_cache()
+    check('★★★ 改 config 的 `PRESET_*` ⇒ 参数对象**立刻重建**（cfg 进了缓存键）',
+          abs(_v1 - (_v0 + 3.0)) < 1e-6,
+          'trim %.1f→%.1f 时 m_shift %.3f→%.3f' % (_t0, _t0 + 3.0, _v0, _v1),
+          '老版本键里只有 name ⇒ 首次调用者的 config 永久污染缓存 ⇒ A/B 试验两边一样')
+
+
+def t_knob_effect():
+    r"""★★★★★ **每个 `GRADE_*` 键都必须真的能改变输出**（"拧了没反应"的自动检测）。
+
+    为什么要有这一组：本项目最痛的一类 bug 是**"改了没反应"**，而它有两种形态：
+      ① **读了但读不到**（键名写错 / 被靶遮住 / 被上游归一化掉）—— `t_config_keys` 只管存在性；
+      ② **读了但没效果**（写进了一个被闭环抵消、或窗根本覆盖不到的字段）。
+    形态② 极难靠读代码发现。10-08 我就造了一个：`GRADE_HI_NEUTRAL` 的窗设在 L* 88~100，
+      而画面最亮的像素在 **L\* 86** ⇒ 各档强度**输出逐位相同**，读码完全看不出问题。
+
+    ⇒ 做法：**扰动测试**。逐键换一个值，跑同一张图，断言输出变了。
+      · 用**两张**合成图（不同内容），**任一**张上有效即算"活"——
+        因为有些键只在特定条件下才起作用（如 `GRADE_DEEP_*` 要有暗部）。
+      · 报"可疑死键"清单；**不**直接判 FAIL（避免误报把自检变成噪声），
+        但如果可疑键超过阈值就红 —— 那说明有人批量加了没接线的键。
+    """
+    import numpy as np
+    from . import config as C, grade
+
+    # 两张合成图：① 纵向渐变 + 暖偏（各亮度段都非空）② 多色相 + 宽彩度
+    yy, xx = np.mgrid[0:56, 0:56]
+    g1 = np.stack([np.clip(0.10 + 0.80 * yy / 55.0, 0, 1),
+                   np.clip(0.09 + 0.72 * yy / 55.0, 0, 1),
+                   np.clip(0.08 + 0.66 * yy / 55.0, 0, 1)], -1)
+    r = np.random.RandomState(7)
+    g2 = np.clip(0.25 + 0.5 * (0.5 + 0.5 * np.cos(6.283 * xx / 56.0))[..., None]
+                 * np.array([1.0, 0.75, 0.45]) + 0.06 * r.rand(56, 56, 3), 0, 1)
+    IMGS = (g1, g2)
+
+    def out_of(img):
+        o, _ = grade.apply(img, C, stock='Ultramax400沉褐', scene=None, person=None)
+        return np.asarray(o, np.float64)
+
+    base = [out_of(im) for im in IMGS]
+    keys = sorted(k for k in dir(C) if k.startswith('GRADE_'))
+    # 每个键的"扰动值"：布尔翻转；数值按量级放大/缩小；不足则用附近值
+    def alt(k, v):
+        if isinstance(v, bool):
+            return [not v]
+        if isinstance(v, (int, float)):
+            cand = []
+            for m in (1.6, 0.4, 2.5):
+                cand.append(type(v)(v * m) if v else type(v)(0.5 if isinstance(v, float) else 1))
+            cand.append(v + (1.0 if isinstance(v, float) else 1))
+            cand.append(v - (1.0 if isinstance(v, float) else 1))
+            return [c for c in cand if c != v]
+        return []
+
+    dead, live, skipped = [], [], []
+    for k in keys:
+        v0 = getattr(C, k)
+        tested = False
+        try:
+            for nv in alt(k, v0):
+                try:
+                    setattr(C, k, nv)
+                    for i, im in enumerate(IMGS):
+                        if float(np.max(np.abs(out_of(im) - base[i]))) > 1e-6:
+                            tested = True
+                            break
+                    if tested:
+                        break
+                except Exception:                                       # noqa: BLE001
+                    pass
+        finally:
+            setattr(C, k, v0)
+        if tested:
+            live.append(k)
+        elif isinstance(v0, (bool, int, float)):
+            dead.append(k)
+        else:
+            skipped.append(k)
+    # 已知"条件性 / 被靶遮住 / 确认已死"的键 —— **每条都要写明理由**。
+    # ★ 新冒出来的死键**不在此列** ⇒ 会红。这才是这一组的价值。
+    _KNOWN = {
+        'GRADE_SH_A': '被靶遮住：`_default.sh_abs` 覆盖全部 10 条预设（见 config 死值警告）',
+        'GRADE_SH_B': '同上',
+        'GRADE_HI_A': '被靶遮住：`_default.hi_abs` 覆盖全部 10 条预设',
+        'GRADE_HI_B': '同上',
+        'GRADE_SAT': '被靶遮住：预设自己写了 `sat`（鹿井 0.8528）⇒ `mix()` 优先读靶',
+        'GRADE_PERSON_DL': '条件性：要在 `apply(person=...)` 传掩膜才生效（合成图没传）',
+        'GRADE_PERSON_W': '条件性：同上',
+        'GRADE_SPLIT_DAMP': '**确认已死**：包内零读点（只被 `_debug` 归档副本读）—— 见 config 死键清单',
+        'GRADE_SPLIT_MID_LIMIT': '**确认已死**：全仓库零读点 —— 见 config 死键清单',
+        'GRADE_SPLIT_W_REF': '**确认已死**：包内零读点（只被 `_debug` 读）—— 见 config 死键清单',
+        'GRADE_BAND_SOFTMAX_HI': '条件性：**只在 `GRADE_BAND_SOFTMAX=True` 时才被读**'
+                                 '（扰动测试一次只拧一个键 ⇒ 关着时拧它当然没效果）。'
+                                 '主开关本身**是活的**（已被同一条测试证明）',
+    }
+    _new = [k for k in dead if k not in _KNOWN]
+    check('★★★★★ **没有新出现的**"读了但没效果"的键（扰动测试：拧一下必须动）',
+          not _new, '活 %d / 共 %d ｜ **新死键: %s** ｜ 已知条件性/被遮/已死 %d 个'
+          % (len(live), len(live) + len(dead), ', '.join(_new) or '无', len(_KNOWN)),
+          '本项目的头号痛点是"拧了没反应"。新死键 ⇒ 该键读了但没效果'
+          '（被靶遮住 / 被归一化抵消 / 作用窗覆盖不到）。'
+          '★ 10-08 实例：`GRADE_HI_NEUTRAL` 的窗设在 L* 88~100，而画面最亮像素在 **L\\* 86** '
+          '⇒ 各档强度**输出逐位相同**，只读代码完全看不出 ⇒ 已删。'
+          '★ 若确认某键是"条件性"的，把它连**理由**一起登记进 `_KNOWN`，别直接放宽判据。')
+    check('★ 而且已知清单不许膨胀（>12 个 ⇒ 有人在用登记表掩盖死键）',
+          len(_KNOWN) <= 12, '已知 %d 个' % len(_KNOWN))
+
+
 def _main():
     groups = [
         ('胶片风格：9 条预设', t_presets),
@@ -96,6 +337,8 @@ def _main():
         ('服务：路由只剩该有的那几条', t_routes),
         ('★★★★★ 删层纪律：影调层 / 肤色层 / 认人认脸 **真的删了**', t_dropped_layers),
         ('★ 「人在哪」+ 光位：**只用低开销那条** / 判不出要弃权', t_person_light),
+        ('★★★★★ 10-08 评审防复发：接线断了必须有人喊（缓存键/透传/报告同形）', t_review_1008),
+        ('★★★★★ 每个 GRADE_* 键都要真能改变输出（扰动测试，防"拧了没反应"）', t_knob_effect),
     ]
     for title, fn in groups:
         print('[%s]' % title)
@@ -234,19 +477,38 @@ def t_presets():
           '%d 种组合' % len(set(_wb)),
           '全同 ⇒ "逐预设的冷暖基准"是句空话；改冷暖请改 `simulation.print_y_filter_shift`'
           '（映射见 §`_note_load_raw`），别去动 `load_raw` 那三个死键')
-    check('配平基准钉死成 public 那一对（不跟 vendor 版本漂）',
-          abs(float(p.enlarger.y_filter_neutral) - float(C.PRESET_NEUTRAL_Y)) < 1e-9
-          and abs(float(p.enlarger.m_filter_neutral) - float(C.PRESET_NEUTRAL_M)) < 1e-9,
-          'y %.3f m %.3f' % (p.enlarger.y_filter_neutral, p.enlarger.m_filter_neutral))
-    # ★★ 上面那条是**自证**（拿 params 比 config），把 config 两个数对调它照样绿。
-    #    09-23 真踩过一次「Y/M 写反」⇒ 这里再钉**绝对数值**：
-    #    读 DB 的顺序是 `c, m, y`（vendor `params_builder.apply_database_neutral_print_filters`）
-    #    ⇒ public 0.3.2 的 `fujifilm_pro_400h` = [0.0, 50.713(M), 51.423(Y)]。
-    check('★★ 而且 Y/M **不许对调**（绝对值，来源＝public 0.3.2 的滤片库：M 小、Y 大）',
-          abs(float(C.PRESET_NEUTRAL_Y) - 51.423) < 5e-4
-          and abs(float(C.PRESET_NEUTRAL_M) - 50.713) < 5e-4,
-          'Y %.3f / M %.3f' % (C.PRESET_NEUTRAL_Y, C.PRESET_NEUTRAL_M),
-          '对调了整张会偏色，而上面那条自证检查看不出来')
+    # ★★★★ 10-08 晚：配平基准**换源** —— 从"一对硬编码常数"改成**引擎数据库逐条查**。
+    #   为什么换：`neutral` 的语义（作者 README）是「让 18% 灰在最终印相里完全中性的起始设置」，
+    #   而引擎按 **(相纸, 放大机光源, 底片)** 三维查表。原来关掉 DB、把 public 0.3.2 的
+    #   `fujifilm_pro_400h` 那一对发给**全部 10 条**（见 `config.PRESET_NEUTRAL_FROM_DB` 的注释）。
+    #   实测代价：C200 三条差 −27(M)/−57(Y) ⇒ 它的 18% 灰印出来 **b* +30.0（偏黄）**；
+    #   Ektar 差 −18/−11 ⇒ **a* +12.7**。换 DB 后 C200 的 18% 灰 = a* −0.8 / b* +1.4。
+    #   ⚠ 各预设的 shift 已同步重表成「旧总量 − 新中性(DB)」⇒ **总滤片量不变、画面不变**
+    #     （实测 10 条 18% 灰 Δa*/Δb*/ΔL 全部 = 0.00）。⇒ 这是换参数化，不是改观感。
+    _dbn, _neu = [], []
+    for n in ns:
+        _q = presets.digested(n)
+        _dbn.append(bool(_q.settings.neutral_print_filters_from_database))
+        _neu.append((round(float(_q.enlarger.m_filter_neutral), 3),
+                     round(float(_q.enlarger.y_filter_neutral), 3)))
+    check('★★ 配平基准**走引擎数据库**（逐 相纸/光源/底片，不是一对硬编码常数）',
+          all(_dbn), '%d/%d 条开着' % (sum(_dbn), len(_dbn)),
+          '关掉就会退回"一对常数发给 10 条不同底片" —— 那正是 18% 灰偏黄 30 格的原因')
+    check('★★ 而且它**逐卷真的不同**（证明是查表，不是又被换成了常数）',
+          len(set(_neu)) >= 2,
+          ' / '.join('%s M%.2f Y%.2f' % (n, v[0], v[1]) for n, v in list(zip(ns, _neu))[:4]),
+          '全同 ⇒ 数据库那条路没生效（或 vendor 换版后 DB 没跟着换）')
+    # 绝对锚：钉死一对已知的 DB 值，防「Y/M 对调」——自证式检查看不出来（09-23 踩过一次）。
+    #   读 DB 的顺序是 `c_filter, m_filter, y_filter`（vendor `apply_database_neutral_print_filters`）
+    #   ⇒ 0.3.4 库里 `kodak_portra_endura / TH-KG3 / kodak_portra_400` = [0, 51.568(M), 52.534(Y)]。
+    _anchor = [v for n, v in zip(ns, _neu)
+               if presets.load_raw(n)['simulation']['film_stock'] == 'kodak_portra_400'
+               and presets.load_raw(n)['simulation']['print_paper'] == 'kodak_portra_endura']
+    check('★★ 而且 Y/M **不许对调**（绝对锚：portra400+endura ⇒ M 51.568 / Y 52.534）',
+          bool(_anchor) and all(abs(v[0] - 51.568) < 5e-3 and abs(v[1] - 52.534) < 5e-3
+                                for v in _anchor),
+          '%s' % (_anchor[:1] if _anchor else '没找到 portra400+endura 的预设'),
+          '对调了整张偏色，而"逐卷不同"那条看不出来')
 
     # 每条都得能被 spektrafilm 认得（负片 / 相纸 profile 名拼错 = 渲染那一步直接崩）
     bad = []
@@ -581,6 +843,17 @@ def t_grade():
     a1, b1 = _split(on)
     # ★ 分色现在是**逐图往靶收**（靶按预设取，见 `targets.py`）。
     #   判据不是"往哪个方向"，而是**离靶是不是更近了** —— 这条跟靶换谁都不冲突。
+    #   ★★ 10-08：`GRADE_DEEP_A/B` 是**风格化的暗部推色**（故意的、偏离靶的），
+    #     与"这一层往靶收"是两件事 ⇒ 测这条契约时把它**显式设成 0**（跑完还原），
+    #     与上面 `GRADE_SAT=1.0` 的处理同一个道理（契约的前提要显式摆出来）。
+    #     ⚠ 老代码不用设，因为那根旋钮当时是**死的**（被闭环吃掉）；10-08 修活之后必须显式。
+    _dk0 = (float(getattr(C, 'GRADE_DEEP_A', 0.0)), float(getattr(C, 'GRADE_DEEP_B', 0.0)))
+    C.GRADE_DEEP_A, C.GRADE_DEEP_B = 0.0, 0.0
+    try:
+        _on0, _ = grade.apply(disp, C)
+        a1, b1 = _split(_on0)
+    finally:
+        C.GRADE_DEEP_A, C.GRADE_DEEP_B = _dk0
     from . import targets as _T
     _t = _T.for_stock(None)
     _sh_a, _sh_b = float(_t['sh_abs'][0]), float(_t['sh_abs'][1])

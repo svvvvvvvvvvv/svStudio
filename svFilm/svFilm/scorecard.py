@@ -219,14 +219,24 @@ def main(argv=None):
     print('%-12s %-9s %-9s %-9s %s' % ('指标', '实测', '靶', '离靶', '加权'))
     total = 0.0
     rec = {}
+    _nscored, _notgt = 0, []          # ★ 10-08：真正打了分的项数 / 缺靶的项
     for k, (tv, zh, w) in tgt.items():
         mv = med(k)
         if not np.isfinite(mv) or not np.isfinite(tv):
-            print('%-12s %-9s %-9s %-9s %s' % (zh, '—', tv, '—', '（样本不够）'))
+            # ★ 10-08：**区分"样本不够"与"这条预设根本没写这个靶"**。
+            #   老代码两种情况都打"（样本不够）"并 `continue` ⇒ 没靶时 `total` 停在 0.0，
+            #   最后那行"离靶合计 0.0"**看起来完美**，其实是"一条靶都没有"（假绿）。
+            if not np.isfinite(tv):
+                _notgt.append(zh)
+                print('%-12s %-9s %-9s %-9s %s' % (zh, '—', '无靶', '—',
+                      '★ 这条预设没有这个靶（`_default` 也没兜住）'))
+            else:
+                print('%-12s %-9s %-9s %-9s %s' % (zh, '—', tv, '—', '（样本不够）'))
             continue
         dv = abs(mv - tv) * w
         total += dv
         rec[k] = mv
+        _nscored += 1
         print('%-12s %-9.1f %-9.1f %+-9.1f %.1f' % (zh, mv, tv, mv - tv, dv))
     # 只报不打分的（**显式列出来** —— 免得有人以为它们被忘了）
     _lclo, _lchi = lc_band(a.stock)
@@ -239,13 +249,22 @@ def main(argv=None):
         _dv = 0.0 if _lclo <= _mv <= _lchi else min(abs(_mv - _lclo), abs(_mv - _lchi))
         rec['lc'] = _mv
         total += _dv
+        _nscored += 1
         print('%-14s %-9.2f %-9s %-9s %.2f   （大师带 P25~P75 = %.2f ~ %.2f，带内记 0）'
               % ('局部对比 lc', _mv, '%.2f~%.2f' % (_lclo, _lchi), '%+.2f' % _dv, _dv, _lclo, _lchi))
     else:
         print('%-14s %-9.2f %-9s %-9s %s' % ('局部对比 lc', med('lc'), '—', '—',
                                              '大师带缺失 ⇒ 先跑 `_v1_lc_masters.py` 生成 `_lc_band`'))
     print('-' * 56)
-    print('离靶合计（**只打分那几项**；越小越好，只当趋势看、别当分数去刷）：%.1f' % total)
+    # ★ 10-08：**别让"没靶"长得像"满分"**。老代码在没有可打分的靶时照样打 0.0。
+    if _nscored == 0:
+        print('离靶合计：**没有可打分的靶**（本预设缺 `span` / 大师带）'
+              '—— 这不是"0.0 = 完美"，是"没靶可打"！')
+    else:
+        print('离靶合计（**只打分那几项**；越小越好，只当趋势看、别当分数去刷）：%.1f'
+              '   （打了 %d 项%s）'
+              % (total, _nscored,
+                 ('；缺靶 ' + '/'.join(_notgt)) if _notgt else ''))
     try:
         with open(a.log, 'a', encoding='utf-8') as f:
             f.write(json.dumps(dict(t=time.strftime('%Y-%m-%d %H:%M'), folder=a.folder,

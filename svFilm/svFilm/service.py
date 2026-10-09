@@ -86,25 +86,20 @@ _STAGES = [pipeline.StageCache() if getattr(C, 'CACHE_ENABLE', False) else None]
 #     代价 = 重新解码一次（JPG 约 0.36 s / RAW 约 2.3 s @700 长边，和拖「整张亮暗」同量级）。
 #   ⚠ 不收 `MAX_SIDE`：它是**默认参数**（`def load_raw(path, max_side=C.MAX_SIDE)`），
 #     真正的尺寸由调用方传进来、而且已经算在键里了（见 `_load_key` 的第 2 个元素）。
-_DECODE_SIG_KEYS = tuple(sorted(
-    [k for k in dir(C) if k.startswith('ENTRY_')]))
+# ★★★ 10-08 修一个**已经烂掉、且无人发现**的机制：
+#   老写法 `_DECODE_SIG_KEYS = [k for k in dir(C) if k.startswith('ENTRY_')]` —— 而
+#   `config` 里的 `ENTRY_*` 在 **09-30 被整段删除** ⇒ 这个元组**恒为空** ⇒
+#   `_decode_sig()` 恒返回 `()` ⇒ "入口参数一改就重新解码"**永久空转、无人发现**。
+#   ⚠ 真正该盯的是 `io.load_raw` 实际读的那四个键（`PUBLIC_WB*` / `PUBLIC_COLORSPACE`），
+#     它们**不带 `ENTRY_` 前缀** ⇒ 老写法连"该盯谁"都点错了。
+#   ⇒ 改成**显式白名单**；`selftest.t_review_1008` 断言这四个键在 config 里真的存在。
+_DECODE_SIG_KEYS = ('PUBLIC_WB', 'PUBLIC_WB_TEMPERATURE', 'PUBLIC_WB_TINT',
+                    'PUBLIC_COLORSPACE')
 
 
 def _decode_sig():
-    """解码阶段那一段的参数指纹。
-
-    """
-    out = []
-    for k in _DECODE_SIG_KEYS:
-        v = getattr(C, k, None)
-        if isinstance(v, (list, tuple)):
-            v = tuple(v)
-        elif isinstance(v, dict):
-            v = tuple(sorted(v.items()))
-        elif not isinstance(v, (int, float, str, bool, type(None))):
-            v = repr(v)
-        out.append((k, v))
-    return tuple(out)
+    """解码阶段那一段的参数指纹（`PUBLIC_*` 一改就作废，见上面的注释）。"""
+    return tuple((k, getattr(C, k, None)) for k in _DECODE_SIG_KEYS)
 
 
 def _load_key(path, side):

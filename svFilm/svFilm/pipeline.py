@@ -13,6 +13,7 @@ r"""编排 —— 一条链跑完（09-29 `drop-tone-and-skin` 之后）。
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import threading
 import time
@@ -47,11 +48,17 @@ class Result:
 
 
 def _sample_uid(s):
-    """样本的身份。用「路径 + 类型 + 尺寸」—— 别用 `id()`（对象被回收后 id 会复用）。"""
+    """样本的身份。用「路径 + 类型 + 尺寸」；**无路径时用内容摘要，绝不用 `id()`**
+    （对象被回收后 `id` 会复用 ⇒ 两个不同的内存样本会撞成同一个键、互相串图）。"""
+    _shape = tuple(np.shape(s.lin))
     p = getattr(s, 'path', None) or ''
     if not p:
-        return ('<无路径>', id(s), tuple(np.shape(s.lin)))
-    return (os.path.abspath(p), getattr(s, 'kind', ''), tuple(np.shape(s.lin)))
+        # ★ 10-08：老代码在这里用了 `id(s)`，与它自己上面那句注释**直接矛盾**。
+        #   无路径样本（自检、以及将来任何"内存里造图"的入口）改按**内容**取身份。
+        _h = hashlib.blake2b(np.ascontiguousarray(s.lin).tobytes(),
+                             digest_size=8).hexdigest()
+        return ('<无路径>', _shape, _h)
+    return (os.path.abspath(p), getattr(s, 'kind', ''), _shape)
 
 
 class StageCache:
@@ -152,11 +159,15 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
     # ---- 场景 → 引擎参数覆盖（柔光 / 颗粒 / 光晕这类「质感」参数在引擎里）----
     #   没配 `_scene_engine` ⇒ 空 dict ⇒ 逐位同旧行为。
     _TS = None
+    _ov_err = None
     try:
         from . import targets as _TS
         _ov = _TS.scene_engine(_sc, stock=name, cfg=cfg)
-    except Exception:                                  # noqa: BLE001
-        _ov = {}
+    except Exception as _e:                            # noqa: BLE001
+        # ★ 10-08：**不许静默**。这里失败 ⇒ `_scene_engine` 的全局 `"*"`（含
+        #   `density_curves_morph` 与 `print_exposure ×1.15`）**整批失效**，跨度立刻掉一截，
+        #   而报告里原来一句话都没有 ⇒ 会被误判成"引擎参数坏了"。现在记进报告。
+        _ov, _ov_err = {}, '%s: %s' % (type(_e).__name__, str(_e)[:160])
 
     _ckey, _entry = None, None
     if cache is not None:
@@ -166,16 +177,23 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
         # ★★ 09-27：**开关本身也必须进键**。漏了 `GRADE_ENABLE` ⇒ 常驻进程里改了它仍会命中
         #   旧缓存，表现就是**"拧了没反应"**。
         # ★★★ 09-29：**overrides 和靶也必须进键**（原来那两项因为 `_sc` 未定义而永远是 `None`）。
+        # ★★★ 10-08：键的构造**换代**（见 `config.CACHE_KEY_PREFIXES` 的注释）。
+        #   老写法手抄一个元组、只列了 `GRADE_ENABLE` ⇒ 22 个 `GRADE_*` 里 21 个
+        #   翻了对画面没反应。现在用 `config.key_signature()` 前缀表驱动。
+        #   ⚠ 失败**不许**退化成 `None`（那会让所有 overrides/靶变体塌成同一个键）——
+        #     用带标记的哨兵元组，并保持可哈希。
         try:
             _ov_key = tuple(sorted((k, tuple(v) if isinstance(v, list) else str(v))
                                    for k, v in (_ov or {}).items()))
+        except Exception as _e:                        # noqa: BLE001
+            _ov_key = ('ov-err', type(_e).__name__, repr(_ov)[:200])
+        try:
             _tg_key = _TS.cache_key(name, _sc)
-        except Exception:                                  # noqa: BLE001
-            _ov_key, _tg_key = None, None
-        _ckey = ('film', _sample_uid(s), name, getattr(cfg, 'MAX_SIDE', None),
+        except Exception as _e:                        # noqa: BLE001
+            _tg_key = ('tg-err', name, type(_e).__name__, repr(_sc)[:200])
+        _ckey = ('film', _sample_uid(s), name, tuple(np.shape(s.lin)),
                  int(getattr(scene, 'VERSION', 0)),
-                 bool(getattr(cfg, 'GRADE_ENABLE', True)),
-                 _ov_key, _tg_key)
+                 C.key_signature(cfg), _ov_key, _tg_key)
         _entry = cache.get(_ckey)
 
     if _entry is not None:
@@ -209,6 +227,8 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
         grade=g_info,
         scene=(None if _sc is None else dict(_sc)),
         stage_cache=dict(hit=bool(_entry is not None)),
+        # ★ 10-08：`scene_engine` 失败**必须能看见**（它一失败，全局 `"*"` 就整批失效）
+        scene_engine_error=_ov_err,
         ms=(time.perf_counter() - t0) * 1000.0,
     )
     res = Result(disp, rep, s, path)

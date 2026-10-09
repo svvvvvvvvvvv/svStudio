@@ -59,7 +59,9 @@ def _lock_of(name):
     with _LOCK:
         lk = _LOCKS.get(name)
         if lk is None:
-            lk = _LOCKS[name] = threading.Lock()
+            # ★ 10-08：换成 **RLock** —— `render_copy()` 需要在持有同一把锁的同时调
+            #   `render()`（`render` 内部会再取一次同名锁）；用普通 `Lock` 会**自死锁**。
+            lk = _LOCKS[name] = threading.RLock()
     return lk
 
 _SUFFIX = '.json'
@@ -330,32 +332,66 @@ def _apply(p, d, cfg):
     p.settings.use_fast_stats = bool(getattr(cfg, 'SPEK_FAST_STATS', False))
     p.settings.lut_resolution = 17
 
+    # ★★ 10-08：**显式钉死"印相中灰配平"** —— 它是整张落点的命门。
+    #   两键都为 True（默认）时，印相曝光按 18.4% 中灰归一化，`print_exposure` 才是有效的
+    #   落点旋钮；同时 `camera.exposure_compensation_ev` 的**净亮度效果被它抵销**
+    #   （`filming.py:129` 把它喂进中灰参考、`printing.py:112` 返回 `factor_midgray_comp`）。
+    #   原来这里**一个字都没写**，全靠 vendor 的 schema 默认值 ⇒ 换版本若默认翻转，
+    #   整张亮度会**静默位移一档**，而报告里看不出原因。⇒ 显式钉。
+    p.enlarger.print_exposure_compensation = True
+    p.enlarger.normalize_print_exposure = True
+
     p.debug.lut_mode = False               # lut_mode 会把空间效果全关掉 —— 那是给烘 LUT 用的
     p.debug.deactivate_spatial_effects = False
     p.debug.deactivate_stochastic_effects = False
 
 
+_PARAMS_SIG = [None]          # 上次建缓存用的 config 指纹（变了就整体作废）
+
+
 def _params_for(name, cfg):
-    """按预设名缓存。建完不再改 ⇒ 多线程只读。"""
+    r"""按 **(预设名, config 指纹)** 缓存。
+
+    ★★ 10-08 修两个洞：
+      ① 老版本键里**只有 `name`** ⇒ 第一次调用者的 config 会被**永久污染**：
+         `_apply()` 里 `PRESET_NEUTRAL_FROM_DB` / `PRESET_FILTER_M_TRIM` / `SPEK_*` 都是
+         cfg 决定的，换个 cfg 再跑（A/B 试验、或将来前端按请求切）**静默无效** ——
+         而且 `targets.scene_engine` 会用默认 cfg 来建同一批对象，污染源不止一处。
+      ② `clear_cache()` 原本**全包零调用点**（docstring 让调，没人调）⇒ 常驻服务里改这些
+         开关**必须重启引擎**。现在指纹一变**自动作废**；`clear_cache()` 保留作手动口子。
+
+    ⚠ `_apply()` 之后对象仍会被 `_render_locked` **临时改写**（见 `_LOCKS` 那段注释），
+      所以"建完不再改 ⇒ 多线程只读"这句只对 `_apply` 之后、`render` 之外成立。
+    """
+    _sig = None
+    if hasattr(cfg, 'key_signature'):
+        try:
+            _sig = cfg.key_signature(cfg)
+        except Exception:                              # noqa: BLE001
+            _sig = None
     with _LOCK:
+        if _PARAMS_SIG[0] != _sig:
+            _PARAMS.clear()                            # config 变了 ⇒ 老参数对象全部作废
+            _PARAMS_SIG[0] = _sig
         p = _PARAMS.get(name)
         if p is not None:
             return p
-    d = load_raw(name)
-    spektra = __import__(__name__.rsplit('.', 1)[0] + '.spektra', fromlist=['x'])
-    init_params, _simulate = spektra._sf()
-    p = init_params(film_profile=d['simulation']['film_stock'],
-                    print_profile=d['simulation']['print_paper'])
-    _apply(p, d, cfg)
-    with _LOCK:
+        d = load_raw(name)
+        spektra = __import__(__name__.rsplit('.', 1)[0] + '.spektra', fromlist=['x'])
+        init_params, _simulate = spektra._sf()
+        p = init_params(film_profile=d['simulation']['film_stock'],
+                        print_profile=d['simulation']['print_paper'])
+        _apply(p, d, cfg)
         _PARAMS[name] = p
-    return p
+        return p
 
 
 def clear_cache():
-    """改完 config 里的加速开关要调它（否则缓存里那份还是老设置）。"""
+    """手动作废参数缓存。现在**通常不需要**（`_params_for` 会按 config 指纹自动作废），
+    留作显式口子：改了引擎级开关、又想在同进程里立刻看到效果时调它。"""
     with _LOCK:
         _PARAMS.clear()
+        _PARAMS_SIG[0] = None
 
 
 def digested(name, cfg=C, apply_specifics=None):
@@ -518,6 +554,7 @@ def _walk(root, dotted):
 
 
 _SIM = [None]
+_SIM_LOCK = threading.Lock()          # ★ 10-08：`_SIM[0]` 的初始化原先**无锁**（裸双检）
 
 
 def _simulate_once(p, lin, apply_specifics=False):
@@ -529,28 +566,36 @@ def _simulate_once(p, lin, apply_specifics=False):
     包一层，只改这一个开关；值由 `config.PRESET_APPLY_STOCK_SPECIFICS` 给（默认 False）。
     """
     if _SIM[0] is None:
-        spektra = __import__(__name__.rsplit('.', 1)[0] + '.spektra', fromlist=['x'])
-        _init_params, _simulate = spektra._sf()
-        from spektrafilm.runtime.params_builder import digest_params
+        with _SIM_LOCK:                     # ★ 10-08：初始化挪进锁里（双检仍在锁内）
+            if _SIM[0] is None:
+                spektra = __import__(__name__.rsplit('.', 1)[0] + '.spektra', fromlist=['x'])
+                _init_params, _simulate = spektra._sf()
+                from spektrafilm.runtime.params_builder import digest_params
 
-        def _run(image, params, _specifics, **kw):
-            # ★★★ 09-28 修一个**静默 bug**（"我们调的光晕 40 从来没生效"的真根因）：
-            #   这里 digest 了一次（用 `_specifics=False` ✓），但**忘了告诉 `simulate` 别再 digest**
-            #   ⇒ `simulate` 的 `digest_params_first` 默认 **True** ⇒ 它内部**又 digest 一次**
-            #   （用 `apply_stocks_specifics=True`）⇒ `_apply_halation_preset` 把
-            #   `halation_strength` 从我们设的 **0.4 重写回卷的出厂值 0.08**（实测确认）。
-            #   vendor 的 docstring 明写：「If you already have digested parameters or want to
-            #   digest them yourself, set `digest_params_first=False`」—— 我们正是"自己 digest"。
-            #   ⇒ 补上 `digest_params_first=False`。
-            return _simulate(image,
-                             digest_params(params, apply_stocks_specifics=bool(_specifics)),
-                             digest_params_first=False, **kw)
-        _SIM[0] = _run
+                def _run(image, params, _specifics, **kw):
+                    # ★★★ 09-28 修一个**静默 bug**（"我们调的光晕 40 从来没生效"的真根因）：
+                    #   这里 digest 了一次（用 `_specifics=False` ✓），但**忘了告诉 `simulate` 别再 digest**
+                    #   ⇒ `simulate` 的 `digest_params_first` 默认 **True** ⇒ 它内部**又 digest 一次**
+                    #   （用 `apply_stocks_specifics=True`）⇒ `_apply_halation_preset` 把
+                    #   `halation_strength` 从我们设的 **0.4 重写回卷的出厂值 0.08**（实测确认）。
+                    #   vendor 的 docstring 明写：「If you already have digested parameters or want to
+                    #   digest them yourself, set `digest_params_first=False`」—— 我们正是"自己 digest"。
+                    #   ⇒ 补上 `digest_params_first=False`。
+                    return _simulate(image,
+                                     digest_params(params,
+                                                   apply_stocks_specifics=bool(_specifics)),
+                                     digest_params_first=False, **kw)
+                _SIM[0] = _run
     return _SIM[0](lin, p, bool(apply_specifics), print_timings=False)
 
 
 def render_copy(lin, name, cfg=C, **kw):
-    """调试用：每次都从 JSON 重新建 params（不走缓存），排除"缓存里是旧值"。"""
-    with _LOCK:
-        _PARAMS.pop(name, None)
-    return render(lin, name, cfg, **kw)
+    """调试用：每次都从 JSON 重新建 params（不走缓存），排除"缓存里是旧值"。
+
+    ★ 10-08：整段放进**同一把按预设的锁**（`_lock_of` 已改成 RLock，可重入）。
+      老写法只 `pop` 不入锁 ⇒ 并发时同一预设会存在**两份 params**：一份挂在被 pop 掉的
+      旧对象上继续跑、一份是新对象 ⇒ 画面"偶尔不一样"，而自检全绿。"""
+    with _lock_of(name):
+        with _LOCK:
+            _PARAMS.pop(name, None)
+        return render(lin, name, cfg, **kw)

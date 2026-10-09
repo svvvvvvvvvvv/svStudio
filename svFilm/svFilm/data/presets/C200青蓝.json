@@ -1,4 +1,6 @@
 {
+  "_note_neutral_step2": "★ 10-08 step2：本条 shift **还原成预设原本的值**（m=2.0 / y=3.0）。理由：step1 只是把底座换对、把观感原样保住；而本条的观感**原本是建立在错误的中性上**的（用 Pro400H 的中性值配 fujifilm_c200 底片），18% 灰实测 b* = +30.0（严重偏黄）。⇒ 换成「正确中性(DB) + 原本 shift」＝ 回到它本来的样子。⚠ 与 step1 的 `_note_neutral_migration`（那一版是\"保观感\"的补偿值）冲突时，**以本键为准**。",
+  "_note_neutral_migration": "★ 10-08 迁移（底座换源，画面不变）：中性滤片从\"硬编码 0.3.2 常数\"（Y 51.423 / M 50.713）改成 **引擎数据库按 (相纸, 光源, 底片) 查出的值**（`config.PRESET_NEUTRAL_FROM_DB=True`、`PRESET_FILTER_M_TRIM=0`）。因为 `neutral` 与 `shift` 是**同一根 CC 轴**，这里把本条的 shift 重表成「旧总量 − 新中性」⇒ **总滤片量逐条不变，画面不变**（实测 18% 灰 Δa*/Δb*/ΔL = 0.00）。旧 shift：m=2.0 / y=3.0 → 新：m=-25.201 / y=-53.897。⚠ 别把新 shift 当成\"风格值\"去调——它是\"扣掉正确中性后的余量\"，真正的冷暖身份要看**总量**（= 中性 + shift）。",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
