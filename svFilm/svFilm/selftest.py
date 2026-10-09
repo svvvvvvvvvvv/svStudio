@@ -323,6 +323,110 @@ def t_knob_effect():
           len(_KNOWN) <= 12, '已知 %d 个' % len(_KNOWN))
 
 
+def t_synth_transfer():
+    r"""★★★★★ **合成测试图的传递函数**（内容无关的回归基准）。
+
+    为什么要有这一组：项目里**全部测量都在不可控的照片上做**，而"两组不同照片的分布差"
+    **无法归因到渲染**（10-08 夜栽了五次）。合成测试图把"我们的变换"变成一**条可读的曲线**，
+    且**真实照片从此只用于验证、不再用于拟合**。
+    ⇒ 这一组同时是 **10-09 三个硬缺陷的回归锁**：
+        ① **出口没有白**：旧曲线输入 L*100 → 输出 **88.7**（纯白被压到 RGB≈220）
+        ② **暗部过冲**：旧曲线输入 L*20 → 输出 **10.8**（先压暗再交叉）
+        ③ **中调鼓包**：旧曲线输入 45~55 抬 **+17**
+      修法（已落 `targets._scene_engine["*"]`）：`lightness_compression` 0.7→**0.95**、
+      `gamma_factor_slow` 1.3→**0.85**。实测：L100 88.7→**95.2**、L20 10.8→**20.2**、曲线单调。
+    ⚠ 本组**不含逐场景覆盖**（用 `scene_engine(None, ...)` 的全局 `"*"` 层）——
+      传递函数应当在**基线**上量，逐场景覆盖是"基线之上的条件修正"。
+    """
+    import numpy as np
+    from . import color, grade, presets, targets
+
+    W, H = 768, 900
+
+    def s2l(c):
+        c = np.asarray(c, np.float64)
+        return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+    ch = np.zeros((H, W, 3), np.float64)
+    ch[0:300] = np.linspace(0.0, 1.0, W)[None, :, None]              # ① 灰阶斜坡
+    for i in range(16):
+        ch[300:450, int(i * W / 16):int((i + 1) * W / 16)] = i / 15.0  # ② 16 级灰块
+    for i in range(12):                                              # ③ 12 档肤色块
+        hh = np.radians(55.0)
+        lab = np.array([[[30.0 + i * 5.0, 20.0 * np.cos(hh), 20.0 * np.sin(hh)]]], np.float64)
+        ch[450:620, int(i * W / 12):int((i + 1) * W / 12)] = np.clip(color.from_lab(lab)[0, 0], 0, 1)
+    for i in range(12):                                              # ④ 色相环
+        hh = np.radians(i * 30.0)
+        lab = np.array([[[60.0, 35.0 * np.cos(hh), 35.0 * np.sin(hh)]]], np.float64)
+        ch[620:750, int(i * W / 12):int((i + 1) * W / 12)] = np.clip(color.from_lab(lab)[0, 0], 0, 1)
+    ch[750:900, 0:W // 3] = 0.0                                      # ⑤ 黑白灰
+    ch[750:900, W // 3:2 * W // 3] = 0.5
+    ch[750:900, 2 * W // 3:] = 1.0
+
+    ov = targets.scene_engine(None, stock='Ultramax400沉褐', cfg=C)
+    e = presets.render(s2l(ch), 'Ultramax400沉褐', C, overrides=ov)
+    lab = color.to_lab(e)
+    L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
+    mm = dict(Lm=float(np.median(L)), am=float(np.median(a)), bm=float(np.median(b)))
+    tg = targets.for_stock('Ultramax400沉褐', None)
+    L2, a2, b2, _i = grade.mix(L, a, b, tg, C, mm, person=None)
+    a3, b3, _s = grade.split(L2, a2, b2, tg, C, mm)
+    lab2 = color.to_lab(np.clip(grade.gamut(L2, a3, b3), 0, 1))
+    Lo, ao, bo = lab2[..., 0], lab2[..., 1], lab2[..., 2]
+    LABI = color.to_lab(np.ascontiguousarray(ch))
+    Li, ai, bi = LABI[..., 0], LABI[..., 1], LABI[..., 2]
+
+    def ramp(v):
+        x = int(np.clip(v / 100.0 * (W - 1), 0, W - 1))
+        return float(np.median(Lo[0:300, max(0, x - 2):x + 3]))
+    L100, L50, L20 = ramp(100), ramp(50), ramp(20)
+    mid = (slice(760, 890), slice(W // 3 + 8, 2 * W // 3 - 8))
+    midb = float(np.median(bo[mid]))
+    sk = []
+    for i in range(12):
+        sl = (slice(460, 610), slice(int(i * W / 12) + 10, int((i + 1) * W / 12) - 10))
+        ci = float(np.hypot(np.median(ai[sl]), np.median(bi[sl])))
+        co = float(np.hypot(np.median(ao[sl]), np.median(bo[sl])))
+        ho = float(np.degrees(np.arctan2(np.median(bo[sl]), np.median(ao[sl]))) % 360)
+        sk.append((float(np.median(Li[sl])), ci, co, ho))
+    s50 = min(sk, key=lambda t: abs(t[0] - 50.0))
+    skinC = s50[2] / max(s50[1], 1e-6)
+    hh = [t[3] for t in sk if t[3] < 200]
+    hsp = max(hh) - min(hh)
+    xs = [int(v / 100.0 * (W - 1)) for v in range(0, 101, 5)]
+    ys = [float(np.median(Lo[0:300, max(0, x - 2):x + 3])) for x in xs]
+    bad_mono = [i for i in range(1, len(ys)) if ys[i] < ys[i - 1] - 0.05]
+
+    check('★★★★★ 合成图 ①：**输入纯白 L*100 的输出必须 >= 94**（"出口没有白"的回归锁）',
+          L100 >= 94.0, '输入 L*100 -> 输出 L*%.1f' % L100,
+          '旧曲线只有 **88.7**（纯白被压到 RGB≈220）=> 这就是"白衬衫是奶色"的根。'
+          '修法 = `io.output_gamut_compress.lightness_compression` 0.7->0.95')
+    check('★★★★★ 合成图 ②：**暗部不许过冲**（输入 L*20 的输出须在 16~24）',
+          16.0 <= L20 <= 24.0, '输入 L*20 -> 输出 L*%.1f（离 20 有 %+.1f）' % (L20, L20 - 20.0),
+          '旧曲线是 **10.8**（-9.2 的过冲）=> 暗部先被压暗再交叉。'
+          '修法 = `print_render.density_curves_morph.gamma_factor_slow` 1.3->0.85')
+    check('★★★★ 合成图 ③：灰阶传递函数**单调无回折**',
+          not bad_mono, '21 点采样，回折处 %s' % (bad_mono or '无'),
+          '曲线回折 = 某些亮度区间"越亮越暗"，是影调映射的硬伤')
+    check('★★★ 合成图 ④：中调抬升钉住（现状 %+.1f，已知偏大但无依据定论）' % (L50 - 50.0),
+          abs(L50 - 67.7) <= 2.0, '输入 L*50 -> 输出 L*%.1f' % L50,
+          '配方说"暗部上提"，但 +14 是否过头**没有依据** => 只钉住、不改')
+    check('★★★ 合成图 ⑤：**灰阶偏蓝**钉住（现状 b*%+.1f，已知未解——来自上游）' % midb,
+          abs(midb - (-6.1)) <= 2.0, '中灰块输出 b* = %+.1f' % midb,
+          '实测：黑/中灰/白的输出 b* **全是负的** => 整条灰阶偏蓝。'
+          '扫过 `sat`/`white_level`/`gamma`：**没有单一旋钮能修**（来自胶片/相纸/扫描链）')
+    check('★★★ 合成图 ⑥：**肤色彩度倍率**钉住（现状 x%.2f，已知未解——来自上游）' % skinC,
+          abs(skinC - 1.64) <= 0.2, '肤色块(C*20) -> 出 C*%.1f（x%.2f）' % (s50[2], skinC),
+          '配方要求"肤色**低饱和**"，而管线把它放大 => 这是"肤色发黄发暗"的机器原因。'
+          '⚠ 试过 `sat=0.60` 能压到 x1.15，但**同时把冷色压到 x0.64** —— '
+          '而配方明确要求"蓝色**增**饱和" => **`sat` 不是对的那根杠杆**。'
+          '真正的修法在上游（胶片/相纸/扫描的彩度），要单独设计')
+    check('★★ 合成图 ⑦：肤色色相随明度的漂移钉住（现状 %.0f°，已知未解）' % hsp,
+          hsp <= 45.0, '12 档肤色块输出的色相跨度 = %.1f°' % hsp,
+          '同一个 Lab 色相 55° 的肤色块，**只改明度**，输出色相漂 %.0f° => '
+          '一张脸的亮处与暗处会是两种颜色。这是"肤色难看"的另一半原因' % hsp)
+
+
 def _main():
     groups = [
         ('胶片风格：9 条预设', t_presets),
@@ -339,6 +443,8 @@ def _main():
         ('★ 「人在哪」+ 光位：**只用低开销那条** / 判不出要弃权', t_person_light),
         ('★★★★★ 10-08 评审防复发：接线断了必须有人喊（缓存键/透传/报告同形）', t_review_1008),
         ('★★★★★ 每个 GRADE_* 键都要真能改变输出（扰动测试，防"拧了没反应"）', t_knob_effect),
+        ('★★★★★ 合成测试图的传递函数（内容无关的回归基准：出口白/暗部不过冲/曲线单调）',
+         t_synth_transfer),
         ('★★★★★ 连续调制 `{"by":…}` + **光位不驱动影调**（10-09）', t_by_modulation),
     ]
     for title, fn in groups:

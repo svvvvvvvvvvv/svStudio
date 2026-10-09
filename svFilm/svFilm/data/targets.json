@@ -838,10 +838,10 @@
   "_note_span_flat_1008": "★★★ 10-08 **第一条按场景轴的动态参数**（有实测依据）：输入判为「跨度=平」的片子，最终跨度系统性偏短。实测（用户自己 45 张成片，scene_vs_gap.py）：span=平 8 张 ⇒ 输出跨度中位 74.02、缺 **-7.63**；span=正常 24 张 ⇒ -1.77；span=大 13 张 ⇒ -1.86。**组间极差 5.86 ÷ 组内 IQR 3.34 = 信噪比 1.76** ⇒ 值得做（同批测的 exp 0.73 / overwhite 0.60 ⇒ 不值得）。值 = 在 3 张最平的片子上扫 gamma_factor 得到：0.98→73.69(缺7.96) · 1.14→78.17 · 1.22→79.90 · **1.30→81.39(离靶-0.26)**，副作用 L50 +1.12 / C50 +1.07（都很小且方向不错）。⚠ 只对 span=平 生效（轴键按 scene.classify 的档位命中），不影响其余档；⚠ 这是本项目**第一个真正的逐场景参数**，先用着，跨图稳定性还没建。⚠ 该覆盖要生效必须让 \targets.scene_engine 拿到 scene —— pipeline 已经传了。",
   "*": {
    "print_render.density_curves_morph.active": true,
-   "print_render.density_curves_morph.gamma_factor_slow": 1.3,
+   "print_render.density_curves_morph.gamma_factor_slow": 0.85,
    "print_render.density_curves_morph.gamma_factor": 0.98,
    "io.output_gamut_compress.lightness_compression": [
-    0.7,
+    0.95,
     1.0,
     2.2
    ],
