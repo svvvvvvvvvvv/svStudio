@@ -56,7 +56,9 @@ import numpy as np
 from . import color
 from . import config as C
 
-VERSION = 5                          # ★ 换判据就要 +1（缓存键带它）
+VERSION = 6                          # ★ 换判据就要 +1（缓存键带它）
+#   6（10-09）：光位判据的「贴边 ⇒ 弃权」守卫改成**单向**（原先对 `E_bg`/`E_tb` 误用 `abs`，
+#              把"方向相反、证据明确"的片子当"贴边"弃权）。实测弃权率 50%→33~40%（鹿井）、71%→49%（我们）。
 AXES = ('exp', 'span', 'back', 'overwhite')
 
 _EXP_ORDER = ('暗', '正常', '亮')
@@ -246,11 +248,21 @@ def _light_position(d, L, person, cfg):
              or (raw['has_spike_src']
                  and raw['E_span'] >= float(getattr(cfg, 'SCENE_BACK_SPAN_MIN', 20.0))))
     if not _hard:
-        for _k, _v, _t in (('E_bg', abs(eb), tb), ('E_tb', abs(raw['E_tb']), ts),
-                           ('E_lr', abs(raw['E_lr']), ts)):
-            if _t * (1 - mg) <= _v <= _t * (1 + mg):
-                raw['why'] = 'marginal: %s=%.1f 贴 %.1f' % (_k, _v, _t)
-                return None, raw
+        # ★★★ 10-09 修（**单向证据必须单向守卫**）：
+        #   上面 `_hard` 那三条**本来就是单向**的 —— `E_bg` 只有**正**支持"光在主体背后"、
+        #   `E_tb` 只有**负**支持逆光；但这里原先一律 `abs(...)` ⇒ **把单向证据当双向**，
+        #   于是一大批"方向相反、其实证据很明确"的片子被当成"贴边"弃权。
+        #   实测（鹿井 514 + 我们 45 = 559 张）：**74 例正 `E_tb` + 64 例负 `E_bg` 是误弃权**
+        #   （`E_bg` 负 = 背景比主体暗 = 顺光/面光的**反证**，却被算成"贴边不敢判"）。
+        #   ⇒ 改成单向：只有 **`E_lr`（左↔右）** 才是真正双向的量。
+        #   ⚠ 带宽 `mg` 不变（它是 09-29 为"阈值一动就翻"加的），**只是不再用错方向**。
+        _marg = ((tb * (1 - mg) <= eb <= tb * (1 + mg))                    # 只有正的 E_bg
+                 or (-ts * (1 + mg) <= raw['E_tb'] <= -ts * (1 - mg))      # 只有负的 E_tb
+                 or (ts * (1 - mg) <= abs(raw['E_lr']) <= ts * (1 + mg)))  # E_lr 双向
+        if _marg:
+            raw['why'] = ('marginal: E_bg=%.1f E_tb=%.1f E_lr=%.1f 贴 %.0f/%.0f'
+                          % (eb, raw['E_tb'], raw['E_lr'], tb, ts))
+            return None, raw
 
     if _hard:
         # 亮区偏"主体中轴"还是偏一侧 ⇒ 正逆光 / 侧逆光
