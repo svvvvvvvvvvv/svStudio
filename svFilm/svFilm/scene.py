@@ -284,15 +284,356 @@ def _light_position(d, L, person, cfg):
     return '面光/顺平光', raw
 
 
-def classify(disp, cfg=C, lin=None, person=None):
+# ---------------------------------------------------------------------------
+# ★★ 10-09 新增：「多线索 → 程度量 → 分级」光位（技能 §192 的 ①~④）—— ⚠ **尚未接执行**
+#
+#   ⚠ 旧 `_light_position` **原样保留**（`back` 轴行为一字不变）；这里是**并列的第二条实现**，
+#     结果进 `raw['light']` / `out['back2']`，**默认关**（`config.SCENE_LIGHT_EVIDENCE=False`）
+#     ⇒ 不进缓存键、不影响下游取参。**接执行时必做三件**：
+#       ① `scene.VERSION` +1（缓存键带它）② 复跑 `selftest` ③ 先出"新旧标签逐张对照"给 SV 目检。
+#
+#   为什么要推倒重来（§192 的调研结论，四条系统性差异）：
+#     · 工业界「逆光检测」是相机里做了 30 年的成熟功能，答案高度一致：
+#       **分块 + 块间关系 + 多线索 + 程度量 + 降级** —— 没有一家靠"单判据 + 弃权"。
+#     · 我们 v3：分块太粗（3×3=9 块 vs 64 区）· 线索太少（无复核）· 只有二值没有程度 ·
+#       判不出只能弃权（没有降级路径）。
+#     · 我们一直没用**最可靠的那条证据**：**脸上的明暗形状**（人像布光实践）。
+#     · `person.py` 一次前向里**已经白送"脸皮肤"掩膜**（边际成本 0）⇒ 这条证据是白捡的。
+# ---------------------------------------------------------------------------
+
+LIGHT_LABELS = ('正逆光', '侧逆光', '侧光', '面光/顺平光')
+
+
+def _ramp(v, hi, lo=0.0):
+    r"""把量 `v` 线性映射到 0~1（`lo` 处 0、`hi` 处 1，两端夹住）。
+
+    ★★ 为什么**不用阈值**：阈值是"是/否"（EP1158353 那一代），过了阈就饱和；
+      我们要的是**程度**（**EP0570968** 的连续量 `g`、**CN110971841B** 的"逆光程度"）。
+      ⇒ 阈值只当**归一化的锚**（取 `hi = 2T` ⇒ 阈值处 ≈ 0.5）。
+    """
+    hi, lo = float(hi), float(lo)
+    if hi <= lo:
+        return 0.0
+    return float(min(max((float(v) - lo) / (hi - lo), 0.0), 1.0))
+
+
+def _soft_or(pairs):
+    r"""软或（noisy-OR）：`1 − Π(1 − wᵢ·eᵢ)` —— **多条弱线索能累加**。
+
+    出处：**Lalonde ICCV09**「多**弱**线索合并 + 先验」；也对应 **US 7,010,160 B1** 的
+    "先按亮度判、**再用第二条独立证据复核**"。
+    ⚠ 与 v3「条件触发」的区别：v3 是**任一条强**才进逆光族（弱证据全部浪费）；
+      软或让"三条都中等"也算 —— **这正是降弃权要的**（弃权只留给"所有线索都弱"）。
+    """
+    p = 1.0
+    for w, e in pairs:
+        p *= (1.0 - max(0.0, min(1.0, float(w) * float(e))))
+    return 1.0 - p
+
+
+def _block_fields(L, n):
+    r"""n×n 块级亮度场 + **块间关系**（相邻块梯度的一致性）。
+
+    ★ 提分辨率：`SCENE_BACK_NBLK2 = 8` ⇒ **64 区**（对齐 **EP1158353 A2** 的 64 区分块）；
+      v3 是 3×3 = 9 块。
+    ★★ **块间关系**（**EP2849431 B1** 的要点：「用**相邻块**的亮度关系判断，
+      **不是绝对阈值**」）：`coh` = |相邻块差的均值| ÷ 均绝对值 ∈ [0,1]
+      —— 高 ⇒ 左右（上下）**真的有一致的亮暗趋势**；低 ⇒ 只是噪声/局部纹理。
+    ★ 块值仍用 v3 的**相对量** `z = 块中位 L − 整张中位 L`（跨域可比，别改回绝对值）。
+    """
+    h, w = L.shape
+    g = float(np.median(L))
+    z = np.zeros((n, n), np.float64)
+    for i in range(n):
+        for j in range(n):
+            s = L[i * h // n:(i + 1) * h // n, j * w // n:(j + 1) * w // n]
+            if s.size:
+                z[i, j] = float(np.median(s)) - g
+    zf = np.sort(z.ravel())[::-1]
+
+    def _coh(dv):
+        a = float(np.abs(dv).mean())
+        return float(abs(dv.mean()) / a) if a > 1e-6 else 0.0
+
+    # ★★ **块间关系**（EP2849431）的更强形式：对**块列均值 / 块行均值**做最小二乘直线，
+    #    取"首→末的预测差"当**趋势量**。比 `mean(最右列) − mean(最左列)` 稳健得多 ——
+    #    后者只要**一列**亮（一幅亮墙、一块招牌）就翻，那量到的是**内容**不是**光向**。
+    #    （10-09 自检发现：`面光→侧光` 的 27 张翻转里，多数是"某一侧有亮物体"。）
+    ci = np.arange(n, dtype=np.float64) - (n - 1) / 2.0
+    den = float((ci ** 2).sum()) or 1.0
+    E_lr_t = float(((z.mean(axis=0) * ci).sum() / den) * (n - 1))
+    E_tb_t = float(((z.mean(axis=1) * ci).sum() / den) * (n - 1))
+
+    return dict(z=z,
+                E_lr=float(np.mean(z[:, -1]) - np.mean(z[:, 0])),
+                E_tb=float(np.mean(z[-1]) - np.mean(z[0])),
+                E_lr_t=E_lr_t, E_tb_t=E_tb_t,
+                E_span=float(zf[0] - zf[-1]),
+                spike=float(zf[0] - zf[1]) if zf.size > 1 else 0.0,
+                coh_x=_coh(np.diff(z, axis=1)),
+                coh_y=_coh(np.diff(z, axis=0)))
+
+
+def _blk_off(mask, sub, n, thresh_pct, max_row=None):
+    """`mask` 里"达到 `thresh_pct` 的块"中，落在**主体之外**的块占比。
+
+    ★ `max_row`（块行号）**以下**的块不算 —— 逆光的意思是"光源在**主体背后**"，
+      而**画面底部的一片过曝（亮地面 / 水面反光 / 白斑马线）不是光源**。
+      ★★ 这是 10-09 我自己抽查翻转样例时抓出来的**假阳性来源**：
+      005_02（白箭头路面）被 cz 推成"正逆光"、125_02（亮水面）被推成"正逆光"，
+      而 125 的**脸比背景亮 36 格**（正光）—— 两条自相矛盾。
+    """
+    H, W = mask.shape
+    off = tot = 0
+    for i in range(n):
+        if max_row is not None and i > max_row:
+            continue
+        for j in range(n):
+            sb = mask[i * H // n:(i + 1) * H // n, j * W // n:(j + 1) * W // n]
+            sp = sub[i * H // n:(i + 1) * H // n, j * W // n:(j + 1) * W // n]
+            if sb.size and sb.mean() * 100.0 >= thresh_pct:
+                tot += 1
+                if sp.size and sp.mean() < 0.5:
+                    off += 1
+    return (float(off) / float(n * n)), tot
+
+
+def _sub_bottom_row(sub, n):
+    """主体**最低**像素落在第几个块行（块行号从 0 起）。拿不到 ⇒ `None`。"""
+    rr = np.nonzero(sub.any(axis=1))[0]
+    if rr.size == 0:
+        return None
+    H = sub.shape[0]
+    return min(int(rr.max()) * n // H, n - 1)
+
+
+def _face_evidence(L, sub, face, cfg):
+    r"""**脸上的受光** —— 人像布光实践里最可靠的证据（自有出处，见 §192.1 末行）。
+
+    与「主体 vs 背景」的区别：头肩掩膜**混了头发/衣服**，而脸是**同一种材质、连续表面**
+    ⇒ 脸上的明暗差是**光方向**的直接读数（不是"身上平均亮度"那种混合量）。
+
+    量三样（都用**掩膜内中位**，抗噪）：
+      · `E_bg`  = 背景中位 − **脸**中位（**正的越大 ⇒ 脸被背景压 ⇒ 逆光**）
+      · `E_lr`  = 脸（按掩膜自身外接框左右分半）右半中位 − 左半中位（**侧光/侧逆光的读数**）
+      · `E_tb`  = 脸下半中位 − 上半中位（**负 ⇒ 上亮 ⇒ 光从上方/背后**）
+    ⚠ 脸太小 / 掩膜为空 ⇒ `ok=False`（该线索**缺席**，合成器跳过它 —— 这就是 **US8035727** 的
+      "证据不够就**降级**、而不是弃权"）。
+    """
+    out = dict(ok=False, n_px=0, E_bg=None, E_lr=None, E_tb=None, E_span=None)
+    if face is None:
+        return out
+    m = np.asarray(face, np.float64)
+    if m.ndim != 2 or tuple(m.shape[:2]) != tuple(L.shape[:2]):
+        return out
+    fm = m > 0.5
+    n_px = int(fm.sum())
+    out['n_px'] = n_px
+    if n_px < int(getattr(cfg, 'SCENE_LIGHT_FACE_MIN_PX', 300)):
+        return out
+    if n_px < float(getattr(cfg, 'SCENE_LIGHT_FACE_MIN_REL', 0.03)) * max(int(sub.sum()), 1):
+        return out
+    ys, xs = np.nonzero(fm)
+    xm = int((int(xs.min()) + int(xs.max()) + 1) // 2)
+    ym = int((int(ys.min()) + int(ys.max()) + 1) // 2)
+    yy, xx = np.mgrid[0:L.shape[0], 0:L.shape[1]]
+    Lf = float(np.median(L[fm]))
+    out['E_bg'] = float(np.median(L[~sub]) - Lf)
+    for key, half in (('E_lr', xx >= xm), ('E_tb', yy >= ym)):
+        a, b = fm & half, fm & (~half)
+        if int(a.sum()) >= 30 and int(b.sum()) >= 30:
+            out[key] = float(np.median(L[a]) - np.median(L[b]))
+    vs = L[fm]
+    out['E_span'] = float(np.percentile(vs, 95) - np.percentile(vs, 5))
+    out['ok'] = True
+    return out
+
+
+def light_evidence(d, L, person=None, face=None, cfg=C):
+    r"""多线索光位证据 → **程度量** → 分级。**不改 `back`、不进缓存键**（供对照与后续接执行）。
+
+    ## 与 v3（`_light_position`）的四点不同
+    1. **程度量而不是二值**（EP0570968 的 `g`）：`deg_back` / `deg_side` ∈ [0,1]。
+    2. **软或合并**而不是条件触发（Lalonde ICCV09）：多条中等证据能累加。
+    3. **多一条最可靠的线索**：**脸上的受光**（`_face_evidence`）。
+    4. **有降级路径**（US8035727）：人掩膜不可用 ⇒ 用**中心区**当主体（TI US2008/0110226 口径），
+       **不是直接弃权**；脸掩膜太小 ⇒ 只跳过那条线索。
+       ⇒ **弃权只留给"画面有大结构、但所有线索彼此不支持某一边"**。
+
+    @returns {dict} `label` / `deg_back` / `deg_side` / `conf` / `degrade` / `ev`（原始证据）/ `why`
+    """
+    H, W = L.shape
+    tb = float(getattr(cfg, 'SCENE_BACK_TB', 15.0))
+    ts = float(getattr(cfg, 'SCENE_BACK_TS', 20.0))
+    n2 = max(int(getattr(cfg, 'SCENE_BACK_NBLK2', 8) or 8), 2)
+    floor = float(getattr(cfg, 'SCENE_LIGHT_CONF_FLOOR', 0.35))
+    grade = float(getattr(cfg, 'SCENE_LIGHT_GRADE', 0.50))
+    t_off = float(getattr(cfg, 'SCENE_BACK_CLIP_OFF_MIN', 0.05))
+    ev = {}
+    out = dict(label=None, why=None, conf=0.0, deg_back=0.0, deg_side=0.0,
+               degrade=None, ev=ev, H=H, W=W)
+
+    # ---- ★ 主体：优先「人在哪」；拿不到 ⇒ **降级**用中心区（不是弃权）----
+    sub = None
+    if person is not None:
+        per = np.asarray(person, np.float64)
+        if per.ndim == 2 and tuple(per.shape[:2]) == (H, W):
+            s = per > 0.5
+            if (int(s.sum()) >= int(getattr(cfg, 'SCENE_BACK_MIN_SUB_PX', 500))
+                    and int((~s).sum()) >= 500):
+                sub = s
+    if sub is None:
+        sub = np.zeros((H, W), bool)
+        sub[H // 3:2 * H // 3, W // 3:2 * W // 3] = True
+        out['degrade'] = 'center_subject(人在哪不可用 ⇒ 中心区当主体)'
+    bak = ~sub
+    ev['person_pct'] = round(float(sub.mean() * 100.0), 2)
+
+    # ---- 图本身极端 ⇒ 真的判不动（这两条保留：不是"证据弱"，是"没有证据"）----
+    _l50 = float(np.median(L))
+    ev['L50'] = round(_l50, 1)
+    if (_l50 < float(getattr(cfg, 'SCENE_BACK_EXTREME_LO', 8.0))
+            or _l50 > float(getattr(cfg, 'SCENE_BACK_EXTREME_HI', 92.0))):
+        out['why'] = 'extreme_luma(%.0f)' % _l50
+        return out
+    rgb = np.clip(np.asarray(d, np.float64), 0.0, 1.0)
+    cl = (rgb.max(axis=2) >= 254.0 / 255.0) if rgb.ndim == 3 else np.zeros((H, W), bool)
+    ev['clip_pct'] = round(100.0 * float(cl.mean()), 3)
+    if ev['clip_pct'] > float(getattr(cfg, 'SCENE_BACK_BLOWN_ALL', 30.0)):
+        out['why'] = 'mostly_blown(%.1f%%)' % ev['clip_pct']
+        return out
+
+    # ---- ① 明暗结构（提分辨率 + 块间关系：边条 + **趋势**两种口径都留）----
+    bf = _block_fields(L, n2)
+    e_lr, e_tb, e_span, spike = bf['E_lr'], bf['E_tb'], bf['E_span'], bf['spike']
+    ev.update(E_lr=round(e_lr, 1), E_tb=round(e_tb, 1), E_span=round(e_span, 1),
+              spike=round(spike, 1), coh_x=round(bf['coh_x'], 2), coh_y=round(bf['coh_y'], 2),
+              E_lr_t=round(bf['E_lr_t'], 1), E_tb_t=round(bf['E_tb_t'], 1), nblk=n2)
+    ev['E_bg'] = round(float(np.median(L[bak]) - np.median(L[sub])), 1)
+
+    # ---- ② 过曝区在主体之外（**底部不算**：亮地面/水面不是光源）+ 突出光源 ----
+    _bot = _sub_bottom_row(sub, n2)
+    ev['sub_bot_blk'] = _bot
+    cz, _n_clip = _blk_off(cl, sub, n2, float(getattr(cfg, 'SCENE_BACK_CLIP_PCT', 3.0)),
+                           max_row=_bot)
+    hz, _n_hot = _blk_off(bf['z'] >= bf['z'].max()
+                          - float(getattr(cfg, 'SCENE_BACK_HOT_REL', 0.10)) * max(e_span, 1e-6),
+                          sub, n2, 0.0, max_row=_bot)
+    ev['clip_blk_off'] = round(cz, 3)
+    ev['hot_blk_off'] = round(hz, 3)
+    has_src = bool(hz > 0.0 and spike >= float(getattr(cfg, 'SCENE_BACK_SPIKE_REL', 0.30))
+                   * max(e_span, 1e-6))
+    ev['has_spike_src'] = has_src
+
+    # ---- ③ ★ 脸上的受光（新线索；缺 ⇒ 跳过，不是弃权）----
+    fe = _face_evidence(L, sub, face, cfg)
+    ev['face'] = dict(ok=fe['ok'], n_px=fe['n_px'],
+                      **{k: (None if fe[k] is None else round(fe[k], 1))
+                         for k in ('E_bg', 'E_lr', 'E_tb', 'E_span')})
+
+    # ---- ④ 合成器：每条线索 → 0~1 程度，软或合并 ----
+    def _face(key, w=1.0, sign=1.0):
+        v = fe.get(key)
+        return (w, _ramp(sign * v, 2.0 * tb)) if (fe['ok'] and v is not None) else (0.0, 0.0)
+
+    # ★★★ 10-09 自检修的第 4 个缺陷（最要紧的一条）：**因果证据必须是必要条件**。
+    #   逆光的**定义**就是"光在主体背后" ⇒ 它必然表现为「**主体（尤其是脸）比它身后暗**」。
+    #   原先六条线索一律软或 ⇒ "上亮下暗"或"过曝区在主体外"**单独**就能顶出逆光族，
+    #   结果实测：新判逆光族的 158 张里 **87 张（55%）的脸其实比背景亮**（自相矛盾）。
+    #   ⇒ 现在：`deg_back = 因果 × 支持`。
+    #     · 因果（必需）= 主体比背景暗 **或** 脸比背景暗（两者都可用时软或）；
+    #     · 支持（强化）= 上亮下暗 / 过曝区在主体外 / 突出光源 / 脸上上亮下暗。
+    # ★★★ 10-09 自检修的第 6 个缺陷：**主/客体掩膜会污染因果证据**。
+    #   `E_bg = 背景中位 − 主体中位`，"主体"里**混着头发和衣服**（常常很暗）⇒ 一个
+    #   "深色衣服 + 亮脸 + 中亮背景"的人会让 `E_bg` 变正，于是被判逆光 —— 但**根本没逆光**。
+    #   实测：新判逆光族的 98 张里仍有 **42 张（43%）的脸其实比背景亮**。
+    #   ⇒ 有**脸皮肤**掩膜时，以**脸**为主证据（脸是同一材质、连续表面，最干净的"主体"读数，
+    #     也是人像布光实践里最可靠的证据），掩膜版的 `E_bg` 只当**弱支持**（权重 0.35）。
+    if fe['ok'] and fe.get('E_bg') is not None:
+        causal = _soft_or([
+            (1.0, _ramp(fe['E_bg'], 2.0 * tb)),                       # ★ 脸比背景暗（主）
+            (float(getattr(cfg, 'SCENE_LIGHT_EBG_W_FACE', 0.35)),
+             _ramp(ev['E_bg'], 2.0 * tb)),                            # 主体比背景暗（弱支持）
+        ])
+    else:
+        causal = _ramp(ev['E_bg'], 2.0 * tb)
+    support = _soft_or([
+        (1.0, _ramp(-e_tb, 2.0 * ts)),               # 上亮下暗
+        (1.0, _ramp(cz, 2.0 * t_off)),               # 过曝区在主体之外（**底部已排除**）
+        (0.6, 1.0 if has_src else 0.0),              # 突出光源（v3 教训：单独不够 ⇒ 权重低）
+        _face('E_tb', 0.7, -1.0),                    # ★ 脸上「上亮下暗」
+    ])
+    #   ★★ 形式：`deg_back = causal × (1 + 0.35 × support)`（上限 1）。
+    #      · `causal = 0` ⇒ `deg_back = 0`（**因果必需**，这次修的重点）；
+    #      · `causal = 0.5`（= `E_bg` 正好在标定阈值 `T` 上）⇒ 0.5~0.68 ⇒ 够「逆光族」的门
+    #        （**与 v3「E_bg ≥ T ⇒ 逆光族」口径对齐**）；
+    #      · `support` 只能**放大**、不能**制造**。
+    deg_back = min(1.0, causal * (1.0 + 0.35 * support))
+    ev['causal'], ev['support'] = round(causal, 3), round(support, 3)
+    deg_side = _soft_or([
+        (1.0, _ramp(abs(bf['E_lr_t']), 2.0 * ts)),   # ★ **趋势量**（不是边条）：抗"某一侧有亮物体"
+        _face('E_lr', 0.7, +1.0),                    # ★ 脸上左右明暗差
+    ])
+    deg_front = _soft_or([                            # "明确顺光/面光"的**正面证据**
+        (1.0, _ramp(-ev['E_bg'], 2.0 * tb)),          # 背景比主体暗 ⇒ 光从相机方向来
+        _face('E_bg', 0.7, -1.0),                     # 脸比背景亮
+    ])
+    out['deg_back'], out['deg_side'] = round(deg_back, 3), round(deg_side, 3)
+    out['conf'] = round(max(deg_back, deg_side, deg_front), 3)
+    out['deg_front'] = round(deg_front, 3)
+
+    # ---- 判决：三个程度量**取最大**（不是"逆光优先"）+ 只在"全弱"时看结构 ----
+    #   ★★ 10-09 自检修的第二个缺陷：原先只比较 `deg_back` 与 `deg_side`，
+    #      **从不用正面证据否决** ⇒ 125_02 那种"脸比背景亮 36 格"（明显正光）也会被判正逆光。
+    #      现在三量取 argmax；逆光族还要**压过**正面证据。
+    #   ★★ 10-09 自检修的第 5 个缺陷（**逻辑漏洞**）：原先第一道门写的是
+    #      `best >= max(floor, grade)`，而 `floor(0.35) < grade(0.5)` ⇒
+    #      **落在 [0.35, 0.50) 的片子直接被推进"弃权"**（既不该判、也不该弃——白丢）。
+    #      ⇒ 改成单一门槛 `floor`：**弃权只留给「best < floor 且画面本来有大结构」**。
+    struct_min = float(getattr(cfg, 'SCENE_LIGHT_STRUCT_MIN', 12.0))
+    best = max(deg_back, deg_side, deg_front)
+    if best >= floor:
+        if best == deg_back and deg_back >= grade:
+            # 亮区偏主体中轴 ⇒ 正逆光；偏一侧 ⇒ 侧逆光（沿用 v3 口径）
+            if cl.any():
+                _yy, _xx = np.nonzero(cl)
+                hi_cx = float(np.median(_xx)) / max(W - 1, 1)
+            else:
+                hi_cx = float(int(np.argmax(bf['z'][0] + bf['z'][1] + bf['z'][2])) + 0.5) / n2
+            _ys, _xs = np.nonzero(sub)
+            cx = abs(hi_cx - float(np.median(_xs)) / max(W - 1, 1))
+            ev['hi_cx'], ev['cx_diff'] = round(hi_cx, 3), round(cx, 3)
+            out['label'] = ('正逆光' if cx <= float(getattr(cfg, 'SCENE_BACK_CX_TOL', 0.10))
+                            else '侧逆光')
+        elif best == deg_side:
+            out['label'] = '侧光'
+        else:
+            out['label'] = '面光/顺平光'
+    elif e_span < struct_min:
+        # 画面**本来就没有明暗结构** ⇒ "面光/顺平光"是**有信息**的判断（不是弃权）
+        out['label'] = '面光/顺平光'
+    else:
+        out['why'] = ('weak: best=%.2f deg_back=%.2f deg_side=%.2f deg_front=%.2f E_span=%.1f'
+                      % (best, deg_back, deg_side, deg_front, e_span))
+    return out
+
+
+def classify(disp, cfg=C, lin=None, person=None, face=None):
     r"""量四根轴（一次算完）。
 
     `lin`：解码后的**线性**图 —— 只给 `overwhite`（源头过曝）那一轴用。
     `person`：`person.person(disp)` 的粗掩膜（人在哪）—— 只给 `back`（光位）那一轴用。
       **拿不到就传 `None`** ⇒ `back` 弃权（写 `-`），其余三根照常。
+    `face`：`person.person_face(disp)` 给的**脸皮肤**掩膜（可选）—— 只给**并列的第二条光位实现**
+      （`light_evidence`，见下）用；`back` 轴**不看它**。
+
+    ⚠⚠ **`SCENE_LIGHT_EVIDENCE`（默认 `False`）**：打开后多算一份"多线索 → 程度量"的光位，
+      落在 `out['back2']` / `raw['light']` —— **只给对照用，不参与缓存键、不参与下游取参**。
+      接执行要三件：① `VERSION` +1 ② 复跑 `selftest` ③ 先出对照给 SV 目检（技能 §192）。
 
     @returns {dict}
       四根轴 + `key`（缓存用，带 VERSION）+ `raw`（量到的原值，便于自查与事后标定阈值）
+      （+ `back2` / `raw['light']`，仅当 `SCENE_LIGHT_EVIDENCE` 打开）
     """
     d = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
     lab = color.to_lab(np.ascontiguousarray(d))
@@ -311,6 +652,16 @@ def classify(disp, cfg=C, lin=None, person=None):
     # ---- 光位：主体 vs 它身后的背景（见 `_light_position`）----
     out['back'], _lp = _light_position(d, L, person, cfg)
     out['raw'].update(_lp)
+
+    # ---- ★ 并列的第二条光位实现（多线索 → 程度量；**默认关、未接执行**）----
+    #   ⚠ 这里**不影响** `back`、`key`、任何下游取参 —— 纯粹是"同一次调用里顺带算一份"。
+    if bool(getattr(cfg, 'SCENE_LIGHT_EVIDENCE', False)):
+        try:
+            out['raw']['light'] = light_evidence(d, L, person=person, face=face, cfg=cfg)
+            out['back2'] = out['raw']['light'].get('label')
+        except Exception as _e:                             # noqa: BLE001
+            out['raw']['light'] = dict(label=None, why='error: %s' % type(_e).__name__)
+            out['back2'] = None
 
     # ---- 源头过曝：**必须在解码后的线性域判**（显示域那边早被引擎重渲染压过了）----
     ow_pct = None

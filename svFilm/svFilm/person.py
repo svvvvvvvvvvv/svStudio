@@ -51,6 +51,10 @@ _LOCK = threading.Lock()
 _SEG = [None]
 _WHY = [None]
 
+# 模型一次前向就输出这 6 类（见 `masks()`）。⚠ 第 3 类 = **脸上的皮肤**。
+NCLASS = 6
+BG, HAIR, SKIN, FACE, CLOTH, OTHER = range(NCLASS)
+
 
 class PersonUnavailable(RuntimeError):
     """模型 / 依赖拿不到。调用方**降级**（光位那一轴给 `None`），**不崩**。"""
@@ -105,11 +109,41 @@ def why():
     return _WHY[0]
 
 
+def masks(disp, want=(BG,)):
+    r"""一次前向 → **指定类别**的置信掩膜（与 `disp` 同尺寸，0~1）；拿不到 ⇒ 抛 `PersonUnavailable`。
+
+    类别号：`BG=0` 背景 · `HAIR=1` 头发 · `SKIN=2` 身体皮肤 · **`FACE=3` 脸上的皮肤** ·
+    `CLOTH=4` 衣服 · `OTHER=5` 其他。
+
+    ★★★ 为什么要有这个函数：`selfie_multiclass` **一次前向就把 6 类全算完了**
+    ⇒ 取第 3 类（脸上的皮肤）的**边际成本是 0** —— 这**不是**"再跑一次人脸识别"，
+      也不是把 `birefnet` 那条高开销的路接回来（那条已随认人整套删掉）。
+    ⚠ 用途**只限证据**（光位判据的一条线索）；**不许**拿它去复建"肤色调色层"
+      （10-08 评估过、裁定不做，理由见本模块 `person()` 的 docstring）。
+    """
+    import cv2
+    seg, mp = _segmenter()
+    d = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
+    u8 = np.ascontiguousarray((d * 255.0 + 0.5).astype(np.uint8))
+    H, W = u8.shape[:2]
+    small = np.ascontiguousarray(cv2.resize(u8, (SEG_SIDE, SEG_SIDE),
+                                            interpolation=cv2.INTER_AREA))
+    with _LOCK:                       # ★ mediapipe 实例不是线程安全的 ⇒ 调用串行化
+        r = seg.segment(mp.Image(image_format=mp.ImageFormat.SRGB, data=small))
+    out = {}
+    for k in want:
+        k = int(k)
+        cm = np.asarray(r.confidence_masks[k].numpy_view(), np.float32)
+        out[k] = np.clip(cv2.resize(cm, (W, H), interpolation=cv2.INTER_LINEAR),
+                         0.0, 1.0).astype(np.float32)
+    return out
+
+
 def person(disp):
-    r"""**人在哪** —— 返回与 `disp` 同尺寸的粗掩膜（0~1）；拿不到 ⇒ `None`。
+    r"""**人在哪** —— 返回与 `disp` 同尺寸的粗掩膜（0~1）；拿不到 ⇒ 抛（调用方弃权）。
 
     口径 = `selfie_multiclass` 的 **「1 − 背景类」**（= 当年那个 ~0.3 s 的老口径）。
-    ⚠ **只取这一项**：不跑人脸检测、不要 face_skin / skin / hair —— 光位只需要"主体在哪"。
+    ⚠ **只取这一项**：不跑人脸检测、不要 skin / hair —— 光位只需要"主体在哪"。
     ⚠ 返回 `None`（模型不可用）时，调用方**必须**能弃权，别硬判。
 
     ## ★ 10-08 记录（**已评估、暂不采用**，别再重复调研）
@@ -122,16 +156,17 @@ def person(disp):
       正是当年"脸↔脖子断层"那个删除理由的结构性解法）。
     **裁定：不做**（不引入会动画面的新层）。要捡起来时，这一段的结论可直接用。
     """
-    import cv2
-    seg, mp = _segmenter()
-    d = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
-    u8 = np.ascontiguousarray((d * 255.0 + 0.5).astype(np.uint8))
-    H, W = u8.shape[:2]
-    small = np.ascontiguousarray(cv2.resize(u8, (SEG_SIDE, SEG_SIDE),
-                                            interpolation=cv2.INTER_AREA))
-    with _LOCK:                       # ★ mediapipe 实例不是线程安全的 ⇒ 调用串行化
-        r = seg.segment(mp.Image(image_format=mp.ImageFormat.SRGB, data=small))
-    # 6 类顺序：0=背景 1=头发 2=身体皮肤 3=脸皮肤 4=衣服 5=其他 ⇒ 只用 0
-    cm0 = np.asarray(r.confidence_masks[0].numpy_view(), np.float32)
-    p = 1.0 - cm0
-    return np.clip(cv2.resize(p, (W, H), interpolation=cv2.INTER_LINEAR), 0.0, 1.0)
+    return np.clip(1.0 - masks(disp, (BG,))[BG], 0.0, 1.0)
+
+
+def person_face(disp):
+    r"""**一次前向**同时给「人在哪」与「脸上的皮肤在哪」—— 边际成本 0。
+
+    ★ 10-09 起用：光位判据的第三条线索 = **脸上的受光**（人像布光实践里最可靠的证据，
+      见 `scene.light_evidence` 与技能 §192）。**只用掩膜**，不恢复 `face.py` 那套。
+
+    @returns `(person, face)` 两张与 `disp` 同尺寸的 0~1 掩膜；
+      模型不可用 ⇒ 抛 `PersonUnavailable`（调用方**弃权**，不许硬判）。
+    """
+    m = masks(disp, (BG, FACE))
+    return np.clip(1.0 - m[BG], 0.0, 1.0), m[FACE]
