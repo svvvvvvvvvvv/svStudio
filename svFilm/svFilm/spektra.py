@@ -25,7 +25,8 @@ spektrafilm 的 profiles 与生成的 LUT = **CC BY-SA 4.0 + 自定义前言**
 `enlarger.print_exposure` + `normalize_print_exposure`）—— 它是"负片正确曝光"。
 `presets._render_locked` **保留**它（实测关掉中位会低 **5.1** 个 L*）。
 ⚠ 09-29：原来那套"影调层在引擎之前定落点"（`tone.py`）**已整段删除**。
-svFilm 现在只在**成片**上做颜色（`grade.py`：混色 → 分色），不碰曝光。
+★ 10-10：`grade.py`（颜色层）也**整段删除**了（分支 `drop-grade`）⇒ svFilm 现在
+**一条链只到引擎**：解码 + 白平衡 + 护栏 → 判场景 → 引擎 → 出图（+ `scanfx` 的扫描段后处理）。
 """
 from __future__ import annotations
 

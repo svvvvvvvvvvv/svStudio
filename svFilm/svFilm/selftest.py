@@ -20,10 +20,6 @@ from . import color, config as C, io, pipeline, presets
 # ★ 09-23：凡是要点名「一条胶片风格」的地方就用这一条（别把中文名写死到各处）。
 _PRESET = 'Portra400薄荷'
 
-# ★ 颜色层（`grade.py`）当前开着。它关掉之后报告里没有 `d_sh` / `c_gain` 这些键
-#   ⇒ 断言必须跟着开关走，否则会把"关掉这一层"误报成"功能坏了"。
-_GRADE_ON = bool(getattr(C, 'GRADE_ENABLE', True))
-
 FAIL = []
 
 
@@ -91,62 +87,13 @@ def t_review_1008():
     它们的共同点是：**没有任何东西会报错**。
     """
     import numpy as _np
-    from . import config as C, grade, presets, service, targets
-
-    # 造一张**各亮度段都非空**的合成图（纯随机图会让分带掩膜退化，测不出东西）
-    _yy = _np.mgrid[0:64, 0:64][0] / 63.0
-    _d = _np.clip(_yy[..., None].repeat(3, 2) * 0.7 + 0.15
-                  + 0.02 * _np.random.RandomState(0).rand(64, 64, 3), 0.0, 1.0)
-
-    # ---- ① 报告同形：关整层 vs 开着，键集合必须一致 ----
-    _on = grade.apply(_d, C, stock='Ultramax400沉褐', scene=None, person=None)[1]
-    _keep = C.GRADE_ENABLE
-    C.GRADE_ENABLE = False
-    try:
-        _off = grade.apply(_d, C, stock='Ultramax400沉褐', scene=None, person=None)[1]
-    finally:
-        C.GRADE_ENABLE = _keep
-    _miss = sorted(set(_on) ^ set(_off))
-    check('★★★ 关颜色层时报告与开着时**键集合完全相同**', not _miss,
-          '开着 %d 键 / 关着 %d 键；差异: %s' % (len(_on), len(_off), _miss or '无'),
-          '两种形状 ⇒ 下游 `.get(key, 默认)` 一条路拿默认值、一条路拿真值，排查时误导')
-
-    # ---- ② 白名单合并透传：split()/mix() 的每个自检键都要在 apply() 报告里 ----
-    _r = _np.random.RandomState(1)
-    _L2 = _r.rand(64, 64) * 60.0 + 20.0
-    _a2 = _r.rand(64, 64) * 10.0 - 5.0
-    _b2 = _r.rand(64, 64) * 10.0 - 5.0
-    _tg = targets.for_stock('Ultramax400沉褐', None)
-    _m = dict(Lm=float(_np.median(_L2)), am=float(_np.median(_a2)), bm=float(_np.median(_b2)))
-    _i2 = grade.split(_L2, _a2, _b2, _tg, C, _m)[2]
-    _i3 = grade.mix(_L2, _a2, _b2, _tg, C, _m)[3]
-    _miss2 = sorted((set(_i2) | set(_i3)) - set(_on))
-    check('★★★ 分色/混色返回的**每个**自检键都进了 `apply()` 报告（白名单合并）',
-          not _miss2, '缺: %s' % (_miss2 or '无'),
-          '这份手抄透传清单已经漏过两次（`split_resid` 一轮、'
-          '`d_mid`/`d_deep`/`split_curve_a/b` 一轮），每次代价都是"白跑一轮真渲染"')
-
-    # ---- ③ band_gain 长度：不足会**静默跳过**那几个色相带 ----
-    _nb = len(grade.BANDS)
-    _badb = [n for n in presets.names()
-             if len(((targets.for_stock(n, None) or {}).get('band_gain')) or [0] * _nb) < _nb]
-    check('★★ 每条预设的 `band_gain` 长度 ≥ 色相带数（%d）' % _nb, not _badb,
-          '不足: %s' % (_badb or '无'),
-          '不足时 `grade.mix` 用 `if bi < len(_bg)` **静默跳过**，不报错也不进报告')
+    from . import config as C, presets, service, targets
 
     # ---- ④ 解码签名不能再是空的（`ENTRY_*` 那次的教训）----
     _gone = [k for k in service._DECODE_SIG_KEYS if not hasattr(C, k)]
     check('★★★ 解码签名有键、且键真的在 config 里', bool(service._DECODE_SIG_KEYS) and not _gone,
           '键=%s 缺=%s' % (list(service._DECODE_SIG_KEYS), _gone or '无'),
           '老写法靠 `ENTRY_` 前缀取键，前缀被删光后恒为空 ⇒ 机制静默失效、无人发现')
-
-    # ---- ⑤ 段缓存键必须覆盖**全部** GRADE_*（"拧了没反应"的根）----
-    _sig = dict(C.key_signature(C))
-    _gk = [k for k in dir(C) if k.startswith('GRADE_')]
-    _missg = [k for k in _gk if k not in _sig]
-    check('★★★ 段缓存键覆盖**全部** `GRADE_*`（%d 个）' % len(_gk), not _missg,
-          '漏: %s' % (_missg or '无'),
-          '漏了就"拧了没反应"——`GRADE_SPLIT_ENABLE` 的注释恰恰承诺"一键回退这一段"')
 
     # ---- ⑥ 印相中灰配平必须**显式钉住**，不许吃 vendor 的 schema 默认 ----
     _p = presets.digested('Ultramax400沉褐', C)
@@ -222,107 +169,6 @@ def t_review_1008():
           '老版本键里只有 name ⇒ 首次调用者的 config 永久污染缓存 ⇒ A/B 试验两边一样')
 
 
-def t_knob_effect():
-    r"""★★★★★ **每个 `GRADE_*` 键都必须真的能改变输出**（"拧了没反应"的自动检测）。
-
-    为什么要有这一组：本项目最痛的一类 bug 是**"改了没反应"**，而它有两种形态：
-      ① **读了但读不到**（键名写错 / 被靶遮住 / 被上游归一化掉）—— `t_config_keys` 只管存在性；
-      ② **读了但没效果**（写进了一个被闭环抵消、或窗根本覆盖不到的字段）。
-    形态② 极难靠读代码发现。10-08 我就造了一个：`GRADE_HI_NEUTRAL` 的窗设在 L* 88~100，
-      而画面最亮的像素在 **L\* 86** ⇒ 各档强度**输出逐位相同**，读码完全看不出问题。
-
-    ⇒ 做法：**扰动测试**。逐键换一个值，跑同一张图，断言输出变了。
-      · 用**两张**合成图（不同内容），**任一**张上有效即算"活"——
-        因为有些键只在特定条件下才起作用（如 `GRADE_DEEP_*` 要有暗部）。
-      · 报"可疑死键"清单；**不**直接判 FAIL（避免误报把自检变成噪声），
-        但如果可疑键超过阈值就红 —— 那说明有人批量加了没接线的键。
-    """
-    import numpy as np
-    from . import config as C, grade
-
-    # 两张合成图：① 纵向渐变 + 暖偏（各亮度段都非空）② 多色相 + 宽彩度
-    yy, xx = np.mgrid[0:56, 0:56]
-    g1 = np.stack([np.clip(0.10 + 0.80 * yy / 55.0, 0, 1),
-                   np.clip(0.09 + 0.72 * yy / 55.0, 0, 1),
-                   np.clip(0.08 + 0.66 * yy / 55.0, 0, 1)], -1)
-    r = np.random.RandomState(7)
-    g2 = np.clip(0.25 + 0.5 * (0.5 + 0.5 * np.cos(6.283 * xx / 56.0))[..., None]
-                 * np.array([1.0, 0.75, 0.45]) + 0.06 * r.rand(56, 56, 3), 0, 1)
-    IMGS = (g1, g2)
-
-    def out_of(img):
-        o, _ = grade.apply(img, C, stock='Ultramax400沉褐', scene=None, person=None)
-        return np.asarray(o, np.float64)
-
-    base = [out_of(im) for im in IMGS]
-    keys = sorted(k for k in dir(C) if k.startswith('GRADE_'))
-    # 每个键的"扰动值"：布尔翻转；数值按量级放大/缩小；不足则用附近值
-    def alt(k, v):
-        if isinstance(v, bool):
-            return [not v]
-        if isinstance(v, (int, float)):
-            cand = []
-            for m in (1.6, 0.4, 2.5):
-                cand.append(type(v)(v * m) if v else type(v)(0.5 if isinstance(v, float) else 1))
-            cand.append(v + (1.0 if isinstance(v, float) else 1))
-            cand.append(v - (1.0 if isinstance(v, float) else 1))
-            return [c for c in cand if c != v]
-        return []
-
-    dead, live, skipped = [], [], []
-    for k in keys:
-        v0 = getattr(C, k)
-        tested = False
-        try:
-            for nv in alt(k, v0):
-                try:
-                    setattr(C, k, nv)
-                    for i, im in enumerate(IMGS):
-                        if float(np.max(np.abs(out_of(im) - base[i]))) > 1e-6:
-                            tested = True
-                            break
-                    if tested:
-                        break
-                except Exception:                                       # noqa: BLE001
-                    pass
-        finally:
-            setattr(C, k, v0)
-        if tested:
-            live.append(k)
-        elif isinstance(v0, (bool, int, float)):
-            dead.append(k)
-        else:
-            skipped.append(k)
-    # 已知"条件性 / 被靶遮住 / 确认已死"的键 —— **每条都要写明理由**。
-    # ★ 新冒出来的死键**不在此列** ⇒ 会红。这才是这一组的价值。
-    _KNOWN = {
-        'GRADE_SH_A': '被靶遮住：`_default.sh_abs` 覆盖全部 10 条预设（见 config 死值警告）',
-        'GRADE_SH_B': '同上',
-        'GRADE_HI_A': '被靶遮住：`_default.hi_abs` 覆盖全部 10 条预设',
-        'GRADE_HI_B': '同上',
-        'GRADE_SAT': '被靶遮住：预设自己写了 `sat`（鹿井 0.8528）⇒ `mix()` 优先读靶',
-        'GRADE_PERSON_DL': '条件性：要在 `apply(person=...)` 传掩膜才生效（合成图没传）',
-        'GRADE_PERSON_W': '条件性：同上',
-        'GRADE_SPLIT_DAMP': '**确认已死**：包内零读点（只被 `_debug` 归档副本读）—— 见 config 死键清单',
-        'GRADE_SPLIT_MID_LIMIT': '**确认已死**：全仓库零读点 —— 见 config 死键清单',
-        'GRADE_SPLIT_W_REF': '**确认已死**：包内零读点（只被 `_debug` 读）—— 见 config 死键清单',
-        'GRADE_BAND_SOFTMAX_HI': '条件性：**只在 `GRADE_BAND_SOFTMAX=True` 时才被读**'
-                                 '（扰动测试一次只拧一个键 ⇒ 关着时拧它当然没效果）。'
-                                 '主开关本身**是活的**（已被同一条测试证明）',
-    }
-    _new = [k for k in dead if k not in _KNOWN]
-    check('★★★★★ **没有新出现的**"读了但没效果"的键（扰动测试：拧一下必须动）',
-          not _new, '活 %d / 共 %d ｜ **新死键: %s** ｜ 已知条件性/被遮/已死 %d 个'
-          % (len(live), len(live) + len(dead), ', '.join(_new) or '无', len(_KNOWN)),
-          '本项目的头号痛点是"拧了没反应"。新死键 ⇒ 该键读了但没效果'
-          '（被靶遮住 / 被归一化抵消 / 作用窗覆盖不到）。'
-          '★ 10-08 实例：`GRADE_HI_NEUTRAL` 的窗设在 L* 88~100，而画面最亮像素在 **L\\* 86** '
-          '⇒ 各档强度**输出逐位相同**，只读代码完全看不出 ⇒ 已删。'
-          '★ 若确认某键是"条件性"的，把它连**理由**一起登记进 `_KNOWN`，别直接放宽判据。')
-    check('★ 而且已知清单不许膨胀（>12 个 ⇒ 有人在用登记表掩盖死键）',
-          len(_KNOWN) <= 12, '已知 %d 个' % len(_KNOWN))
-
-
 def t_synth_transfer():
     r"""★★★★★ **合成测试图的传递函数**（内容无关的回归基准）。
 
@@ -339,7 +185,7 @@ def t_synth_transfer():
       传递函数应当在**基线**上量，逐场景覆盖是"基线之上的条件修正"。
     """
     import numpy as np
-    from . import color, grade, presets, targets
+    from . import color, presets, targets
 
     W, H = 768, 900
 
@@ -367,11 +213,8 @@ def t_synth_transfer():
     e = presets.render(s2l(ch), 'Ultramax400沉褐', C, overrides=ov)
     lab = color.to_lab(e)
     L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
-    mm = dict(Lm=float(np.median(L)), am=float(np.median(a)), bm=float(np.median(b)))
-    tg = targets.for_stock('Ultramax400沉褐', None)
-    L2, a2, b2, _i = grade.mix(L, a, b, tg, C, mm, person=None)
-    a3, b3, _s = grade.split(L2, a2, b2, tg, C, mm)
-    lab2 = color.to_lab(np.clip(grade.gamut(L2, a3, b3), 0, 1))
+    # ★★ 10-10：颜色层已整段删除 ⇒ 传递函数直接在**引擎输出**上量（引擎出图 = 成片）。
+    lab2 = lab
     Lo, ao, bo = lab2[..., 0], lab2[..., 1], lab2[..., 2]
     LABI = color.to_lab(np.ascontiguousarray(ch))
     Li, ai, bi = LABI[..., 0], LABI[..., 1], LABI[..., 2]
@@ -472,7 +315,6 @@ def _main():
     groups = [
         ('胶片风格：9 条预设', t_presets),
         ('胶片风格：换一条真的换画面', t_preset_differs),
-        ('二次调色：分色 + 混色（L2/L3）', t_grade),
         ('直方图（LR 画法：亮度 + RGB 叠加 + 5 个区）', t_hist),
         ('靶按预设分组', t_targets),
         ('可调键：config 里真的接上了（防"假旋钮"）', t_config_keys),
@@ -483,7 +325,6 @@ def _main():
         ('★★★★★ 删层纪律：影调层 / 肤色层 / 认人认脸 **真的删了**', t_dropped_layers),
         ('★ 「人在哪」+ 光位：**只用低开销那条** / 判不出要弃权', t_person_light),
         ('★★★★★ 10-08 评审防复发：接线断了必须有人喊（缓存键/透传/报告同形）', t_review_1008),
-        ('★★★★★ 每个 GRADE_* 键都要真能改变输出（扰动测试，防"拧了没反应"）', t_knob_effect),
         ('★★★★★ 合成测试图的传递函数（内容无关的回归基准：出口白/暗部不过冲/曲线单调）',
          t_synth_transfer),
         ('★★★★★ 连续调制 `{"by":…}` + **光位不驱动影调**（10-09）', t_by_modulation),
@@ -687,20 +528,20 @@ def t_preset_differs():
 # ---------------------------------------------------------------------------
 
 def t_dropped_layers():
-    r"""★★★ 09-29 新分支 `drop-tone-and-skin`：三样东西**从代码里删掉**了。
+    r"""★★★ 09-29 `drop-tone-and-skin` + **10-10 `drop-grade`**：**整段删掉的层**。
 
     这组是"删干净了没有"的钉子 —— 防的是"关了开关但代码还在、谁哪天又把它接回去"：
-      · **模块级**：`tone` / `face` / `facegain` / `region` **必须 import 不进来**；
-      · **config**：`TONE_*` / `FACE_*` / `SKIN_*` / `PERSON_*` / `GRADE_SKIN_*` /
-        `SCENE_BACK_*` / `SCENE_SHOT_*` 一个都不许剩，`STYLE` / `GRADE_SCOPE` /
-        `GRADE_REGION_SCOPE` / `PRESET_MID_SHIFT` / `TARGET_*_FLOOR_L` 同样；
+      · **模块级**：`tone` / `face` / `facegain` / `region` / **`grade`** 必须 import 不进来；
+      · **config**：`TONE_*` / `FACE_*` / `SKIN_*` / **`GRADE_*`** / `SCENE_SHOT_*` 一个都不许剩，
+        `STYLE` / `GRADE_SCOPE` / `GRADE_REGION_SCOPE` / `PRESET_MID_SHIFT` / `TARGET_*_FLOOR_L` 同样；
       · **pipeline 的代码里**不许再出现那几层的名字；
       · **服务路由 `/styles`** 必须没了。
+    ★ 10-10：**颜色层（`grade.py`）也整段删了** —— 理由见 `pipeline.run_from` 里那段注释。
     """
     import importlib
     import inspect
 
-    for m in ('tone', 'face', 'facegain', 'region'):
+    for m in ('tone', 'face', 'facegain', 'region', 'grade'):
         try:
             importlib.import_module('svFilm.%s' % m)
             _ok = False
@@ -711,8 +552,8 @@ def t_dropped_layers():
 
     # ★ 09-29 晚：`PERSON_*` / `SCENE_BACK_*` **不在这个黑名单里** ——
     #   它们是**重新加回来**的光位判据（只用低开销的"人在哪"，见 `t_person_light`）。
-    _bad = [k for k in dir(C) if k.startswith(('TONE_', 'FACE_', 'SKIN_',
-                                               'GRADE_SKIN_', 'ANCHOR_', 'SCENE_SHOT_'))]
+    _bad = [k for k in dir(C) if k.startswith(('TONE_', 'FACE_', 'SKIN_', 'GRADE_',
+                                               'ANCHOR_', 'SCENE_SHOT_'))]
     _bad += [k for k in ('STYLE', 'PRESET_MID_SHIFT', 'TARGET_BLACK_FLOOR_L',
                          'TARGET_HI_FLOOR_L', 'GRADE_REGION_SCOPE', 'GRADE_SCOPE')
              if hasattr(C, k)]
@@ -723,7 +564,8 @@ def t_dropped_layers():
     _src = '\n'.join(l.split('#')[0] for l in
                      inspect.getsource(pipeline.run_from).splitlines())
     _hit = [n for n in ('tone', 'facegain', 'FACE_STEP_ENABLE', 'TONE_ENABLE',
-                        'GRADE_SCOPE', 'render_with_face', 'skin_gap') if n in _src]
+                        'GRADE_SCOPE', 'render_with_face', 'skin_gap',
+                        'grade.apply', 'GRADE_ENABLE') if n in _src]
     check('★★ pipeline **代码里**不再出现那几层的名字', not _hit,
           '命中: %s' % (_hit or '无'),
           '又接回去了 ⇒ 这不是"删掉"，是"关开关"')
@@ -933,11 +775,6 @@ def t_targets():
           % (b['black_shape'], z['black_shape'], max(_sp),
              b['sh_abs'][0], z['sh_abs'][0], b['hi_abs'][0], z['hi_abs'][0]),
           '两条预设的靶一模一样 ⇒ 多半是把同一个文件复制了两份（靶没分开）')
-    check('★★ `grade.apply` 接受 stock 参数（靶能传下去）',
-          'stock' in __import__('inspect').signature(
-              __import__('svFilm.grade', fromlist=['x']).apply).parameters)
-
-
 
 
 def t_by_modulation():
@@ -1039,281 +876,21 @@ def t_by_modulation():
         star.pop(key, None)
 
 
-def t_grade():
-    """二次调色（`grade.py`）：关掉必须逐位恒等；开着必须按量到的方向动。"""
-    from . import grade
-
-    disp = _gray_img(seed=23)
-    # ★★ 开关必须**成对还原**：这一组会临时改 `GRADE_ENABLE` / `GRADE_SAT` / `GRADE_SPLIT_ENABLE`，
-    #   漏还原 ⇒ 后面几组看到的默认值全错位（09-29 那 4 条老账里有 3 条就是这么来的）。
-    _ge0 = bool(getattr(C, 'GRADE_ENABLE', True))
-    # ★★★ 09-29：**彩度守恒那条契约的前提是 `GRADE_SAT=1.0`**（"只重新分配、不改总量"）。
-    #   本会话把默认改成 0.72（落地 A）⇒ 契约**前提变了**、旧写法没显式设它 ⇒ 必然假红
-    #   （实测 33.65 → 23.42 = −30.4%，正好是 ×0.72 的量级，**不是 bug**）。
-    #   ⇒ 按纪律：**在这里显式把它设成 1.0 来跑**（跑完还原），判据数字一个字不改。
-    _sat0 = float(getattr(C, 'GRADE_SAT', 1.0))
-    # ① 关掉 ⇒ 逐位不变（不能"说关还偷偷动一点"）
-    C.GRADE_ENABLE = False
-    try:
-        off, info = grade.apply(disp, C)
-    finally:
-        C.GRADE_ENABLE = True          # 下面几条要测"开着"的样子（函数结束时会还原成 _ge0）
-    check('★ 关掉二次调色 ⇒ 逐位不动（不许"说关还偷偷动"）',
-          float(np.max(np.abs(off - disp))) < 1e-12,
-          '最大差 %.2e' % float(np.max(np.abs(off - disp))))
-
-    on, info = grade.apply(disp, C)
-    check('开着 ⇒ 画面真的变了', float(np.max(np.abs(on - disp))) > 0.005,
-          '最大差 %.4f' % float(np.max(np.abs(on - disp))))
-    check('输出没有 NaN / Inf 且在 [0,1]',
-          bool(np.all(np.isfinite(on))) and float(on.min()) >= 0.0 and float(on.max()) <= 1.0)
-
-    # ② 极端图不崩
-    for tag, img in (('全黑', np.zeros((8, 8, 3))), ('全白', np.ones((8, 8, 3))),
-                     ('全灰', np.full((8, 8, 3), 0.5))):
-        try:
-            o, _ = grade.apply(img, C)
-            ok = bool(np.all(np.isfinite(o)))
-        except Exception:                                          # noqa: BLE001
-            ok = False
-        check('极端图不崩：%s' % tag, ok, '',
-              '分位全相等时除零 —— 彩度归一那段必须有 _EPS 兜着')
-
-    # ③ 暗部真的往鹿井的方向动了（a* 更绿、b* 更黄）
-    def _split(d):
-        lab = color.to_lab(np.ascontiguousarray(d))
-        L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
-        am, bm = np.median(a), np.median(b)
-        m = L <= np.percentile(L, 25.0)
-        return float(a[m].mean() - am), float(b[m].mean() - bm)
-    a0, b0 = _split(disp)
-    a1, b1 = _split(on)
-    # ★ 分色现在是**逐图往靶收**（靶按预设取，见 `targets.py`）。
-    #   判据不是"往哪个方向"，而是**离靶是不是更近了** —— 这条跟靶换谁都不冲突。
-    #   ★★ 10-08：`GRADE_DEEP_A/B` 是**风格化的暗部推色**（故意的、偏离靶的），
-    #     与"这一层往靶收"是两件事 ⇒ 测这条契约时把它**显式设成 0**（跑完还原），
-    #     与上面 `GRADE_SAT=1.0` 的处理同一个道理（契约的前提要显式摆出来）。
-    #     ⚠ 老代码不用设，因为那根旋钮当时是**死的**（被闭环吃掉）；10-08 修活之后必须显式。
-    _dk0 = (float(getattr(C, 'GRADE_DEEP_A', 0.0)), float(getattr(C, 'GRADE_DEEP_B', 0.0)))
-    C.GRADE_DEEP_A, C.GRADE_DEEP_B = 0.0, 0.0
-    try:
-        _on0, _ = grade.apply(disp, C)
-        a1, b1 = _split(_on0)
-    finally:
-        C.GRADE_DEEP_A, C.GRADE_DEEP_B = _dk0
-    from . import targets as _T
-    _t = _T.for_stock(None)
-    _sh_a, _sh_b = float(_t['sh_abs'][0]), float(_t['sh_abs'][1])
-    _d0 = abs(a0 - _sh_a) + abs(b0 - _sh_b)
-    _d1 = abs(a1 - _sh_a) + abs(b1 - _sh_b)
-    check('★★ 暗部分色**离靶更近了**（逐图往靶收；靶 %+.2f/%+.2f）' % (_sh_a, _sh_b),
-          _d1 < _d0 - 1e-6,
-          '离靶 %.2f → %.2f   （当前 a* %+.2f→%+.2f  b* %+.2f→%+.2f）'
-          % (_d0, _d1, a0, a1, b0, b1),
-          '越来越远 ⇒ 补的符号反了，或者 target 取错了')
-    # ★★★ 彩度守恒（09-24 这个 bug 的回归护栏）：`GRADE_SAT = 1.0` 时
-    #   分色混色**不许改变整张的彩度中位** —— 它只该"重新分配"。
-    #   ⚠ 原来归一系数取的是**彩色像素**的中位、却乘到**所有**像素上 ⇒ 灰像素被多乘一次
-    #     ⇒ 整张彩度虚涨 46%、画面发飘（脸崩了）。
-    #   ⚠ 不能用灰图测（灰图 C=0，比值没意义）⇒ 造一张**有颜色**的确定性测试图
-    C.GRADE_SAT = 1.0                  # ★ 09-29：契约前提（只重新分配）——显式设，跑完还原
-    _rng = np.random.RandomState(51)
-    _c = np.stack([_rng.rand(96, 96) * 0.55 + 0.22 for _ in range(3)], -1)
-    _c[..., 1] = np.clip(_c[..., 1] * 1.05, 0, 1)      # 偏彩（不是灰）
-    _lab0 = color.to_lab(_c)
-    _c1, _ = grade.apply(_c, C)
-    _lab1 = color.to_lab(np.ascontiguousarray(_c1))
-    _m0 = float(np.median(np.sqrt(_lab0[..., 1] ** 2 + _lab0[..., 2] ** 2)))
-    _m1 = float(np.median(np.sqrt(_lab1[..., 1] ** 2 + _lab1[..., 2] ** 2)))
-    check('★★★ 分色混色**不许改整张彩度中位**（GRADE_SAT=1 ⇒ 只重新分配）',
-          abs(_m1 / max(_m0, 1e-6) - 1.0) < 0.08,
-          '整张彩度中位 %.2f → %.2f（%+.1f%%）' % (_m0, _m1, 100 * (_m1 / max(_m0, 1e-6) - 1)),
-          '涨太多 ⇒ 归一的系数算错了基准（别拿彩色子集的中位去乘所有像素）')
-    C.GRADE_SAT = _sat0                # ★ 09-29：还原到进来时的值（别把 0.72 落成 1.0）
-
-    check('报告里带着"动了多少"（能自查，不用读图）',
-          bool(info.get('applied')) and 'd_sh' in info and 'c_gain' in info)
-
-    # ④ 灰像素不被动（加饱和不许把中性轴一起推偏 —— digitalFilm 那条教训）
-    # ⚠ 必须三通道**相等**才是真灰（`dstack` 三个不同常数 = 一个浅蓝，不是灰）
-    cmax = 0.0
-    for gv in (0.2, 0.35, 0.5, 0.65, 0.8):
-        g, _ = grade.apply(np.full((64, 64, 3), float(gv), np.float64), C)
-        lab = color.to_lab(np.ascontiguousarray(g))
-        cmax = max(cmax, float(np.max(np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2))))
-    check('★ 中性灰不被推彩度（彩度闸兜着；留 3 的余量给分级那一点点）',
-          cmax < 3.0, '五档灰最大彩度 %.2f' % cmax,
-          '中性轴被推偏 ⇒ 灰像素没被彩度闸挡掉（加饱和把中性轴一起推偏是 digitalFilm 的老毛病）')
-
-    # ⑤ ★ 分色那一段的**单段开关**：关掉它 ⇒ 分色不动、**混色照跑**
-    _rgb = np.random.RandomState(77)
-    _c = np.stack([_rgb.rand(96, 96) * 0.55 + 0.22 for _ in range(3)], -1)
-    _c[..., 1] = np.clip(_c[..., 1] * 1.05, 0, 1)
-    C.GRADE_SPLIT_ENABLE = False
-    _o_nosp, _i_nosp = grade.apply(_c, C)
-    C.GRADE_SPLIT_ENABLE = True
-    _o_sp, _ = grade.apply(_c, C)
-    C.GRADE_ENABLE = _ge0              # ★ 开关成对还原（漏了它 ⇒ 后面几组全部错位变红）
-    check('★★ `GRADE_SPLIT_ENABLE=False` ⇒ 分色那一段真的不生效（混色照跑）',
-          _i_nosp.get('split_model') == 'off'
-          and float(np.max(np.abs(_o_nosp - _o_sp))) > 1e-6,
-          '关掉分色 vs 开着分色 最大差 %.3g ；报告 split_model=%s'
-          % (float(np.max(np.abs(_o_nosp - _o_sp))), _i_nosp.get('split_model')),
-          '两者完全一样 ⇒ 分色没被真的跳过（那个单段开关是摆着看的）')
-
-    # ⑥ ★★ 09-30：**靶可以是「内容曲线」** —— 目标随画面自身的色偏查表，不再是常数。
-    #   为什么：大师**自己那批图**的暗部 Δb 的 IQR 就有 4~8 格 ⇒ 固定点靶不可达。
-    #   两条断言：
-    #     · 配了 `_curves` 的预设 ⇒ `split_curve_used` 非空；没配 ⇒ 空（**向后兼容**）
-    #     · 自变量真的在起作用 ⇒ 两张"整张 b*"不同的图，查出来的目标不同
-    C.GRADE_ENABLE = True
-    _o_nc, _i_nc = grade.apply(_c, C)                       # 不传 stock ⇒ 全局靶（无曲线）
-    _o_wc, _i_wc = grade.apply(_c, C, stock='Portra400薄荷')  # 薄荷配了曲线
-    check('★★ 没配曲线的路径 ⇒ `split_curve_used` 为空（向后兼容，仍走点靶）',
-          not _i_nc.get('split_curve_used'),
-          'curve_used=%r' % (_i_nc.get('split_curve_used'),))
-    # ⚠ 09-30 深夜：`split_curve_used` **现在还会带五段曲线的 `z*` 键**（`_zone_curves`）——
-    #   判"旧口径那几条"时必须**先滤掉 `z` 前缀**，否则条数永远对不上（自检当场红过）。
-    _old_cv = lambda z: [k for k in (z.get('split_curve_used') or []) if not k.startswith('z')]
-    _zs_cv = lambda z: [k for k in (z.get('split_curve_used') or []) if k.startswith('z')]
-    check('★★ 配了曲线的预设 ⇒ 曲线靶被读到（薄荷 5 条：sh_b / hi_a / hi_b / md_a / md_b）',
-          len(_old_cv(_i_wc)) == 5,
-          'curve_used=%r  tgt_sh=%r' % (_i_wc.get('split_curve_used'), _i_wc.get('tgt_sh')))
-    # ★★ 09-30 晚：`_cv_used` **按实际查到的报**（老写法只要配了 `_curves` 就一律报 4 条，
-    #   某条缺了也照样报 ⇒ 排查"曲线到底生效没有"时会误判）。清风已删掉无信号的 sh_a/sh_b
-    #   ⇒ 它只该报 hi_a/hi_b 两条。
-    _o_qc, _i_qc = grade.apply(_c, C, stock='Pro400H清风')
-    check('★ `_cv_used` 按实际查到的报（清风只剩 hi_a/hi_b ⇒ 2 条，不是"一律 4 条"）',
-          len(_old_cv(_i_qc)) == 2,
-          'curve_used=%r' % (_i_qc.get('split_curve_used'),),
-          '仍报 4 条 ⇒ 又回到"缺了也不说"的老口径')
-
-    # 自变量在起作用：造两张整张 b* 差很远的图（一暖一冷），曲线给的目标必须不同
-    _warm = np.stack([np.full((64, 64), 0.62), np.full((64, 64), 0.56),
-                      np.full((64, 64), 0.30)], -1)
-    _cool = np.stack([np.full((64, 64), 0.35), np.full((64, 64), 0.55),
-                      np.full((64, 64), 0.68)], -1)
-    _o1, _i1 = grade.apply(_warm, C, stock='Portra400薄荷')
-    _o2, _i2 = grade.apply(_cool, C, stock='Portra400薄荷')
-    _d1 = float((_i1.get('tgt_sh') or [0, 0])[1])
-    _d2 = float((_i2.get('tgt_sh') or [0, 0])[1])
-    # 方向：**画面越黄（整张 b* 越高）⇒ 目标越蓝（Δb 越负）** —— 两位大师实测都单调。
-    # ★★★ 09-30 深夜新增：**五段靶走的是"按画面查的曲线"**（`_zone_curves`）——
-    #   没有它，五段靶会**静默退回固定值**（画面看不出报错，只是"那一段又不动了"）。
-    check('★★★ 五段靶走"按画面查的曲线"（`_zone_curves` 命中 6 条 z*）',
-          len(_zs_cv(_i_wc)) == 6,
-          'z* 命中=%r' % (_zs_cv(_i_wc),),
-          '一条都没命中 ⇒ `_zone_curves` 没读到（字段名/路径错了），五段靶静默退回固定值')
-    check('★★★ 曲线靶真的随画面走：暖画面 vs 冷画面 ⇒ 暗部 Δb 的目标不同（且暖画面更蓝）',
-          _d2 > _d1 + 0.2,
-          '暖画面目标 %+.2f ｜ 冷画面目标 %+.2f ｜ x=%s / %s'
-          % (_d1, _d2, _i1.get('curve_x'), _i2.get('curve_x')),
-          '两者相同 ⇒ 曲线没被用上（自变量没接进去）')
-    # ★★ 09-30 晚：**中间调也走曲线**（`md_a/md_b`）—— 它是"唯一该动态却还固定"的那两条
-    #   （同一把尺子下：鹿井 中Δa IQR 2.47 相关 +0.72、中Δb IQR 4.42 相关 +0.60）。
-    #   方向 = **递增**（画面越黄 ⇒ 中调相对越黄），与暗/亮带的递减相反 ⇒ 这里单独钉。
-    _m1 = float((_i1.get('tgt_mid') or [0, 0])[1])
-    _m2 = float((_i2.get('tgt_mid') or [0, 0])[1])
-    check('★★★ 中调靶也随画面走（`md_b`）：暖画面的中调目标 > 冷画面（方向与暗带相反）',
-          _m1 > _m2 + 0.2,
-          '暖画面中调目标 %+.2f ｜ 冷画面 %+.2f' % (_m1, _m2),
-          '两者相同 ⇒ md 曲线没接进去；方向反了 ⇒ 单调化方向写错了（中调是**递增**）')
-    # ★★★ 09-30 晚：**约束带 3 → 5**（预设配了 `zone_abs` 时）。
-    #   为什么钉：扩带是"眼睛看到的那两段（阴影/次高光）终于有人管"的关键，
-    #   而它**只在配了 `zone_abs` 时生效** —— 一旦哪天 targets.json 的字段名写错，
-    #   `split()` 会**静默退回三带**、画面照旧 ⇒ 必须当场红。
-    check('★★★ 配了 `zone_abs` 的预设 ⇒ 分色走**五个带**（并且报告里带 5 段位移）',
-          int(_i_wc.get('split_zones') or 0) == 5 and len(_i_wc.get('d_zones') or []) == 5,
-          'split_zones=%r  d_zones=%r' % (_i_wc.get('split_zones'), _i_wc.get('d_zones')),
-          '还是 3 ⇒ `zone_abs` 没读到（字段名/JSON 路径写错了，会静默退回老行为）')
-    import numpy as _np5
-    from . import targets as _T5
-    _img5 = _np5.stack([_np5.full((64, 64), 0.35)] * 3, -1)
-    _img5[..., 0] = 0.60
-    _o5, _i5 = grade.apply(_img5, C, stock='C200透明')      # 这条预设**没有** `zone_abs`
-    check('★★★ 没配 `zone_abs` 的预设 ⇒ **逐位走老三带**（向后兼容）',
-          int(_i5.get('split_zones') or 0) == 0 and len(_i5.get('d_zones') or []) == 3,
-          'split_zones=%r  len(d_zones)=%d' % (_i5.get('split_zones'),
-                                               len(_i5.get('d_zones') or [])),
-          '没配也走了 5 带 ⇒ 兼容分支坏了')
-    # ★★ 09-30 晚：**「人物区域整体提亮」（`person_dl`）** —— 两条硬规矩。
-    #   ⚠ 判据必须用**差分对照**：grade 本来就一直在动（混色+分色），
-    #     拿"输出 vs 输入"比会把 grade 的正常动作算进来（第一版就是这么写错的，当场红）。
-    #     正确做法 = 固定同一条链，**只翻 `person_dl`**，看差在哪。
-    from . import targets as _TGT              # ⚠ 本函数作用域里只有 `_T`，没有 `targets`
-    import numpy as _np2
-    _img = _np2.stack([_np2.full((96, 96), 0.35)] * 3, -1)
-    _img[..., 0] = 0.62                                       # 偏红的一块，保证有彩度
-    _pmask = _np2.zeros((96, 96))
-    _pmask[24:72, 24:72] = 1.0                                # 中间一块当"人"
-    _tg0 = _TGT.for_stock('Portra400薄荷')
-    _orig = _TGT.for_stock
-
-    def _run(pdl, pz):
-        _TGT.for_stock = lambda name, s2=None, _t=dict(_tg0, person_dl=pdl): dict(
-            _t, stock=name, _scene_hits=[])
-        try:
-            return grade.apply(_img, C, stock='Portra400薄荷', person=pz)
-        finally:
-            _TGT.for_stock = _orig
-
-    _o0, _i0 = _run(8.0, None)          # 有 person_dl、但**没有掩膜**
-    _o1, _i1 = _run(0.0, None)          # 关掉 person_dl
-    _a0, _ia = _run(8.0, _pmask)        # 有掩膜
-    _a1, _ia1 = _run(0.0, _pmask)
-    _L = lambda z: color.to_lab(_np2.asarray(z, _np2.float64))[..., 0]        # noqa: E731
-    _d_nomask = float(_np2.max(_np2.abs(_np2.asarray(_o0) - _np2.asarray(_o1))))
-    check('★★★ `person_dl` 写了、但 `person=None` ⇒ **一点不生效**（弃权，不许退化成全局）',
-          _i0.get('person_on') is False and _d_nomask < 1e-9,
-          'person_on=%r ｜ 翻 person_dl 后的最大差 %.3g' % (_i0.get('person_on'), _d_nomask),
-          '没掩膜也动了 ⇒ 又变成"整张提亮"，早晚出割裂')
-    _dk = _L(_a0) - _L(_a1)             # 只翻 person_dl 造成的 L* 差
-    _d_in = float(_np2.median(_dk[30:66, 30:66]))
-    _d_out = float(_np2.max(_np2.abs(_dk[0:12, 0:12])))
-    check('★★★ 给了掩膜 ⇒ 只有**人身上**被抬起来、掩膜外**一点不动**',
-          _ia.get('person_on') is True and _d_in > 3.0 and _d_out < 1e-6,
-          '人身上 ΔL*=%.2f ｜ 掩膜外 ΔL*=%.3g ｜ person_pct=%r'
-          % (_d_in, _d_out, _ia.get('person_pct')),
-          '掩膜外也动 ⇒ 掩膜没乘上（会污染背景）；人身上没动 ⇒ 没接进去')
-    C.GRADE_ENABLE = _ge0
-
-
 def t_config_keys():
     """★★ 09-26：**可调参数只在 `config.py`** —— 防"假旋钮"。
 
     症状：代码里写的是 `getattr(cfg, 'X', 字面默认)`，而 `config.py` 里**没有 X 这个键**
     ⇒ 永远取那个字面默认，**改源码里那个常量毫无反应**。
     """
-    from . import grade
-
-    # ★ 影调层删掉后，原来那四个"假旋钮"（TARGET_BLACK_FLOOR_L / TARGET_HI_FLOOR_L /
-    #   TONE_REL …）随之消失；这里改成钉**颜色层真正在用的**那些键。
-    for k in ('GRADE_ENABLE', 'GRADE_SAT', 'GRADE_SPLIT_ENABLE', 'GRADE_SPLIT_LIMIT',
-              'GRADE_SPLIT_ITERS', 'GRADE_SPLIT_NODES', 'GRADE_SPLIT_RANGE',
-              'GRADE_C_MIN', 'GRADE_SH_A', 'GRADE_SH_B', 'GRADE_HI_A', 'GRADE_HI_B',
-              'GRADE_DEEP_A', 'GRADE_DEEP_B', 'SPEK_PE_SHIFT',
-              'GRADE_PERSON_W', 'GRADE_PERSON_DL'):
+    # ★★ 10-10：颜色层整段删除 ⇒ 原来那一串 `GRADE_*` 的"键 / 真被读"检查全部作废。
+    #   现在只钉**引擎侧真正在用的键**（那些删不掉：引擎靠它们出图）。
+    for k in ('SPEK_PE_SHIFT', 'MAX_SIDE', 'EXPORT_MAX_SIDE', 'GRAIN_BLUR_REF_LONG_SIDE',
+              'CHROMA_BLUR_ENABLE', 'CHROMA_BLUR_W', 'PERSON_MODEL',
+              'SCANFIX_ENABLE', 'PUBLIC_COLORSPACE'):
         check('config.%s 这个键真的在（不是 getattr 的裸默认）' % k,
               hasattr(C, k), '当前 %r' % getattr(C, k, None),
               '缺它 ⇒ 代码里 `getattr(cfg, …)` 永远取那个字面默认，'
               '改源码里同名常量**不会有任何反应**')
-
-    # ★★ 光"键在"不够 —— 必须**真的读它**（键在但没人读 = 换了个人继续摆着看）
-    _rng = np.random.RandomState(71)
-    img = np.stack([_rng.rand(96, 96) * 0.6 + 0.2 for _ in range(3)], -1)
-    img[..., 2] = np.clip(img[..., 2] * 0.75, 0, 1)          # 偏黄 ⇒ 有真彩度
-    _l0 = C.GRADE_SPLIT_LIMIT
-    try:
-        C.GRADE_SPLIT_LIMIT = 0.0
-        _n0, _ = grade.apply(img, C)
-        C.GRADE_SPLIT_LIMIT = 12.0
-        _n1, _ = grade.apply(img, C)
-    finally:
-        C.GRADE_SPLIT_LIMIT = _l0
-    _dd = float(np.max(np.abs(_n0 - _n1)))
-    check('★★ 改 config.GRADE_SPLIT_LIMIT **真的**改变分色的补量（键在、且被读到）',
-          _dd > 1e-6, '限 0 与限 12 的最大差 %.3g' % _dd,
-          '改了没反应 ⇒ 这个键还是"摆着看的"')
 
 
 
@@ -1390,26 +967,13 @@ def t_scene():
 
 
 def t_contract():
-    # ① 颜色层跑在胶片引擎**之后**
-    calls = []
-
-    def _mark(tag, fn):
-        def _w(*a, **k):
-            if not calls or calls[-1] != tag:
-                calls.append(tag)
-            return fn(*a, **k)
-        return _w
-
-    from . import grade as _g
-    _p0, _g0 = presets.render, _g.apply
-    presets.render, _g.apply = _mark('presets', _p0), _mark('grade', _g0)
-    try:
-        pipeline.run_from(_mk_sample(_gray_img(seed=11)), stock=_PRESET)
-    finally:
-        presets.render, _g.apply = _p0, _g0
-    check('★★ 颜色层跑在胶片引擎**之后**（成片是显示域，只能事后染色、不能调曝光）',
-          calls[:2] == ['presets', 'grade'], '调用序: %s' % calls[:4],
-          '顺序反了 = 在引擎之前调亮度，控制不了成片亮度（实测三条档只拉开 8.8 / 该 29.4）')
+    # ① ★★ 10-10：颜色层已整段删除 ⇒ 原来的"颜色层跑在引擎之后"这条**作废**。
+    #   改成一条**更有力**的：整条链上**只有引擎在动像素** ⇒ 出图 = `presets.render` 的输出。
+    _r_pure = pipeline.run_from(_mk_sample(_gray_img(seed=11)), stock=_PRESET)
+    check('★★★ 整条链上**只有引擎在动像素**：出图 = `presets.render` 的输出',
+          _pure_engine_same(_r_pure, _mk_sample(_gray_img(seed=11))),
+          '与"只跑 presets.render"的差超出了引擎自身噪声',
+          '还有别的层在偷偷改像素 ⇒ 颜色层没删干净')
 
     # ② 不认得的名字**当场报错**
     try:
@@ -1420,28 +984,12 @@ def t_contract():
     check('胶片风格名字不认得 ⇒ 当场报错（不是静默出一张别的）', ok,
           '', '"名字不认得就静默走默认"是本项目最阴的一类坑，出现过三次')
 
-    # ③ 报告要说实话（进去多少 / 出来多少，能自查，不用读图）
+    # ③ 报告要说实话（'grade' 这个键**不该再有** —— 它有 ⇒ 颜色层没删干净）
     r = pipeline.run_from(_mk_sample(_gray_img(seed=17)), stock=_PRESET)
-    check('★ 报告里带 `grade`（颜色层的量）与 `scene`（判出来的场景）',
-          isinstance(r.report.get('grade'), dict) and 'scene' in r.report,
-          '键: %s' % sorted(r.report.keys()))
-    if _GRADE_ON:
-        g = r.report['grade']
-        check('★ 颜色层开着 ⇒ 报告里带着"动了多少"（能自查，不用读图）',
-              bool(g.get('applied')) and 'L50_out' in g and 'd_sh' in g and 'c_gain' in g,
-              'L50_out=%s' % g.get('L50_out'))
-
-    # ④ 关掉颜色层 ⇒ 出图**就是纯引擎输出**（别的层不许偷偷动像素）
-    _ge_k = bool(getattr(C, 'GRADE_ENABLE', True))
-    C.GRADE_ENABLE = False
-    try:
-        _r_pure = pipeline.run_from(_mk_sample(_gray_img(seed=17)), stock=_PRESET)
-    finally:
-        C.GRADE_ENABLE = _ge_k
-    check('★★ 关掉颜色层 ⇒ 出图**就是纯引擎输出**（不许偷偷动像素）',
-          _pure_engine_same(_r_pure, _mk_sample(_gray_img(seed=17))),
-          '与"只跑 presets.render"的差超出了引擎自身噪声',
-          '关了这一层却还在改像素 ⇒ 开关没接对')
+    check('★ 报告里带 `scene`（判出来的场景）、且**不再有 `grade` 键**',
+          'scene' in r.report and 'grade' not in r.report,
+          '键: %s' % sorted(r.report.keys()),
+          '`grade` 还在 ⇒ 颜色层没删干净（报告形状会骗人）')
 
     check('成片没有 NaN / Inf 且在 [0,1]',
           bool(np.all(np.isfinite(r.disp))) and float(r.disp.min()) >= 0.0
@@ -1458,17 +1006,8 @@ def t_cache():
     r4 = pipeline.run_from(s, stock='C200青蓝', cache=c)
     check('★ 换胶片风格 ⇒ **不**命中', not r4.report['stage_cache']['hit'])
 
-    # ★★ 09-29：**开关本身必须进键** —— 它改的是出图本身（跑不跑颜色层）。
-    #   不进键 ⇒ 常驻进程里改了一开，仍会命中"没开"的旧缓存 ⇒ "拧了没反应"（第 4 类）。
-    _ge0 = bool(C.GRADE_ENABLE)
-    try:
-        C.GRADE_ENABLE = not _ge0
-        r5 = pipeline.run_from(s, stock=_PRESET, cache=c)
-    finally:
-        C.GRADE_ENABLE = _ge0
-    check('★★ 换颜色层开关 ⇒ **不**命中（否则就是"拧了没反应"）',
-          not r5.report['stage_cache']['hit'],
-          '开关 %s → %s，命中=%s' % (_ge0, not _ge0, r5.report['stage_cache']['hit']))
+    # ★ 10-10：原来这里有一条"换 `GRADE_ENABLE` ⇒ 不许命中缓存"的断言，随颜色层一起删
+    #   （那个开关已经不存在了）。"引擎 overrides / 靶必须进键"那条**保留**（见下）。
 
     # ★★★ 09-29：**靶 / 场景覆盖（引擎 overrides）也必须进键**。
     #   以前这两项因为 `_sc` 在缓存键那段还没定义而**永远是 None**（被 except 吞掉）

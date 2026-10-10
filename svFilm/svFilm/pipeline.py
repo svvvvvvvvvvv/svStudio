@@ -21,7 +21,7 @@ from collections import OrderedDict
 
 import numpy as np
 
-from . import config as C, grade, io, presets, scene
+from . import config as C, io, presets, scene
 
 
 class Result:
@@ -198,22 +198,21 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
 
     if _entry is not None:
         disp = _entry['disp']
-        g_info = dict(_entry['g_info'])
     else:
         # ========== 跑链 ==========
         # 引擎之前一个像素都不动：喂进去的就是 RAW 解码出来的场景线性（`io.load_raw`）。
         disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg, overrides=(_ov or None))
-        # ---- L2 分色 + L3 混色（颜色）----
-        # ⚠ 这一层**不做曝光**（显示域乘增益 = 拉噪声 + 高光切白），只按亮度/色相加权染色。
-        # ★ 可整体关掉（`config.GRADE_ENABLE`）。
-        if bool(getattr(cfg, 'GRADE_ENABLE', True)):
-            # ★★ 09-30 晚：把「人在哪」一起喂进去 —— L3 的「人物区域整体提亮」要用它
-            #   （`person_dl`）。拿不到 ⇒ None ⇒ **那一块不生效**（弃权），不崩。
-            disp, g_info = grade.apply(disp, cfg, stock=name, scene=_sc, person=_pz)
-        else:
-            g_info = dict(applied=False, note='颜色层已关')
+        # ---- ★★★★ 10-10：颜色层**已整段删除**（分支 `feature/drop-grade`）----
+        #   引擎出图 = 成片。为什么删（三条，SV 拍板）：
+        #     ① 拆层实测：它在**压**"画面内色相张度"（引擎后 52.4 → 颜色层后 49.1），
+        #        而大师 65.4 ⇒ **方向是反的**；
+        #     ② 它在"中性轴"上**从来没起作用** —— `selftest` 那三条红（合成图 ①⑤⑧）
+        #        的病因已定位在**上游（胶片 / 相纸 / 扫描）**，把那几根旋钮全清零也修不动；
+        #     ③ 一整层（2 段 + 20 多根旋钮 + 10 个色相带的靶）换来的调试成本 > 收益。
+        #   ⚠ 保留 `presets._post_scan`（`scanfx.chroma_blur` 扫描色度模糊）—— 那属于
+        #     **扫描段**、不属于颜色层。
         if _ckey is not None:
-            cache.put(_ckey, disp=disp, g_info=g_info)
+            cache.put(_ckey, disp=disp)
 
     rep = dict(
         camera=s.cam,
@@ -222,9 +221,9 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
         stock=name,
         stock_label=presets.label_of(name)[0],
         stock_desc=presets.label_of(name)[1],
-        # ★ 09-29：报告形状调整 —— 影调层没了 ⇒ `grade` / `scene` 直接挂在**根上**
+        # ★ 09-29：报告形状调整 —— 影调层没了 ⇒ 各段直接挂在**根上**
         #   （原来是塞在 `report['tone']` 里；`tone` 这个键随 `tone.py` 一起删了）。
-        grade=g_info,
+        # ★ 10-10：`grade` 这个键也随**颜色层**一起删（`tone` → `grade` → 现在只剩 `scene`）。
         scene=(None if _sc is None else dict(_sc)),
         stage_cache=dict(hit=bool(_entry is not None)),
         # ★ 10-08：`scene_engine` 失败**必须能看见**（它一失败，全局 `"*"` 就整批失效）
