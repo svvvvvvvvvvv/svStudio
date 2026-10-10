@@ -497,6 +497,50 @@ def _post_scan(out, cfg):
         return out
 
 
+def _scale_grain_blur(p, lin, cfg, _ovs):
+    r"""★★★ 10-10：把 `film_render.grain.blur` 从「绝对像素」转成「随渲染尺寸缩放」。
+
+    ## 为什么
+    `grain.blur` 在 vendor 里是**绝对像素**的高斯 σ，而且它模糊的是**整幅染料密度图**
+    （`grain.py:104-106`：`layer_particle_model` 返回输入密度的无偏采样 ⇒ 模糊它 = 模糊整张画面）
+    ⇒ 名义上叫"颗粒模糊"，**实际是"整幅画面的柔度"**；单位是绝对像素
+    ⇒ **同一个数，图越小糊得越狠**。
+
+    ## 实测（10-10，`_full_scan.py`，两侧都缩到 SIDE=900 同口径）
+    全长边 6264：`A1_ldr50 49.67 / C1_psd_slope −3.006 / C4_grain 0.485`
+    2048 @ blur≈1.0：`A1 50.02 / C1 −2.993 / C4 0.500` ⇒ **逐项对上**
+    ⇒ 且 `3.0 ÷ 1.0 = 3.0` ≈ 尺寸比 `6264 ÷ 2048 = 3.06` ⇒ **确认随尺寸线性缩放**。
+
+    ## 做法
+    `blur_eff = blur × (实际长边 ÷ cfg.GRAIN_BLUR_REF_LONG_SIDE)`。
+    基准取**交付口径长边**（6264，10-09 夜标 3.0 时用的）⇒ 交付尺寸因子 **1.0**、
+    **输出逐位不变**；2048 预览因子 0.327 ⇒ 颗粒与交付物等价 ⇒ **预览 = 交付物**。
+
+    ★ 与 `scanfx.CHROMA_BLUR_W`（画面宽度比例）同思路；这里保留"绝对像素 × 尺寸因子"的
+      形式，好处是**不动 targets/预设里既有的值与语义**，且交付物零变化。
+
+    ⚠ `p` 是跨调用**共享的缓存对象** ⇒ 只改值、把旧值记进 `_ovs`，由 `finally` 还原。
+    """
+    ref = float(getattr(cfg, 'GRAIN_BLUR_REF_LONG_SIDE', 0.0) or 0.0)
+    if ref <= 0.0:
+        return                                     # 关（0/负）⇒ 回到"绝对像素"旧行为
+    try:
+        g = p.film_render.grain
+    except Exception:                                                    # noqa: BLE001
+        return
+    if not bool(getattr(g, 'active', False)) or not hasattr(g, 'blur'):
+        return                                     # 颗粒关着 ⇒ 不碰
+    try:
+        h, w = np.asarray(lin).shape[:2]
+    except Exception:                                                    # noqa: BLE001
+        return
+    f = float(max(int(h), int(w))) / ref
+    if abs(f - 1.0) < 1e-9:
+        return                                     # 交付尺寸 ⇒ 逐位不变
+    _ovs.append((g, 'blur', g.blur))
+    g.blur = float(g.blur) * f
+
+
 def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
     _p0 = p.enlarger.print_exposure
     _pp0 = p.print
@@ -547,10 +591,17 @@ def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
                 _ovs.append((_holder, _attr, getattr(_holder, _attr)))
                 setattr(_holder, _attr, _val)
 
+        # ★★ 10-10：grain.blur ——「绝对像素」→「随渲染尺寸缩放」（预览 = 交付物）。
+        #   必须放 overrides **之后**（场景覆盖可能改过它）；旧值记进 _ovs 供 finally 还原。
+        _scale_grain_blur(p, lin, cfg, _ovs)
+
         out = _simulate_once(p, np.clip(np.asarray(lin, np.float64), 0.0, None),
                              bool(getattr(cfg, 'PRESET_APPLY_STOCK_SPECIFICS', False)))
     finally:
-        for _obj, _attr, _old in _ovs:          # ★ 覆盖先还，再还上面那两项
+        # ★ 10-10：**逆序**还原。原因：同一个字段可能被记**两次**（先 overrides 记一次、
+        #   `_scale_grain_blur` 再记一次）⇒ 顺序还原会留最后一次的值、把共享的 `p` 污染掉。
+        #   逆序 ⇒ 回到最先记的那个（= `_apply` 建对象时的原值）。字段都不同时与顺序等价。
+        for _obj, _attr, _old in reversed(_ovs):   # 覆盖先还，再还上面那两项
             setattr(_obj, _attr, _old)
         p.enlarger.print_exposure = _p0
         p.print = _pp0
