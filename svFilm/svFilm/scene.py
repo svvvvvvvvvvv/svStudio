@@ -56,11 +56,15 @@ import numpy as np
 from . import color
 from . import config as C
 
-VERSION = 7                          # ★ 换判据就要 +1（缓存键带它）
+VERSION = 8                          # ★ 换判据就要 +1（缓存键带它）
 #   6（10-09）：光位判据的「贴边 ⇒ 弃权」守卫改成**单向**（原先对 `E_bg`/`E_tb` 误用 `abs`，
 #              把"方向相反、证据明确"的片子当"贴边"弃权）。实测弃权率 50%→33~40%（鹿井）、71%→49%（我们）。
 #   7（10-09）：`SCENE_BACK_MARGIN` 0.35 → **0.15**（标定，SV 定）⇒ 弃权再降到 **19%/17%/24%**。
 AXES = ('exp', 'span', 'back', 'overwhite')
+#: ★ 10-10 新增：**光型**（逆光 / 面光 / 缝隙光 / 中性 / 未知）—— 见 `lighttype.py`。
+#  它**也进 key**（第 5 个 token），但 `AXES` 不动（`AXES` 是给 `token()` 遍历用的，
+#  `lighttype` 的值本身就是词，直接进 key 即可）。
+LIGHTTYPE_KEY = True
 
 _EXP_ORDER = ('暗', '正常', '亮')
 _SPAN_ORDER = ('平', '正常', '大')
@@ -700,7 +704,16 @@ def classify(disp, cfg=C, lin=None, person=None, face=None):
     out['overwhite'] = (None if ow_pct is None
                         else bool(ow_pct >= float(getattr(cfg, 'SCENE_OVERWHITE_PCT', 0.5))))
 
-    out['key'] = 'v%d|%s' % (VERSION, '|'.join(token(k, out.get(k)) for k in AXES))
+    # ---- ★ 光型（10-10 并入）：复用已有 person 掩膜，只多取一次 FACE ----
+    try:
+        from . import lighttype as _lt
+        out['lighttype'] = _lt.measure(disp, person_mask=person, cfg=cfg)
+    except Exception as _e:                                                  # noqa: BLE001
+        out['lighttype'] = {'type': '未知', 'why': 'lighttype_failed: %s' % _e}
+    # ★ 第 5 个 token：光型（10-10）
+    _lttype = (out.get('lighttype') or {}).get('type') or '-'
+    out['key'] = 'v%d|%s|%s' % (VERSION,
+                                 '|'.join(token(k, out.get(k)) for k in AXES), _lttype)
     return out
 
 

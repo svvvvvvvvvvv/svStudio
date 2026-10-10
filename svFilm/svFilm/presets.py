@@ -39,6 +39,7 @@ from __future__ import annotations
 import dataclasses          # ★ 09-29：0.3.4 的 `PrintCurvesMorphParams` 是 frozen ⇒ 要 replace
 import json
 import os
+import sys
 import threading
 
 import numpy as np
@@ -53,6 +54,74 @@ _PARAMS: dict[str, object] = {}
 _LOCK = threading.Lock()
 # 渲染用的**按预设名**的一把锁（粒度 = 预设，不同预设仍可并行）
 _LOCKS: dict = {}
+# ★ 10-10：`_post_scan` 的**诊断变量** —— 色度模糊那一层"没生效"时在这里留证。
+#   为什么需要：它是**减弱**型效果，失效时画面不报警、直方图也不报警 ⇒ 只能靠这里。
+#   值 = None（正常）｜ 字符串（失败原因）。`selftest` 与事后排查都读它。
+_POST_SCAN_ERROR: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# ★★★ 10-10：**overrides 与"基线层"的合并** —— 一个坑了两个人的静默死键
+# ---------------------------------------------------------------------------
+# 背景：`print_render.density_curves_morph.active` 的 `True` **只存在于
+#   `targets.data()['_scene_engine']['*']`**（基线层），**不在预设 JSON 里**；
+#   而引擎 schema 的默认是 `active=False`（`params_schema.py:163-165`）。
+#   `pipeline` 走 `targets.scene_engine()` ⇒ 它会**先铺 `"*"` 层**再叠轴覆盖 ⇒ `active` 在。
+#   ⚠ 但**直接调** `presets.render(overrides={'…density_curves_morph.gamma_factor': 1.6})`
+#     的人（脚本 / 试验）会**丢掉整条基线** ⇒ `active` 缺席 ⇒ **morph 整根死掉**，
+#     而且输出与"不带该 override"**在噪声内相同**（实测 max|Δ| 3.22e-2 vs 引擎噪声 3.20e-2）
+#     ⇒ 看起来像"这根旋钮没用"，实际是"基线没铺"。
+#   ⇒ 这里做两件事：① 提供 `_with_base_overrides()` 供调用方铺基线；
+#     ② `render()` 里加一条**不改变行为**的警告，命中这个模式就喊一声。
+def _base_overrides(cfg, stock=None):
+    """取 `targets._scene_engine` 的**基线层**（`"*"` + 可选 `_stock_engine[stock]`）。
+
+    ★ 为什么需要它：`targets.scene_engine()` 是把 **`"*"` 基线 ＋ 场景轴覆盖** 合并后的结果
+      （见 `targets.py:218-221`）。试验脚本若**只**把"要动的那一根"塞进 `overrides`，
+      就等于把基线整个丢掉 —— morph 的 `active` 就是这么丢的。
+      ⇒ 正确写法：`ov = presets._base_overrides(C); ov.update({一根旋钮: 值})`。
+    ⚠ 只读 targets，**不碰任何预设 / 不写文件**。取不到（import 失败等）⇒ 返回 `{}`（不崩）。
+    """
+    try:
+        from . import targets as _T
+        _se = (_T.load().get('_scene_engine') or {})
+    except Exception:                                      # noqa: BLE001
+        return {}
+    out = {}
+    _b = _se.get('*')
+    if isinstance(_b, dict):
+        out.update(_b)
+    if stock:
+        _st = (_se.get('_stock_engine') or {}).get(stock)
+        if isinstance(_st, dict):
+            out.update(_st)
+    return out
+
+
+def _warn_if_morph_dead(overrides):
+    """★ 开发期守卫：`overrides` 出现 `…density_curves_morph.*` 却**没带 `active`** ⇒ 喊一声。
+
+    **只警告、不修改行为**（不自动补 `active` —— 那会悄悄改画面，违反"不许改画面"纪律）。
+    为什么值得加：这个模式**已经坑了两个人**，而且失效时**没有任何东西会报错**
+    （输出落在引擎自身噪声内，像"这根旋钮没用"）。与本项目 `agx_particle_*`、
+    `print_render.density_curve_gamma`、`_DECODE_SIG_KEYS` 是同一类"接线断了没人喊"。
+    """
+    if not overrides:
+        return
+    _has_morph = False
+    _has_active = False
+    for _k in overrides:
+        _s = str(_k)
+        if 'print_render.density_curves_morph' not in _s:
+            continue
+        _has_morph = True
+        if _s.endswith('.active') or _s == 'print_render.density_curves_morph':
+            _has_active = True
+    if _has_morph and not _has_active:
+        print('[svFilm 警告] overrides 里给了 `print_render.density_curves_morph.*` '
+              '却**没有带 `active`** ⇒ **morph 很可能是死的**（引擎默认 active=False，'
+              '而 True 只写在 `targets._scene_engine["*"]` 基线层里，直接调 render 不会铺它）。\n'
+              '  ⇒ 正确写法：`ov = presets._base_overrides(cfg); ov.update({...})`。', file=sys.stderr)
 
 
 def _lock_of(name):
@@ -193,9 +262,20 @@ def _apply(p, d, cfg):
     p.film = _profile_swap(p.film, sp['film_channel_swap'])
     p.print = _profile_swap(p.print, sp['print_channel_swap'])
 
-    # ---- special：两条密度曲线 gamma（下限 0.01，与 GUI 一致）----
+    # ---- special：**胶片端**密度曲线 gamma（下限 0.01，与 GUI 一致）----
     p.film_render.density_curve_gamma = max(float(sp['film_gamma_factor']), 0.01)
-    p.print_render.density_curve_gamma = max(float(sp['print_gamma_factor']), 0.01)
+    # ★★★ 10-10 代码清理：**删掉 `p.print_render.density_curve_gamma = ...`**。
+    #   它**没有任何消费者**：0.3.4 的 `PrintRenderingParams` 只声明了两个字段
+    #   （`glare` / `density_curves_morph`，见 `params_schema.py:160-165`）——
+    #   `density_curve_gamma` **根本不在里面**（存在的是 `FilmRenderingParams.density_curve_gamma`，
+    #   那是另一回事、是活的，就是上面这一行）。
+    #   `RuntimePhotoParams` 是普通 dataclass（无 `__slots__`）⇒ 这一行**不报错**，
+    #   只会给 `print_render` 挂一个**没人读**的新属性 ⇒ 预设里的 `print_gamma_factor`
+    #   **从未生效过**（10 条预设的值 0.93~1.07 全部落空）—— 与 `agx_particle_*` 同一个坑。
+    #   ⚠ 这不是"删掉一个功能"，而是**删掉一个假的接线**：画面逐位不变（已实测）。
+    #   ⚠ 若将来要真的让 `print_gamma_factor` 生效，得先确认 0.3.4 里**印相端密度曲线 gamma
+    #     该走哪个字段**（当前 schema 里没有任何入口）—— 别把这一行加回来。
+    #   ★ 判据依据：`config.py` 的死键清单（`print_render.density_curve_gamma` 那一行）。
 
     # ---- camera ----
     p.camera.lens_blur_um = float(si['camera_lens_blur_um'])
@@ -468,8 +548,19 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=
       `simulate()` 内部还会再 digest 一次，这一次用的是它自己的默认值；
       所以下面先把 `apply_stocks_specifics` 想关掉的效果**写死在 params 上**，
       并在 `selftest.t_presets` 里钉着不放。
+
+    ★★★ 10-10：**`overrides` 是"整份替换"，不是"叠加"** ⇒ 别只传一根！
+      它是 `targets.scene_engine()` 的产出，而那份产出 = **`"*"` 基线层 ＋ 场景轴覆盖** 合并后的
+      结果。只筛出"我要动的那一根"再传进来 = **把基线整个丢掉**。
+      实例（已实测、坑过两个人）：`print_render.density_curves_morph.active` 的 `True`
+      **只在 `targets._scene_engine["*"]` 里**（引擎 schema 默认 `False`，预设 JSON 里也没有）
+      ⇒ 只传 `...morph.gamma_factor` 会让 **morph 整根死掉**，输出与"不带 override"在噪声内相同
+      （max|Δ| 3.22e-2 vs 引擎噪声 3.20e-2），看着像"这根旋钮没用"。
+      ✅ 正确写法：`ov = presets._base_overrides(cfg); ov.update({一根旋钮: 值})`。
+      ⚠ 命中这个模式时下面只**警告**，**不自动补 `active`**（自动补 = 悄悄改画面）。
     """
     p = _params_for(name, cfg)
+    _warn_if_morph_dead(overrides)
 
     # ★★★ 09-26：**按预设名加锁**。下面这一整段是「临时改写共享的 `p` → 跑 → 还原」，
     #   而常驻服务是多线程的（`ThreadingHTTPServer`）⇒ 同一预设的两个请求并发时，
@@ -489,12 +580,32 @@ def _post_scan(out, cfg):
     尺子库实测（747 张大师，统一口径）「色度/亮度锐度比」：大师 **0.60**、我们 **0.99**
     ⇒ 真实扫描链的色度分辨率天然低于亮度，**这一层属于"扫描"，不属于调用方**。
     默认关（`CHROMA_BLUR_ENABLE=False`）⇒ 对既有行为**逐位无影响**。
+    ★ 10-10 清理：原来这里是**裸 `except Exception: return out`** ⇒ 任何异常（缺 scipy、
+      配置写错、内存不足）都会让这一层**静默不生效**，而"没有色度模糊"在画面上**看不出来**
+      （它是个**减弱**型效果，缩略图/直方图都不报警）⇒ 与项目里"接线断了没人喊"那一类同源。
+      **修法：仍然吞掉异常（绝不抛 —— 常驻服务是批处理的，抛出去会打断整批），
+      但至少留一行可查的痕迹**：stderr 一行 warning + 模块级诊断变量 `_POST_SCAN_ERROR`。
+      ⚠ **不许改成抛异常**：`_post_scan` 在 `render()` 的主路径上，抛出去 = 整批出图中断。
     """
+    global _POST_SCAN_ERROR
+    _POST_SCAN_ERROR = None
+    scanfx = None
     try:
         from . import scanfx
-        return scanfx.chroma_blur(out, cfg)
-    except Exception:                                                      # noqa: BLE001
-        return out
+        out = scanfx.chroma_blur(out, cfg)
+    except Exception as e:                                                 # noqa: BLE001
+        # 吞掉，但**留下痕迹**（stderr 一行 + 模块级诊断变量，供 selftest / 事后排查读）
+        _POST_SCAN_ERROR = '%s: %s' % (type(e).__name__, e)
+        print('[svFilm 警告] presets._post_scan 的 scanfx.chroma_blur 抛异常 ⇒ '
+              '**色度模糊这一层静默不生效**：%s' % _POST_SCAN_ERROR, file=sys.stderr)
+    # ⚠ `scanfx.chroma_blur` **自己**也会吞异常（缺 scipy ⇒ 原样返回、不抛）⇒
+    #   上面那个 except **抓不到它**，这里把它的诊断变量并进来，否则"缺 scipy"依然无声。
+    _cc = str(getattr(scanfx, '_CHROMA_LAST_ERROR', None) or '') if scanfx else ''
+    if _cc:
+        _POST_SCAN_ERROR = _cc
+        print('[svFilm 警告] scanfx.chroma_blur 跳过（**没有报错，但也没生效**）：%s'
+              % _cc, file=sys.stderr)
+    return out
 
 
 def _scale_grain_blur(p, lin, cfg, _ovs):

@@ -33,6 +33,13 @@ from __future__ import annotations
 
 import numpy as np
 
+# ★ 10-10：**诊断变量** —— 本模块有两处"静默降级"（缺 scipy / 缺 color），
+#   它们**不抛异常**、只是原样返回 ⇒ 调用方 `presets._post_scan` 的 try/except
+#   **抓不到**，于是 `CHROMA_BLUR_ENABLE=True` 设了也白设、而且没人知道。
+#   ⇒ 每次调用前清空、降级时写入原因；`presets._post_scan` 读它并打一行 warning。
+#   值 = None（正常或本来就没开）｜ 字符串（降级原因）。
+_CHROMA_LAST_ERROR: str | None = None
+
 
 def _pct(a, q):
     return float(np.percentile(a, q))
@@ -54,7 +61,12 @@ def chroma_blur(rgb, cfg):
       否则换渲染尺寸数值就变了（这是本项目 `lc` 已经吃过一次亏的地方）。
 
     默认关（`CHROMA_BLUR_ENABLE=False`）⇒ 对现有行为逐位无影响。
+
+    ★ 10-10：缺 scipy 那条路原来**静默返回**（不改画面、也不吭声）⇒ 现在写
+      `_CHROMA_LAST_ERROR`，由 `presets._post_scan` 报一行 warning。**行为不变**（仍返回原图）。
     """
+    global _CHROMA_LAST_ERROR
+    _CHROMA_LAST_ERROR = None
     if not bool(getattr(cfg, 'CHROMA_BLUR_ENABLE', False)):
         return rgb
     w_rel = float(getattr(cfg, 'CHROMA_BLUR_W', 0.004) or 0.0)
@@ -67,7 +79,11 @@ def chroma_blur(rgb, cfg):
     lab = _color.to_lab(np.clip(a, 0.0, 1.0))
     try:
         from scipy.ndimage import gaussian_filter
-    except Exception:                                                      # noqa: BLE001
+    except Exception as e:                                                 # noqa: BLE001
+        # ⚠ 不抛（调用方是批处理路径）—— 但**记下来**，否则这一层永远静默失效
+        _CHROMA_LAST_ERROR = ('scipy 不可用（%s: %s）⇒ 色度模糊被跳过；'
+                              'CHROMA_BLUR_ENABLE=True 也**不会**生效'
+                              % (type(e).__name__, e))
         return rgb
     sig = max(0.3, w_rel * a.shape[1])
     lab[..., 1] = gaussian_filter(lab[..., 1], sig, mode='nearest')

@@ -803,15 +803,32 @@ def t_by_modulation():
           not bad_name, '非法: %s' % (bad_name or '无'),
           '名字写错 ⇒ `_deg()` 恒返回 0 ⇒ 调制**静默失效**（这正是本项目最怕的那类坑）')
 
-    # ---- ② ★★★ 设计约束：光位不许驱动影调 ----
-    off = []
+    # ---- ② ★★★ 设计约束：光位不许驱动影调（**默认禁止 + 显式例外**）----
+    #   ★ 10-11 改：原版只扫 `back=`，而 10-10 起我们把光位轴迁成了 `lighttype=`
+    #     ⇒ 原断言**形同虚设**（查的键已没人用），规则实际被绕过。
+    #     现改成扫**两种轴块**，并把例外**登记在 `targets.json` 的 `_tone_allow` 里**
+    #     —— 从"没人看得见的漏洞"变成"有记录、要写理由的例外"。
+    #   ⚠ 理由文字也改了：原文写"光位→影调已被证伪（同义反复 + 阶跃，§194）"，
+    #     那是 10-09 用**打靶判据**（信噪比 0.75）得出的结论；按 10-11 的新规矩
+    #     （摈弃打靶结论）**不该再写成"已被证伪"**。规则仍成立，但理由是**工程理由**：
+    #     **离散档驱动全局影调 ⇒ 阶跃**。要开，必须给出**目检依据**并登记例外。
+    _allow = (d.get('_tone_allow') or {}) if isinstance(d, dict) else {}
+    off, allowed = [], []
     for k, blk in se.items():
-        if not (isinstance(k, str) and k.startswith('back=') and isinstance(blk, dict)):
+        if not (isinstance(k, str) and (k.startswith('back=')
+                                        or k.startswith('lighttype='))
+                and isinstance(blk, dict)):
             continue
-        off += ['%s.%s' % (k, kk) for kk in blk if 'density_curves_morph' in kk]
-    check('★★★ `back=`（光位）轴块里**没有任何影调参数**（"光位不驱动影调"）',
-          not off, '命中: %s' % (off or '无'),
-          '光位→影调 已被证伪（同义反复 + 阶跃，§194）⇒ 要加回来先读那段证据')
+        for kk in blk:
+            if 'density_curves_morph' not in kk:
+                continue
+            if kk in (_allow.get(k) or []):
+                allowed.append('%s.%s' % (k, kk))
+            else:
+                off.append('%s.%s' % (k, kk))
+    check('★★★ 光位轴块（`back=` / `lighttype=`）里的影调参数**必须登记在 `_tone_allow`**',
+          not off, '未登记: %s ｜ 已登记: %s' % (off or '无', allowed or '无'),
+          '离散档驱动全局影调 ⇒ 阶跃。要开必须给出**目检依据**并写进 `_tone_allow`（见 §194 的原始证据）')
 
     # ---- ③ 机制：注入一条 `{"by": ...}`（调**预设基线**、**逐通道** Δ），跑完还原 ----
     #   ⚠ 两个坑都是这条自检自己抓出来的：

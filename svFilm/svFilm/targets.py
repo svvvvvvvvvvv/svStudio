@@ -170,8 +170,14 @@ def scene_engine(scene, stock=None, cfg=None):
     try:
         from . import scene as _S
         _tok, _axes = _S.token, _S.AXES
+        # ★ 10-10：把**光型**（`lighttype`）作为**最后、优先级最高**的一层加进层序。
+        #   为什么：`scene.classify` 已把光型写进 `key`，但它不是 `AXES` 里的一轴
+        #   ⇒ 不追加的话 `"lighttype=逆光"` 这类键**永远查不到**（静默死键，实测踩过）。
+        #   它比 `back` 更细（能分出缝隙光）⇒ 该盖在 `back` 之上。
+        _lighttype_key = True
     except Exception:                                      # noqa: BLE001
         _tok, _axes = (lambda a, v: str(v)), tuple(scene.keys())
+        _lighttype_key = False
 
     def _acc(_d, _v):
         r"""累加 Δ：**标量配标量、列表配列表**（形状不一致 ⇒ **当场抛**）。
@@ -239,6 +245,18 @@ def scene_engine(scene, stock=None, cfg=None):
             _blk = ov.get(_k)
             if isinstance(_blk, dict):
                 _absorb(_blk)
+    # --- ④ ★ 光型（`lighttype`）—— **最后、优先级最高** 的一层 (10-10) ---
+    #   为什么：`scene.classify` 把光型写进了 `key`，但它不是 `scene.AXES` 的一轴
+    #   ⇒ 不加这一层的话 `"lighttype=…"` 这类键**永远查不到**（静默死键，实测踩过：
+    #   合并后 `lighttype=逆光` 的 gamma 覆盖不生效，仍是 0.98）。
+    #   优先级放在 `back` 之后：光型比 `back` 更细（能分出**缝隙光**，`back` 判不出来）。
+    if _lighttype_key:
+        _ltv = (scene.get('lighttype') or {}).get('type')
+        if _ltv:
+            for _k in ('lighttype=%s' % _ltv, 'lighttype=*'):
+                _blk = ov.get(_k)
+                if isinstance(_blk, dict):
+                    _absorb(_blk)
     # ---- 累加：`{"add"}` 的基准必须已在前面的层里（**老契约不变**）；
     #      `{"by"}` 允许落到**预设基线**（典型用法就是"在预设幅度上调"，见下）----
     if _add:
