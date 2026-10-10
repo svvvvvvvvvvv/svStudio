@@ -185,6 +185,21 @@ def targets_of(stock):
     }
 
 
+def scope_of(key):
+    """该键的【内容关系】—— 决定它到底能不能当"靶"。
+
+    见 `targets.json` 的 `_provenance` 与技能 §209/§210：
+      cross = 跨内容（鹿井 747 张 vs 我们）⇒ **只能当线索**，不能宣布"做对了"；
+      same  = 同内容（合成测试图 / 同片配对）⇒ 才可作**对照/验收**；
+      phys  = 物理或上游依据。
+    """
+    try:
+        pv = targets.load().get('_provenance') or {}
+        return (pv.get(key) or {}).get('scope', '?')
+    except Exception:                                        # noqa: BLE001
+        return '?'
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser('svFilm.scorecard')
     ap.add_argument('folder')
@@ -216,7 +231,15 @@ def main(argv=None):
     print('评分卡 · %s · %d 张 · 卷 %s' % (a.folder, len(rows), a.stock))
     if a.tag:
         print('说明：%s' % a.tag)
-    print('%-12s %-9s %-9s %-9s %s' % ('指标', '实测', '靶', '离靶', '加权'))
+    # ★★★ 10-10（SV 拍板 A：「把靶改成对照」）：**先说清这个表是什么**。
+    #   本项目**当前没有"跨内容靶"**：下面每一个数都是【跨内容线索】（鹿井 747 张 vs 我们），
+    #   按 §209 的文献结论，跨内容对齐**不成立**（Adobe US9857953：完全迁移统计会"产生伪影、
+    #   值被拉伸得过于激进"；Reinhard 2001 的已知局限：无法建立空间/语义对应、内容差大时退化）。
+    #   ⇒ 这个表的作用是**定位问题**，**不是**验收；验收在同内容的两条路上（合成幻影 / 同片配对）。
+    print('★ 口径：下表全部是【跨内容线索】（大师语料 vs 我们），只用于**定位问题**；')
+    print('   判据不在这个表里 —— 在 ① 合成测试图 ② 同片配对（同一张原片：我们 vs 用户 LR）③ 目检。')
+    print()
+    print('%-12s %-9s %-9s %-9s %s   %s' % ('指标', '实测', '线索值', '距离', '加权', '内容关系'))
     total = 0.0
     rec = {}
     _nscored, _notgt = 0, []          # ★ 10-08：真正打了分的项数 / 缺靶的项
@@ -237,7 +260,9 @@ def main(argv=None):
         total += dv
         rec[k] = mv
         _nscored += 1
-        print('%-12s %-9.1f %-9.1f %+-9.1f %.1f' % (zh, mv, tv, mv - tv, dv))
+        _sc = scope_of(k)
+        _tag = {'cross': 'cross·线索', 'same': '★same·对照', 'phys': 'phys·依据'}.get(_sc, _sc)
+        print('%-12s %-9.1f %-9.1f %+-9.1f %.1f   [%s]' % (zh, mv, tv, mv - tv, dv, _tag))
     # 只报不打分的（**显式列出来** —— 免得有人以为它们被忘了）
     _lclo, _lchi = lc_band(a.stock)
     for k, zh, why in REPORT_ONLY:
@@ -261,8 +286,9 @@ def main(argv=None):
         print('离靶合计：**没有可打分的靶**（本预设缺 `span` / 大师带）'
               '—— 这不是"0.0 = 完美"，是"没靶可打"！')
     else:
-        print('离靶合计（**只打分那几项**；越小越好，只当趋势看、别当分数去刷）：%.1f'
-              '   （打了 %d 项%s）'
+        print('线索距离合计（**这不是分数、也不是"离靶"** —— 上表全是跨内容线索，'
+              '只能当趋势/定位；要验收请走合成图或同片配对）：%.1f'
+              '   （比了 %d 项%s）'
               % (total, _nscored,
                  ('；缺靶 ' + '/'.join(_notgt)) if _notgt else ''))
     try:
