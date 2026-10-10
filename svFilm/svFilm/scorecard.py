@@ -205,7 +205,8 @@ def main(argv=None):
     ap.add_argument('folder')
     ap.add_argument('--stock', default='Ultramax400沉褐')
     ap.add_argument('--tag', default='')
-    ap.add_argument('--log', default=r'E:/Debug_svStudio/_debug/评分卡.jsonl')
+    ap.add_argument('--log', default=os.environ.get('SVFILM_SCORECARD_LOG') or 'scorecard.jsonl',
+                    help='评分卡日志（默认写当前目录；可用环境变量 SVFILM_SCORECARD_LOG 指定）')
     ap.add_argument('--side', type=int, default=SIDE)
     a = ap.parse_args(argv)
 
