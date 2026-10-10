@@ -17,12 +17,17 @@ from . import config as C, io, presets
 
 
 def _fmt_probe(res):
-    g = res.report.get('grade') or {}
-    return ('%-16s %-4s %-14s  L50 %5.1f  场景 %-18s  %5.0fms' % (
+    # ★ 10-10：读数原来来自颜色层的报告（`report['grade']['L50_out']`），颜色层删掉后
+    #   **直接从成片量** —— 这才是「落点 L*」该有的意思。
+    import numpy as _np
+    from . import color
+    _l50 = float(_np.median(color.to_lab(_np.clip(res.disp, 0.0, 1.0))[..., 0]))
+    _sc = res.report.get('scene') or {}
+    return ('%-16s %-4s %-14s  落点L* %5.1f  场景 %-18s  %5.0fms' % (
                 res.sample.name, res.sample.kind,
                 (res.report.get('stock') or 'config默认'),
-                float(g.get('L50_out', float('nan'))),
-                ((res.report.get('scene') or {}).get('key') or '-'),
+                _l50,
+                (_sc.get('key') or '-'),
                 res.report.get('ms', 0)))
 
 

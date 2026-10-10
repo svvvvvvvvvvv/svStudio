@@ -356,16 +356,18 @@ def _stats_of(i, stock):
     lab = color.to_lab(np.clip(r.disp, 0, 1))
     L = lab[..., 0]
     Cc = np.sqrt(lab[..., 1] ** 2 + lab[..., 2] ** 2)
-    g = r.report.get('grade') or {}
     sc = r.report.get('scene') or {}
+    # ★ 10-10：原来这里读 `report['grade']['L50_out']`（颜色层的量）。颜色层删掉后
+    #   直接报**从成片量出来的**那一个 —— 它本来就在旁边（`L50_measured`）⇒ 两个键合并成同一个来源。
+    _l50 = round(float(np.median(L)), 1)
     return dict(ms=round(r.report.get('ms', 0)),
                 stock=r.report.get('stock'),
                 # ★ 场景判据那三根轴（`scene.py`）—— 一眼看出这张被分到哪一档
                 scene=sc.get('key'),
-                # ★ 颜色层**实打实做到哪了**（不是请求里那个）——
+                # ★ 成片**实打实**的落点 / 彩度（不是请求里那个）——
                 #   一眼看出"落点 / 彩度到多少"，免得画面跟预期不一样却查不出原因。
-                L50=round(float(g.get('L50_out', 0)), 1),
-                L50_measured=round(float(np.median(L)), 1),
+                L50=_l50,
+                L50_measured=_l50,
                 b=round(float(np.median(lab[..., 2])), 2),
                 c50=round(float(np.median(Cc)), 2))
 

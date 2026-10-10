@@ -751,29 +751,22 @@ def t_hist():
 
 
 def t_targets():
-    """靶按预设分组（`targets.py`）：换预设必须换靶。"""
+    """靶按预设分组（`targets.py`）：换预设必须换靶。
+
+    ★★ 10-10：颜色层删掉后，靶里**只剩 `span`（跨度）还有消费者**（`scorecard.py`）。
+      那些分色 / 彩度靶（`sh_abs` / `hi_abs` / `mid_abs` / `band_gain` / `zone_abs` …）
+      已随颜色层一起从 `targets.json` 清掉 ⇒ 这一组现在只钉 `span`。
+    """
     from . import targets
 
-    check('★ 滨田 / 増田 两条预设各自有专属靶（不是落回 _default）',
-          targets.for_stock('Pro400H清风')['own'] and targets.for_stock('Portra400薄荷')['own'])
-    check('★ 没有专属靶的预设落回 _default（不报错、有靶）',
-          targets.for_stock('C200过曝')['own'] is False
-          and targets.for_stock('C200过曝')['black_shape'] is not None)
+    check('★★ 三条大师预设各自有专属靶；其余预设落回 `_default`',
+          targets.for_stock('Pro400H清风')['own'] and targets.for_stock('Portra400薄荷')['own']
+          and targets.for_stock('Ultramax400沉褐')['own']
+          and targets.for_stock('C200过曝')['own'] is False)
     b, z = targets.for_stock('Pro400H清风'), targets.for_stock('Portra400薄荷')
-    # ★★ 09-29 晚：`sh_abs / hi_abs` **换了口径**（「分带 median − 整张 median」，见
-    #   `targets.json` 的 `_split_abs_note`）⇒ 数值比老口径小约 6 倍（老 ~−9 ⇒ 新 ~−1）。
-    #   老判据 `|暗Δa 差| > 1.0` 是**旧量纲**下调的阈值；在新量纲下"差 1.0 格"已经相当于
-    #   两条预设的暗部 chroma 靶差一个数量级 —— **阈值过时，不是靶被复制了**。
-    #   这条契约的本意只是「**不是把同一个文件复制了两份**」（一个文件一个靶）⇒ 改成：
-    #   黑位差 > 1.0（**影调量纲、本轮没换口径**，照旧）+ 分色四项里**最大的一项**差 > 0.25
-    #   （0.25 远高于 JSON 浮点噪声、又远低于 1 格的感知量级，正好是"查重"该有的尺度）。
-    _sp = [abs(b['sh_abs'][i] - z['sh_abs'][i]) for i in range(2)] \
-        + [abs(b['hi_abs'][i] - z['hi_abs'][i]) for i in range(2)]
-    check('★★ 两条预设的靶**真的不一样**（一个文件一个靶，不是复制）',
-          abs(b['black_shape'] - z['black_shape']) > 1.0 and max(_sp) > 0.25,
-          '黑位 %.1f vs %.1f · 分色最大差 %.2f（暗Δa %+.2f vs %+.2f / 亮Δa %+.2f vs %+.2f）'
-          % (b['black_shape'], z['black_shape'], max(_sp),
-             b['sh_abs'][0], z['sh_abs'][0], b['hi_abs'][0], z['hi_abs'][0]),
+    check('★★ 换个预设 ⇒ `span` 靶**真的不一样**（不是把同一个文件复制了两份）',
+          abs(float(b['span']) - float(z['span'])) > 1.0,
+          'span %.2f vs %.2f' % (b['span'], z['span']),
           '两条预设的靶一模一样 ⇒ 多半是把同一个文件复制了两份（靶没分开）')
 
 
@@ -936,34 +929,9 @@ def t_scene():
     check('不给线性图 ⇒ overwhite = None（不硬猜）',
           scene.classify(flat)['overwhite'] is None)
 
-    # ④ 场景覆盖：默认**一个字段都不动**；命中才盖、且只盖命中的那些
-    base = targets.for_stock(_PRESET, None)
-    _sc = {'key': 'v3|x', 'exp': '暗', 'span': '平', 'overwhite': False}
-    same = targets.for_stock(_PRESET, _sc)
-    check('★★ 没有 `_scene` 段时，给不给场景一个字段都不变（默认逐位不变）',
-          same.get('sat') == base.get('sat') and same['_scene_hits'] == []
-          and same.get('span') == base.get('span'),
-          'hits=%s' % same['_scene_hits'])
-
-    d = targets.load()
-    _save = d.get('_scene')
-    try:
-        d['_scene'] = {'overwhite=过曝': {'sat': 1.23}, 'exp=*': {'split_limit': 9.9}}
-        _hit = dict(_sc); _hit['overwhite'] = True
-        tt = targets.for_stock(_PRESET, _hit)
-        check('★★ 命中场景覆盖时字段真的盖上，且只盖命中的那些',
-              tt['sat'] == 1.23 and tt['split_limit'] == 9.9
-              and tt['_scene_hits'] == ['exp=*', 'overwhite=过曝'],
-              'hits=%s' % tt['_scene_hits'])
-        tt2 = targets.for_stock(_PRESET, _sc)
-        check('★ 没命中的档不盖（overwhite=False ⇒ 不掉进 overwhite=过曝）',
-              tt2['sat'] == base.get('sat') and tt2.get('split_limit') == 9.9,
-              'sat %s（应还是 %s）' % (tt2['sat'], base.get('sat')))
-    finally:
-        if _save is None:
-            d.pop('_scene', None)
-        else:
-            d['_scene'] = _save
+    # ④ ★ 10-10：原来这里测「`_scene` 场景覆盖」—— 那个机制**只服务颜色层**
+    #   （它覆盖的都是分色/彩度靶），颜色层删掉后**零消费者** ⇒ 机制与这段测试一起删。
+    #   「按场景分参数」这件事仍然活着，但走的是 `_scene_engine`（改**引擎参数**）。
 
 
 def t_contract():

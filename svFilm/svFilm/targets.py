@@ -64,7 +64,9 @@ def load():
 def for_stock(name, scene=None):
     """取某条预设的靶；没有专属靶的预设落回 `_default`。
 
-    `scene`：`scene.classify(...)` 的结果 —— **这是「按场景分参数」的入口**。
+    ★★ 10-10：靶现在**只剩 `span`**（`scorecard` 读）；在这里，`scene` 参数只用来
+      在返回值里记一条 `t['scene']` —— 原来那段「按场景覆盖靶字段」已随颜色层删除。
+      「按场景分参数」这件事走的是 `scene_engine()`（改**引擎参数**）。
     """
     d = load()
     t = dict(d.get('_default') or {})
@@ -82,27 +84,10 @@ def for_stock(name, scene=None):
     #   · ⚠ **默认没有 `_scene` 这个键 ⇒ 一个字段都不盖，行为与加它之前逐位相同**
     #   · ⚠ 这里**只做覆盖、不做拟合** —— 数值从哪来是人的决定（见 `scene.py` 顶部那段：
     #     我们跟大师的三条差跨所有分组一致 ⇒ 那几根旋钮分场景没有收益）。
-    t['_scene_hits'] = []
-    if scene:
-        ov = d.get('_scene') or {}
-        if ov:
-            # ⚠ 键里的"值"必须跟 `scene.token()` 一致（`back`/`blown` 在代码里是 bool，
-            #   写覆盖时要用「逆光/顺平」「过曝/正常」这些词）—— 词形只有那一个函数负责。
-            try:
-                from . import scene as _S
-                _tok = _S.token
-                _axes = _S.AXES
-            except Exception:                                  # noqa: BLE001
-                _tok, _axes = (lambda a, v: str(v)), tuple(scene.keys())
-            for _ax in _axes:
-                _v = scene.get(_ax)
-                if _v is None:
-                    continue
-                for _k in ('%s=%s' % (_ax, _tok(_ax, _v)), '%s=*' % _ax):
-                    _blk = ov.get(_k)
-                    if isinstance(_blk, dict):
-                        t.update(_blk)
-                        t['_scene_hits'].append(_k)
+    # ★★ 10-10：原来这里有一整段「`_scene` 场景覆盖」（把命中的场景靶字段盖上去）。
+    #   那段**只服务颜色层**（覆盖的都是分色 / 彩度靶）—— 颜色层删掉后它**零消费者** ⇒ 整段删除。
+    #   靶现在只剩 `span`（`scorecard` 读）；「按场景分参数」这件事仍然活着，
+    #   但走的是 `_scene_engine`（改**引擎参数**），见下面的 `scene_engine()`。
     t['scene'] = (scene or {}).get('key')
     return t
 

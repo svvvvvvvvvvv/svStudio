@@ -1,15 +1,18 @@
 # -*- coding: utf-8 -*-
-r"""编排 —— 一条链跑完（09-29 `drop-tone-and-skin` 之后）。
+r"""编排 —— 一条链跑完。
 
-    解码 + 白平衡 + 护栏  →  判场景  →  胶片引擎(spektrafilm 0.3.4)
-        →  **颜色层（混色 → 分色）**  →  出图
+    解码 + 白平衡 + 护栏  →  判场景  →  胶片引擎(spektrafilm 0.3.4)  →  出图
 
 ★ 为什么是这个顺序：曝光/反差归**引擎**（"曝光 → 显影 → 密度"这条因果链的最前面一环）。
   反过来说：**在胶片之后改亮度 = 对印好的照片再翻拍调增益**，物理上不存在"冲好了再曝光"，
   而且到显示域就没有高光余量了。
+  ⚠ 引擎输出**就是成片**（`presets._post_scan` 里另有一层**扫描段**后处理 —— 那不是颜色层）。
 
-★ 影调层（`tone.py`）/ 肤色层（`grade.skin()`）/ 认人认脸（`face.py` · `facegain.py` · `region.py`）
-  09-29 新分支 `drop-tone-and-skin` **整段删除**（不是关开关）—— 见 `config.py` 文件头。
+★ 已经删掉的层（**整段删代码，不是关开关**；`selftest.t_dropped_layers` 钉着不许回来）：
+  · **09-29** `drop-tone-and-skin`：影调层 `tone.py` · 肤色层 `grade.skin()` ·
+    认人认脸 `face.py` / `facegain.py` / `region.py`；
+  · **10-10** `drop-grade`：**颜色层** `grade.py`（混色 + 分色）—— 理由见下面 `run_from` 里那段注释。
+  ⇒ 现在**整条链上只有引擎在动像素**（`selftest.t_contract` 有一条断言钉着）。
 """
 from __future__ import annotations
 
@@ -40,11 +43,14 @@ class Result:
 
     def summary(self):
         r = self.report
-        g = r.get('grade') or {}
+        # ★ 10-10：原来这里读 `report['grade']['L50_out']`（颜色层的量）。颜色层删掉后
+        #   **直接从成片量**（`to_lab` 一次，~50ms，相对出图 30s 可忽略）——
+        #   这才是「落点 L*」该有的意思（`scene.raw.L50` 是**解码后未曝光**的值，很暗、没意义）。
+        from . import color
+        _l50 = float(np.median(color.to_lab(np.clip(self.disp, 0.0, 1.0))[..., 0]))
         return ('{}  [{}]  胶片 {}  |  落点 L*{:.1f}  |  {:.0f}ms'.format(
                     self.sample.name, self.sample.kind,
-                    r.get('stock_label') or r.get('stock'),
-                    float(g.get('L50_out', float('nan'))), r['ms']))
+                    r.get('stock_label') or r.get('stock'), _l50, r['ms']))
 
 
 def _sample_uid(s):
@@ -174,12 +180,11 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
         # ★ 09-26：键里带上 **判据版本号**。场景是**这张图**的确定函数（同一张图永远同一套标签），
         #   所以不用把标签本身塞进键；但判据一改（`scene.VERSION` +1）就是另一套参数 ⇒ 必须作废。
         #   ⚠ `config.SCENE_*` 阈值改了不带版本号 ⇒ 同一进程内不会作废（config 都是进程内冻结的，无妨）。
-        # ★★ 09-27：**开关本身也必须进键**。漏了 `GRADE_ENABLE` ⇒ 常驻进程里改了它仍会命中
-        #   旧缓存，表现就是**"拧了没反应"**。
+        # ★★ 09-27：**开关本身也必须进键**（漏了它 ⇒ 常驻进程里改了仍会命中旧缓存 =
+        #   本项目最痛的"拧了没反应"）。
         # ★★★ 09-29：**overrides 和靶也必须进键**（原来那两项因为 `_sc` 未定义而永远是 `None`）。
-        # ★★★ 10-08：键的构造**换代**（见 `config.CACHE_KEY_PREFIXES` 的注释）。
-        #   老写法手抄一个元组、只列了 `GRADE_ENABLE` ⇒ 22 个 `GRADE_*` 里 21 个
-        #   翻了对画面没反应。现在用 `config.key_signature()` 前缀表驱动。
+        # ★★★ 10-08：键的构造**换代**（见 `config.CACHE_KEY_PREFIXES` 的注释）——
+        #   老写法是手抄一个元组，漏一个旋钮就是"翻了没反应"。现在用前缀表驱动。
         #   ⚠ 失败**不许**退化成 `None`（那会让所有 overrides/靶变体塌成同一个键）——
         #     用带标记的哨兵元组，并保持可哈希。
         try:
