@@ -59,6 +59,29 @@ _LOCKS: dict = {}
 #   值 = None（正常）｜ 字符串（失败原因）。`selftest` 与事后排查都读它。
 _POST_SCAN_ERROR: str | None = None
 
+# ★ 10-11：**白端门控警告的进程内去重表**（见 `_check_white_gate`）。
+#   同一预设名**只警告一次** ⇒ "看得见但不刷屏"。只在 `clear_cache()` 里清空。
+#
+# ⚠⚠⚠ **两个坑都踩过，一起记在这里：**
+#   ① **不许用 `_LOCK` 保护它** —— `_params_for()` 是 `with _LOCK:` **持锁**调 `_apply()` 的，
+#      而 `_check_white_gate()` 就长在 `_apply()` 里 ⇒ 在那里取 `_LOCK`（**非重入**）
+#      = **当场自死锁**。实测症状：进程 CPU 100%、`_params_for` **一行都不返回**，
+#      而且它**一直握着 `_LOCK`** ⇒ 同进程后续任何 thread 一起被堵死。
+#   ② **不许拿 `set.add()` 的返回值当"占位成功"** —— 我第一版写的是
+#      `if _WARNED.add(k) is not SENTINEL: return`，理由是"CPython 里 add 是原子的"。
+#      **错了：`set.add()` 永远返回 `None`**（不是 `self`，也不是任何哨兵）
+#      ⇒ 那个条件**恒为真** ⇒ 函数在 print 之前就返回。
+#   ③ **拿到哨兵之后必须用 `!=` 比，不能用 `is not`** —— 我第二版改成
+#      `dict.setdefault(k, SENTINEL) is not SENTINEL`：`setdefault` 对**已有键**
+#      返回的是**上次存进去的那个对象**，而键是 `str(name)` **每次新建的字符串**
+#      ⇒ 新旧字符串**不是同一个对象** ⇒ `is not` **恒为真** ⇒ 又变回"每次都喊"。
+#      ⇒ 结论：**哨兵 + 值比较（`!=`）**才同时满足"可判重"与"可原子占位"。
+#   ★ 这两个坑的共同点：**条件恒真 ⇒ 看着在跑、其实静默失效** —— 与本项目
+#     "静默失效 6 类"同一族。两次都是靠 `verify_all.py` 的**计数断言**抓出来的
+#     （不是靠读代码），这也是"警告必须配一条计数测试"的理由。
+_WARN_CLAIM = object()          # 哨兵值（只当"已喊过"的占位用；去重判据是 `in`）
+_WHITE_GATE_WARNED: dict = {}   # ★ 是 **dict** 不是 set（理由见上面 ①②③）
+
 
 # ---------------------------------------------------------------------------
 # ★★★ 10-10：**overrides 与"基线层"的合并** —— 一个坑了两个人的静默死键
@@ -122,6 +145,71 @@ def _warn_if_morph_dead(overrides):
               '却**没有带 `active`** ⇒ **morph 很可能是死的**（引擎默认 active=False，'
               '而 True 只写在 `targets._scene_engine["*"]` 基线层里，直接调 render 不会铺它）。\n'
               '  ⇒ 正确写法：`ov = presets._base_overrides(cfg); ov.update({...})`。', file=sys.stderr)
+
+
+def _check_white_gate(name, wc, bc, white_level):
+    r"""★ 10-11：**白端门控警告** —— 预设把 `scan_white_correction` 关掉时喊一声。
+
+    ## 它警告的是什么（`color_reference.py:139-145`，零渲染语义证明）
+    `white_correction` / `black_correction` **不是普通开关，而是两根 level 键的门控**：
+
+        TT  两根都活 ｜ TF  white 活 / black **死** ｜ FT  white **死** / black 活 ｜ FF 两根都 **死**
+
+    `:139-142` 是**直接赋值覆盖**局部变量（`white_level = self._y_white` 等），
+    所以被覆盖那一支的 level 键**一个读点都没有**（零渲染扫值已证：扫 0.90→1.30，(m,q) 不动）。
+    ⇒ `white_correction=False` 时 `scanner.white_level` 写多少都一样 —— **死键**。
+
+    ## 为什么值得报警（后果是**结构性**的，不是幅度问题）
+    · 白锚从「固定常数 `W_s`」退化成「链自身白参考 `y_white`」⇒ `m` 从 1.2688 掉到 1.0017；
+    · ★ **「三通道都高」的显示码上界**从 236~237 掉到 **226~227** ⇒ `min(RGB)≥235` **恒为 0**
+      （`min235` 0.86 / 6.25 / 15.94 → **0**）—— 这是**值域天花板**，与分辨率无关；
+    · 整张暗 ~3 L\*、`L95` −3.5~−4.0、颊 `L*` −2.9~−4.0；
+    · ★★ 而 `scanner.white_level` **正是唯一能抬「高光天花板低 6 L\*」的那根键**
+      （1.02→1.18 时 L\*60 +4.55，且 1.12 时 clip 仍 0.0000%）—— **它在这一支里是死的**
+      ⇒ 于是「调 white_level 没反应」会被误判成「这根键没用」，
+        真相是「**这个卷把整段白端校正关了**」。（静默失效第 7 类的实例。）
+
+    ## 纪律
+    ★ **只打警告，不碰任何值、不改 `p`、不改任何返回值。** 把这几条预设置 `True`
+      属于**改画面**（选项 B）⇒ 必须用户拍板，不在本函数的权限内。
+    ★ 同名**只警告一次**（进程内去重）⇒ 不刷屏。
+    ★★ **不取任何锁** —— 只用一次 `dict` 查询 + 一次赋值。
+       理由：本函数被 `_apply()` 调用，而 `_apply()` 的调用方 `_params_for()` 正**持着 `_LOCK`**；
+       `_LOCK` 是**非重入**的 ⇒ 在这里取它 = **自死锁**（且会把整个进程一起堵住）。见上面那段。
+    """
+    if wc and bc:
+        return
+    _key = str(name)
+    # ★★ 这里我连踩三次，全部记下来 —— **三次都是"条件写反/恒真恒假"**，
+    #    而且**光读代码三次都看不出来**，每次都是 `verify_all.py` 的**计数断言**抓出来的。
+    #    ① `if _WARNED.add(k) is not SENTINEL: return`
+    #       —— **`set.add()` 永远返回 `None`** ⇒ 恒真 ⇒ **一次都没喊**（静默失效）。
+    #    ② `if _WARNED.setdefault(k, SENTINEL) != SENTINEL: return`
+    #       —— 拿到哨兵 = **本次是新键 = 该继续喊**，我却判成 return ⇒ 语义写反。
+    #    ③ `if _WARNED.pop(k, SENTINEL) is not SENTINEL: return`
+    #       —— `pop` **会把条目删掉**；删了当然"下次又是新键"⇒ 每次都喊。
+    #    ⇒ 最终用**最笨、最不容易写反**的写法：**先看、再写**（`in` + 赋值）。
+    #      `in` 与 `[k]=v` 都是**单次原子调用**（GIL 下）⇒ 不需要锁。
+    #      多线程下最坏结果是**重复喊一次**（日志重复，可接受），**绝不会漏报**。
+    #    ⚠ 我一度还在这里留了一句 `SVFILM_WGATE_DEBUG` 的调试 `pop`，
+    #      它自己把去重表吃掉了 ⇒ 调试代码本身成了 bug 来源。**已整体删除。**
+    if _key in _WHITE_GATE_WARNED:
+        return
+    _WHITE_GATE_WARNED[_key] = _WARN_CLAIM
+    if not wc and bc:
+        _dead, _alive, _how = 'scanner.white_level', 'scanner.black_level', 'FT（只开黑）'
+    elif wc and not bc:
+        _dead, _alive, _how = 'scanner.black_level', 'scanner.white_level', 'TF（只开白）'
+    else:
+        _dead, _alive, _how = ('scanner.white_level / black_level', '（无）', 'FF（两根都关）')
+    print(
+        '[presets] ⚠ 预设 %s 的 scan_white_correction=%s / scan_black_correction=%s ⇒ %s\n'
+        '          scanner.white_level / black_level 是死键（白端将消失、高光天花板无法抬升）。\n'
+        '          组合 = %s ⇒ ★死键: %s ｜ 还活着的: %s（本预设写的是 scan_white_level=%s）。\n'
+        '          为何"结构性"：白锚退化 ⇒ "三通道都高"的显示码上界 237→227 ⇒ min(RGB)>=235 恒为 0，\n'
+        '                        整张暗 ~3 L*、L95 −3.5~−4.0；而 white_level 是唯一能抬高光天花板的键。\n'
+        '          若这是有意为之请在预设里写明；否则置 True（⚠ 置 True 会改那一条的出图 ⇒ 要用户拍板）。'
+        % (_key, wc, bc, _how, _how, _dead, _alive, white_level), file=sys.stderr)
 
 
 def _lock_of(name):
@@ -247,8 +335,12 @@ def _diffusion(dst, src, prefix):
     dst.bloom_size = float(src[prefix + '_bloom_size'])
 
 
-def _apply(p, d, cfg):
-    """把预设 JSON 的字段逐条灌进 params。字段名与 `params_schema` 的对应关系写死在下面。"""
+def _apply(p, d, cfg, name=None):
+    """把预设 JSON 的字段逐条灌进 params。字段名与 `params_schema` 的对应关系写死在下面。
+
+    `name` = 预设名（**只**用于诊断信息，见 `_check_white_gate`）。
+    ⚠ 它**不参与任何赋值**，缺省 `None` ⇒ 老调用点行为完全不变。
+    """
     ii = d['input_image']
     gr = d['grain']
     pf = d['preflashing']
@@ -315,8 +407,16 @@ def _apply(p, d, cfg):
 
     # ---- scanner ----
     p.scanner.lens_blur = float(si['scan_lens_blur'])
-    p.scanner.white_correction = bool(si['scan_white_correction'])
-    p.scanner.black_correction = bool(si['scan_black_correction'])
+    _wc = bool(si['scan_white_correction'])
+    _bc = bool(si['scan_black_correction'])
+    # ★ 10-11：**在解析之前**先看一眼门控。它是**只写 stderr** 的纯观察者
+    #   （不读也不写 `p`、不参与任何返回路径）⇒ 对渲染逐字段无影响（已用参数级
+    #   全字段 SHA256 指纹对全 10 条预设实测：改前 == 改后）。详见 `_check_white_gate`。
+    #   ⚠ 放在 `p.scanner.* =` 赋值之前，是为了让"警告"与"解析结果"绑定在同一处、
+    #     不会出现"赋值改了但警告没跟上"的漂移。
+    _check_white_gate(name, _wc, _bc, si['scan_white_level'])
+    p.scanner.white_correction = _wc
+    p.scanner.black_correction = _bc
     p.scanner.unsharp_mask = tuple(si['scan_unsharp_mask'])
     black = float(si['scan_black_level'])
     white = float(si['scan_white_level'])
@@ -483,14 +583,22 @@ def _params_for(name, cfg):
         init_params, _simulate = spektra._sf()
         p = init_params(film_profile=d['simulation']['film_stock'],
                         print_profile=d['simulation']['print_paper'])
-        _apply(p, d, cfg)
+        _apply(p, d, cfg, name)
         _PARAMS[name] = p
         return p
 
 
 def clear_cache():
     """手动作废参数缓存。现在**通常不需要**（`_params_for` 会按 config 指纹自动作废），
-    留作显式口子：改了引擎级开关、又想在同进程里立刻看到效果时调它。"""
+    留作显式口子：改了引擎级开关、又想在同进程里立刻看到效果时调它。
+
+    ★ 10-11：**它故意不去动 `_WHITE_GATE_WARNED`。**
+      去重表按设计是**进程级**的（任务书原话「同一预设名只警告一次（进程内去重）」）
+      ⇒ 常驻服务里反复切卷 / 反复作废缓存，那条警告**也只该出现一次**。
+      我第一版让它跟着清空 ⇒ 实测"清缓存后再连调 3 次 = 又喊 3 次"，
+      **在常驻服务里就是刷屏**。⇒ 去重表**只在进程重启时归零**。
+      （开发期想再看到它 ⇒ 重启进程；或临时 `presets._WHITE_GATE_WARNED.clear()`。）
+    """
     with _LOCK:
         _PARAMS.clear()
         _PARAMS_FSIG.clear()

@@ -20,3 +20,11 @@ _logs/
 *.tmp
 svstudio_启动日志.txt
 体检结果.txt
+
+# ★ 10-11：`add_notes.py`（白端门控注记）写盘前留的**自动备份**。
+#   只为"万一要回滚"存在，不是交付物 ⇒ 不进版本库。
+#   （留痕：这次改动的**权威记录**是 git 自己的 diff，备份只是保险。）
+#   ⚠ 写法注意：带斜杠的模式（`presets/_wgate_backup/`）是**相对 .gitignore 所在目录锚定**的，
+#     而它实际在 `svFilm/svFilm/data/presets/` ⇒ 那样写**匹配不到**（我第一次就写错了）。
+#     不带斜杠的 `_wgate_backup/` 才是"任意层级同名目录"。
+_wgate_backup/
