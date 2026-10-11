@@ -198,7 +198,7 @@ await page.addInitScript(() => {
     engineStocks: async () => ({
       ok: true,
       items: [
-        { name: 'Portra400薄荷', label: 'Portra400 · 薄荷', desc: '暖调', engine: true },
+        { name: 'GOLD200暖橙', label: 'GOLD200 · 暖橙', desc: '暖调', engine: true },
         { name: 'C200青蓝', label: 'C200 · 青蓝', desc: '青绿', engine: true },
         { name: 'Ektar100浓彩', label: 'Ektar100 · 浓彩', desc: '浓', engine: true },
       ],
@@ -1084,7 +1084,7 @@ console.log('\n[14] 视图三档（A / A|B / B）');
      ① 换卷之后相纸**有没有自动跟到新卷的配套纸**（不是留在上一卷那张）
      ② 换纸之后**发出去的请求里带的是不是新纸**（下拉亮对了、请求没带 = 画面不变）
      ③ 中性卷下这一栏**是不是真不显示**（引擎对中性卷返回空表）
-   ⚠ mock 里 `Portra400薄荷` 的配套纸**恰好是列表第一张**、`C200青蓝` 的配套却是**第三张**
+   ⚠ mock 里 `GOLD200暖橙` 的配套纸**恰好是列表第一张**、`C200青蓝` 的配套却是**第三张**
      ⇒ 只有这样才区分得出「读了引擎的 isDefault」和「腿短取了 option[0]」。 */
 console.log('\n[16] 加入目录（库外目录：原地读）');
 {

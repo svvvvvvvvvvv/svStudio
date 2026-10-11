@@ -7,7 +7,7 @@ import { useStore } from '../store/useStore';
  *   卷名改了要同步这里，否则图标退回中性灰（不会报错，只是看不出是哪一卷）。
  */
 const STOCK_COLORS: Record<string, { a: string; b: string; t: string }> = {
-  Portra400薄荷: { a: '#e8a87c', b: '#c9764a', t: 'P400 薄荷' },
+  GOLD200暖橙: { a: '#e0a878', b: '#b9703f', t: 'G200 暖橙' },
   Pro400H马卡龙: { a: '#a8c8b8', b: '#5f8f7a', t: '400H 马卡龙' },
   Portra400淡雅: { a: '#e6c39a', b: '#c09a6a', t: 'P400 淡雅' },
   Ultramax400沉褐: { a: '#c9a284', b: '#8a5f3f', t: 'UM400 沉褐' },

@@ -18,7 +18,7 @@ import numpy as np
 from . import color, config as C, io, pipeline, presets
 
 # ★ 09-23：凡是要点名「一条胶片风格」的地方就用这一条（别把中文名写死到各处）。
-_PRESET = 'Portra400薄荷'
+_PRESET = 'GOLD200暖橙'
 
 FAIL = []
 
@@ -472,7 +472,7 @@ def t_presets():
     #   改成钉**外部真值**：原来那 9 条的名字必须都还在（一条都不能被改名/弄丢），
     #   外加鹿井那条（Ultramax400沉褐）也必须在。条数只当信息，不当断言。
     _BASE = ('C200过曝', 'C200透明', 'C200青蓝', 'Ektar100浓彩', 'Portra400淡雅',
-             'Portra400空气感', 'Portra400薄荷', 'Pro400H清风', 'Pro400H马卡龙')
+             'Portra400空气感', 'GOLD200暖橙', 'Pro400H清风', 'Pro400H马卡龙')
     _gone = [n for n in _BASE if n not in ns]
     check('原来那 9 条一条都不少（不是只写了几个名字）', not _gone,
           '共 %d 条；丢了的: %s' % (len(ns), _gone or '无'),
@@ -875,10 +875,10 @@ def t_targets():
     from . import targets
 
     check('★★ 三条大师预设各自有专属靶；其余预设落回 `_default`',
-          targets.for_stock('Pro400H清风')['own'] and targets.for_stock('Portra400薄荷')['own']
+          targets.for_stock('Pro400H清风')['own'] and targets.for_stock('GOLD200暖橙')['own']
           and targets.for_stock('Ultramax400沉褐')['own']
           and targets.for_stock('C200过曝')['own'] is False)
-    b, z = targets.for_stock('Pro400H清风'), targets.for_stock('Portra400薄荷')
+    b, z = targets.for_stock('Pro400H清风'), targets.for_stock('GOLD200暖橙')
     check('★★ 换个预设 ⇒ `span` 靶**真的不一样**（不是把同一个文件复制了两份）',
           abs(float(b['span']) - float(z['span'])) > 1.0,
           'span %.2f vs %.2f' % (b['span'], z['span']),
