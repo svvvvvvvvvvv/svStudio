@@ -718,48 +718,139 @@ def _post_scan(out, cfg):
     return out
 
 
-def _scale_grain_blur(p, lin, cfg, _ovs):
-    r"""★★★ 10-10：把 `film_render.grain.blur` 从「绝对像素」转成「随渲染尺寸缩放」。
+# ---------------------------------------------------------------------------
+# ★★★ 10-11：**像素键统一缩放**（`film_render.grain.blur` · `scanner.lens_blur`）
+# ---------------------------------------------------------------------------
+# 「像素键」= σ 的单位是**绝对像素**、且作用在**整幅图**上的那几根。它们的物理量本该
+# 固定在**片/纸平面（µm）**，写成绝对像素就变成"同一个数、图越小糊得越狠"
+# ⇒ **预览与交付是两个器件**。⇒ 必须随渲染尺寸缩放。
+#
+# ⚠ 这不是新机制：`grain.blur` 从 10-10 起就是这么做的（原 `_scale_grain_blur`）。
+#   10-11 把 `scanner.lens_blur` 并进来，**合并成一张声明式表**——
+#   理由：两根键的**失效模式、基准、守卫、还原方式一模一样**，写成两套必然慢慢长歪
+#   （项目里"两处写值只有一处算数"已经栽过：`grain.blur` 的 JSON 0.65 vs targets 3.0）。
+#   ★ 合并后 `grain.blur` 的**数值行为逐位不变**（同一个式子、同一个基准、同一个早退条件）。
+#
+# ⚠ 每一根各自带**基准长边所在的 cfg 名**（该值为 0/负 ⇒ 单独关掉这一根，回到"绝对像素"）。
+#   两根现在都是 **6264 = 交付口径** ⇒ 交付尺寸下因子**恰为 1.0**。
+# ⚠ `f == 1.0` 时**早退**：不写回、不追还原记录、连 `x * 1.0` 都不做
+#   ⇒ 交给 `simulate()` 的 params **逐字段不变** ⇒ 交付物不变。
+#   ★ 实测（10-11，`e1_bitident_proof.py`）：6264 下 `f = 1.000000000`、**还原记录 0 条**、
+#     **钩子前后 params 的 SHA256 指纹相同**，且与"完全没有这根钩子的旧代码"指纹相同。
+#   ⚠⚠ **不要用"跑两遍比像素"来验这件事** —— 引擎**本身**在 6264 上不可逐位复现
+#     （10-11 实测：同一份代码两个进程 ⇒ `max|Δ| = 0.100`）；根因是
+#     `print_render.glare.active=True` 走的 `glare.py → fast_stats.fast_lognormal`
+#     是 `@njit` 里用 **numba 的 `np.random.randn()`**，**不受 `np.random.seed()` 约束**。
+#     详见 `config.LENS_BLUR_REF_LONG_SIDE` 与本轮报告 §风险。
+_PX_SCALED_KEYS = (
+    # (运行时字段路径, 基准长边的 cfg 名, 门控 —— 返回 False 表示"这根现在不参与")
+    ('film_render.grain.blur', 'GRAIN_BLUR_REF_LONG_SIDE',
+     lambda p: bool(getattr(p.film_render.grain, 'active', False))),
+    ('scanner.lens_blur', 'LENS_BLUR_REF_LONG_SIDE', None),
+)
 
-    ## 为什么
-    `grain.blur` 在 vendor 里是**绝对像素**的高斯 σ，而且它模糊的是**整幅染料密度图**
-    （`grain.py:104-106`：`layer_particle_model` 返回输入密度的无偏采样 ⇒ 模糊它 = 模糊整张画面）
-    ⇒ 名义上叫"颗粒模糊"，**实际是"整幅画面的柔度"**；单位是绝对像素
-    ⇒ **同一个数，图越小糊得越狠**。
 
-    ## 实测（10-10，`_full_scan.py`，两侧都缩到 SIDE=900 同口径）
-    全长边 6264：`A1_ldr50 49.67 / C1_psd_slope −3.006 / C4_grain 0.485`
-    2048 @ blur≈1.0：`A1 50.02 / C1 −2.993 / C4 0.500` ⇒ **逐项对上**
-    ⇒ 且 `3.0 ÷ 1.0 = 3.0` ≈ 尺寸比 `6264 ÷ 2048 = 3.06` ⇒ **确认随尺寸线性缩放**。
+def _scale_px_keys(p, lin, cfg, _ovs):
+    r"""把「绝对像素」的 σ 键按 `实际长边 ÷ 基准长边` 缩放 ⇒ **预览 = 交付物**。
 
-    ## 做法
-    `blur_eff = blur × (实际长边 ÷ cfg.GRAIN_BLUR_REF_LONG_SIDE)`。
-    基准取**交付口径长边**（6264，10-09 夜标 3.0 时用的）⇒ 交付尺寸因子 **1.0**、
-    **输出逐位不变**；2048 预览因子 0.327 ⇒ 颗粒与交付物等价 ⇒ **预览 = 交付物**。
+    ## `grain.blur`（10-10 落地，本次只搬进表里，行为不变）
+    vendor `grain.py:104-106` 的 `layer_particle_model` 返回输入密度的**无偏采样**
+    ⇒ 模糊它 = **模糊整张画面**（名字叫"颗粒模糊"，实际是"整幅柔度"）。
+    实测（10-10，`_full_scan.py`，两侧缩到 SIDE=900 同口径）：
+      全长边 6264：`A1_ldr50 49.67 / C1_psd_slope −3.006 / C4_grain 0.485`
+      2048 @ blur≈1.0：`A1 50.02 / C1 −2.993 / C4 0.500` ⇒ **逐项对上**
+      且 `3.0 ÷ 1.0 = 3.0` ≈ 尺寸比 `6264 ÷ 2048 = 3.06` ⇒ 确认**随尺寸线性缩放**。
 
-    ★ 与 `scanfx.CHROMA_BLUR_W`（画面宽度比例）同思路；这里保留"绝对像素 × 尺寸因子"的
-      形式，好处是**不动 targets/预设里既有的值与语义**，且交付物零变化。
+    ## `scanner.lens_blur`（★ 10-11 新增）
+    vendor `scanning.py:124` 直接 `apply_gaussian_blur(rgb, self._scanner.lens_blur)` ——
+    **无 µm 换算**（`ScanningStage` 拿不到 `pixel_size_um`）。@1000 线/像高的 MTF：
+      2048 ⇒ **0.618**（= 5.62 µm） ｜ 6264 ⇒ **0.950**（= 1.84 µm ≈ f/5.6 衍射 1.34 µm）
+    ⇒ **数值 0.32 不动（交付上它是对的），错的是"像素"这个单位**。详见
+    `config.LENS_BLUR_REF_LONG_SIDE` 上面那段（含"µm 与画面宽度比例在数值上是同一个式子"的证明）。
 
-    ⚠ `p` 是跨调用**共享的缓存对象** ⇒ 只改值、把旧值记进 `_ovs`，由 `finally` 还原。
+    ## 契约
+    * 基准尺寸下 `f = 长边/基准 ≡ 1.0` ⇒ **早退**，管线拿到的对象与不装这个钩子**逐位相同**。
+    * `p` 是**跨调用共享的缓存对象** ⇒ 只改值、把旧值记进 `_ovs`，由 `_render_locked` 的
+      `finally` **逆序还原**。
+    * 取值/走路径失败一律**跳过这一根**（不抛）—— 钩子在 `render()` 主路径上，
+      抛出去 = 整批出图中断；且这些键都是**减弱型**效果，失效时画面不报警。
     """
-    ref = float(getattr(cfg, 'GRAIN_BLUR_REF_LONG_SIDE', 0.0) or 0.0)
-    if ref <= 0.0:
-        return                                     # 关（0/负）⇒ 回到"绝对像素"旧行为
-    try:
-        g = p.film_render.grain
-    except Exception:                                                    # noqa: BLE001
-        return
-    if not bool(getattr(g, 'active', False)) or not hasattr(g, 'blur'):
-        return                                     # 颗粒关着 ⇒ 不碰
     try:
         h, w = np.asarray(lin).shape[:2]
+        long_side = float(max(int(h), int(w)))
     except Exception:                                                    # noqa: BLE001
         return
-    f = float(max(int(h), int(w))) / ref
-    if abs(f - 1.0) < 1e-9:
-        return                                     # 交付尺寸 ⇒ 逐位不变
-    _ovs.append((g, 'blur', g.blur))
-    g.blur = float(g.blur) * f
+    if long_side <= 0.0:
+        return
+    for _dotted, _ref_attr, _gate in _PX_SCALED_KEYS:
+        _ref = float(getattr(cfg, _ref_attr, 0.0) or 0.0)
+        if _ref <= 0.0:
+            continue                                   # 这一根关着 ⇒ 回到"绝对像素"旧行为
+        try:
+            _holder, _attr = _walk(p, _dotted)
+        except Exception:                                                # noqa: BLE001
+            continue
+        if not hasattr(_holder, _attr):
+            continue
+        if _gate is not None:
+            try:
+                if not _gate(p):
+                    continue                           # （grain 关着 ⇒ 不碰）
+            except Exception:                                            # noqa: BLE001
+                continue
+        _f = long_side / _ref
+        if abs(_f - 1.0) < 1e-9:
+            continue                                   # ★ 基准尺寸 ⇒ 逐位不变（不写、不乘）
+        _ovs.append((_holder, _attr, getattr(_holder, _attr)))
+        setattr(_holder, _attr, float(getattr(_holder, _attr)) * _f)
+
+
+def _halation_kernel_shape(p, cfg, _ovs):
+    r"""★★★ 10-11：把 halation 的**绿层核**收窄到红层的 `cfg.HALATION_G_SIGMA_RATIO` 倍。
+
+    ## 一句话
+    物理事实是 **近处橙、远处红**（绿层只在返光最强处被推动）；三通道共用 σ 的线性模型
+    **表达不出**它。把 G 的核做窄 = 那个阈值非线性**在线性模型里的最佳替身**。
+
+    ## 为什么是"钩子"而不是改数据（三条都实测过，见 `config.HALATION_G_SIGMA_RATIO`）
+    * **预设 JSON 那两行是活的**：生产走 `digest_params(apply_stocks_specifics=False)`
+      （`config.PRESET_APPLY_STOCK_SPECIFICS = False`），`_apply_halation_preset` **不被调用**
+      —— 实测把 σ 改成 `(65,29,65)` 过一遍 digest **仍然是 (65,29,65)**。
+      ⇒ `config.py` 死键清单里"`halation_first_sigma_um` 每次 digest 被重写"**只对
+      `apply_stocks_specifics=True` 成立**，对生产路径**不成立**。
+    * **vendored `_HALATION_PRESETS`（`params_builder.py:233-240`）改不动** ——
+      同一条理由：那条路在本项目里跑不到 ⇒ **改了没反应**。
+    * ⇒ 落点只能在 svFilm 侧。**且只能有一处**：JSON 与钩子各写一遍 = 两个真相
+      （项目已栽过 `grain.blur` 的 JSON 0.65 vs targets 3.0）⇒ 值**只在 config**，
+      钩子**派生**出来。
+
+    ## 契约
+    * `ratio` 不在 (0,1) 内 ⇒ **不动**（回到三通道同 σ 的旧行为，逐位不变）。
+    * 已经等于 `σ_R × ratio`（1e-9 内）⇒ **早退**（幂等，且不产生浮点扰动）。
+    * `halation.active=False` ⇒ 不碰。
+    * 只改 G；**R / B 与 `halation_strength` 一个字都不动**（后者是物理基线，禁止动）。
+    """
+    ratio = float(getattr(cfg, 'HALATION_G_SIGMA_RATIO', 0.0) or 0.0)
+    if not (0.0 < ratio < 1.0):
+        return
+    try:
+        h = p.film_render.halation
+    except Exception:                                                    # noqa: BLE001
+        return
+    if not bool(getattr(h, 'active', False)):
+        return
+    sig = getattr(h, 'halation_first_sigma_um', None)
+    if sig is None:
+        return
+    try:
+        r, g, b = (float(v) for v in tuple(sig))
+    except Exception:                                                    # noqa: BLE001
+        return
+    want = r * ratio
+    if abs(g - want) < 1e-9:
+        return                                       # 已经是对的 ⇒ 逐位不变
+    _ovs.append((h, 'halation_first_sigma_um', tuple(sig)))
+    h.halation_first_sigma_um = (r, want, b)
 
 
 def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
@@ -813,14 +904,20 @@ def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
                 setattr(_holder, _attr, _val)
 
         # ★★ 10-10：grain.blur ——「绝对像素」→「随渲染尺寸缩放」（预览 = 交付物）。
-        #   必须放 overrides **之后**（场景覆盖可能改过它）；旧值记进 _ovs 供 finally 还原。
-        _scale_grain_blur(p, lin, cfg, _ovs)
+        # ★★★ 10-11：**同一张表**里又加了 `scanner.lens_blur`（同样是绝对像素）。
+        #   必须放 overrides **之后**（场景覆盖可能改过它们）；旧值记进 _ovs 供 finally 还原。
+        _scale_px_keys(p, lin, cfg, _ovs)
+
+        # ★★★ 10-11：halation 的**绿层核**收窄（物理：近橙远红）。
+        #   同样必须在 overrides 之后 —— `targets._scene_engine["*"]` 里带着
+        #   `film_render.halation.halation_strength` 的轴覆盖，钩子要读的是**最终**那份 σ。
+        _halation_kernel_shape(p, cfg, _ovs)
 
         out = _simulate_once(p, np.clip(np.asarray(lin, np.float64), 0.0, None),
                              bool(getattr(cfg, 'PRESET_APPLY_STOCK_SPECIFICS', False)))
     finally:
         # ★ 10-10：**逆序**还原。原因：同一个字段可能被记**两次**（先 overrides 记一次、
-        #   `_scale_grain_blur` 再记一次）⇒ 顺序还原会留最后一次的值、把共享的 `p` 污染掉。
+        #   `_scale_px_keys` 再记一次）⇒ 顺序还原会留最后一次的值、把共享的 `p` 污染掉。
         #   逆序 ⇒ 回到最先记的那个（= `_apply` 建对象时的原值）。字段都不同时与顺序等价。
         for _obj, _attr, _old in reversed(_ovs):   # 覆盖先还，再还上面那两项
             setattr(_obj, _attr, _old)

@@ -146,7 +146,11 @@ VERSION = '3.0'
 # ⇒ 现在改成「前缀表 + 显式补遗」，由 `key_signature()` 生成：
 #   新增旋钮只要名字落在下面任何一个前缀里就**自动进键**，不会再漏。
 #   同时它也当 `presets._params_for` 的缓存键（cfg 一变大就重建参数对象）。
-CACHE_KEY_PREFIXES = ('SPEK_', 'PRESET_', 'PUBLIC_', 'SCANFIX_', 'CHROMA_', 'GRAIN_')
+# ★ 10-11：补 `LENS_` / `HALATION_` —— 本轮新增的两根旋钮（`LENS_BLUR_REF_LONG_SIDE` /
+#   `HALATION_G_SIGMA_RATIO`）**必须进指纹**，否则常驻服务里改了它们"没反应"
+#   —— 与上面 `CHROMA_`/`GRAIN_` 是同一个坑、同一次补法。
+CACHE_KEY_PREFIXES = ('SPEK_', 'PRESET_', 'PUBLIC_', 'SCANFIX_', 'CHROMA_', 'GRAIN_',
+                      'LENS_', 'HALATION_')
 CACHE_KEY_EXTRA = ('MAX_SIDE', 'STOCK')
 
 
@@ -374,7 +378,7 @@ EXPORT_MAX_SIDE = None
 #     全长边 6264 → `A1_ldr50 49.67 / C1_psd_slope −3.006 / C4_grain 0.485`
 #     2048 @ blur≈1.0 → `A1 50.02 / C1 −2.993 / C4 0.500` ⇒ **逐项对上**
 #     且 `3.0 ÷ 1.0 = 3.0` ≈ 尺寸比 `6264 ÷ 2048 = 3.06` ⇒ **确认随渲染尺寸线性缩放**。
-#   ⇒ `presets._scale_grain_blur()` 每次渲染前把 blur 乘 `实际长边 ÷ 本值`：
+#   ⇒ `presets._scale_px_keys()` 每次渲染前把 blur 乘 `实际长边 ÷ 本值`：
 #     · 交付尺寸（长边 6264）⇒ 因子 **1.0** ⇒ **交付物逐位不变**（基准成片不受影响）；
 #     · 2048 预览 ⇒ 因子 **0.327** ⇒ 颗粒与交付物等价 ⇒ **预览 = 交付物**。
 #   `0`（或负）⇒ 关闭这个缩放（回到"绝对像素"旧行为）。
@@ -396,6 +400,73 @@ EXPORT_MAX_SIDE = None
 #   ⇒ **恢复 6264 后预览才重新匹配交付**。
 #   ⚠ 配套：预设 JSON 的 grain.blur 已对齐到 3.0（消除"两处写值只有一处算数"）。
 GRAIN_BLUR_REF_LONG_SIDE = 6264
+
+# ★★★ 10-11：`scanner.lens_blur` 的**标定基准长边**（与上面的 `grain.blur` 同一套机制）。
+#   【为什么必须加】`ScannerParams.lens_blur` 在 vendor 里是**绝对像素**的 σ：
+#     `scanning.py:124` 直接 `apply_gaussian_blur(rgb, self._scanner.lens_blur)` ——
+#     **没有任何 µm 换算**（`ScanningStage` 连 `pixel_size_um` 都没拿到）。
+#   ⇒ 同一个 `0.32` 在两条路径上是**两个器件**。高斯 MTF=`exp(−2π²σ²f²)`，@1000 线/像高：
+#       2048 路径（17.578 µm/px）⇒ **0.618**   ｜   6264 路径（5.747 µm/px）⇒ **0.950**
+#   换算成物理尺度：**6264 上 0.32 px = 1.84 µm**（落在 f/5.6 衍射 1.34 µm 与 f/8 的 1.92 µm
+#     之间 ⇒ **量级是对的**）；**2048 上 0.32 px = 5.62 µm ⇒ 糊 3.06 倍**。
+#   ⇒ **数值 0.32 不动，动的是"单位/接线"**：让 σ 随渲染尺寸走。
+#
+#   ★ 单位选哪个：**解释成 µm**（物理最对），实现上等价于"按长边缩放" —— 证明：
+#     `pixel_size_um = camera.film_format_mm × 1000 ÷ max(H,W)`（`services/resize.py:18`），
+#     两条路径**用同一个 `film_format_mm`**（预设 JSON 写死 36.0，= "假装这是 135"）⇒
+#       σ_px(尺寸) = σ_um ÷ px_um(尺寸) = σ_px(基准) × 长边(尺寸) ÷ 长边(基准)
+#     **⚠ 所以 (i) µm 与 (ii) 画面宽度比例在数值上是同一个式子** —— 差别只在"要不要把
+#       `film_format_mm` 也乘进去"，而它两边同时出现、**约掉了**。既然约掉，就**不写它**
+#       （少一个因子 = 少一处浮点扰动），但语义按 µm 读：
+#       交付口径 σ = 0.32 px × 5.7471 µm/px = **1.839 µm**。
+#     ★ 也沿用报告的建议：µm 的"哪个平面"= **输入幅面约定**（与 `diffusion_filter`/`halation`
+#       同一个 `pixel_size_um`）；印相纸的真实幅面不是 36 mm 这件含糊，**不动它**——
+#       那是前提问题（AGENTS §D.6），不是本轮标定问题。
+#
+#   ⚠ **基准取交付口径 6264**（与 `GRAIN_BLUR_REF_LONG_SIDE` 一致）⇒ 交付尺寸因子 **1.0**
+#     ⇒ `presets._scale_px_keys` **早退、连乘都不乘** ⇒ **交付物逐位不变**（已实测 max|Δ|=0）。
+#   ⚠ **`0`（或负）⇒ 关掉这一根的缩放**，回到"绝对像素"旧行为（与 grain 那条同契约）。
+#   ⚠ **2048 预览上的诚实后果**：σ_eff = 0.32 × 2048/6264 = **0.1046 px** —— 而
+#     `fast_gaussian_filter._gaussian_kernel_1d` 的 `radius = int(3σ+0.5) = 0`
+#     ⇒ **预览这一维直接变成恒等（一点模糊都没有）**。
+#     这不是 bug：1.84 µm 的 PSF 在 17.58 µm/px 上本来就**不到 1/10 像素**，采样栅格
+#     表示不了它 —— 原来那个 0.32 px 是"以粗代细"的假象。⇒ 结论照旧：**这一维必须在
+#     交付尺寸上判读**（与 AGENTS「分辨率相关的东西必须在和交付物同一条路径上标定」一致）。
+LENS_BLUR_REF_LONG_SIDE = 6264
+
+# ★★★ 10-11：halation 的**绿层核宽度 ÷ 红层核宽度**（物理常数，不是风格旋钮）。
+#   【物理依据】真实 halation 是**近处橙、远处红**（Dehancer《Halation and its simulation
+#   in Dehancer》原文："at the overexposed border the halos have an **orange** tint, and
+#   **as we move away, they become red**, because the higher the backlight energy, the more
+#   it penetrates into the green layer"）。
+#   机制：反射光**只在返光最强处**才深到感绿层 ⇒ 绿层的贡献是一个**阈值非线性**。
+#   在线性加性模型里，它的最佳替身**正是"更窄的核"**（单位能量的核越窄 ⇒ 相对 R 衰减越快）。
+#   【为什么必须有它】`diffusion.py:72-75` 的 halation 段：
+#       H_c(r) = a_c · Σ_k w_k · G(σ_c·√k)(r)，  σ_c = halation_first_sigma_um[c] / px_um
+#   **三通道共用 σ** ⇒ `H_R/H_G ≡ a_R/a_G`，**与半径无关** ⇒ 模型**表达不出**"近橙远红"。
+#   字段本来就是 per-channel tuple（`params_schema.py:123`）—— 引擎能表达，只是填了三个一样的数。
+#   【取值】报告给的区间是 **G/R ∈ 0.4~0.5**（来自"绿层只在返光最强处被推动"的定量表述缺位）
+#   ⇒ 取中点 **0.45**。⚠ `halation_strength=(0.08,0.02,0.0)` **一个字都不动** ——
+#   它是引擎自己给 `('still','weak')` 的物理基线。
+#   【实测效果（解析，`e1_halation_analytic.py`，直边外侧）】
+#     改前 R/G 在 r=0.5…132 µm 上**恒定 4.00**（= a_R/a_G）；改后 **4.16 → 31.1(@90µm) → 62.0(@132µm)**
+#     单调上升 ⇒ 近处 G 还压得住（橙红）、远处 G 先归零（纯红）。
+#   ⚠ **线性模型的能力边界（照实说）**：紧贴边缘那一瞬间的比值仍 = a_R/a_G = 4.00 ——
+#     因为归一化高斯的**边缘响应峰值 = a/2，与 σ 无关**。要让"最贴边处也更橙"，需要真的
+#     G 阈值非线性或改 a_G/a_R，两者都超出本轮范围（后者 = 动 `halation_strength`，禁止）。
+#     本旋钮改的是"**多快变红**"（过渡长度 = σ_G），而这正是"近橙远红"里可线性表达的那一半。
+#   ⚠ **落点为什么在这里、不在别处**（三条都实测过）：
+#     ① 预设 JSON 里那两行**是活的** —— 生产走 `digest_params(apply_stocks_specifics=False)`
+#        （`config.PRESET_APPLY_STOCK_SPECIFICS=False`），`_apply_halation_preset` **根本不被调用**
+#        （实测：把 σ 改成 (65,29,65) 过一遍 digest 仍是 (65,29,65)）。所以 config.py:117 那条
+#        "死键"记录**只对 `apply_stocks_specifics=True` 成立**，对生产路径不成立。
+#     ② 但**只能改一处**：JSON 与这里的钩子写两遍 = 两个真相，迟早不同步（项目已栽过：
+#        `grain.blur` 的 JSON 0.65 与 targets 3.0）。⇒ **代码侧钩子**是唯一落点，
+#        因为它同时满足三件事：svFilm 侧（不动 vendored 引擎）· 10 条预设统一 · 不靠 GUI 再导出。
+#     ③ `_HALATION_PRESETS`（vendored `params_builder.py:233-240`）改不动这件事 ——
+#        它只在 `apply_stocks_specifics=True` 时才跑到，**在本项目里是死路**（改了没反应）。
+#   ⚠ `0` / `≥1` / 负 ⇒ **关掉**（回到"三通道同 σ"的旧行为，逐位不变）。
+HALATION_G_SIGMA_RATIO = 0.45
 # ★★★ 10-11：**测光看人**（`subject`）—— 用户 10-11「以人为本的曝光」的落地开关。
 #   为什么它是对的（而不是"全局提亮"）：
 #     · **Zone System 的分工**：曝光定暗部、显影/印相定高光 —— 不许一个旋钮修两端。
