@@ -644,13 +644,27 @@ def _person_metering(lin, overrides, cfg):
     @returns `(overrides_to_use, mask_or_None)`。
     `mask is None` ⇒ 调用方**必须**清理（本函数的契约是"返回了掩膜就要 clear"）。
     """
+    # ★★★ 10-11：**中灰锚必须无条件装上**（它与"测光看人"是两件独立的事）。
+    #   锚落在 `exposure.install()` 的 wrapper 里 ⇒ 若把 `install()` 留在下面
+    #   `PERSON_METERING` 那个 if **之后**，**关掉"测光看人"会让锚静默消失**
+    #   （而锚现在是整条链的曝光主人）⇒ 提到最前面，无条件装。
+    #   ⚠ 失败**不许静默**：装不上就退化成"锚不生效"（= 回到修复前），必须留痕迹。
+    _EX = None
+    try:
+        from . import exposure as _EX
+        if not _EX.install():
+            import sys as _sys
+            print('[svFilm 警告] presets._person_metering: `exposure.install()` 失败 ⇒ '
+                  '**中灰锚未生效**（本张走的是"硬锚 0.184"的旧行为）', file=_sys.stderr)
+            _EX = None
+    except Exception:                                                    # noqa: BLE001
+        _EX = None
     if not bool(getattr(cfg, 'PERSON_METERING', False)):
         return overrides, None
     if not isinstance(overrides, dict):
         return overrides, None                       # 不碰 None/别的东西
     try:
-        from . import exposure as _EX
-        if not _EX.install():
+        if _EX is None:
             return overrides, None
         import numpy as _np
         from . import color as _col, person as _P
