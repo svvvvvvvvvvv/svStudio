@@ -13,7 +13,7 @@ r"""svFilm 常驻 HTTP 服务 —— 引擎对外的第二条口子（给工作�
 
 ## 设计要点
 - **零依赖**（只用标准库 `http.server`）—— 为了"能搬到别人机器上"。
-- ★ **一条 `/render` 就够**：`GET /render?id=3&stock=Portra400薄荷&side=700` → 图。
+- ★ **一条 `/render` 就够**：`GET /render?id=3&stock=GOLD200暖橙&side=700` → 图。
   前端直接 `<img src="...">`，**改参数 = 改 URL**，不用写任何取字节的代码。
 - **只绑 127.0.0.1**（不对外）。
 - 缓存 = `io.load()` 的产物（Sample），LRU 上限可调。
@@ -30,7 +30,7 @@ $PY -m svFilm.service --port 8800 --cache 40
 | GET | `/health` | `{ok, cached, version}` |
 | GET | `/stocks` | **胶片风格**列表（9 条预设：name/label/desc） |
 | GET | `/load?paths=a,b&side=700` | **同步**载入并缓存（慢，1.9 s/张；前端分批调） |
-| GET | `/render?id=3&stock=Portra400薄荷&side=700` | 出图（直接返回图片字节） |
+| GET | `/render?id=3&stock=GOLD200暖橙&side=700` | 出图（直接返回图片字节） |
 | GET | `/stats?id=3` | 只出数字，不出图（调参时看指标用） |
 | GET | `/list` | 当前缓存里有什么 |
 """
