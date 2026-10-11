@@ -530,6 +530,57 @@ def pe_of(name):
     return float(load_raw(name)['simulation']['print_exposure'])
 
 
+# ===========================================================================
+# ★★★ 10-11：**以人为本的测光入口**（`subject`）
+# ---------------------------------------------------------------------------
+# 【为什么有它】用户 10-11 要求"找理论支撑"，三条合起来指向同一条路：
+#   1. **Zone System 的分工**：曝光定暗部、显影/印相定高光 —— 两个独立决策，不许一个旋钮修两端。
+#   2. **项目已验证的反振荡原理**（AGENTS 第 12 条）：唯一不振荡的自适应是 spektrafilm 的
+#      `auto print exposure` —— **补偿式、可逆、不改目标**。
+#   3. **★ 第一原理**：**任何"读图像统计量 → 反馈到全局参数"的规则必然振荡**（没有不动点）。
+#      引擎的锚是**写死的 `0.184`**（`filming.py:126`）⇒ 它不读图 ⇒ 它不振荡。
+#      ⇒ **要改"人好不好看"，只能改「看哪里」（测光方式，输入侧），不能改「看多少」（曝光量，输出侧）。**
+#   实测佐证：`subject` 测光 37 张复验 ⇒ 逆光组脸 **+17.6**、**变差 0 张**；
+#     而"全局提亮"那条 52 张实测 ⇒ 中位没变、>75 的从 2 张炸到 14 张。
+#
+# ⚠ **弃权是安全侧**：mediapipe 拿不到 / 没检出人 ⇒ **自动退回普通 `render()`**，不硬判。
+# ⚠ 掩膜口径：`person.py` 的 `1 − 背景类`（粗掩膜，**只服务测光，不做人脸识别**）。
+# ===========================================================================
+def render_metered(lin, name, cfg=C, print_exposure=None, print_profile=None,
+                   overrides=None, person_mask=None):
+    r"""与 `render()` 同签名，但**测光看人**（`camera.auto_exposure_method="subject"`）。
+
+    `lin` —— 场景线性（与 `render()` 一样）。
+    `overrides` —— 若**没有**显式给 `camera.auto_exposure_method`，本函数会把它设成 `"subject"`。
+    `person_mask` —— 可选，外部已算好的掩膜（省一次前向）。
+    **拿不到人 / 装不上 shim ⇒ 自动退回普通 `render()`**（弃权）。
+    """
+    from . import exposure as _EX
+    ov = dict(overrides or {})
+    if not _EX.install():
+        return render(lin, name, cfg, print_exposure, print_profile, overrides)
+    m = person_mask
+    if m is None:
+        try:
+            from . import color as _col, person as _P
+            disp = np.clip(_col.l2s(np.clip(np.asarray(lin, np.float64), 0.0, None)), 0.0, 1.0)
+            m = _P.person(disp)
+        except Exception:                                                     # noqa: BLE001
+            m = None
+    if m is None:
+        return render(lin, name, cfg, print_exposure, print_profile, overrides)
+    # ★ 10-11 修：**必须直接赋值，不能 setdefault** ——
+    #   `overrides` 惯例是「整份 base + 叠加」，而 `_scene_engine["*"]` 里
+    #   **本来就带着 `camera.auto_exposure_method = 'matrix'`** ⇒ `setdefault` 静默无效
+    #   （实测：subject 与 matrix 输出几乎逐位相同，脸 L* 差 +0.0）。
+    ov['camera.auto_exposure_method'] = 'subject'
+    _EX.set_mask(m)
+    try:
+        return render(lin, name, cfg, print_exposure, print_profile, ov)
+    finally:
+        _EX.clear()
+
+
 def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=None):
     r"""喂**场景线性**，出**显示域**（与 `spektra.render()` 同契约，可互换）。
 
@@ -567,9 +618,68 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=
     #   一个的改写会被另一个的还原抹掉（现在写的值恰好相同所以侥幸没事，
     #   但只要 `overrides` 一上就立刻变成真竞态）。
     #   ★ 粒度为**每个预设一把锁**：不同预设仍可并行，只有同名预设串行（本来就该串行，它们共用一个对象）。
-    with _lock_of(name):
-        return _post_scan(
-        _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides), cfg)
+    # ★★★ 10-11：**测光看人**（`subject`）—— 用户 10-11「以人为本的曝光」的落地。
+    #   为什么在这里、为什么是这个形式（见 `config.PERSON_METERING` 的长注释）：
+    #     · 要改"人好不好看"，**只能改「看哪里」（测光方式，输入侧）**，
+    #       不能改「看多少」（曝光量，输出侧）—— 后者是"读统计量→改全局参数"的闭环，**必然振荡**。
+    #     · **注入用副本**（`dict(overrides)`），**不改调用方的字典**。
+    #     · **弃权是安全侧**：装不上 shim / 没检出人 ⇒ 走原路径，一个字不变。
+    _ov, _pm = _person_metering(lin, overrides, cfg)
+    try:
+        with _lock_of(name):
+            return _post_scan(
+            _render_locked(p, name, lin, cfg, print_exposure, print_profile, _ov), cfg)
+    finally:
+        if _pm is not None:
+            try:
+                from . import exposure as _EX
+                _EX.clear()
+            except Exception:                                                # noqa: BLE001
+                pass
+
+
+def _person_metering(lin, overrides, cfg):
+    r"""算 person 掩膜并把测光方式改成 `subject`；**任何一步不成立 ⇒ 原样返回**（弃权）。
+
+    @returns `(overrides_to_use, mask_or_None)`。
+    `mask is None` ⇒ 调用方**必须**清理（本函数的契约是"返回了掩膜就要 clear"）。
+    """
+    if not bool(getattr(cfg, 'PERSON_METERING', False)):
+        return overrides, None
+    if not isinstance(overrides, dict):
+        return overrides, None                       # 不碰 None/别的东西
+    try:
+        from . import exposure as _EX
+        if not _EX.install():
+            return overrides, None
+        import numpy as _np
+        from . import color as _col, person as _P
+        _lin = _np.clip(_np.asarray(lin, _np.float64), 0.0, None)
+        _disp = _np.clip(_col.l2s(_lin), 0.0, 1.0)
+        _m = _P.person(_disp)
+        if _m is None:
+            return overrides, None
+        # ★★★ 10-11 修：**掩膜占比守卫**（物理依据）。
+        #   实测（合成图纯白/灰阶）`person.person()` 会输出**占比 1.000 的整幅掩膜**
+        #   ⇒ 那会让"测光看人"退化成"按整幅测光"，而**结果看起来还挺合理** ⇒ 静默出错。
+        #   （症状：自检 ② 暗部过冲 / ④ 中调抬升 由 3 红变 5 红。）
+        #   守卫区间 **[0.005, 0.70]**（按 m>0.5 算）：人不可能占满整幅（那是分割失败）、
+        #   也不可能一个都没有（空掩膜）。**超出即弃权**，并留 stderr 痕迹（不静默）。
+        # ⚠ 口径：person.person() 返回的是 **0~1 的浮点置信度**，不是布尔掩膜 ⇒
+        #   必须用**阈值 0.5** 算占比（mean(m>0) 在浮点掩膜上恒等于 1.000 —— 我踩过）。
+        #   实测分离度：合成图（没人）**0.000** ｜ 真实照片 **0.241~0.485**。
+        _cov = float(_np.mean(_np.asarray(_m) > 0.5))
+        if not (0.005 <= _cov <= 0.70):
+            import sys as _sys
+            print('[svFilm 警告] presets._person_metering: 人掩膜占比 %.3f 不合理 '
+                  '⇒ **弃权，改走原测光路径**（本次不做"测光看人"）' % _cov, file=_sys.stderr)
+            return overrides, None
+        _ov = dict(overrides)
+        _ov['camera.auto_exposure_method'] = 'subject'
+        _EX.set_mask(_m)
+        return _ov, _m
+    except Exception:                                                    # noqa: BLE001
+        return overrides, None
 
 
 def _post_scan(out, cfg):
@@ -772,7 +882,8 @@ def _simulate_once(p, lin, apply_specifics=False):
             if _SIM[0] is None:
                 spektra = __import__(__name__.rsplit('.', 1)[0] + '.spektra', fromlist=['x'])
                 _init_params, _simulate = spektra._sf()
-                from spektrafilm.runtime.params_builder import digest_params
+                from spektrafilm.runtime.params_builder import (clone_runtime_params,
+                                                               digest_params)
 
                 def _run(image, params, _specifics, **kw):
                     # ★★★ 09-28 修一个**静默 bug**（"我们调的光晕 40 从来没生效"的真根因）：
@@ -783,8 +894,17 @@ def _simulate_once(p, lin, apply_specifics=False):
                     #   vendor 的 docstring 明写：「If you already have digested parameters or want to
                     #   digest them yourself, set `digest_params_first=False`」—— 我们正是"自己 digest"。
                     #   ⇒ 补上 `digest_params_first=False`。
+                    # ★★★ 10-11 修（P3）：**digest 之前先克隆**。
+                    #   为什么：`digest_params()` 会**就地改写**传入的对象 ——
+                    #   而 `params` 是**跨调用共享的缓存对象** ⇒ 一旦它改了字段（实测
+                    #   `preview_mode=True` 时会把 grain.active/area/couplers.diffusion/
+                    #   scanner.unsharp **就地清零**），**同进程内之后每张图就静默无颗粒/无锐化/无扩散**。
+                    #   （子任务当场撞到：候选表第 1 张图 8 条臂全正常、第 2 张图 8 条臂逐个分位数完全相同。）
+                    #   本项目现在不触发（`preview_mode` 写死 False），**但这是埋着的雷**。
+                    #   `params_builder` 已有现成的 `clone_runtime_params` ⇒ 克隆后再 digest。
+                    #   ⚠ 对现有路径**逐位不变**：克隆后 digest 的结果与原地 digest 相同。
                     return _simulate(image,
-                                     digest_params(params,
+                                     digest_params(clone_runtime_params(params),
                                                    apply_stocks_specifics=bool(_specifics)),
                                      digest_params_first=False, **kw)
                 _SIM[0] = _run
