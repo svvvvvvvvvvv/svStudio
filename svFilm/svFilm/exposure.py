@@ -35,6 +35,12 @@ import numpy as np
 _MASK = [None]          # 当前这张的"人"掩膜（0~1，与输入图同尺寸）；渲染是串行的
 _INSTALLED = [False]
 
+# ★★ 掩膜占比下限（`m.sum()/m.size`）：低于它 ⇒ **弃权**，走 `matrix`（= 与
+#    `presets._person_metering` 的占比守卫**同一个落点**；生产路径实测软掩膜占比
+#    最低 8.63% ⇒ 本条在产线上是死代码，只有喂小区域掩膜（脸/颊）时才会命中）。
+_MIN_MASK_COVER = 0.003
+_ABSTAIN = [0, None]    # [次数, 上次原因] —— 观察者状态，只计数不改画面
+
 
 def _anchor_wb():
     r"""读 `config.EXPOSURE_ANCHOR_W/B`（**每次动态读** ⇒ 同一进程里可做 A/B、可回退）。
@@ -70,6 +76,21 @@ def clear():
     _MASK[0] = None
 
 
+def abstain_count():
+    """掩膜过小 ⇒ 弃权的**次数**（观察者；给计数测试与排障用）。"""
+    return int(_ABSTAIN[0])
+
+
+def abstain_why():
+    """上次弃权的原因串（没弃权过 ⇒ `None`）。"""
+    return _ABSTAIN[1]
+
+
+def _reset_abstain():
+    """只给计数测试用（清观察者状态，不碰画面）。"""
+    _ABSTAIN[0], _ABSTAIN[1] = 0, None
+
+
 def install():
     """把引擎的测光换成「支持 `subject` + 中灰锚」的版本。幂等。"""
     if _INSTALLED[0]:
@@ -98,9 +119,21 @@ def install():
         if m.shape[:2] != (H, W):                     # 掩膜要缩到引擎这次用的尺寸
             m = cv2.resize(m, (W, H), interpolation=cv2.INTER_AREA)
         m = np.clip(m.astype(np.float64), 0.0, 1.0)
-        # 掩膜太小时（人太小/没检到）⇒ 弃权，交给原实现
-        if m.sum() < 0.02 * m.size * 0.15:
-            return anchor_ev(orig(image, color_space, apply_cctf_decoding, 'center_weighted'))
+        # ★★ 掩膜太小时（人太小 / 没检到 / 喂进来的是脸那种小区域）⇒ **弃权**。
+        #   ⚠ 2026-10-12 修：原来退回的是 `center_weighted`，而**外层**守卫
+        #     （`presets._person_metering` 的占比守卫）退回的是 `matrix` ⇒ 同一件事两条
+        #     互不相同的落点，而且**一声不响**（实测：喂脸掩膜时静默退回"看中央"）。
+        #   ⇒ 统一到 `matrix`，并加计数 + 告警（阈值见 `_MIN_MASK_COVER`）。
+        cover = float(m.sum()) / max(float(m.size), 1.0)
+        if cover < _MIN_MASK_COVER:
+            _ABSTAIN[0] += 1
+            _ABSTAIN[1] = ('mask_cover=%.5f < %.5f' % (cover, _MIN_MASK_COVER))
+            if _ABSTAIN[0] == 1 or _ABSTAIN[0] % 100 == 0:
+                import sys as _sys
+                print('[svFilm 警告] exposure: 测光掩膜太小（占比 %.5f < %.5f）⇒ '
+                      '弃权，退回 matrix（本进程第 %d 次）'
+                      % (cover, _MIN_MASK_COVER, _ABSTAIN[0]), file=_sys.stderr)
+            return anchor_ev(orig(image, color_space, apply_cctf_decoding, 'matrix'))
         xyz = colour.RGB_to_XYZ(np.clip(image, 0, 1), color_space,
                                 apply_cctf_decoding=apply_cctf_decoding)
         Y = xyz[:, :, 1]
