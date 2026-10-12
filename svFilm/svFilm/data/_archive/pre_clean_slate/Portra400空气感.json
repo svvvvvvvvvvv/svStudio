@@ -28,6 +28,13 @@
    15.0
   ]
  },
+ "load_raw": {
+  "_note_load_raw": "★ 09-29 裁定：**这一段在本链上是死键，一个字节都不读**。`presets._apply()` 只读 input_image / grain / preflashing / halation / couplers / glare / special / simulation；引擎里读 `white_balance` / `temperature` / `tint` / `lens_correction` 的地方是 `spektrafilm/utils/raw_file_processor.py`（处理**真实 RAW 文件**那条路），而我们喂进去的是**已经解码好的场景线性** ⇒ 这四个键在预设里**改了没反应**（本项目第 4 类坑「假旋钮」）。而且 10 条预设里它们**全是同一组值**（custom / 5200 / 1.0 / false）⇒ 连信息量都没有。★★ **整张冷暖基准的真实落点 = 印相端校色滤片**：`simulation.print_y_filter_shift`（冷暖主旋钮，Y 越大越暖）/ `simulation.print_m_filter_shift`（绿↔品红）。负片→印相体系里「白平衡」**本来就是印相滤片**。现在 10 条预设**各不相同**（Y 3~13、M −4~+2）⇒ 逐预设的冷暖基准**早就在跑**，⇒ 这一档**不需要另开**；要调冷暖请改那两个，**别改这里**。",
+  "white_balance": "custom",
+  "temperature": 5200.0,
+  "tint": 1.0,
+  "lens_correction": false
+ },
  "grain": {
   "active": true,
   "sublayers_active": false,
@@ -146,7 +153,8 @@
    0,
    1,
    2
-  ]
+  ],
+  "print_gamma_factor": 0.93
  },
  "simulation": {
   "film_stock": "kodak_portra_400",
@@ -193,13 +201,19 @@
    0.3
   ],
   "output_color_space": "sRGB",
+  "saving_color_space": "sRGB",
+  "saving_cctf_encoding": true,
+  "auto_preview": true,
   "scan_film": false,
   "_note_unsharp_back": "★★★ 09-29：1.5/2.0 → **0.3/0.3（回原值）**。SV：「锐化太狠了，要重新考虑」。为什么退：**「局部对比」的正解是 couplers 的空间扩散**（README 明说「让 couplers 扩散 ⇒ 提高局部对比和感知锐度」）—— 实测扩散 10→60 把局部对比从 1.01 拉到 **1.10（正中靶）**。⇒ 锐化是【补】（数字）、couplers 是【治】（物理）；两个都开就过火。⚠ 要再调就调 `couplers.diffusion_size_um`，别再靠锐化。",
   "_note_scan_black": "★★★★ 10-09 晚：**`scan_black_level` 0.02 → 0.01**（对齐大师的「暗部贴黑」）。依据 = **直方图对齐**（技能 §202）：把我们的片在 0.045/0.02/0.01/0.005/0.002/0.0 六档下出直方图，与鹿井 514 张的「左端形状」对照 —— 大师的左端是**紧贴 0 的尖峰**（94% 的片都有一点点、中位影裁 0.1050%）；我们 0.02 档中位只有 0.0053%（差 20 倍）。★ 全 45 张复验（长边 1440，全部走完整链路含颜色层）：中位 **0.0053% → 0.0578%**（离大师从 20 倍缩到 **1.8 倍**）· P90 **0.031% → 0.398%** · 有影裁 98%（大师 94%）。⚠ **代价（照实记）**：这个旋钮**看内容** —— 只有\"画面里有深到能被切平的一整块暗部\"的片才有反应：**DSCF1289 1.21%→8.96%** · **DSCF1291 0.49%→8.00%**（45 张里 2 张 = 4%），其余 43 张都 ≤0.83%。已目检这两张：**整图观感基本不变**（切掉的是壁画暗部/衣服阴影这类本来就暗的像素），直方图左端明显更贴 0。⚠ 数据见 `效果debug/2026-10-09/目检_黑点/复验_001.json`。⚠ 曾试过归零（0.0）：因曲线趾部堆积，影裁会跳到 10~16% ⇒ 过头，不采用。",
   "_note_white_gate": "★★★★★ 10-11 由 Portra400空气感 标注（**只加注记，一个键值都没改**）：**本条 `scan_white_correction=false` ⇒ `scan_white_level`（现值 0.98）是死键。**\n【源码依据】`color_reference.py:139-142` 是**直接赋值覆盖**局部变量（`white_correction=False and black_correction=True` ⇒ `white_level = self._y_white`），`:144-145` 只用覆盖后的局部变量 ⇒ **被覆盖那一支的 level 键一个读点都没有**。\n【零渲染扫值已证】把 `white_level` 从 0.90 扫到 1.30，`(m, q)` **纹丝不动**。四种组合：TT 两根都活 ｜ TF white 活 / black 死 ｜ **FT white 死 / black 活** ｜ FF 两根都死。本条 = **FT**：`scan_black_level` 仍活，白端那根死。\n【后果是结构性的，不是幅度问题】白锚从「固定常数 `W_s`」退化成「链自身白参考 `y_white`」⇒ `m` 1.2688 → 1.0017 ⇒ ★「三通道都高」的**显示码上界 236~237 → 226~227** ⇒ `min(RGB)>=235` **恒为 0**（实测 `min235` 0.86 / 6.25 / 15.94 → **0**）—— 这是**逐像素值域天花板**，与分辨率无关。另：整张暗 ~3 L\\*、`L95` −3.5~−4.0、颊 `L*` −2.9~−4.0。\n【★ 为什么这条注记重要】`scanner.white_level` 正是**唯一能抬「高光天花板低 6 L\\*」的那根键**（1.02→1.18 时 L\\*60 +4.55，且 1.12 时 clip 仍 0.0000%）—— **它在本条里是死的** ⇒ 在 GUI 换卷到本条后「调 white_level 没反应」会被**误判成「这根键没用」**，真相是「**这个卷把整段白端校正关了**」。本项目的静默失效清单里，这是**第 7 类**的实例。\n【若这是有意为之】请在这条注记里写明理由（原样保留）；【若该改】改 `scan_white_correction` → `true` —— ⚠ **那会改本条的出图**（白端抬起来、整张亮 ~3 L\\*），属**改目标**，**必须用户拍板**（`P0扫描锚定_1011` 的选项 B）。目前**刻意不动**：本条的 `false` 是上游快照原值，没有任何记录说过它被有意关掉。\n【运行时警告】`presets._check_white_gate()`（`presets.py`，在 `_apply` 读 `scan_white_correction` 处）会在引擎日志里对每条这样的预设**各喊一次**（进程内去重，不刷屏）。本次改动**零画面影响**：全 10 条预设的参数级全字段 SHA256 指纹改前 == 改后。"
  },
  "display": {
-  "preview_max_size": 1200
- },
- "_archive": "★ 这里只留「当前有效」的键与依据。**旧拍板 / 旧靶 / 已死依据 / 已死键**逐字保留在 `svFilm/svFilm/data/_archive/`：`README.md`（分类与时间线）· `B1_*.json` / `B2_*.json` / `B3_*.json`（每批搬走了什么、逐字原文）· `keys_moved.json`（索引）· `snapshots/B<n>/`（改动前的整份文件）。回滚：每批一个 commit，`git revert <commit>`。"
+  "use_display_transform": true,
+  "gray_18_canvas": true,
+  "white_padding": 0.03,
+  "preview_max_size": 1200,
+  "output_interpolation": "spline36"
+ }
 }

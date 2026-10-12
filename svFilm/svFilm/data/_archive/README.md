@@ -16,12 +16,23 @@
 
 | 路径 | 是什么 |
 |---|---|
-| `keys_moved.json` | **索引**：每批动了哪些文件、搬了多少项、快照在哪 |
+| `keys_moved.json` | **索引**：每批动了哪些文件、搬了多少项 |
+| `pre_clean_slate/` | ★★ **清账前（`9e785c8`）的 11 份主文件原样** —— **真正的"改动前"**，可整份拷回 |
 | `B1_dead_keys_unread.json` | B1 的**逐字**原文（`presets.py` 全文件都不提的死键） |
 | `B2_backup_files.json` | B2 的清单（两个不在加载路径上的备份文件） |
 | `B3_dead_targets.json` | B3 的**逐字**原文（死靶 + `_provenance` 死条目 + 旧轴注记） |
-| `snapshots/B1/` · `snapshots/B3/` | 改动**之前**的整份主文件（可整份拷回） |
 | `backup_files/` | 从 `presets/` 搬出来的两个备份（原样保留，见 §3） |
+| `snapshots/` | *（已清空）* —— 见下面的 ⚠ |
+| `README.md` | 本文件 |
+
+> ⚠ **一处自己的 bug（已修，留证）**：第一版 `_apply_cleanup.py` 把
+> `snapshot_batch()` 写在 `BATCHES[n](True)` **之后** ⇒ `snapshots/B1` / `snapshots/B3`
+> 存的其实是"**改完**的"文件，**等于没用**。
+> **修法**：从 `git show 9e785c8:<file>` 取 11 份主文件写进 **`pre_clean_slate/`**
+> （逐字节 = 清账前的 HEAD 版），并删掉那两个错的目录。
+> ★ 教训：**快照必须在写之前拍** —— "改动后拍快照"看起来一模一样，但它什么也证明不了。
+> （发现方式：复核时用"快照里应含/不含某个已搬走的键"去反向验，B1 的快照里居然还有
+> `particle_scale_layers` ⇒ 当场露馅。）
 
 ## 2. 三批各搬了什么（每批一个 commit，可单独 `git revert`）
 
@@ -106,9 +117,10 @@
 
 ```powershell
 cd E:\svStudio
-git log --oneline -5                     # 4d54caf / 024dfe9 / 9233984
+git log --oneline -6                     # 4d54caf / 024dfe9 / 9233984 / 8a6da90 / …
 git revert <commit>                      # 任意一批单独回滚
-# 或整份拷回：
-Copy-Item -Recurse -Force svFilm\svFilm\data\_archive\snapshots\B1\* svFilm\svFilm\data\
+# 或整份拷回（★ 真正的"清账前"）：
+Copy-Item -Force svFilm\svFilm\data\_archive\pre_clean_slate\targets.json svFilm\svFilm\data\
+Copy-Item -Force svFilm\svFilm\data\_archive\pre_clean_slate\*.json      svFilm\svFilm\data\presets\
 ```
 ★ 更彻底的备份 = **分支 `feature/drop-grade`**（清账前的原样）。
