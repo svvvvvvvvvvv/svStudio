@@ -1,0 +1,26 @@
+{
+  "_what": "清账 1012（分支 feature/clean-slate）：从主文件搬出来的每一个键的**逐字**快照。",
+  "_how": "每批一个子文件 B<N>_*.json（逐字原文）；整份文件快照在 snapshots/B<N>/。",
+  "_revert": "每批一个 commit，回滚用 `git revert <commit>`；或从 snapshots/B<N>/ 整份拷回。",
+  "batches": {
+    "B1": {
+      "title": "dead_keys_unread",
+      "why": "`presets.py` 全文件一个字都不提的死键（`special.print_gamma_factor` / `load_raw` 整段 / `display.*` 4 键 / 3 个存盘预览开关）⇒ 删掉连 KeyError 都不会有",
+      "files": [
+        "presets/C200过曝.json",
+        "presets/C200透明.json",
+        "presets/C200青蓝.json",
+        "presets/Ektar100浓彩.json",
+        "presets/GOLD200暖橙.json",
+        "presets/Portra400淡雅.json",
+        "presets/Portra400空气感.json",
+        "presets/Pro400H清风.json",
+        "presets/Pro400H马卡龙.json",
+        "presets/Ultramax400沉褐.json"
+      ],
+      "snapshot": "snapshots/B1",
+      "detail_file": "B1_dead_keys_unread.json",
+      "n_moved": 130
+    }
+  }
+}
