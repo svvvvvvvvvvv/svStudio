@@ -124,3 +124,31 @@ Copy-Item -Force svFilm\svFilm\data\_archive\pre_clean_slate\targets.json svFilm
 Copy-Item -Force svFilm\svFilm\data\_archive\pre_clean_slate\*.json      svFilm\svFilm\data\presets\
 ```
 ★ 更彻底的备份 = **分支 `feature/drop-grade`**（清账前的原样）。
+
+
+---
+
+## 第二节 · B7（第二阶段：**注记精简**，10-12）
+
+> **用户原话**：「**注意也需要删掉那些历程 各种啰嗦的地方 只留下功能性注释 尽量精简代码**」，
+> 追问后追加：「**别点头 直接给我删掉**」。
+>
+> **性质**：**零渲染** · **一个生效键都没动** · 每批 `selftest` 都是 **116 ok / 1 红**（基线该红）。
+
+### B7 各批（每批一个 commit，可单独 `git revert`）
+
+| 批 | commit | 动了什么 | 数值证据 |
+|---|---|---|---|
+| **N1** | `8a7da21` | ★ **3 个 grain 死键搬走** + `presets.py` 那三行加 `if ... in gr` 守卫 | 全字段快照 84730 个字段里**只有 10 个变**（每条预设 1 个）：`grain.particle_scale_layers` [2.5,1,0.5] -> [2.0,1,0.5]（**schema 默认**）⇒ 该字段只在 `sublayers_active=True` 时被读（`grain.py:179`），我们 10 条全是 False。另两个键（`blur_dye_clouds_um` 1.0 / `micro_structure` (0.2,30)）**与 schema 默认逐位相同 ⇒ 连字段都没变**。`ov:*` 指纹 **4/4 SAME** |
+| **N2** | `d48a3eb` | `targets.json` 15 条注记精简 | 全字段 **0 变化** |
+| **N3** | `9db2489` | `Ultramax400沉褐` 26 条注记精简 | 全字段 **0 变化** |
+| **N4** | `125b714` | `GOLD200暖橙` + `Pro400H清风` 18 条 | 全字段 **0 变化** |
+| **N5** | `b196eee` | 7 条预设 61 条 | 全字段 **0 变化** |
+| **N6** | `980da0d` | `config.py` 7 段长注释 13083 -> 6251 字 | 全字段 **0 变化**；`git diff` 逐行核过**非注释行 0 处** |
+
+### 归档里有什么
+
+* **`B7_note_history.json`** —— ★ **每一条被精简/移走的注记的逐字原文**（键 = 文件名；值 = {注记路径: 原文}）。
+  还原方式：把原文贴回同名键即可（顶层 `_archive` 指针不必还原）。
+* **`B7_dead_keys_grain.json`** —— 3 个 grain 死键 × 10 条预设的逐字值 + "为什么以前搬不动/为什么现在能搬"。
+* **快照**：本批不必另拍 —— 改动前 == `a09e332`（工作树干净），`git show a09e332:<file>` 即逐字节原文。

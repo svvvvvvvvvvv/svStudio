@@ -39,6 +39,40 @@
       "snapshot": "snapshots/B3",
       "detail_file": "B3_dead_targets.json",
       "n_moved": 84
+    },
+    "B7": {
+      "title": "note_slimming_and_dead_grain_keys",
+      "why": "用户 10-12 令「**别点头，直接给我删掉**」：主文件里的注记**只留** 【键是什么 · 当前值+单位 · 当前依据（+等级）· 陷阱】；**历程 / 论证 / 文档导航**逐字搬进 `B7_note_history.json`；主文件顶层只留**一行** `_archive` 指针。另含第一阶段登记的两件顺带：① 3 个 grain 死键（先给 `presets.py` 三行加 `if ... in gr` 守卫）；② 两处账目数字更正（「仍带 +8.000 的 4 条」 -> **3 条**；`GOLD200暖橙` 不再把自己列进去）。",
+      "files": [
+        "targets.json",
+        "presets/C200过曝.json",
+        "presets/C200透明.json",
+        "presets/C200青蓝.json",
+        "presets/Ektar100浓彩.json",
+        "presets/GOLD200暖橙.json",
+        "presets/Portra400淡雅.json",
+        "presets/Portra400空气感.json",
+        "presets/Pro400H清风.json",
+        "presets/Pro400H马卡龙.json",
+        "presets/Ultramax400沉褐.json",
+        "config.py",
+        "presets.py"
+      ],
+      "snapshot": null,
+      "snapshot_note": "**本批无需另拍快照**：改动前的工作树 == `a09e332`（分支 `feature/clean-slate`，`git status` 为空）⇒ `git show a09e332:<file>` 就是**逐字节**的改动前版本。",
+      "detail_files": [
+        "B7_note_history.json",
+        "B7_dead_keys_grain.json"
+      ],
+      "commits": [
+        "8a7da21 B7-N1（grain 死键）",
+        "d48a3eb B7-N2（targets.json 注记）",
+        "9db2489 B7-N3（Ultramax 注记）",
+        "125b714 B7-N4（GOLD200 + 清风 注记）",
+        "b196eee B7-N5（7 条预设注记）",
+        "980da0d B7-N6（config.py 注释）"
+      ],
+      "n_moved": "注记条数不变（只精简正文），字数见报告 §字数前后对比"
     }
   }
 }
