@@ -38,11 +38,6 @@
    1.0,
    1.0
   ],
-  "particle_scale_layers": [
-   2.5,
-   1.0,
-   0.5
-  ],
   "density_min": [
    0.07,
    0.08,
@@ -54,11 +49,6 @@
    0.99
   ],
   "blur": 0.65,
-  "blur_dye_clouds_um": 1.0,
-  "micro_structure": [
-   0.2,
-   30
-  ],
   "_note_grain_size": "★★★ 09-30：**修 bug + 定档**，并**按 SV 的目检回退过头的那一版**。① **修 bug**：`presets._apply` 一直写 `g.agx_particle_area_um2`（0.3.2 的旧名字），而 vendor 0.3.4 的 `model/grain.py` 读的是 `grain.particle_area_um2` ⇒ 我们设的值**从来没生效过**（vendor 实读 schema 默认 0.2）；`particle_scale` / `scale_layers` 同病。铁证：按两个名字各 override 同一个值，带 `agx_` 那档和基线**一个数都不差**。自检当初验的也是带前缀那个名字 ⇒ 一起绿（\"验错对象\"）。② **定档**：`particle_area_um2 = 1.2`、`particle_scale = [1,1,1]`（单色，SV 选的观感）。★ **1.2 的出处 = 作者自己的示例** `spektrafilm/examples/run_simulation.py:38`（GUI / schema 开箱默认 0.2）。⚠ **曾经定过 48，被 SV 一眼否掉**：48 是为了在 1600 长边下把\"微反差\"顶到鹿井中位，但它是作者示例的 **40 倍**，成片颗粒明显过大。⇒ 记下这条教训：**不要为了追一个统计量去堆风格参数**；\"我们比大师平\"该由**约束/补偿层**解决（测光策略 / 印相预闪 / 关印放柔光），不是靠把颗粒调大。见技能 §137、§138。③ `sublayers_active` 仍是 False ⇒ `particle_scale_layers` 不参与（作者示例是 True，待议）。"
  },
  "preflashing": {

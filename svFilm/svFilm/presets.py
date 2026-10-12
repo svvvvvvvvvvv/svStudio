@@ -481,6 +481,9 @@ def _apply(p, d, cfg, name=None):
     #    `selftest.t_presets` 现在**验 vendor 真正读的那个名字**，并断言带 `agx_` 的死属性
     #      **不该存在**（防回退）。
     g = p.film_render.grain
+    # ⚠ 下面这 3 个键是**死键**：`sublayers_active=False` 时引擎一个都不读（`grain.py:179` 的分支），
+    # 已搬进 `_archive/B7_dead_keys_grain.json`。缺省时**不写**（保持引擎 schema 默认），
+    # 否则从 JSON 删掉这些键会让 `_apply` 当场 KeyError。
     if float(gr['particle_area_um2']) <= 0:
         # 粒子面积为 0 物理上无意义（grain.py 里会除以零）⇒ 等同关掉
         g.active = False
@@ -489,12 +492,15 @@ def _apply(p, d, cfg, name=None):
         g.sublayers_active = bool(gr['sublayers_active'])
         g.particle_area_um2 = float(gr['particle_area_um2'])
         g.particle_scale = tuple(gr['particle_scale'])
-        g.particle_scale_layers = tuple(gr['particle_scale_layers'])
+        if 'particle_scale_layers' in gr:
+            g.particle_scale_layers = tuple(gr['particle_scale_layers'])
         g.density_min = tuple(gr['density_min'])
         g.uniformity = tuple(gr['uniformity'])
         g.blur = float(gr['blur'])
-        g.blur_dye_clouds_um = float(gr['blur_dye_clouds_um'])
-        g.micro_structure = tuple(gr['micro_structure'])
+        if 'blur_dye_clouds_um' in gr:
+            g.blur_dye_clouds_um = float(gr['blur_dye_clouds_um'])
+        if 'micro_structure' in gr:
+            g.micro_structure = tuple(gr['micro_structure'])
 
     # ---- couplers ----
     c = p.film_render.dir_couplers

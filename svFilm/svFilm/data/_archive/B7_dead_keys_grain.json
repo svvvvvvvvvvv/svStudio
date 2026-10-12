@@ -1,0 +1,128 @@
+{
+ "_what": "清账第二阶段（B7-N1）：从 10 条预设的 `grain` 段搬走的 **3 个死键**（逐字）。",
+ "_why": "引擎的读点在 `grain.py:179` 的 `if not grain.sublayers_active:` 分支之后 —— 10 条预设 `sublayers_active` 全是 False ⇒ **这三个键一个都不参与出图**。",
+ "_why_not_before": "第一阶段搬不动它们：`presets.py:492/496/497` 直接取 `gr[...]` ⇒ 删键会让 `_apply` 当场 KeyError。本批先把那三行改成 `if ... in gr` 才搬。",
+ "_note": "`blur_dye_clouds_um` 与 `micro_structure` 的值与 schema 默认（1.0 / (0.2,30)）**恰好相同**；`particle_scale_layers` 是 [2.5,1,0.5]（默认 (2.0,1,0.5)）—— 三者都只在 `sublayers_active=True` 时才被读。",
+ "keys": {
+  "C200过曝.json": {
+   "particle_scale_layers": [
+    2.5,
+    1.0,
+    0.5
+   ],
+   "micro_structure": [
+    0.2,
+    30
+   ],
+   "blur_dye_clouds_um": 1.0
+  },
+  "C200透明.json": {
+   "particle_scale_layers": [
+    2.5,
+    1.0,
+    0.5
+   ],
+   "micro_structure": [
+    0.2,
+    30
+   ],
+   "blur_dye_clouds_um": 1.0
+  },
+  "C200青蓝.json": {
+   "particle_scale_layers": [
+    2.5,
+    1.0,
+    0.5
+   ],
+   "micro_structure": [
+    0.2,
+    30
+   ],
+   "blur_dye_clouds_um": 1.0
+  },
+  "Ektar100浓彩.json": {
+   "particle_scale_layers": [
+    2.5,
+    1.0,
+    0.5
+   ],
+   "micro_structure": [
+    0.2,
+    30
+   ],
+   "blur_dye_clouds_um": 1.0
+  },
+  "Portra400淡雅.json": {
+   "particle_scale_layers": [
+    2.5,
+    1.0,
+    0.5
+   ],
+   "micro_structure": [
+    0.2,
+    30
+   ],
+   "blur_dye_clouds_um": 1.0
+  },
+  "Portra400空气感.json": {
+   "particle_scale_layers": [
+    2.5,
+    1.0,
+    0.5
+   ],
+   "micro_structure": [
+    0.2,
+    30
+   ],
+   "blur_dye_clouds_um": 1.0
+  },
+  "Pro400H马卡龙.json": {
+   "particle_scale_layers": [
+    2.5,
+    1.0,
+    0.5
+   ],
+   "micro_structure": [
+    0.2,
+    30
+   ],
+   "blur_dye_clouds_um": 1.0
+  },
+  "GOLD200暖橙.json": {
+   "particle_scale_layers": [
+    2.5,
+    1.0,
+    0.5
+   ],
+   "micro_structure": [
+    0.2,
+    30
+   ],
+   "blur_dye_clouds_um": 1.0
+  },
+  "Pro400H清风.json": {
+   "particle_scale_layers": [
+    2.5,
+    1.0,
+    0.5
+   ],
+   "micro_structure": [
+    0.2,
+    30
+   ],
+   "blur_dye_clouds_um": 1.0
+  },
+  "Ultramax400沉褐.json": {
+   "particle_scale_layers": [
+    2.5,
+    1.0,
+    0.5
+   ],
+   "micro_structure": [
+    0.2,
+    30
+   ],
+   "blur_dye_clouds_um": 1.0
+  }
+ }
+}
