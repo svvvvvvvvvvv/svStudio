@@ -203,5 +203,5 @@
  "display": {
   "preview_max_size": 1200
  },
- "_archive": "★ 这里只留「当前有效」的键与依据。**旧拍板 / 旧靶 / 已死依据 / 已死键**逐字保留在 `svFilm/svFilm/data/_archive/`：`README.md`（分类与时间线）· `B1_*.json` / `B2_*.json` / `B3_*.json`（每批搬走了什么、逐字原文）· `keys_moved.json`（索引）· `snapshots/B<n>/`（改动前的整份文件）。回滚：每批一个 commit，`git revert <commit>`。"
+ "_archive": "★ 这里只留「当前有效」的键与依据。**旧拍板 / 旧靶 / 已死依据 / 已死键**逐字保留在 `data/_archive/`：`README.md`（分类与时间线）· `B1_dead_keys_unread.json` / `B2_backup_files.json` / `B3_dead_targets.json`（每批搬走了什么、逐字原文）· `keys_moved.json`（索引）· `pre_clean_slate/`（**清账前**的 11 份主文件原样）。回滚：每批一个 commit，`git revert <commit>`。"
 }

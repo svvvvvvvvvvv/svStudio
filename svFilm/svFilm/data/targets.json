@@ -222,5 +222,5 @@
     "note": "几乎不做分色（四个数都在 ±0.2 内）。★ 10-12 回写：n 120→298（源 = datapack_1011/feat.json，group=masuda 现 298 条；旧块是 n=120 时量的，已过期）。口径 = 逐张 A4 分位取中位；span = **逐张 (p95−p5) 的中位**（不是 L95−L5，后者=80.11）；C50 = 逐张 img.C 的中位。实测值 L5 14.7552 / L50 63.8101 / L95 94.8615 / span 78.4195 / C50 8.0535。⚠ **混链警告**：她横跨半格/135/645/数码（`増田_参数深究.md` §6-7），这 298 张是**混画幅聚合** ⇒ 画幅族（颗粒尺度/柔光）**不可**按此对齐，只可用于影调落点/跨度。",
     "span": 78.42
   },
-  "_archive": "★ 这里只留「当前有效」的键与依据。**旧拍板 / 旧靶 / 已死依据 / 已死键**逐字保留在 `svFilm/svFilm/data/_archive/`：`README.md`（分类与时间线）· `B1_*.json` / `B2_*.json` / `B3_*.json`（每批搬走了什么、逐字原文）· `keys_moved.json`（索引）· `snapshots/B<n>/`（改动前的整份文件）。回滚：每批一个 commit，`git revert <commit>`。"
+  "_archive": "★ 这里只留「当前有效」的键与依据。**旧拍板 / 旧靶 / 已死依据 / 已死键**逐字保留在 `data/_archive/`：`README.md`（分类与时间线）· `B1_dead_keys_unread.json` / `B2_backup_files.json` / `B3_dead_targets.json`（每批搬走了什么、逐字原文）· `keys_moved.json`（索引）· `pre_clean_slate/`（**清账前**的 11 份主文件原样）。回滚：每批一个 commit，`git revert <commit>`。"
 }
