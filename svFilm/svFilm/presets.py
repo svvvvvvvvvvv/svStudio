@@ -809,7 +809,12 @@ def _person_metering(lin, overrides, cfg):
         from . import color as _col, person as _P
         _lin = _np.clip(_np.asarray(lin, _np.float64), 0.0, None)
         _disp = _np.clip(_col.l2s(_lin), 0.0, 1.0)
-        _m = _P.person(_disp)
+        # ★★★ 10-12 晚：**一次前向同时拿「人」与「脸」**（`person_face()` 就是为此写的，边际成本 0）。
+        _m, _mf = None, None
+        try:
+            _m, _mf = _P.person_face(_disp)
+        except Exception:                                                    # noqa: BLE001
+            _m, _mf = _P.person(_disp), None
         if _m is None:
             return overrides, None
         # ★★★ 10-11 修：**掩膜占比守卫**（物理依据）。
@@ -829,8 +834,20 @@ def _person_metering(lin, overrides, cfg):
             return overrides, None
         _ov = dict(overrides)
         _ov['camera.auto_exposure_method'] = 'subject'
-        _EX.set_mask(_m)
-        return _ov, _m
+        # ★★★ 10-12 晚：**有脸就用脸**（口径 = 二值 `>0.5` 的占比 >= `EXPOSURE_FACE_MIN_COVER`）。
+        #   为什么二值而不是软置信：实测 `r2(颊 ~ 脸)` 二值 **0.890** / 软 **0.310**
+        #   （软掩膜把发际与背景边缘一起平均进来，反而比"人"还差）。
+        #   为什么要有下限：脸的**小区域**会被 `exposure.py` 的掩膜占比守卫拦下 ⇒ 那一段是安全侧。
+        #   两档共用一套 `ev' = (1-w)·ev + b`，只是 `(w, b)` 不同（见 `config` 的注记）。
+        _use, _reg = _m, 'person'
+        if bool(getattr(cfg, 'EXPOSURE_METER_FACE', False)) and _mf is not None:
+            _fcov = float(_np.mean(_np.asarray(_mf) > 0.5))
+            if (float(getattr(cfg, 'EXPOSURE_FACE_MIN_COVER', 0.005)) <= _fcov
+                    <= float(getattr(cfg, 'EXPOSURE_FACE_MAX_COVER', 0.50))):
+                # ★ 口径必须是**二值 >0.5**（见 config 注记：软口径 r2 只有 0.310）
+                _use, _reg = (_np.asarray(_mf, _np.float64) > 0.5).astype(_np.float32), 'face'
+        _EX.set_mask(_use, _reg)
+        return _ov, _use
     except Exception:                                                    # noqa: BLE001
         return overrides, None
 

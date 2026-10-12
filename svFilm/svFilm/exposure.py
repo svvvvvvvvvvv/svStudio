@@ -34,6 +34,7 @@ import numpy as np
 
 _MASK = [None]          # 当前这张的"人"掩膜（0~1，与输入图同尺寸）；渲染是串行的
 _INSTALLED = [False]
+_REGIME = ['person']    # 'face' / 'person' —— 决定用哪一对 (w, b)；渲染串行，逐张设置
 
 # ★★ 掩膜占比下限（`m.sum()/m.size`）：低于它 ⇒ **弃权**，走 `matrix`（= 与
 #    `presets._person_metering` 的占比守卫**同一个落点**；生产路径实测软掩膜占比
@@ -42,13 +43,19 @@ _MIN_MASK_COVER = 0.003
 _ABSTAIN = [0, None]    # [次数, 上次原因] —— 观察者状态，只计数不改画面
 
 
-def _anchor_wb():
-    r"""读 `config.EXPOSURE_ANCHOR_W/B`（**每次动态读** ⇒ 同一进程里可做 A/B、可回退）。
+def _anchor_wb(regime='person'):
+    r"""读常数：`regime='face'` 读 `EXPOSURE_ANCHOR_*_FACE`（缺键 ⇒ 退回人档那一对）。
 
+    **每次动态读** ⇒ 同一进程里可做 A/B、可回退。
     读不到（老 config / 被删键）⇒ 返回 `(0.0, 0.0)` = **逐位等于修复前**（安全侧）。
     """
     try:
         from . import config as _C
+        if regime == 'face':
+            wf = getattr(_C, 'EXPOSURE_ANCHOR_W_FACE', None)
+            bf = getattr(_C, 'EXPOSURE_ANCHOR_B_FACE', None)
+            if wf is not None and bf is not None:
+                return float(wf or 0.0), float(bf or 0.0)
         w = float(getattr(_C, 'EXPOSURE_ANCHOR_W', 0.0) or 0.0)
         b = float(getattr(_C, 'EXPOSURE_ANCHOR_B', 0.0) or 0.0)
     except Exception:                                                        # noqa: BLE001
@@ -59,21 +66,31 @@ def _anchor_wb():
 def anchor_ev(ev):
     r"""`ev' = (1 - w) * ev + b` —— **唯一改动点**（一行）。
 
-    `w = b = 0` ⇒ 原样返回（逐位等于修复前，回退点）。
+    `w/b` 按当前档位（`_REGIME`）取：有脸档 / 人档；`w = b = 0` ⇒ 原样返回（回退点）。
     """
-    w, b = _anchor_wb()
+    w, b = _anchor_wb(_REGIME[0])
     if w == 0.0 and b == 0.0:
         return ev
     return (1.0 - w) * ev + b
 
 
-def set_mask(m):
-    """渲染前把这张的"人"掩膜放进来（`None` ⇒ `subject` 退回原实现）。"""
+def regime():
+    """当前档位（'face' / 'person'）—— 给测试与排障用。"""
+    return _REGIME[0]
+
+
+def set_mask(m, regime='person'):
+    """渲染前把这张的测光掩膜放进来（`None` ⇒ `subject` 退回原实现）。
+
+    `regime` ⇒ 用哪一对 `(w, b)`：`'face'` = 脸掩膜档，`'person'` = 人掩膜档。
+    """
     _MASK[0] = None if m is None else np.asarray(m, np.float32)
+    _REGIME[0] = 'face' if str(regime) == 'face' else 'person'
 
 
 def clear():
     _MASK[0] = None
+    _REGIME[0] = 'person'
 
 
 def abstain_count():
