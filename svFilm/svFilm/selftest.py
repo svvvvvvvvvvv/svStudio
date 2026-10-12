@@ -123,20 +123,24 @@ def t_review_1008():
           not _bad_add, '有问题: %s' % (_bad_add or '无'),
           '加法需要一个数值底。没有底 ⇒ 该 add 会被静默忽略（"写了没反应"），'
           '所以必须静态钉住：**要叠加的键，先在 `"*"` 里给基准值**')
+    # ★★ 10-12 晚：**这两条锁改法**。`span=平` 已删（`三条设计_1012\A_标定_1012.md`：方向反了）
+    #   ⇒ `_scene_engine` 现在**一条场景轴都没有**（`back=` 10-09 删、`lighttype=` 10-11 撤、
+    #   `span=平` 10-12 删）⇒ 原来那两句**没有对象可指**，必然红。
+    #   但它们要验的是**机制**（"逐场景参数真的接线了" / "两轴真的叠加"），
+    #   **不该依赖某条轴恰好活着** ⇒ 改成**临时造一条轴、断言、跑完还原**（就地改 `_se`，保住它的身份）。
+    #   ⚠ 注意 `_se` 是**活对象**（`_d['_scene_engine']`）；这里**不能**整体换 dict，
+    #     否则 `_se` 会指着一份不再生效的旧快照（上一版就这么错过一次）。
     _GN = 'print_render.density_curves_morph.gamma_factor'
-    _g1 = targets.scene_engine({'span': '平', 'exp': None, 'back': None, 'overwhite': None},
-                               stock='Ultramax400沉褐', cfg=C).get(_GN)
-    _g2 = targets.scene_engine({'span': None, 'exp': None, 'back': None, 'overwhite': None},
-                               stock='Ultramax400沉褐', cfg=C).get(_GN)
-    check('★★ 只用 `span=平` 时确实命中（其余轴为 None 也不受影响）',
-          _g1 is not None and _g2 is not None and abs(float(_g1) - float(_g2)) > 1e-9,
-          'span=平 → %s ／ 无 span → %s' % (_g1, _g2),
-          '这是"逐场景参数真的接线了"的最小证据')
-    # ★ **证明叠加真的生效**：临时往 `_scene_engine` 里塞一个 `back=正逆光` 的 `{"add": Δ}`，
-    #   断言"两轴同时命中 = 两轴各自之和"。跑完还原（与 `t_scene` 注入 `_scene` 同一手法）。
-    #   ⚠ 不这么做的话，"支持叠加"就只是注释里的一句话 —— 本项目最恨"说了没接上"。
+    _has_span = 'span=平' in _se
+    _span_save = _se.get('span=平')
     _inj = {'print_render.density_curves_morph.gamma_factor': {'add': 0.07}}
     try:
+        _se['span=平'] = {_GN: 1.23}
+        _g1 = targets.scene_engine({'span': '平', 'exp': None, 'back': None, 'overwhite': None},
+                                   stock='Ultramax400沉褐', cfg=C).get(_GN)
+        # ★ **证明叠加真的生效**：临时再加一条 `back=正逆光` 的 `{"add": Δ}`，
+        #   断言"两轴同时命中 = 两轴各自之和"。跑完还原。
+        #   ⚠ 不这么做的话，"支持叠加"就只是注释里的一句话 —— 本项目最恨"说了没接上"。
         _se['back=正逆光'] = dict(_inj)
         _a = float(targets.scene_engine({'span': '平', 'exp': None, 'back': '正逆光',
                                          'overwhite': None}, stock='Ultramax400沉褐',
@@ -146,6 +150,16 @@ def t_review_1008():
                                         cfg=C).get(_GN))
     finally:
         _se.pop('back=正逆光', None)
+        if _has_span:
+            _se['span=平'] = _span_save
+        else:
+            _se.pop('span=平', None)
+    _g2 = targets.scene_engine({'span': None, 'exp': None, 'back': None, 'overwhite': None},
+                               stock='Ultramax400沉褐', cfg=C).get(_GN)
+    check('★★ 只用 `span=平` 时确实命中（其余轴为 None 也不受影响）',
+          _g1 is not None and _g2 is not None and abs(float(_g1) - float(_g2)) > 1e-9,
+          '（临时造一条 span=平 → 1.23）span=平 → %s ／ 无 span → %s' % (_g1, _g2),
+          '这是"逐场景参数真的接线了"的最小证据')
     check('★★★ 两轴同时命中时**真的叠加**（注入 {"add":0.07} 验证，跑完还原）',
           abs(_a - (float(_g1) + 0.07)) < 1e-9 and abs(_b - (float(_g2) + 0.07)) < 1e-9,
           'span=平+正逆光 %.4f（应 %.4f）／ 只正逆光 %.4f（应 %.4f）'
@@ -1147,10 +1161,20 @@ def t_cache():
 
     _se_save = _d.get('_scene_engine')
     try:
+        # ★★ 10-12 晚：**这条锁原来动的是 `["*"]` 的 `gamma_factor`，已经测不到东西了**。
+        #   原因：10-12 把 4 个键（`gamma_factor` / `gamma_factor_slow` /
+        #   `lightness_compression` / `grain.blur`）**下沉到 `_stock_engine[<预设>]`**，
+        #   而它**优先级高于 `["*"]`**（见 `_note_stock_engine_1012` / `targets.py:218-225`）
+        #   ⇒ 对本用例这 10 条已登记预设，改 `["*"]` 的 `gamma_factor`
+        #   **对解析出来的 overrides 零影响** ⇒ 键不变 ⇒ 命中 ⇒ 假红。
+        #   ⇒ 它此前之所以能过，是**靠 `span=平` 恰好活着**（`_d['_scene_engine'] = {'*': …}`
+        #   顺手把那条轴删了，而用例图恰好命中 `span=平` ⇒ 解析值从 1.23 掉回 0.98 ⇒ miss）。
+        #   `span=平` 10-12 一删就露馅。⇒ 改用**没有下沉的那一根**，锁的还是同一件事
+        #   （"引擎 overrides 真的进了缓存键"）。
         _star = dict((_se_save or {}).get('*') or {})
-        _gf = 'print_render.density_curves_morph.gamma_factor'
-        _star[_gf] = float(_star.get(_gf, 1.10)) + 0.05
-        _d['_scene_engine'] = {'*': _star}
+        _pf = 'enlarger.preflash_exposure'
+        _star[_pf] = float(_star.get(_pf, 0.01)) + 0.01
+        _d['_scene_engine'] = dict(_se_save or {}, **{'*': _star})
         r7 = pipeline.run_from(s, stock=_PRESET, cache=c)
     finally:
         if _se_save is None:
