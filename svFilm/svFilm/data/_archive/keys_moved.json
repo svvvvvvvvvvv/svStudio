@@ -29,6 +29,16 @@
       "snapshot": null,
       "detail_file": "B2_backup_files.json",
       "n_moved": 2
+    },
+    "B3": {
+      "title": "dead_targets",
+      "why": "颜色层删除后零消费者的死靶（`scorecard.targets_of` 只取 `span`）+ 描述已删轴 / 已撤决定的旧注记（`_` 开头 ⇒ 永不被 `ov.get()` 命中）",
+      "files": [
+        "targets.json"
+      ],
+      "snapshot": "snapshots/B3",
+      "detail_file": "B3_dead_targets.json",
+      "n_moved": 84
     }
   }
 }
