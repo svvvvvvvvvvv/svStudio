@@ -443,6 +443,8 @@ def _main():
         ('★★★★★ 合成测试图的传递函数（内容无关的回归基准：出口白/暗部不过冲/曲线单调）',
          t_synth_transfer),
         ('★★★★★ 连续调制 `{"by":…}` + **光位不驱动影调**（10-09）', t_by_modulation),
+        ('★★★★★ 工具层：基线**只有一个来源** + `targets.json` 文件指纹（10-12 T4/T6）',
+         t_tooling_1012),
     ]
     for title, fn in groups:
         print('[%s]' % title)
@@ -1158,6 +1160,90 @@ def t_routes():
         check('★ 已经删掉的路由 %s 确实不在了' % p, ("u.path == '%s'" % p) not in src,
               '', '滑杆 / 相纸 / 成色基准都随新边界删了，接口不该还留着')
     check('默认端口还是 8765（台子那边钉着）', svc.DEFAULT_PORT == 8765, str(svc.DEFAULT_PORT))
+
+
+def t_tooling_1012():
+    r"""★★★★★ 工具层的两个**静默**陷阱（10-12）—— T4 `_base_overrides` · T6 `targets.load` 指纹。
+
+    ⚠ 为什么值得立钉子：这两个**都不会报错**，只会把「我改的值没生效」
+      变成「**我拿到的是另一份数**」—— 与 `_check_white_gate` / `_warn_if_morph_dead`
+      同一类（本项目最贵的一类）。
+    """
+    import json as _json
+    import tempfile as _tf
+
+    from . import config as _C, targets as _T
+
+    _lc = 'io.output_gamut_compress.lightness_compression'
+
+    # ---- ① 基线**只能有一个来源**：`_base_overrides` ≡ `scene_engine({})` ----
+    _names = [k for k in (_T.load().get('_stock_engine') or {})
+              if not str(k).startswith('_')]
+    check('`_stock_engine` 里登记了预设（否则下面几条测的是空气）',
+          len(_names) >= 3, '%d 条' % len(_names))
+
+    _bad, _unres = [], []
+    for _n in _names:
+        try:
+            _a = presets._base_overrides(_C, _n)
+        except Exception as _e:                              # noqa: BLE001
+            _bad.append('%s(%s)' % (_n, type(_e).__name__))
+            continue
+        if _a != _T.scene_engine({}, stock=_n, cfg=_C):
+            _bad.append(_n)
+        _unres += [k for k, v in _a.items() if isinstance(v, dict) and 'mul' in v]
+    check('★★ `_base_overrides(stock)` 与生产基线 `scene_engine({})` **逐位一致**',
+          not _bad, '不一致=%s' % (_bad or '无'),
+          '两份合并逻辑一漂 ⇒ 实验脚本拿到的基线不是生产那份 = 又一次「口径错了」')
+    check('★★ `_base_overrides(stock)` 里**没有未解析的 `{"mul":k}`**',
+          not _unres, '未解析=%s' % (sorted(set(_unres)) or '无'),
+          '未解析 dict 喂给 render ⇒ setattr 处炸 `UFuncOutputCastingError`')
+
+    # ---- ② 没给 stock ⇒ 当场抛（不许静默给一份「跟预设无关」的基线）----
+    try:
+        presets._base_overrides(_C)
+        _exc = '没抛'
+    except ValueError:
+        _exc = ''
+    except Exception as _e:                                  # noqa: BLE001
+        _exc = '抛的是 %s（要 ValueError）' % type(_e).__name__
+    check('★★ `_base_overrides(cfg)`（**没给 stock**）当场抛 `ValueError`',
+          not _exc, _exc,
+          '静默返回「跟预设无关」的基线 ⇒ 增田/滨田会拿到鹿井那份值（10-12 前的真实缺陷）')
+
+    # ---- ③ 破法：证明上面那两条**不是恒真** ----
+    #   10-12 前的旧写法 = 去 `_scene_engine` **里面**找 `_stock_engine`（找不到 ⇒ 整层丢）
+    #   ⇒ 拿到的是 `["*"]` 里那份。要求**至少有一条预设与它不同**，否则这条钉子什么都没测。
+    _star = ((_T.load().get('_scene_engine') or {}).get('*') or {}).get(_lc)
+    _diff = [_n for _n in _names
+             if presets._base_overrides(_C, _n).get(_lc) != _star]
+    check('★★★ 破法：至少有一条预设的 `lc` **不等于** `["*"]` 里那个值',
+          bool(_diff), '与 ["*"] 不同：%s' % (_diff or '无'),
+          '全都一样 ⇒ 「逐位一致」那条恒真，测不出「丢了 _stock_engine 那一层」')
+
+    # ---- ④ `targets.load()` 必须有文件指纹（T6）：**同一进程内**改文件要立刻生效 ----
+    _save = _T._P
+    _fd, _tmp = _tf.mkstemp(suffix='.json', prefix='_selftest_tg_')
+    os.close(_fd)
+    try:
+        with open(_tmp, 'w', encoding='utf-8') as _f:
+            _json.dump({'_default': {'probe': 1}}, _f)
+        _T._P = _tmp
+        _T.load()
+        with open(_tmp, 'w', encoding='utf-8') as _f:        # ★ 同一个进程内改
+            _json.dump({'_default': {'probe': 2}, '_scene_engine': {'*': {}}}, _f)
+        _v = (_T.load().get('_default') or {}).get('probe')
+    finally:
+        _T._P = _save
+        try:
+            os.remove(_tmp)
+        except OSError:
+            pass
+    _T._SIG = None
+    _T.load()                                                # 读回真文件
+    check('★★★ 同一进程里改 `targets.json` ⇒ `load()` **立刻**读到新值（T6）',
+          _v == 2, 'probe=%r（应为 2）' % _v,
+          '进程内永久缓存 ⇒ 改了不生效且不报错（"拧了没反应"第 4 类）')
 
 
 if __name__ == '__main__':

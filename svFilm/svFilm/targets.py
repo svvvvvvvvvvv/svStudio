@@ -52,12 +52,36 @@ import os
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _P = os.path.join(_HERE, 'data', 'targets.json')
 _CACHE = {}
+_SIG = None            # 上次读盘时的 (st_mtime_ns, st_size) —— 用来判「文件变没变」
 
 
 def load():
-    if not _CACHE:
+    """读 `targets.json`（**带文件指纹的缓存**）。
+
+    ★★ 10-12（T6 修复）：原来是「**进程内永久缓存**」（`if not _CACHE`）⇒
+      **同一个进程里改 `targets.json` 不生效** —— 实验脚本「改一个值 → 跑一次 →
+      再改再跑」时，第二轮拿到的还是**旧靶** ⇒ 表现正是本文件最怕的那一类：
+      「明明改了却没反应」，而且**没有任何东西会报错**。
+
+      ⇒ 现在**每次调用都先 `stat` 一下文件，`(mtime_ns, size)` 变了才重读**。
+      没变 ⇒ 与旧行为**逐位相同**（只多一次 stat）。
+      ⚠ 必须用 `mtime_ns` 而不是 `mtime`：`mtime` 是秒精度，**同一秒内改两次会漏判**。
+      ⚠ 用 `size` 兜底：某些工具的 `os.replace` 会保留 mtime。
+
+    ⚠ **保留 dict 身份**（`clear()` + `update()`，**不重新赋值**）：调用方可能已经
+      持有 `load()` 返回的那个 dict 的引用，换对象会让它拿着旧快照。
+    ⚠ 文件缺失 / 写入中读到半截 ⇒ **当场抛**（`os.stat` / `json.load` 都不吞）：
+      静默退回旧值才是灾难。
+    """
+    global _SIG
+    st = os.stat(_P)
+    _sig = (st.st_mtime_ns, st.st_size)
+    if _sig != _SIG:
         with open(_P, encoding='utf-8') as f:
-            _CACHE.update(json.load(f))
+            _new = json.load(f)
+        _CACHE.clear()
+        _CACHE.update(_new)
+        _SIG = _sig
     return _CACHE
 
 

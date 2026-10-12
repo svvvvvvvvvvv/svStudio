@@ -94,30 +94,54 @@ _WHITE_GATE_WARNED: dict = {}   # ★ 是 **dict** 不是 set（理由见上面 
 #     的人（脚本 / 试验）会**丢掉整条基线** ⇒ `active` 缺席 ⇒ **morph 整根死掉**，
 #     而且输出与"不带该 override"**在噪声内相同**（实测 max|Δ| 3.22e-2 vs 引擎噪声 3.20e-2）
 #     ⇒ 看起来像"这根旋钮没用"，实际是"基线没铺"。
-#   ⇒ 这里做两件事：① 提供 `_with_base_overrides()` 供调用方铺基线；
+#   ⇒ 这里做两件事：① 提供 `_base_overrides()` 供调用方铺基线；
 #     ② `render()` 里加一条**不改变行为**的警告，命中这个模式就喊一声。
 def _base_overrides(cfg, stock=None):
-    """取 `targets._scene_engine` 的**基线层**（`"*"` + 可选 `_stock_engine[stock]`）。
+    r"""取**基线层**（`_scene_engine["*"]` ＋ `_stock_engine[stock]`），**已解析**。
 
-    ★ 为什么需要它：`targets.scene_engine()` 是把 **`"*"` 基线 ＋ 场景轴覆盖** 合并后的结果
-      （见 `targets.py:218-221`）。试验脚本若**只**把"要动的那一根"塞进 `overrides`，
+    ★ 为什么需要它：`targets.scene_engine()` 是把 **`"*"` 基线 ＋ 按预设基值 ＋ 场景轴覆盖**
+      合并后的结果。试验脚本若**只**把"要动的那一根"塞进 `overrides`，
       就等于把基线整个丢掉 —— morph 的 `active` 就是这么丢的。
-      ⇒ 正确写法：`ov = presets._base_overrides(C); ov.update({一根旋钮: 值})`。
-    ⚠ 只读 targets，**不碰任何预设 / 不写文件**。取不到（import 失败等）⇒ 返回 `{}`（不崩）。
+      ⇒ 正确写法：`ov = presets._base_overrides(C, stock=名字); ov.update({一根旋钮: 值})`。
+
+    ★★ 10-12（T4 修复）：**改为直接委托 `targets.scene_engine({}, stock=stock, cfg=cfg)`。**
+      这里原来**另抄了一份合并逻辑**，于是埋了两个静默失效（都**不是**本轮引入的）：
+        ① 它去 `_scene_engine` **里面**找 `_stock_engine` —— 而后者 10-12 起在**顶层**
+           ⇒ ★ **整层被静默丢掉**：增田/滨田拿到的是「鹿井那份」
+           `lightness_compression=[0.8,1.0,2.2]`，而生产是 `[0.85,1.0,2.2]`
+           ⇒ 拿它当基线扫旋钮 = 又犯一次「**口径错了**」。
+        ② `{"mul": k}` **原样返回**（`{'enlarger.print_exposure': {'mul': 1.15}}`）
+           ⇒ 拿去 `render(overrides=…)` 会在 setattr 处炸 `UFuncOutputCastingError`。
+      ⇒ **根因是"同一套合并规则存了两份、必然会漂"** ⇒ 现在只留一份（`targets.scene_engine`）。
+        副产品：`{"mul"}` 在这里也被解析成绝对量（10 条预设各自不同）。
+
+    ⚠ `{"mul": k}` 的语义是「乘在**该预设**的基线上」⇒ **没有 `stock` 就无解**。
+      而 10-12 起 `_stock_engine` 已启用（10 条预设各自有值）⇒ **"跟预设无关的基线"不再存在**
+      ⇒ `stock=None` **当场抛**（照 `targets.scene_engine` 的老契约：
+      「写错路径要立刻知道，**别静默**」——静默拿到错基线才是灾难）。
+      确实只要全局那一层 ⇒ 直接调 `targets.scene_engine({}, stock=None, cfg=cfg)`。
+    ⚠ 只读 targets，**不碰任何预设 / 不写文件**。import 失败 ⇒ 返回 `{}`（不崩）。
     """
+    if not stock:
+        raise ValueError(
+            'presets._base_overrides() 必须传 `stock=<预设名>`。\n'
+            '  ⇒ 10-12 起 `_stock_engine` 已启用：**每条预设的基值不同**'
+            '（如 `lightness_compression` 鹿井 [0.8,1.0,2.2] / 增田·滨田 [0.85,1.0,2.2]）\n'
+            '  ⇒ 不指定预设就没有"基线"可言，硬返回一份会**静默给错基准**。\n'
+            '  ⇒ 只要全局那层：`targets.scene_engine({}, stock=None, cfg=cfg)`。')
     try:
         from . import targets as _T
-        _se = (_T.load().get('_scene_engine') or {})
     except Exception:                                      # noqa: BLE001
         return {}
-    out = {}
-    _b = _se.get('*')
-    if isinstance(_b, dict):
-        out.update(_b)
-    if stock:
-        _st = (_se.get('_stock_engine') or {}).get(stock)
-        if isinstance(_st, dict):
-            out.update(_st)
+    out = dict(_T.scene_engine({}, stock=stock, cfg=cfg) or {})
+    _unres = sorted(k for k, v in out.items()
+                    if isinstance(v, dict) and 'mul' in v)
+    if _unres:
+        raise ValueError(
+            '_base_overrides(stock=%r) 里仍有 %d 个 `{"mul": k}` 未解析：%s\n'
+            '  ⇒ 多半是 `targets.scene_engine` 那个解析分支没走到'
+            '（它要求 `stock` 非空且能取到该预设的基线）。'
+            % (stock, len(_unres), _unres))
     return out
 
 
@@ -144,7 +168,8 @@ def _warn_if_morph_dead(overrides):
         print('[svFilm 警告] overrides 里给了 `print_render.density_curves_morph.*` '
               '却**没有带 `active`** ⇒ **morph 很可能是死的**（引擎默认 active=False，'
               '而 True 只写在 `targets._scene_engine["*"]` 基线层里，直接调 render 不会铺它）。\n'
-              '  ⇒ 正确写法：`ov = presets._base_overrides(cfg); ov.update({...})`。', file=sys.stderr)
+              '  ⇒ 正确写法：`ov = presets._base_overrides(cfg, stock=预设名); '
+              'ov.update({...})`。', file=sys.stderr)
 
 
 def _check_white_gate(name, wc, bc, white_level):
@@ -715,7 +740,7 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=
       **只在 `targets._scene_engine["*"]` 里**（引擎 schema 默认 `False`，预设 JSON 里也没有）
       ⇒ 只传 `...morph.gamma_factor` 会让 **morph 整根死掉**，输出与"不带 override"在噪声内相同
       （max|Δ| 3.22e-2 vs 引擎噪声 3.20e-2），看着像"这根旋钮没用"。
-      ✅ 正确写法：`ov = presets._base_overrides(cfg); ov.update({一根旋钮: 值})`。
+      ✅ 正确写法：`ov = presets._base_overrides(cfg, stock=预设名); ov.update({一根旋钮: 值})`。
       ⚠ 命中这个模式时下面只**警告**，**不自动补 `active`**（自动补 = 悄悄改画面）。
     """
     p = _params_for(name, cfg)
