@@ -21,6 +21,14 @@
       "snapshot": "snapshots/B1",
       "detail_file": "B1_dead_keys_unread.json",
       "n_moved": 130
+    },
+    "B2": {
+      "title": "backup_files",
+      "why": "两个不在加载路径上的备份文件（`presets._files()` 只收 `*.json`、非递归）",
+      "files": [],
+      "snapshot": null,
+      "detail_file": "B2_backup_files.json",
+      "n_moved": 2
     }
   }
 }
