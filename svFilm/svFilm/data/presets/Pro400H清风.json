@@ -143,7 +143,8 @@
  "simulation": {
   "film_stock": "fujifilm_pro_400h",
   "_note_film_stock": "★★★★★ `simulation.film_stock` = **`fujifilm_pro_400h`**。★ **准确说法**：它是\"**引擎内最软的 still 负片**\"这个物理条件下的**最近可用代理**，**不是滨田本人用的卷** —— 他自述用 **Kodak Portra 400**（+ 常用 Fuji Pro 160NS），而那两个引擎里**查不到**。\n· 实测（固定密度窗，越小越硬）：`fujifilm_pro_400h` = **1.967（11 支 still 负片里最软）** ｜ `kodak_portra_400` = 1.850（更硬）⇒ **换成 Portra 400 与\"NC = low contrast\"方向相反**。\n· ⚠ **若哪天真要做\"Portra 400 的滨田\"，那不是换卷、是换一次目标**（情形 b）⇒ **必须用户拍板**。",
-  "film_format_mm": 36.0,
+  "film_format_mm": 70.0,
+  "_note_film_format_mm": "★★★ 10-13：`film_format_mm` 36 -> **70**（= 70mm 画幅）。\n· **它是什么**：唯一去处 `pixel_size_um = film_format_mm×1000÷长边`（`services/resize.py:18`，`crop_and_rescale`）⇒ **所有 µm 类效果的总缩放**，只喂 6 处空间族：`camera.lens_blur_um` · `camera.diffusion_filter` · `halation`（散射段+光晕段）· 颗粒 · `enlarger.diffusion_filter` · `dir_couplers.diffusion_size_um/tail_um`。**影调 / 颜色 / 曝光一格不碰**（已逐点核读取点）。\n· **为什么是 70**：36 与 `glimmerglass` 同源 —— 都是 09-23 `7aa7879`「卷表换成 public GUI 那 9 条大师预设」整表搬进来的**继承值**，此后从没按目标定过。画幅 = \"我们假装拍的是多大底\"，是**前提**不是标定。依据：画幅规律（Dehancer：画幅越小 halation 相对画面越大，16mm > 35mm > 65mm）。\n· **画面后果**：三条空间族的像素尺度 **全部 ×0.514（=36÷70）** ⇒ 颗粒 / 散射 / 光晕 / 柔光**一起相对画面变小**（等效换成更细的底）。\n· ⚠ **只落本条（滨田）**；其余 9 条仍 36.0。",
   "camera_lens_blur_um": 12.0,
   "camera_diffusion_filter_active": false,
   "camera_diffusion_filter_family": "glimmerglass",
