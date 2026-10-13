@@ -134,7 +134,7 @@
    1,
    2
   ],
-  "film_gamma_factor": 0.99,
+  "film_gamma_factor": [0.9775, 1.0175, 0.9998],
   "print_channel_swap": [
    0,
    1,
