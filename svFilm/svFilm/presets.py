@@ -380,7 +380,17 @@ def _apply(p, d, cfg, name=None):
     p.print = _profile_swap(p.print, sp['print_channel_swap'])
 
     # ---- special：**胶片端**密度曲线 gamma（下限 0.01，与 GUI 一致）----
-    p.film_render.density_curve_gamma = max(float(sp['film_gamma_factor']), 0.01)
+    # ★★ 10-13：**放宽成"标量或逐通道 3 元组"都接受**（原来写死 `float()` ⇒ 预设 JSON
+    #   只能写标量 ⇒ `FilmRenderingParams.density_curve_gamma` 的逐通道能力**落不了地**）。
+    #   底层本来就接受 3 元组：`model/density_curves.py:20-22` 显式把标量铺成 `[g,g,g]`
+    #   （`np.size(gamma_factor)==1` 那一支），消费点 `stages/filming.py:83,143` 原样透传。
+    #   ⇒ 这一行**只放宽类型、不改语义**：**标量输入走 else 分支 ⇒ 逐位不变**
+    #   （10-13 已证：10 条预设全字段 SHA256 指纹 10/10 相同 + `selftest` 117 ok/0 红）。
+    _fg = sp['film_gamma_factor']
+    if isinstance(_fg, (list, tuple)):
+        p.film_render.density_curve_gamma = tuple(max(float(_v), 0.01) for _v in _fg)
+    else:
+        p.film_render.density_curve_gamma = max(float(_fg), 0.01)
     # ★★★ 10-10 代码清理：**删掉 `p.print_render.density_curve_gamma = ...`**。
     #   它**没有任何消费者**：0.3.4 的 `PrintRenderingParams` 只声明了两个字段
     #   （`glare` / `density_curves_morph`，见 `params_schema.py:160-165`）——
