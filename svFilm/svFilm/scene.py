@@ -292,8 +292,10 @@ def _light_position(d, L, person, cfg):
 # ★★ 10-09 新增：「多线索 → 程度量 → 分级」光位（技能 §192 的 ①~④）—— ⚠ **尚未接执行**
 #
 #   ⚠ 旧 `_light_position` **原样保留**（`back` 轴行为一字不变）；这里是**并列的第二条实现**，
-#     结果进 `raw['light']` / `out['back2']`，**默认关**（`config.SCENE_LIGHT_EVIDENCE=False`）
-#     ⇒ 不进缓存键、不影响下游取参。**接执行时必做三件**：
+#     结果进 `raw['light']` / `out['back2']`。
+#     ★★ 10-14 更正：**现值 `config.SCENE_LIGHT_EVIDENCE=True`（已开，见 `config.py:300`）**
+#       —— 旧注记写的"默认关（=False）"**与事实相反**。它进 `out['back2']`（不进缓存键）。
+#       ⚠ 下游取参那条通道（`targets` 的 `{"by": …}`）**当前零落值** ⇒ 实际不改任何取参。
 #       ① `scene.VERSION` +1（缓存键带它）② 复跑 `selftest` ③ 先出"新旧标签逐张对照"给 SV 目检。
 #
 #   为什么要推倒重来（§192 的调研结论，四条系统性差异）：
@@ -657,8 +659,9 @@ def classify(disp, cfg=C, lin=None, person=None, face=None):
     `face`：`person.person_face(disp)` 给的**脸皮肤**掩膜（可选）—— 只给**并列的第二条光位实现**
       （`light_evidence`，见下）用；`back` 轴**不看它**。
 
-    ⚠⚠ **`SCENE_LIGHT_EVIDENCE`（默认 `False`）**：打开后多算一份"多线索 → 程度量"的光位，
-      落在 `out['back2']` / `raw['light']` —— **只给对照用，不参与缓存键、不参与下游取参**。
+    ⚠⚠ **`SCENE_LIGHT_EVIDENCE`（现值 `True`，见 `config.py:300`；10-14 更正旧写的"默认 False"）**：
+      多算一份"多线索 → 程度量"的光位，落在 `out['back2']` / `raw['light']`
+      —— 不参与缓存键；下游 `{"by": …}` 通道**当前零落值** ⇒ 实际不改任何取参。
       接执行要三件：① `VERSION` +1 ② 复跑 `selftest` ③ 先出对照给 SV 目检（技能 §192）。
 
     @returns {dict}

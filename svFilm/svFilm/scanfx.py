@@ -60,7 +60,10 @@ def chroma_blur(rgb, cfg):
     ★ σ 用**画面宽度的比例**表示（`CHROMA_BLUR_W`），与分辨率无关 ——
       否则换渲染尺寸数值就变了（这是本项目 `lc` 已经吃过一次亏的地方）。
 
-    默认关（`CHROMA_BLUR_ENABLE=False`）⇒ 对现有行为逐位无影响。
+    ★★★ 10-14 更正：**现值 `CHROMA_BLUR_ENABLE=True` ⇒ 本函数在跑**。
+      旧注记写的"默认关（`CHROMA_BLUR_ENABLE=False`）⇒ 对现有行为逐位无影响"
+      **与事实相反**。
+      ★ 要不要关它 = **目标性**（会改观感）⇒ **待用户拍板，别自己动**。
 
     ★ 10-10：缺 scipy 那条路原来**静默返回**（不改画面、也不吭声）⇒ 现在写
       `_CHROMA_LAST_ERROR`，由 `presets._post_scan` 报一行 warning。**行为不变**（仍返回原图）。
