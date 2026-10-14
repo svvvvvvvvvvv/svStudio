@@ -1,8 +1,8 @@
 {
- "_note_amount_1013c": "10-14 · couplers.amount = **1.18**（10-14 落）。\n· **靶 = A5 暗端 + A4_d 中/暗，三条链全正**，本链基线 + sigma 单位。\n· ⚠ **别再用 \u0007mount 追 A4_b（中/亮）—— 它是纯标量倍率，同乘分子分母，杠杆 ~ 0。**\n· 要动色相配比 ⇒ 首选 \film_gamma_factor 3 元组（+145/单位，dC* ~ +0.27），不是 amount。\n· 逐格账与代价：E:\\ds\\photo\\amount落值_1013\\ + 中段彩度_1013\\ + \u0007mountAB_1013\\。",
+ "_note_amount_1013c": "10-14 · couplers.amount = **1.18**（10-14 落）。\n· **靶 = A5 暗端 + A4_d 中/暗，三条链全正**，本链基线 + sigma 单位。\n· ⚠ **别再用 \u0007mount 追 A4_b（中/亮）—— 它是纯标量倍率，同乘分子分母，杠杆 ~ 0。**\n· 要动色相配比 ⇒ 首选 \film_gamma_factor 3 元组（+145/单位，dC* ~ +0.27），不是 amount。\n· 逐格账与代价：amount落值_1013\\ + 中段彩度_1013\\ + \u0007mountAB_1013\\。",
  "_note_chroma_1013b": "已并入 _note_amount_1013c（旧的「补中段」依据已失效）。值一个字节未动。",
- "_note_chroma_1013": "10-13 · couplers.amount 1.10 -> **1.18**（小步标定，11 张同图配对）。\n· 判据形态：**F1 界 + F4 形状比 + F3 关系**（不用等于靶）。\n· 详细：E:\\ds\\photo\\amount三链_1013\\。",
- "_note_lc_shape_1013": "10-13 · lightness_compression（CAM16-UCS 的 Jp 单侧软压缩，gamut_compression.py:705-738）。\n· 它**按电平、不按色相**；(t,1,p) 里 Jp<=t*Jp_white 逐位恒等、以上 Reinhard 膝滚降、黑锚 0。\n· **10-13 用 F4 形状命题查过 ⇒ 三条都不改**（详细依据与逐格账：E:\\ds\\photo\\中性轴口径_1013\\）。\n· 现值见本文件 lightness_compression。",
+ "_note_chroma_1013": "10-13 · couplers.amount 1.10 -> **1.18**（小步标定，11 张同图配对）。\n· 判据形态：**F1 界 + F4 形状比 + F3 关系**（不用等于靶）。\n· 详细：amount三链_1013\\。",
+ "_note_lc_shape_1013": "10-13 · lightness_compression（CAM16-UCS 的 Jp 单侧软压缩，gamut_compression.py:705-738）。\n· 它**按电平、不按色相**；(t,1,p) 里 Jp<=t*Jp_white 逐位恒等、以上 Reinhard 膝滚降、黑锚 0。\n· **10-13 用 F4 形状命题查过 ⇒ 三条都不改**（详细依据与逐格账：中性轴口径_1013\\）。\n· 现值见本文件 lightness_compression。",
  "_note_neutral_migration": "★ 10-08 迁移：中性滤片改成**按 (相纸, 光源, 底片) 查表**，shift 重表成「旧总量 − 新中性」⇒ 总滤片量不变。本条：旧 m=-3.0/y=7.0 → 现 m=-3.855/y=5.889。⚠ 别把 shift 当风格值（冷暖看**总量**）。",
  "input_image": {
   "upscale_factor": 1.0,
