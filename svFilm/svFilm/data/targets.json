@@ -169,7 +169,7 @@
     "Ultramax400沉褐": {
       "print_render.density_curves_morph.gamma_factor": 0.98,
       "print_render.density_curves_morph.gamma_factor_fast": 0.75,
-      "print_render.density_curves_morph.gamma_factor_slow": 1.0,
+      "print_render.density_curves_morph.gamma_factor_slow": 1.18,
       "io.output_gamut_compress.lightness_compression": [
         0.8,
         1.0,
