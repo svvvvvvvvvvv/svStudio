@@ -17,7 +17,7 @@
     "span": 81.65,
     "span_note": "不变量口径：跨度=L95−L5。旧口径 black_shape/hi_shape 相对中位、随落点漂移；改用跨度后落点归曝光、形状归跨度"
   },
-  "_scene_engine_note": "★★ 本层（`[\"*\"]`）= **基线**：只装「补偿」与「保护」，**不是风格**；按轴那层**故意空着**。\n· 优先级：`_stock_engine[预设名]` > `[\"*\"]` > 轴层。★ 4 个键（morph `gamma_factor`/`gamma_factor_slow` · `lightness_compression` · `grain.blur`）10-12 已**逐条下沉**到 `_stock_engine` ⇒ **对已登记的 10 条，改这里看着\"没反应\"**（本层同值只作兜底）。\n· `morph.active = true`：**结构性必需**（预设里没这个键、schema 默认 False ⇒ 没它整根 morph 死）。\n· `lightness_compression`：现值见 `_stock_engine`（依据：查证）。⚠ 09-29 的 0.95 与 10-01 的 0.66 **都已撤回**（旧口径错）⇒ 别再往这里加量。\n· `auto_exposure_method = \"matrix\"`：亮度保证（7 种测光 × 4 张 vs 机内 JPG，matrix 8.5 最好 / highlight_weighted 37.9 最差）。依据：查证。\n· `preflash_exposure = 0.01`：作者意图（保护高光）。⚠ **极敏感**：0.05 就压过头 ⇒ **上限 0.03**。\n· `print_exposure = {\"mul\": 1.0546}`：★ 10-15 拍板 −1/8 档（原 ×1.15，见 `_note_print_exposure_1012`）。⚠ **负片方向是反的：值越小越亮**。\n· 按轴那层空着是有意的：找不到能预测\"该给多少\"的场景轴（`overwhite`/`span`/`exp` 都区分不出）。",
+  "_scene_engine_note": "★★ 本层（`[\"*\"]`）= **基线**：只装「补偿」与「保护」，**不是风格**；按轴那层**故意空着**。\n· 优先级：`_stock_engine[预设名]` > `[\"*\"]` > 轴层。★ 4 个键（morph `gamma_factor`/`gamma_factor_slow` · `lightness_compression` · `grain.blur`）10-12 已**逐条下沉**到 `_stock_engine` ⇒ **对已登记的 10 条，改这里看着\"没反应\"**（本层同值只作兜底）。\n· `morph.active = true`：**结构性必需**（预设里没这个键、schema 默认 False ⇒ 没它整根 morph 死）。\n· `lightness_compression`：现值见 `_stock_engine`（依据：查证）。⚠ 09-29 的 0.95 与 10-01 的 0.66 **都已撤回**（旧口径错）⇒ 别再往这里加量。\n· `auto_exposure_method = \"matrix\"`：亮度保证（7 种测光 × 4 张 vs 机内 JPG，matrix 8.5 最好 / highlight_weighted 37.9 最差）。依据：查证。\n· `preflash_exposure = 0.01`：作者意图（保护高光）。⚠ **极敏感**：0.05 就压过头 ⇒ **上限 0.03**。\n· `print_exposure = {\"mul\": 1.15}`：★ **依据：无**（孤儿补偿，见 `_scene_engine._note_print_exposure_1012`）。⚠ **负片方向是反的：值越小越亮**。\n· 按轴那层空着是有意的：找不到能预测\"该给多少\"的场景轴（`overwhite`/`span`/`exp` 都区分不出）。",
   "_lc_band": {
     "version": 1,
     "note": "scorecard.lc 的**大师带**（P25~P75，不是靶）。生成脚本 `_v1_lc_masters.py`（调试目录）；语料 = 鹿井 747 + 増田 298 + 滨田 31 = 1076 张 xhs 成片。定义 = 带限 RMS 对比度（Peli 1990），频带 = 周期∈[画面宽/64, 画面宽/16]，归一 = 100*std/mean(L*)。见 svFilm/scorecard.py 模块头 §局部对比。",
@@ -169,7 +169,7 @@
     "Ultramax400沉褐": {
       "print_render.density_curves_morph.gamma_factor": 0.98,
       "print_render.density_curves_morph.gamma_factor_fast": 0.75,
-      "print_render.density_curves_morph.gamma_factor_slow": 2.0,
+      "print_render.density_curves_morph.gamma_factor_slow": 1.0,
       "io.output_gamut_compress.lightness_compression": [
         0.8,
         1.0,
@@ -192,11 +192,11 @@
       "camera.auto_exposure_method": "matrix",
       "enlarger.preflash_exposure": 0.01,
       "enlarger.print_exposure": {
-        "mul": 1.0546
+        "mul": 1.15
       },
       "film_render.grain.blur": 3.0
     },
-    "_note_print_exposure_1012": "★★★★ `enlarger.print_exposure = {\"mul\": 1.15}` = 一个**全局 0.2018 EV 压暗**（负片：值越大越暗）。\n· ★ **依据：无** —— 原来的唯一理由是「换测光（hw→matrix）会让同一 pe 更亮，必须重新配对」，而中灰锚一上测光就不再进入画面 ⇒ **那件事从未发生**（与 `PRESET_FILTER_M_TRIM` 同病：**补偿的根修掉了，补偿还在**）。\n· ★ **不能直接删**（实测 6 次渲染 / 三条预设 / 同进程）：删它 = **−0.2018 EV** ⇒ 颊 L* **+6.15 / +3.39 / +5.97**、整张 L50 +6.8/+4.9/+6.4；同内容配对到相机直出三条链**一致变差**。\n· ⚠ 中灰锚的回归 `g·b = 27.14` **就是在 ×1.15 在位时拟合的**；⚠ **响应率随落点变、不许跨链移植**。\n· ⇒ **10-15 拍板**：往亮 **−1/8 档**（×2^(−1/8)）⇒ mul **1.15 → 1.0546**（= −0.125 EV）。拍板语境 = B纸 + amount 0.76 + slow 2.0 的阶梯目检（`换纸_1015`）。",
+    "_note_print_exposure_1012": "★★★★ `enlarger.print_exposure = {\"mul\": 1.15}` = 一个**全局 0.2018 EV 压暗**（负片：值越大越暗）。\n· ★ **依据：无** —— 原来的唯一理由是「换测光（hw→matrix）会让同一 pe 更亮，必须重新配对」，而中灰锚一上测光就不再进入画面 ⇒ **那件事从未发生**（与 `PRESET_FILTER_M_TRIM` 同病：**补偿的根修掉了，补偿还在**）。\n· ★ **不能直接删**（实测 6 次渲染 / 三条预设 / 同进程）：删它 = **−0.2018 EV** ⇒ 颊 L* **+6.15 / +3.39 / +5.97**、整张 L50 +6.8/+4.9/+6.4；同内容配对到相机直出三条链**一致变差**。\n· ⚠ 中灰锚的回归 `g·b = 27.14` **就是在 ×1.15 在位时拟合的**；⚠ **响应率随落点变、不许跨链移植**。\n· ⇒ 处置：**值保留、依据写明\"无\"、挂着等拍板。**",
     "_note_no_back_tone_1009": "★★★★ 10-09：**删掉 `back=正逆光` 的影调补偿** ⇒ **纪律：光位轴不驱动影调**（例外必须登记在 `_tone_allow`，否则自检红）。\n· 它当时是**死键**（那批 45 张里 0 张被判成逆光族）；原依据在判据换代后**已不成立**（同一批 η² = 0.016）。理由：**离散档 + 动态参数 = 阶跃**。\n· ⚠ 「光位改驱动光晕」**没有落值**（本批素材无强光源、触发覆盖率 0%）；通道已建好，等素材。"
   },
   "_note_grain_1009": "★★★★★ 10-09 夜：`film_render.grain.blur` **0.65 → 3.0**（**交付口径 = 全长边 6264**）。依据：同内容配对（尺子标定：1.2 ⇒ 0.89/1.61 ｜ 2.0 ⇒ 0.79/1.47 ｜ **3.0 ⇒ 0.61/1.23**，靶 = 全图 0.63 / 中调 1.18）。\n· ★★ **结构缺陷（重点）**：它的**单位是像素** ⇒ 本该随渲染分辨率缩放 ⇒ **每个渲染尺寸的颗粒都不一样**；正确修法是改成\"画面宽度比例\"（像 `CHROMA_BLUR_W`）。⚠ **所以判颗粒必须用全长边**。\n· `scanner.black_level` 保持 0.03（试 0.05 ⇒ 暗裁过头）。⚠ 颗粒随照片变化很大 ⇒ 一根旋钮拟合不到两张同时正中。",
