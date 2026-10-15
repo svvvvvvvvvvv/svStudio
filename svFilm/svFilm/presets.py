@@ -306,6 +306,22 @@ def _apply(p, d, cfg, name=None):
     p.scanner.black_level = black
     p.scanner.white_level = white
 
+    # ---- 输出色域压缩的"压顶"膝（扫描段）—— **可选键**：缺省 ⇒ 吃引擎 schema 默认 (0.7, 1.0, 2.2)
+    #   机制（`utils/gamut_compression.py:297-304`，ACES RGC 的 Reinhard knee）：
+    #     `threshold` 越低 ⇒ 高光压得越狠、越容易挤成一坨贴顶的白（clip% 上升、p95 反而低）；
+    #     `threshold` 越高 ⇒ 白端越高、跨度越大。实测（2 张，中位 p95 / clip%）：
+    #       0.70 → 90.4 / 0.06% ｜ 0.75 → 91.8 ｜ 0.80 → 93.4 / 0.16% ｜ 0.85 → 95.0 ｜ 0.90 → 96.6
+    #   ⇒ 它是**白端唯一有效的单根**（+21 L*/单位）。⚠ 改它 = 改"什么形状" ⇒ 目标性（要拍板）。
+    #   ⚠ 传 `"off"` = 关掉压顶（超白会被显示端裁掉，clip% 飙到 8% ⇒ 只给诊断用）。
+    _lcv = si.get('output_lightness_compression')
+    if _lcv is not None:
+        _lc = None if str(_lcv) == 'off' else tuple(float(v) for v in _lcv)
+        try:
+            p.io.output_gamut_compress.lightness_compression = _lc
+        except dataclasses.FrozenInstanceError:
+            p.io.output_gamut_compress = dataclasses.replace(
+                p.io.output_gamut_compress, lightness_compression=_lc)
+
     # ---- halation（⚠ 这两个字段 GUI 里是 ×100 的，这里要除回去）----
     h = p.film_render.halation
     h.active = bool(ha['active'])
