@@ -1,5 +1,5 @@
 {
-  "_note_self": "★★★ 10-15 从零重立（分支 feature/kashii-create）。值 = spektrafilm schema 默认，生成器 _lib/mkpreset.py。\n「选」的：film_stock = kodak_portra_400 ｜ print_paper = kodak_portra_endura —— 10-16 用户拍板（人像卷 · 强抗晕；上游「人像纸，肤色最讨喜」）。\n「定」的三根（10-16 实测）：print_exposure = 0.62（脸 L* 进他带）· output_lightness_compression = 0.80（新卷纸下 p95 = 92.65/93.00 进带）· halation_strength = 1.5/0.5/0（强抗晕卷的物理值；1:1 目检无可见差）。\n接线：scan_white/black_correction = True（False ⇒ white/black_level 死键）。靶 = 鹿井 26 张逐图 [P25,P75]。",
+  "_note_self": "★★★ 从零重立（分支 feature/kashii-create）。值 = spektrafilm schema 默认，生成器 _lib/mkpreset.py。\n「选」：film_stock = kodak_portra_400 ｜ print_paper = kodak_portra_endura（强抗晕人像卷 + 上游「肤色最讨喜」的纸）。\n「定」（均 11 张整批实测）：print_exposure = 0.62（脸 L* 进他带）· output_lightness_compression = 0.80（p95 92.65/93.00 进带）· halation_strength = 1.5/0.5/0（强抗晕卷物理值）· print_morph_gamma_red = 1.15 与 _blue = 1.12（印相端逐通道 γ，绕 L*≈54 旋转；22 条落带 5→10）。\n接线：scan_white/black_correction = True（False ⇒ white/black_level 死键）。靶 = 鹿井 26 张逐图 [P25,P75]。",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -158,6 +158,7 @@
     "output_color_space": "sRGB",
     "scan_film": false,
     "print_morph_gamma_red": 1.15,
+    "print_morph_gamma_blue": 1.12,
     "output_lightness_compression": [
       0.8,
       1.0,
