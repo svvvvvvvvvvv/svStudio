@@ -13,6 +13,8 @@ import sys
 import numpy as np
 
 from . import color, config as C, io, pipeline, presets
+# ⚠ **不要在模块顶层 import spektrafilm**：那会抢在仓库的"来源守卫"之前把引擎加载进来，
+#   守卫会判定"不是指定的那一份"⇒ 整组检查全炸（10-16 踩过）。要用时**惰性 import**。
 
 
 _PRESET = '鹿井预设'
@@ -246,8 +248,11 @@ _R1_DEN_BAND = (20.0, 40.0)     # ★ 分母 = **相邻档**（不许用"五档�
 _R1_MIN_PX = 30                 # 单张、单档的中性像素下限（不够 ⇒ 这张的比不可用，如实标 NaN）
 # ★ 探针**不是生产口径**（见 R1 那组）；每张 = 一次全链 render（~3.6 s）⇒ **图数就是成本**。
 _R1_PROBE_GAINS = (0.70, 0.85, 1.00, 1.20)      # 乘在 `_PROBE_SCENE_GAIN` 上
-_R1_PROBE_KNOWN = 0.407472      # 关掉 glare 后的**逐位可复现**批中位（n=4，两进程逐位相同）
+_R1_PROBE_KNOWN = 0.135292      # 关掉 glare 后的**逐位可复现**批中位（n=4，两进程逐位相同）
 _R1_PROBE_TOL = 0.006           # ±1.5%：已实测的图间散布 IQR = 0.0008、极差 = 0.0091
+# ★ 10-16 重基线：链换了卷/纸（portra_400 + portra_endura）并落了 pe 0.62 / lc 0.80 /
+#   印相 γ_R 1.15 + γ_B 1.12 ⇒ 探针批中位由 0.407472 变为 **0.135292**（实测 n=4、IQR 0.003962）。
+#   ⚠ 这个数**不是生产口径**（合成图表的 R1 恒低于真实照片带）⇒ 它只钉"尺子还活着"。
 
 
 def t_synth_transfer():
@@ -614,12 +619,21 @@ def t_presets():
                             d['halation']['halation_strength'][0]),
           '`apply_stocks_specifics=True` 会按卷的抗晕层把它冲回出厂 ⇒ 必须保持 False')
 
-# ★★ 光晕幅度必须在**物理带内**（人像上限 8；红通道典型值：弱 AH 2-8、无 AH 8-25）—— 钉的是**带**。
+# ★★ 光晕幅度必须**等于引擎按本卷抗晕层类别给的值**（`params_builder._HALATION_PRESETS`）。
+#   钉"按类别取表"而不是钉一条固定的数字带：旧的 `2~8` 是**弱抗晕卷**的带，
+#   换成强抗晕卷（`strength = 1.5/0.5/0`）后会**误判为越界**。
     _hs = tuple(round(float(v) * 100.0, 4) for v in p.film_render.halation.halation_strength)
     _amt = float(p.film_render.halation.halation_amount)
-    check('★ 光晕幅度在物理带内（R 通道 2~8%，人像上限 8）', 2.0 <= _hs[0] <= 8.0,
-          'R/G/B = %s ｜ 倍率 %.2f' % (_hs, _amt),
-          '超 8 ⇒ 脸上高光泛红（GUI 人像提示原话）；超 25 ⇒ 只有"完全无抗晕层"的卷才允许')
+    _info = p.film.info
+    from spektrafilm.runtime.params_builder import _HALATION_PRESETS   # 惰性：见文件头的守卫说明
+    _want = _HALATION_PRESETS.get((str(_info.use), str(_info.antihalation)))
+    _exp = (tuple(round(float(v) * 100.0, 4) for v in _want['strength']) if _want else None)
+    check('★ 光晕幅度 = 引擎按本卷抗晕层类别给的值（%s/%s）'
+          % (getattr(_info, 'use', '?'), getattr(_info, 'antihalation', '?')),
+          bool(_exp) and all(abs(a - b) < 5e-3 for a, b in zip(_hs, _exp)),
+          'R/G/B = %s ｜ 表值 %s ｜ 倍率 %.2f' % (_hs, _exp, _amt),
+          'R 通道典型值：强 AH 1.5、弱 AH 8、无 AH 30（`_HALATION_PRESETS`）；'
+          '超 8 ⇒ 脸上高光泛红（GUI 人像提示原话）')
     check('★ 光晕强度倍率在带内（1.0~1.4）', 1.0 - 1e-9 <= _amt <= 1.4 + 1e-9, '%.2f' % _amt,
           '`halation_amount` 是人像最容易翻车的一根：1.2~1.3 是上限，2 以上脸上高光泛红')
 
@@ -633,14 +647,18 @@ def t_presets():
           'params y=%.3f m=%.3f ｜ JSON y=%.3f m=%.3f' % (_wb + _wbb),
           'JSON 写了但 params 里不是那个数 ⇒ 又是一组"改了没反应"的假旋钮')
 
-# ★★★★ 配平基准**走引擎数据库**；绝对锚 = 本链那三联 ⇒ [C,M,Y] = [0, 74.946, 85.099]（**读 DB 顺序是 c,m,y**）。
+# ★★★★ 配平基准**走引擎数据库**；绝对锚 = **本链当前那三联**（换卷/换纸必须来这里同步）。
+#   现值：`kodak_portra_endura` / TH-KG3 / `kodak_portra_400` ⇒ [C,M,Y] = [0, 51.568, 52.534]
+#   （**读 DB 顺序是 c,m,y**；路径 data/filters/neutral_print_filters.json）
     check('★★ 配平基准走引擎数据库（不是一对硬编码常数）',
           bool(p.settings.neutral_print_filters_from_database),
           'db=%s' % p.settings.neutral_print_filters_from_database,
           '关掉就会退回"一对常数发给不同底片" —— 那正是 18%% 灰偏色的原因')
-    check('★★ 而且 Y/M 不许对调（绝对锚：CAII/TH-KG3/ultramax400 ⇒ M 74.946 / Y 85.099）',
-          abs(float(p.enlarger.m_filter_neutral) - 74.946) < 5e-3
-          and abs(float(p.enlarger.y_filter_neutral) - 85.099) < 5e-3,
+    _nm, _ny = 51.568, 52.534
+    check('★★ 而且 Y/M 不许对调（绝对锚：portra_endura/TH-KG3/portra_400 ⇒ M %.3f / Y %.3f）'
+          % (_nm, _ny),
+          abs(float(p.enlarger.m_filter_neutral) - _nm) < 5e-3
+          and abs(float(p.enlarger.y_filter_neutral) - _ny) < 5e-3,
           'M=%.3f Y=%.3f' % (p.enlarger.m_filter_neutral, p.enlarger.y_filter_neutral),
           '对调了整张偏色；换卷/换纸都要来这里更新锚值（路径：data/filters/neutral_print_filters.json）')
 
