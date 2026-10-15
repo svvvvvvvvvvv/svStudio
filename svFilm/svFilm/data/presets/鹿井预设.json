@@ -157,6 +157,7 @@
     "scan_white_level": 0.98,
     "output_color_space": "sRGB",
     "scan_film": false,
+    "print_morph_gamma_red": 1.15,
     "output_lightness_compression": [
       0.8,
       1.0,

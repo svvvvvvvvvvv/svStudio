@@ -314,17 +314,23 @@ def _apply(p, d, cfg, name=None):
     #   ⇒ **它是黑端的真刀（−24 L*/单位）**，而 `scanner.black_level` 只是微调（−0.6 L*/0.01）。
     #   ⚠ `active` 是**结构性必需**（引擎 schema 默认 False）⇒ 它在 `targets._scene_engine["*"]` 里，
     #     不要在这里重复设；这里只调形状。
+    #   ★ 逐通道那一组（`gamma_factor_{red,green,blue}`，`morph_curves.py:26-32` 逐通道相乘）
+    #     是**改中性轴黄绿的刀**：实测 `red +0.10` ⇒ 中性轴 `0_20 a*` −0.68 → −1.89（进大师带）、
+    #     `80_100 a*` → −0.35（进带）；`−0.10` 完全镜像 ⇒ **"绕 L*≈54 旋转"**（与负片端那根的单瓣不同）。
+    #     `+0.15` ⇒ 11 张整批 22 条落带 5 → 9。⚠ 叠 `_fast` 会把脸 C* 顶出带（22/29）。
     _morph = {k: si[k] for k in ('print_morph_gamma', 'print_morph_gamma_fast',
-                                 'print_morph_gamma_slow') if k in si}
+                                 'print_morph_gamma_slow', 'print_morph_gamma_red',
+                                 'print_morph_gamma_green', 'print_morph_gamma_blue') if k in si}
     if _morph:
+        _cur = p.print_render.density_curves_morph
         _new = dataclasses.replace(
-            p.print_render.density_curves_morph,
-            gamma_factor=float(_morph.get('print_morph_gamma',
-                                          p.print_render.density_curves_morph.gamma_factor)),
-            gamma_factor_fast=float(_morph.get('print_morph_gamma_fast',
-                                               p.print_render.density_curves_morph.gamma_factor_fast)),
-            gamma_factor_slow=float(_morph.get('print_morph_gamma_slow',
-                                               p.print_render.density_curves_morph.gamma_factor_slow)))
+            _cur,
+            gamma_factor=float(_morph.get('print_morph_gamma', _cur.gamma_factor)),
+            gamma_factor_fast=float(_morph.get('print_morph_gamma_fast', _cur.gamma_factor_fast)),
+            gamma_factor_slow=float(_morph.get('print_morph_gamma_slow', _cur.gamma_factor_slow)),
+            gamma_factor_red=float(_morph.get('print_morph_gamma_red', _cur.gamma_factor_red)),
+            gamma_factor_green=float(_morph.get('print_morph_gamma_green', _cur.gamma_factor_green)),
+            gamma_factor_blue=float(_morph.get('print_morph_gamma_blue', _cur.gamma_factor_blue)))
         p.print_render.density_curves_morph = _new
 
     # ---- 输出色域压缩的"压顶"膝（扫描段）—— **可选键**：缺省 ⇒ 吃引擎 schema 默认 (0.7, 1.0, 2.2)
