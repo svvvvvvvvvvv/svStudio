@@ -1,5 +1,5 @@
 {
-  "_note_self": "★★★ 10-15 从零重立（分支 feature/kashii-create）。值 = spektrafilm schema 默认，一个都不手改；生成器 _lib/mkpreset.py。\n「选」的两格：film_stock = kodak_portra_400 ｜ print_paper = kodak_portra_endura —— 10-16 用户拍板（人像卷 · 强抗晕；上游文档「人像纸，暖而柔，肤色最讨喜」）。\n有意偏离默认的两根是**接线**：scan_white/black_correction = True（False 时 scanner.white/black_level 是死键 ⇒ 白锚退化、整张暗 ~3 L*）。\n靶 = 鹿井两个作品集 26 张的逐图 [P25,P75]。基线层（targets.json 的 _scene_engine[\"*\"]）已清零，只剩 morph.active。",
+  "_note_self": "★★★ 10-15 从零重立（分支 feature/kashii-create）。值 = spektrafilm schema 默认，生成器 _lib/mkpreset.py。\n「选」的：film_stock = kodak_portra_400 ｜ print_paper = kodak_portra_endura —— 10-16 用户拍板（人像卷 · 强抗晕；上游「人像纸，肤色最讨喜」）。\n「定」的三根（10-16 实测）：print_exposure = 0.62（脸 L* 进他带）· output_lightness_compression = 0.80（新卷纸下 p95 = 92.65/93.00 进带）· halation_strength = 1.5/0.5/0（强抗晕卷的物理值；1:1 目检无可见差）。\n接线：scan_white/black_correction = True（False ⇒ white/black_level 死键）。靶 = 鹿井 26 张逐图 [P25,P75]。",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -79,8 +79,8 @@
       67.0
     ],
     "halation_strength": [
-      5.0,
       1.5,
+      0.5,
       0.0
     ],
     "halation_first_sigma_um": [
@@ -142,7 +142,7 @@
     "auto_exposure": true,
     "auto_exposure_method": "subject",
     "print_illuminant": "TH-KG3",
-    "print_exposure": 1.0,
+    "print_exposure": 0.62,
     "print_exposure_compensation": true,
     "print_y_filter_shift": 0.0,
     "print_m_filter_shift": 0.0,
@@ -157,6 +157,11 @@
     "scan_white_level": 0.98,
     "output_color_space": "sRGB",
     "scan_film": false,
+    "output_lightness_compression": [
+      0.8,
+      1.0,
+      2.2
+    ],
     "camera_diffusion_filter_active": false,
     "camera_diffusion_filter_family": "black_pro_mist",
     "camera_diffusion_filter_strength": 0.5,
