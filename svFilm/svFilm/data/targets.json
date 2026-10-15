@@ -1,23 +1,16 @@
 {
   "_default": {
-    "who": "鹿井 + 小红书（其余 7 条预设暂用）",
-    "n": 112,
-    "note": "影调形状来自鹿井 32 张；分色/色相带来自 09-24 那轮（鹿井+小红书）"
+    "who": "**鹿井屿渔**（唯一一条预设）",
+    "n": 26,
+    "note": "靶 = **鹿井屿渔的两个作品集**（`130_鹿井小渔_n6a2a1c06` + `128_鹿井小渔_n6a312aef`）= 26 张，**逐图 [P25,P75]**（口径见 `AGENTS.md` §一.1）。完整表：`鹿井收敛_1014/26张靶_完整表.md`。★ 跨内容统计只作【线索/定位】，验收用同内容配对或 F1~F4 判据（同文件 `_provenance`）。"
   },
-  "Pro400H清风": {
-    "who": "**滨田英明**（这条预设就是他的）",
-    "n": 33,
-    "note": "亮部形状只 +15.9（高光收得很紧）；暗部偏青绿、亮部偏暖 = 冷暖分离",
-    "span": 75.26
+  "鹿井预设": {
+    "who": "**鹿井屿渔** —— 两个作品集 26 张（逐图 [P25,P75]）",
+    "n": 26,
+    "note": "10-15 **从零重立**：值 = spektrafilm 引擎 schema 默认（一个都不手改，生成器 `_lib/mkpreset.py`）。卷 `kodak_ultramax_400`（本人惯用卷，用户级）· 纸 `fujifilm_crystal_archive_typeii`（冲扫 = 富士 SP-3000）。",
+    "span": 85.61,
+    "span_note": "口径 = **逐张 (p95−p5) 的中位**；L5 7.16 / L50 57.26 / L95 92.69（n=26）。★ span 是**线索、不作验收**（`_provenance` 的 `scope=cross`）。"
   },
-  "Ultramax400沉褐": {
-    "who": "**鹿井屿渔** —— 按他主页 514 张里的「亮调组」（188 张）对齐",
-    "n": 32,
-    "note": "落点 65.2 / 白 92.0 / 跨度 82.6 / 中调Δb* +3.1 / 彩度P90 25.2（亮调组中位）",
-    "span": 81.65,
-    "span_note": "不变量口径：跨度=L95−L5。旧口径 black_shape/hi_shape 相对中位、随落点漂移；改用跨度后落点归曝光、形状归跨度"
-  },
-  "_scene_engine_note": "★★ 本层（`[\"*\"]`）= **基线**：只装「补偿」与「保护」，**不是风格**；按轴那层**故意空着**。\n· 优先级：`_stock_engine[预设名]` > `[\"*\"]` > 轴层。★ 4 个键（morph `gamma_factor`/`gamma_factor_slow` · `lightness_compression` · `grain.blur`）10-12 已**逐条下沉**到 `_stock_engine` ⇒ **对已登记的 10 条，改这里看着\"没反应\"**（本层同值只作兜底）。\n· `morph.active = true`：**结构性必需**（预设里没这个键、schema 默认 False ⇒ 没它整根 morph 死）。\n· `lightness_compression`：现值见 `_stock_engine`（依据：查证）。⚠ 09-29 的 0.95 与 10-01 的 0.66 **都已撤回**（旧口径错）⇒ 别再往这里加量。\n· `auto_exposure_method = \"matrix\"`：亮度保证（7 种测光 × 4 张 vs 机内 JPG，matrix 8.5 最好 / highlight_weighted 37.9 最差）。依据：查证。\n· `preflash_exposure = 0.01`：作者意图（保护高光）。⚠ **极敏感**：0.05 就压过头 ⇒ **上限 0.03**。\n· `print_exposure = {\"mul\": 1.15}`：★ **依据：无**（孤儿补偿，见 `_scene_engine._note_print_exposure_1012`）。⚠ **负片方向是反的：值越小越亮**。\n· 按轴那层空着是有意的：找不到能预测\"该给多少\"的场景轴（`overwhite`/`span`/`exp` 都区分不出）。",
   "_lc_band": {
     "version": 1,
     "note": "scorecard.lc 的**大师带**（P25~P75，不是靶）。生成脚本 `_v1_lc_masters.py`（调试目录）；语料 = 鹿井 747 + 増田 298 + 滨田 31 = 1076 张 xhs 成片。定义 = 带限 RMS 对比度（Peli 1990），频带 = 周期∈[画面宽/64, 画面宽/16]，归一 = 100*std/mean(L*)。见 svFilm/scorecard.py 模块头 §局部对比。",
@@ -70,116 +63,15 @@
       }
     }
   },
-  "_stock_engine": {
-    "_note_stock_engine_1012": "★★★★★ 10-12：**这一层启用了**（`targets.py:123-127` 设计 / `:223` 实现；此前实读为空）。\n· 4 个键从 `[\"*\"]` **逐条下沉**到这里（10 条各一份，值与搬前**逐位相同** ⇒ 零画面影响，SHA256 为证）：`gamma_factor` 0.98 · `gamma_factor_slow` 0.85 · `lightness_compression` · `grain.blur` 3.0。依据：查证（等价搬家）。\n· ★ 意义：**这些值是\"为谁调的\"现在可追溯**（0.98 的小 S 与 3.0 的颗粒本来是**鹿井规格**，不该默默同时套在滨田/増田身上）。\n· ⚠ **优先级**：`_stock_engine` > `[\"*\"]` > 轴层；`[\"*\"]` 里的同值**故意留作兜底**。★ 留在 `[\"*\"]` 且**不要动**：`morph.active` · `preflash_exposure` · `print_exposure`（孤儿）· `auto_exposure_method`（登记项）。逐条定值见 `_note_lc_stock_1012`。",
-    "_note_lc_stock_1012": "★★★★★ 10-12 晚：`lightness_compression` **逐条定值**：鹿井 **[0.80,1,2.2]**（白端已到位）｜ 増田 **[0.85,1,2.2]**（他每一层的白端都比鹿井高 2~4.7 倍 ⇒ 过了条件直方图 = **真风格差**；clip 已到他的预算 0.080）｜ 滨田 **[0.85,1,2.2]**（L95 位置对但 **0% 三通道同时到 235** = 尾巴被切平）。依据：查证（条件直方图 + 同内容配对）· 幅度**待 SV 目检**。\n· 另三条键实测判为「**该共享**」：`gamma_factor` 0.98（非平 8 张离各自跨度靶 +0.84/+0.62/−0.09）· `gamma_factor_slow` 0.85（★ **依据：无** —— 两把尺子互相矛盾，不许为凑差异动）· `grain.blur` 3.0（**不该动**：创作倍率，不参与拟合）。\n· ⚠ **陷阱**：`γs` 调大 = **趾部压深**，L*40 以上不动；`方法论\\旋钮响应表.md` 第 4 行**符号写反了**。",
-    "_note_lc_ceiling_1012": "★★★★★ 10-12 晚 · **负向碑**：把 `lightness_compression` 的 threshold 抬到 0.90 —— **试过、撤回、不落地。别再加回来。**\n· **为什么必须撤**：同像素传递实测（11 张、按输入 L* 分箱）它不是\"抬白点\"，是**\"输入 L* 45 以上整段平移\"**（< L*30 一格不动；≥60 段 +1.4~+3.2），且**平台宽度一点没变**（0.42 → **0.39 格**）—— 大师那边是缓坡。\n· **三条判据全否**：① 我们的平台**本来就偏高**（P95 vs 靶 90.6~92.0）；② `selftest` 合成图 ④（中调锁 91.9±2.5，依据 = 18 张真实照片同内容配对）读数 95.7 ⇒ 出界 —— **同内容配对是最高等级证据**；③ 与刚删的 `span=平` 同一种病。\n· ★ **白端怎么修**：只能**形状与位置一起做** ⇒ 走 `gamma_factor × gamma_factor_fast`。**不许单独抬 threshold。**\n· ⚠ **量的陷阱**：尺子 `minRGB>=235%`（≈L* 93.06）**恰好压在天花板高度上** ⇒ 被夹到天花板的像素全算纸白 ⇒ **量不出天花板高低**。",
-    "_note_full_1013": "★★★★★ 10-13（任务 A · **完整改** · SV 选定）：`Pro400H清风` **三根键一起动** —— `gamma_factor_fast` **新增 0.75** · `gamma_factor_slow` 0.85 -> **1.00** · `lightness_compression` power 2.2 -> **5.0**（threshold/limit 不动）。\n· **为什么必须三根一起**（缺一根都不到）：① 只有 `gamma_factor_fast ↓` 削得动高光人口（f070 -> hi90 6.46；单调 `gamma_factor ↑` / `white_level ↑` 都只把人口顶更高）；② `lc.power ↑` 把顶上那道墙摊成坡，但它**改不了人口**（五臂实测 hi90 恒在 20.3~21.3）；③ `gamma_factor_slow ↑` 只抬跨度、不动人口（f080_p40 span595 71.43 -> 75.24）。\n· **真实照片（同批 11 张，逐图）**：90-95 **20.32 -> 6.53** · 95-100 **0.00 -> 1.06** · 85-90 10.10 -> 8.06 · **55-85 段全线变厚**（+0.15~+2.98）· **P50 74.63 -> 70.61（-4.02）** · 5-15 段 +1.41。★ 人话：**顶上那一大坨（90-95 占 20%）被摊下来铺到中调 ⇒ 整张中位下移约 4 格**；**暗部是略抬起 + 人口变多**（不是\"更沉\"）。\n· **合成探针（三链，落值前）**：① 纯白 **滨田 93.72 -> 95.53** · 鹿井 93.58 -> 96.88（两条\"该红\"的锁都修绿）· 増田 95.15 -> 96.43；④ 中调 **滨田 93.45 -> 93.07（在锁内）** · 鹿井 92.60 -> 91.03 · 増田 93.31 -> 90.32；③ 单调 0；⑤ 滨田 +0.31 -> +0.57。\n· ⭐ **完整改的 ④ 比\"最小改\"干净**：最小改（只动 `lc.power` 2.2->4.0）会把 ④ 顶到 **94.96（出界）**，完整改因为同时抬了跨度，④ 停在 93.07。⇒ **\"顶上摊平\"和\"跨度拉回\"是一对，不能只做一半。**\n· ⚠ **已知代价（如实记）**：① 整张中位下移 ~4 格（顶上那一坨被摊平的直接后果，肉眼可见）；② 探针 ② 滨田 76.31 -> 71.88（-4.43）—— 但真实照片暗端人口是**增加**的 ⇒ 该探针在滨田链上不可靠（它的期望值 54.3 是**鹿井口径**，滨田改前本来就是 76.31）。\n· ⚠ **本轮落两条链**：`Pro400H清风`（滨田，`lc[0]` = 0.85）与 `Ultramax400沉褐`（鹿井，**`lc[0]` 保留鹿井自己的 0.80**，不照抄滨田）；**増田未落**。★ 若推到増田：⑤ 中灰 **-1.94 -> -4.52（明显恶化）** ⇒ 不建议；鹿井实测一致（① 白端锁 93.58 -> 96.88 修绿 · ②L*20/③回折/④中调/⑤中灰全过 · 真实照片 C4 中段 +5.5% 不降 · A5 暗端 8.28 -> 9.26 进带 · 中性五档最大漂 0.31 · 90-95 10.25 -> 3.09 进鹿井大师带）。\n· **与 `_note_lc_ceiling_1012` 负向碑的关系**：碑禁的是抬 **threshold**（病征 = \"L*45 以上整段平移、平台宽度一点没变 0.42 -> 0.39\"）。本轮动的是 **power + 上游 gf_fast** ⇒ 实测**平台被摊开**（90-95 从 20.32 降到 6.53、95-100 从 0 开到 1.06）⇒ **不是同一种病**。但 <85 段确实被抬（+12.57）—— 这是**代价**，不是\"没影响\"，别读成后者。\n· 数据与推导：`E:\\ds\\photo\\白端标定_1013\\`（`bin_cmp.py` 逐图分箱 · `verify_full.py` 三链探针）。",
-    "C200过曝": {
-      "print_render.density_curves_morph.gamma_factor": 0.98,
-      "print_render.density_curves_morph.gamma_factor_slow": 0.85,
-      "io.output_gamut_compress.lightness_compression": [
-        0.8,
-        1.0,
-        2.2
-      ],
-      "film_render.grain.blur": 3.0
-    },
-    "C200透明": {
-      "print_render.density_curves_morph.gamma_factor": 0.98,
-      "print_render.density_curves_morph.gamma_factor_slow": 0.85,
-      "io.output_gamut_compress.lightness_compression": [
-        0.8,
-        1.0,
-        2.2
-      ],
-      "film_render.grain.blur": 3.0
-    },
-    "C200青蓝": {
-      "print_render.density_curves_morph.gamma_factor": 0.98,
-      "print_render.density_curves_morph.gamma_factor_slow": 0.85,
-      "io.output_gamut_compress.lightness_compression": [
-        0.8,
-        1.0,
-        2.2
-      ],
-      "film_render.grain.blur": 3.0
-    },
-    "Ektar100浓彩": {
-      "print_render.density_curves_morph.gamma_factor": 0.98,
-      "print_render.density_curves_morph.gamma_factor_slow": 0.85,
-      "io.output_gamut_compress.lightness_compression": [
-        0.8,
-        1.0,
-        2.2
-      ],
-      "film_render.grain.blur": 3.0
-    },
-    "GOLD200暖橙": {
-      "print_render.density_curves_morph.gamma_factor": 0.98,
-      "print_render.density_curves_morph.gamma_factor_slow": 0.85,
-      "io.output_gamut_compress.lightness_compression": [
-        0.85,
-        1.0,
-        2.2
-      ],
-      "film_render.grain.blur": 3.0
-    },
-    "Portra400淡雅": {
-      "print_render.density_curves_morph.gamma_factor": 0.98,
-      "print_render.density_curves_morph.gamma_factor_slow": 0.85,
-      "io.output_gamut_compress.lightness_compression": [
-        0.8,
-        1.0,
-        2.2
-      ],
-      "film_render.grain.blur": 3.0
-    },
-    "Portra400空气感": {
-      "print_render.density_curves_morph.gamma_factor": 0.98,
-      "print_render.density_curves_morph.gamma_factor_slow": 0.85,
-      "io.output_gamut_compress.lightness_compression": [
-        0.8,
-        1.0,
-        2.2
-      ],
-      "film_render.grain.blur": 3.0
-    },
-    "Pro400H清风": {
-      "print_render.density_curves_morph.gamma_factor": 0.98,
-      "print_render.density_curves_morph.gamma_factor_fast": 0.75,
-      "print_render.density_curves_morph.gamma_factor_slow": 1.0,
-      "io.output_gamut_compress.lightness_compression": [
-        0.85,
-        1.0,
-        5.0
-      ],
-      "film_render.grain.blur": 3.0
-    },
-    "Pro400H马卡龙": {
-      "print_render.density_curves_morph.gamma_factor": 0.98,
-      "print_render.density_curves_morph.gamma_factor_slow": 0.85,
-      "io.output_gamut_compress.lightness_compression": [
-        0.8,
-        1.0,
-        2.2
-      ],
-      "film_render.grain.blur": 3.0
-    },
-    "Ultramax400沉褐": {
-      "print_render.density_curves_morph.gamma_factor": 0.98,
-      "print_render.density_curves_morph.gamma_factor_fast": 0.75,
-      "print_render.density_curves_morph.gamma_factor_slow": 1.0,
-      "io.output_gamut_compress.lightness_compression": [
-        0.8,
-        1.0,
-        5.0
-      ],
-      "film_render.grain.blur": 3.0
-    }
-  },
   "_scene_engine": {
-    "_note_span_flat_1012_removed": "★★★ 10-12 晚：**删掉 `span=平` 补偿轴**（原 `gamma_factor: 1.23`）。★ **负向碑：别再加回来。**\n· **方向反了**：强制 γ=0.98 后 span595 **+5.87**、P50 **−4.93**（3/3 同号）—— 它声称\"拉长跨度\"，实测是**缩短跨度 + 整体提亮**。\n· **靶本身不对**：「共识靶 81.87」= **鹿井的 span595（81.65）**，而滨田自己只有 74.29。\n· 与 `_note_no_back_tone_1009` 同病：依据在引擎换代后**已不成立**。",
+    "_note_baseline_1015": "★★ 本层 = **基线（补偿 + 保护）**，不是风格；按轴那层故意空着。\n· 层序：`_scene_engine[\"*\"]` → `_stock_engine[预设名]` → 按轴覆盖（**后者盖前者**）。\n· `morph.active = true`：**结构性必需**（预设 JSON 里没这个键、schema 默认 False ⇒ 没它整根 morph 死）。\n· 其余每一根都带自己的 `_note_*`（为什么是这个值、代价是什么）—— **改之前先读它**。\n· ★ 10-15：_stock_engine 那一层**当前没有数据**（只剩一条预设 ⇒ 它没有信息）；**机制仍在**（\targets.scene_engine 照读，自检用注入法验过）。",
+    "_note_print_exposure_1012": "★★★★ `enlarger.print_exposure = {\"mul\": 1.15}` = 一个**全局 0.2018 EV 压暗**（负片：值越大越暗）。\n· ★ **依据：无** —— 当初唯一理由是「换测光（hw→matrix）会让同一 pe 更亮，必须重新配对」，而那件事**从未发生**（中灰锚一上，测光就不再进入画面）。\n· ★ **不能直接删**（实测 6 次渲染 / 三条预设 / 同进程）：删它 = **−0.2018 EV** ⇒ 颊 L* **+6.15 / +3.39 / +5.97**、整张 L50 +6.8/+4.9/+6.4；同内容配对到相机直出三条链**一致变差**。\n· ⚠ 中灰锚的回归 `g·b = 27.14` **是在 ×1.15 在位时拟合的**。⇒ 处置：**值保留、依据写明\"无\"、挂等拍板**。",
+    "_note_matrix_1015": "★★ `camera.auto_exposure_method = \"matrix\"`：亮度保证。依据 = 7 种测光 × 4 张 vs 机内 JPG，`matrix` 8.5 最好 / `highlight_weighted` 37.9 最差。引擎默认是 `center_weighted`（从零起步时它是\"引擎默认\"，这里是\"量过\"的值）。",
+    "_note_preflash_1015": "★ `enlarger.preflash_exposure = 0.01`：作者意图（预闪保高光）。⚠ **极敏感**：0.05 就压过头 ⇒ **上限 0.03**。",
+    "_note_grain_1009": "★ `film_render.grain.blur = 3.0`：**交付口径 = 全长边 6264** 下调的（同内容配对：尺子标定 1.2 ⇒ 0.89/1.61 ｜ 2.0 ⇒ 0.79/1.47 ｜ **3.0 ⇒ 0.61/1.23**，靶 = 全图 0.63 / 中调 1.18）。\n· ★★ **结构缺陷**：它的**单位是像素** ⇒ 本该随渲染分辨率缩放 ⇒ **每个渲染尺寸的颗粒都不一样**；正确修法是改成\"画面宽度比例\"。⚠ **所以判颗粒必须用全长边**。",
+    "_note_lightness_compression_1011": "★ `lightness_compression = [0.80, 1.0, 2.2]`（CAM16-UCS 的 Jp 单侧软压缩）。依据：条件直方图 20 个内容层——白端**层内一致地差** ⇒ 真风格差；同内容配对：机内 `code233%` 2.8~17.9 → 我们 **0.0000**（链把输入侧的纸白整片抹掉）；迁移性 17/17 同向。等级：**查证（方法）· 幅度待拍板**。",
+    "_note_lc_ceiling_1012": "★★★★★ **负向碑**：把 `lightness_compression` 的 threshold 抬到 0.90 —— **试过、撤回、别再加回来。**\n· 同像素传递实测（11 张、按输入 L* 分箱）它不是\"抬白点\"，是**\"输入 L* 45 以上整段平移\"**（< L*30 一格不动；≥60 段 +1.4~+3.2），且**平台宽度一点没变**（0.42 → 0.39 格）—— 大师那边是缓坡。\n· ★ 白端要修只能**形状与位置一起做** ⇒ 走 `gamma_factor × gamma_factor_fast`。**不许单独抬 threshold。**\n· ⚠ 量的陷阱：尺子 `minRGB>=235%`（≈L* 93.06）**恰好压在天花板高度上** ⇒ 被夹到天花板的像素全算纸白 ⇒ **量不出天花板高低**。",
+    "_note_no_lighttype_tone_1011": "★★★★★ **第一原理**：任何「读图像统计量 → 反馈到全局参数」的规则**必然振荡**（没有不动点）。\n实证：引擎的锚是**写死的 `0.184` 常量**（`filming.py:126`）——纯色块输入 0.05 与 0.90 输出 L* **逐位相同** ⇒ **它不读图**。光型对影调落点的 **SNR 只有 0.79**（判据 >1.5）⇒ **光型不该驱动影调**。（曾按 `lighttype=逆光` 给过 `gamma_factor: 1.28`，已撤。）",
     "*": {
       "print_render.density_curves_morph.active": true,
       "print_render.density_curves_morph.gamma_factor_slow": 0.85,
@@ -195,12 +87,8 @@
         "mul": 1.15
       },
       "film_render.grain.blur": 3.0
-    },
-    "_note_print_exposure_1012": "★★★★ `enlarger.print_exposure = {\"mul\": 1.15}` = 一个**全局 0.2018 EV 压暗**（负片：值越大越暗）。\n· ★ **依据：无** —— 原来的唯一理由是「换测光（hw→matrix）会让同一 pe 更亮，必须重新配对」，而中灰锚一上测光就不再进入画面 ⇒ **那件事从未发生**（与 `PRESET_FILTER_M_TRIM` 同病：**补偿的根修掉了，补偿还在**）。\n· ★ **不能直接删**（实测 6 次渲染 / 三条预设 / 同进程）：删它 = **−0.2018 EV** ⇒ 颊 L* **+6.15 / +3.39 / +5.97**、整张 L50 +6.8/+4.9/+6.4；同内容配对到相机直出三条链**一致变差**。\n· ⚠ 中灰锚的回归 `g·b = 27.14` **就是在 ×1.15 在位时拟合的**；⚠ **响应率随落点变、不许跨链移植**。\n· ⇒ 处置：**值保留、依据写明\"无\"、挂着等拍板。**",
-    "_note_no_back_tone_1009": "★★★★ 10-09：**删掉 `back=正逆光` 的影调补偿** ⇒ **纪律：光位轴不驱动影调**（例外必须登记在 `_tone_allow`，否则自检红）。\n· 它当时是**死键**（那批 45 张里 0 张被判成逆光族）；原依据在判据换代后**已不成立**（同一批 η² = 0.016）。理由：**离散档 + 动态参数 = 阶跃**。\n· ⚠ 「光位改驱动光晕」**没有落值**（本批素材无强光源、触发覆盖率 0%）；通道已建好，等素材。"
+    }
   },
-  "_note_grain_1009": "★★★★★ 10-09 夜：`film_render.grain.blur` **0.65 → 3.0**（**交付口径 = 全长边 6264**）。依据：同内容配对（尺子标定：1.2 ⇒ 0.89/1.61 ｜ 2.0 ⇒ 0.79/1.47 ｜ **3.0 ⇒ 0.61/1.23**，靶 = 全图 0.63 / 中调 1.18）。\n· ★★ **结构缺陷（重点）**：它的**单位是像素** ⇒ 本该随渲染分辨率缩放 ⇒ **每个渲染尺寸的颗粒都不一样**；正确修法是改成\"画面宽度比例\"（像 `CHROMA_BLUR_W`）。⚠ **所以判颗粒必须用全长边**。\n· `scanner.black_level` 保持 0.03（试 0.05 ⇒ 暗裁过头）。⚠ 颗粒随照片变化很大 ⇒ 一根旋钮拟合不到两张同时正中。",
-  "_note_revert_1009": "★★★★ 10-09 夜撤回三项。**原则：优先拆补偿、不要加补偿；动一个参数前必须说清\"它原来为什么是这个值\"。**\n· 落定值：`lightness_compression` 回 0.7（10-11 改为 0.80）· `print_y_filter_shift` 回 5.253（≡ SV 拍板的 y=13；**后改成 3.0 ⇒ 现值没有用户背书**）· `band_gain[1]` 那条**已随颜色层删除**。",
   "_provenance": {
     "_what": "★★★ 10-10（SV 拍板 A：「把靶改成对照」）。每个数值键标出【依据来源】与【内容关系】。\n· `scope=cross` 跨内容 ⇒ **只能当线索**，不能用来宣布\"做对了\"；`scope=same` 同内容 ⇒ 可作**对照 / 验收**；`scope=phys` 物理或上游依据 ⇒ 是\"依据\"，不是\"靶\"。\n⚠ **本项目当前没有「跨内容靶」，只有「同内容对照」**。判据 = ① 合成幻影 ② 同片配对 ③ SV 目检。⚠ 清账后本块只剩 `span` 与 `n`；`span` 是 `scope=cross` ⇒ **不当验收、只作方向指示**。",
     "n": {
@@ -215,15 +103,6 @@
     }
   },
   "_tone_allow": {},
-  "_note_tone_allow_1011": "★★ 10-11：`_tone_allow` = **光位轴驱动影调的显式例外登记表**（当前 `{}` = 空）。\n· 为什么需要：自检那条「光位不驱动影调」原来只扫 `back=`，而 10-10 起光位轴迁成了 `lighttype=` ⇒ 规则被**静默绕过**。现改成「默认禁止 + 显式例外」，例外必须登记在这里。**规则本身仍成立**。",
-  "_note_tutorial_1011": "★★★★★ 10-11 教程对照。教程 = **变换规格**，是本项目的合法依据之一。\n【现状】✅ 第一步提色温方向对 · 第二步「暗部上提」有（实测 +4.05）· **第三/四/五步一条都没实现**。\n① `sh_abs`/`hi_abs`/`mid_abs` **从不生效**（13 块色卡各 +3 ⇒ Δ = **0.000000**）⇒ 「配方三 → sh_abs ✅」**是假的**。\n② ★ `scan_black_level` 实测是**调大 = 抬黑位**，**与教程要的\"黑点下压\"方向相反**；而 0.03 当初按「≤L*5 占比对齐大师 0.07%」定 = **跨内容靶**，那指标正是被**抬高黑位**满足的 ⇒ **该靶与教程冲突**。**重定只能用「变换规格 + 物理 + 同内容配对 + 目检」。**\n③ ★ 第五步依据归位：橙 +0.9（教程要\"略降\"）、黄 0.0（教程要\"降\"⇒ 从没做）都是**作品集聚合统计**拟合的（6 次横跳）= 打靶 ⇒ **教程的「黄降饱和、橙饱和略降」重立为正依据**。\n④ ★ **冻结**：用户拍板前冻结\"按跨内容靶动暖色彩度\"这类动作。\n⑤ `targets.load()` 进程内永久缓存、无 mtime 指纹（会话内改 targets.json 无效，**未修**）；`exposure.py` **零调用点**。",
-  "_note_no_lighttype_tone_1011": "★★★★★ 10-11 **撤掉 `lighttype=逆光` 整块**（原 `gamma_factor: 1.28`）。★ **负向碑：别再加回来。**\n· **第一原理**：任何「读图像统计量 → 反馈到全局参数」的规则**必然振荡**（没有不动点）。实证：引擎的锚是**写死的 `0.184` 常量**（`filming.py:126`）——纯色块输入 0.05 与 0.90 输出 L* **逐位相同** ⇒ **它不读图**。\n· 实测佐证：光型对影调落点的 **SNR 只有 0.79**（判据 >1.5）⇒ **光型不该驱动参数**。\n· ★ 若要那个观感：**正确做法是改 `[\"*\"]` 的基线**（= 情形 b，**要拍板**）。",
-  "_note_lightness_compression_1011": "★★★★★ 10-11：`[0.7,1.0,2.2]` → **[0.80,1.0,2.2]**（逐条现值见 `_stock_engine`）。\n· 依据（三关全过）：① 条件直方图 20 个内容层——白端**层内一致地差** ⇒ 真风格差；② 同内容配对：机内 `code233%` 2.8~17.9 → 我们 **0.0000** ⇒ **链把输入侧的纸白整片抹掉**；③ 迁移性 17/17 同向。等级：**查证（方法）· 幅度待拍板**。\n· 为什么 0.80 不用 0.78/0.85：正口径 `minRGB235%`（AGENTS 11 节）说 0.80 好。\n· ⚠ **端点列必须以全长边为准**（2048 与全长边在 1289 差 7.8 倍、方向还会相反）。⚠ 未做完：膝盖在 **0.75~0.78**（疑 900 域门限效应）。⚠ 10-12 **→0.90 试过、撤回**。",
-  "GOLD200暖橙": {
-    "who": "**増田彩来**（这条预设就是他的）",
-    "n": 298,
-    "note": "几乎不做分色（四个数都在 ±0.2 内）。★ 10-12 回写：n 120→298（源 = datapack_1011/feat.json，group=masuda 现 298 条；旧块是 n=120 时量的，已过期）。口径 = 逐张 A4 分位取中位；span = **逐张 (p95−p5) 的中位**（不是 L95−L5，后者=80.11）；C50 = 逐张 img.C 的中位。实测值 L5 14.7552 / L50 63.8101 / L95 94.8615 / span 78.4195 / C50 8.0535。⚠ **混链警告**：她横跨半格/135/645/数码（`増田_参数深究.md` §6-7），这 298 张是**混画幅聚合** ⇒ 画幅族（颗粒尺度/柔光）**不可**按此对齐，只可用于影调落点/跨度。",
-    "span": 78.42
-  },
-  "_archive": "★ 旧拍板 / 旧靶 / 已死依据的**逐字原文**见 `svFilm/svFilm/data/_archive/`；每批一个 commit，`git revert` 可回滚。"
+  "_note_tone_allow_1011": "★★ `_tone_allow` = **光位轴驱动影调的显式例外登记表**（当前 `{}` = 空）。自检默认禁止\"光位轴驱动影调\"，例外必须登记在这里。",
+  "_archive": "★ 旧拍板 / 旧靶 / 已死依据的**逐字原文**见 `svFilm/svFilm/data/_archive/`（含旧 10 条预设原样）；每批一个 commit，`git revert` 可回滚。"
 }

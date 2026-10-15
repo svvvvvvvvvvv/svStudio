@@ -203,7 +203,7 @@ def scope_of(key):
 def main(argv=None):
     ap = argparse.ArgumentParser('svFilm.scorecard')
     ap.add_argument('folder')
-    ap.add_argument('--stock', default='Ultramax400沉褐')
+    ap.add_argument('--stock', default='鹿井预设')
     ap.add_argument('--tag', default='')
     ap.add_argument('--log', default=os.environ.get('SVFILM_SCORECARD_LOG') or 'scorecard.jsonl',
                     help='评分卡日志（默认写当前目录；可用环境变量 SVFILM_SCORECARD_LOG 指定）')

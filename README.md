@@ -100,9 +100,9 @@ npm run verify   # tsc + 构建 + 静态检查 + 真浏览器布局检查
 
 调色台**只有一个选择器**：
 
-- **胶片风格** —— 9 条预设（`GOLD200暖橙` / `Pro400H马卡龙` / `Portra400淡雅` /
-  `Pro400H清风` / `C200过曝` / `Portra400空气感` / `Ektar100浓彩` / `C200青蓝` / `C200透明`），
-  决定颜色、颗粒、柔光、光晕。参数在 `svFilm/svFilm/data/presets/*.json`。
+- **胶片风格** —— **一条预设：`鹿井预设`**（10-15 从零重立；旧 10 条已删）。
+  卷 = 柯达全能400（`kodak_ultramax_400`）· 纸 = 富士水晶 II（`fujifilm_crystal_archive_typeii`），
+  其余参数 = 引擎 schema 默认。决定颜色、颗粒、柔光、光晕。参数在 `svFilm/svFilm/data/presets/*.json`。
 
 > ★ 09-29：原来的「**曝光风格**」选择器随**影调层**（`svFilm/svFilm/tone.py`）一起删掉了 ——
 >   曝光与反差现在完全归**引擎**（`camera.auto_exposure` + `enlarger.print_exposure` + H&D 曲线）。

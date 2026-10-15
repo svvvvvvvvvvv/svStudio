@@ -18,7 +18,7 @@ import numpy as np
 from . import color, config as C, io, pipeline, presets
 
 # ★ 09-23：凡是要点名「一条胶片风格」的地方就用这一条（别把中文名写死到各处）。
-_PRESET = 'GOLD200暖橙'
+_PRESET = '鹿井预设'
 
 FAIL = []
 
@@ -171,7 +171,7 @@ def t_review_1008():
           '老写法靠 `ENTRY_` 前缀取键，前缀被删光后恒为空 ⇒ 机制静默失效、无人发现')
 
     # ---- ⑥ 印相中灰配平必须**显式钉住**，不许吃 vendor 的 schema 默认 ----
-    _p = presets.digested('Ultramax400沉褐', C)
+    _p = presets.digested(_PRESET, C)
     check('★★ `normalize_print_exposure` / `print_exposure_compensation` 显式钉为 True',
           bool(_p.enlarger.normalize_print_exposure)
           and bool(_p.enlarger.print_exposure_compensation),
@@ -212,16 +212,16 @@ def t_review_1008():
     try:
         _se['span=平'] = {_GN: 1.23}
         _g1 = targets.scene_engine({'span': '平', 'exp': None, 'back': None, 'overwhite': None},
-                                   stock='Ultramax400沉褐', cfg=C).get(_GN)
+                                   stock=_PRESET, cfg=C).get(_GN)
         # ★ **证明叠加真的生效**：临时再加一条 `back=正逆光` 的 `{"add": Δ}`，
         #   断言"两轴同时命中 = 两轴各自之和"。跑完还原。
         #   ⚠ 不这么做的话，"支持叠加"就只是注释里的一句话 —— 本项目最恨"说了没接上"。
         _se['back=正逆光'] = dict(_inj)
         _a = float(targets.scene_engine({'span': '平', 'exp': None, 'back': '正逆光',
-                                         'overwhite': None}, stock='Ultramax400沉褐',
+                                         'overwhite': None}, stock=_PRESET,
                                         cfg=C).get(_GN))
         _b = float(targets.scene_engine({'span': None, 'exp': None, 'back': '正逆光',
-                                         'overwhite': None}, stock='Ultramax400沉褐',
+                                         'overwhite': None}, stock=_PRESET,
                                         cfg=C).get(_GN))
     finally:
         _se.pop('back=正逆光', None)
@@ -230,7 +230,7 @@ def t_review_1008():
         else:
             _se.pop('span=平', None)
     _g2 = targets.scene_engine({'span': None, 'exp': None, 'back': None, 'overwhite': None},
-                               stock='Ultramax400沉褐', cfg=C).get(_GN)
+                               stock=_PRESET, cfg=C).get(_GN)
     check('★★ 只用 `span=平` 时确实命中（其余轴为 None 也不受影响）',
           _g1 is not None and _g2 is not None and abs(float(_g1) - float(_g2)) > 1e-9,
           '（临时造一条 span=平 → 1.23）span=平 → %s ／ 无 span → %s' % (_g1, _g2),
@@ -244,11 +244,11 @@ def t_review_1008():
           '前面的 ⇒ 会少补一个因子。这条断言钉住"叠加不许退化成覆盖"')
 
     # ---- ⑦ config 真的进了 `_params_for` 的键（否则第一次调用者的 cfg 永久污染）----
-    _v0 = float(presets.digested('Ultramax400沉褐', C).enlarger.m_filter_shift)
+    _v0 = float(presets.digested(_PRESET, C).enlarger.m_filter_shift)
     _t0 = C.PRESET_FILTER_M_TRIM
     C.PRESET_FILTER_M_TRIM = _t0 + 3.0
     try:
-        _v1 = float(presets.digested('Ultramax400沉褐', C).enlarger.m_filter_shift)
+        _v1 = float(presets.digested(_PRESET, C).enlarger.m_filter_shift)
     finally:
         C.PRESET_FILTER_M_TRIM = _t0
         presets.clear_cache()
@@ -404,8 +404,8 @@ def t_synth_transfer():
     else:
         _ABS = slice(0, 300)                    # 回退：用原来那条斜坡
 
-    ov = targets.scene_engine(None, stock='Ultramax400沉褐', cfg=C)
-    e = presets.render(lin_in, 'Ultramax400沉褐', C, overrides=ov)
+    ov = targets.scene_engine(None, stock=_PRESET, cfg=C)
+    e = presets.render(lin_in, _PRESET, C, overrides=ov)
     lab = color.to_lab(e)
     L, a, b = lab[..., 0], lab[..., 1], lab[..., 2]
     # ★★ 10-10：颜色层已整段删除 ⇒ 传递函数直接在**引擎输出**上量（引擎出图 = 成片）。
@@ -701,13 +701,13 @@ def t_r1_neutral_end_1013():
     _ch[750:900, _W // 3:2 * _W // 3] = 0.5
     _ch[750:900, 2 * _W // 3:] = 1.0
     # ★ 与 `t_synth_transfer` 逐行同构：本体乘 `_PROBE_SCENE_GAIN`，顶部 `_PROBE_ABS_ROWS` 行不乘。
-    _ov = dict(_ts.scene_engine(None, stock='Ultramax400沉褐', cfg=C))
+    _ov = dict(_ts.scene_engine(None, stock=_PRESET, cfg=C))
     _ov['print_render.glare.active'] = False          # ← 见 docstring：numba RNG ⇒ 跨进程不可复现
     _labs = []
     for _g in _R1_PROBE_GAINS:
         _lin = _np.clip(_cl.s2l(_ch) * (_PROBE_SCENE_GAIN * _g), 0.0, None)
         _lin[750:750 + _PROBE_ABS_ROWS, :, :] = _cl.s2l(_np.linspace(0.0, 1.0, _W))[None, :, None]
-        _labs.append(_cl.to_lab(_pr.render(_lin, 'Ultramax400沉褐', C, overrides=_ov)))
+        _labs.append(_cl.to_lab(_pr.render(_lin, _PRESET, C, overrides=_ov)))
     _pb = _r1_batch(_labs)
     _pv = _r1_verdict(_pb['median'], _pb['n'], _pb['iqr'])
     check('★★★★ R1 探针回归锁：固定图表 × 4 档增益的**批中位**钉在 %.4f ± %.4f（= ±1.5%%）' % (
@@ -741,8 +741,8 @@ def t_r1_neutral_end_1013():
 
 def _main():
     groups = [
-        ('胶片风格：9 条预设', t_presets),
-        ('胶片风格：换一条真的换画面', t_preset_differs),
+        ('胶片风格：只有一条预设（鹿井预设）', t_presets),
+        ('胶片风格：改一根旋钮真的改画面（`overrides` 接线）', t_override_bites),
         ('直方图（LR 画法：亮度 + RGB 叠加 + 5 个区）', t_hist),
         ('靶按预设分组', t_targets),
         ('可调键：config 里真的接上了（防"假旋钮"）', t_config_keys),
@@ -780,36 +780,28 @@ def _main():
 
 
 # ---------------------------------------------------------------------------
-# 1. 胶片风格（9 条预设）
+# 1. 胶片风格（**只有一条**：鹿井预设）
 # ---------------------------------------------------------------------------
 
 def t_presets():
-    ns = presets.names()
-    # ⚠ 别写死条数 —— 加一条预设就要改一次，那是「拿 A 比 A」的假检查。
-    #   改成钉**外部真值**：原来那 9 条的名字必须都还在（一条都不能被改名/弄丢），
-    #   外加鹿井那条（Ultramax400沉褐）也必须在。条数只当信息，不当断言。
-    _BASE = ('C200过曝', 'C200透明', 'C200青蓝', 'Ektar100浓彩', 'Portra400淡雅',
-             'Portra400空气感', 'GOLD200暖橙', 'Pro400H清风', 'Pro400H马卡龙')
-    _gone = [n for n in _BASE if n not in ns]
-    check('原来那 9 条一条都不少（不是只写了几个名字）', not _gone,
-          '共 %d 条；丢了的: %s' % (len(ns), _gone or '无'),
-          '这条钉的是名字，不是条数 ⇒ 以后加预设不用改它')
-    check('鹿井那条预设在（Ultramax400沉褐）', 'Ultramax400沉褐' in ns, '、'.join(ns),
-          '这条是照他主页 514 张对齐的那条')
+    """唯一那条预设的接线（10-15 从零重立后重写）。
 
-    miss = [n for n in ns if not presets.has(n)]
-    check('每条的 JSON 都真在磁盘上', not miss, '缺: %s' % miss,
-          '预设文件丢了 ⇒ 界面上会多出一个点不动的选项')
+    ★ 旧版钉的是"原来那 9 条一条都不少""10 条的冷暖基准不全同""逐卷真的不同" ——
+      那些断言随旧 10 条一起删了：**n=1 时它们要么没有意义、要么恒真**（恒真 = 假绿）。
+    ★ 留下的都是**单条也成立**、且都属于"静默失效"那一类：
+      字段名写错 / 被卷标签冲掉 / 假旋钮 / 配平基准换源 / profile 名拼错。
+    """
+    ns = presets.names()
+    check('预设目录 = 只有一条「鹿井预设」', ns == [_PRESET], '、'.join(ns) or '（空）',
+          '10-15 从零重立：旧 10 条已删（分支 feature/kashii-create；原样留在 data/_archive/pre_clean_slate/）')
+    check('它的 JSON 真在磁盘上', presets.has(_PRESET))
 
     # ★★ 关键字段必须**真的落到 params 上**，不是被引擎冲回出厂
     #   （`GrainParams`/`HalationParams` 都是普通 dataclass、没有 `__slots__`
     #    ⇒ 字段名写错**不报错**，只会静默多出一个没人读的属性）
     #    ⚠ 字段名跟 vendor 版本绑死：**0.3.2 = `agx_particle_*`**、0.3.4 = `particle_*`。
-    #      ★★★ 09-30：**原来这条自检验的就是"我们写进去的那个名字"**（`agx_particle_area_um2`）
-    #      ⇒ 写进去、读出来、对上了 ⇒ **假绿**，整整一轮"调颗粒到靶"是空的。
-    #      ⇒ 现在**必须验 vendor 真正读的那个名字**（源码 `model/grain.py` 里的
-    #        `grain.particle_area_um2`），并断言带 `agx_` 的死属性**根本不该存在**。
-    #      （"拿同一个数验两边"是验不出"没人读它"的 —— 见技能 §135。）
+    #      ★★★ 09-30：原来这条自检验的是"我们写进去的那个名字" ⇒ 写进去、读出来、对上了 ⇒ **假绿**。
+    #      ⇒ 现在**必须验 vendor 真正读的那个名字**。
     p = presets.digested(_PRESET)
     d = presets.load_raw(_PRESET)
     check('颗粒真落到 vendor 实读的字段（particle_*，不是 agx_particle_*）',
@@ -817,16 +809,14 @@ def t_presets():
               - float(d['grain']['particle_area_um2'])) < 1e-9,
           '%.3f vs %.3f' % (p.film_render.grain.particle_area_um2,
                             d['grain']['particle_area_um2']),
-          '颗粒字段对不上 ⇒ 有人改了 vendor 的字段名（0.3.2 叫 agx_particle_*、0.3.4 叫 particle_*）'
-          ' —— 换 vendor 版本时 `presets._apply` 和这里要一起改')
+          '颗粒字段对不上 ⇒ 有人改了 vendor 的字段名（0.3.2 叫 agx_particle_*、0.3.4 叫 particle_*）')
     check('颗粒不许再有 agx_ 死属性（防回退到"写了没人读"）',
           not hasattr(p.film_render.grain, 'agx_particle_area_um2')
           and abs(float(p.film_render.grain.particle_scale[0])
                   - float(d['grain']['particle_scale'][0])) < 1e-9,
           'agx_ 残留=%s ｜ scale %.2f vs %.2f'
           % (hasattr(p.film_render.grain, 'agx_particle_area_um2'),
-             p.film_render.grain.particle_scale[0], d['grain']['particle_scale'][0]),
-          '又按老版本名写了 ⇒ vendor 读不到、画面不动（`GrainParams` 没有 __slots__，不会报错）')
+             p.film_render.grain.particle_scale[0], d['grain']['particle_scale'][0]))
     check('光晕强度真落到 params（不被卷的抗晕层标签冲掉）',
           abs(float(p.film_render.halation.halation_strength[0]) * 100.0
               - float(d['halation']['halation_strength'][0])) < 1e-6,
@@ -834,104 +824,45 @@ def t_presets():
                             d['halation']['halation_strength'][0]),
           '`apply_stocks_specifics=True` 会按卷的抗晕层把它冲回出厂 ⇒ 必须保持 False')
 
-    # ★★ 09-29：**光晕幅度 = 该卷自己的物理值**（不是"10 条一个数"，更不许在过火档）。
-    #   两处**独立**出处，互相印证：
-    #     ① 公开 GUI（`spektrafilm_gui/widget_specs.py`）滑杆「Halation 幅度 %」tooltip：
-    #        **红通道典型值：弱 AH 2-8，无 AH 8-25**；人像提示：
-    #        **"R 通道 1.5 = 现代彩色负片的物理值；拍人别超 8，超了脸上高光泛红"**。
-    #     ② 引擎 `_HALATION_PRESETS[(use, antihalation)]`：strong 0.015 / weak 0.08 / no 0.30。
-    #   两边**逐档对上** ⇒ 期望值按**卷的 profile 标签**取（标签是引擎/胶卷给的外部真值）。
-    #   ⚠ 我们原来的 40% 是「完全无抗晕层」上限(25) 的 1.6 倍、**人像上限(8) 的 5 倍**
-    #     ⇒ 一开机就在过火档。
-    #   ★ `halation_amount`（GUI 滑杆「Halation 强度」，1.0=物理默认）**不钉**：
-    #     它是**用户风格旋钮**，`C200透明`(1.4) / `C200过曝`(1.2) / `Pro400H马卡龙`(1.2)
-    #     正是用它做风格区分的（`C200透明` 的**唯一**区别就是它）。
-    #     ⚠ 我 09-29 先试过把它一起归到 1.0 —— **结果 `C200透明` 与 `C200青蓝` 变成逐位相同**，
-    #       `t_preset_differs` 当场红 ⇒ 撤回，只改幅度。**这条注释是给"以后想动它的人"的护栏。**
-    #   ⇒ 用户拍板（09-29）：幅度**改成卷的物理值**。要改这个数，先把依据写进
-    #     `效果debug\_归档_2026-09\2026-09-29\调研与设计_光晕与白平衡.md`，再回来改这里。
-    _PHYS = {'strong': (1.5, 0.5, 0.0), 'weak': (8.0, 2.0, 0.0), 'no': (30.0, 10.0, 1.5)}
-    _bad, _seen = [], []
-    for n in ns:
-        _pp = presets.digested(n)
-        _tag = str(getattr(_pp.film.info, 'antihalation', '') or '')
-        _exp = _PHYS.get(_tag)
-        _got = tuple(round(float(v) * 100.0, 4)
-                     for v in _pp.film_render.halation.halation_strength)
-        _amt = float(_pp.film_render.halation.halation_amount)
-        _seen.append('%s %s=%.1f%%×%.1f' % (n, _tag, _got[0], _amt))
-        if _exp is None or _got != _exp:
-            _bad.append('%s[%s] 幅度%s（期望 %s）' % (n, _tag, _got, _exp))
-    check('★★ 光晕幅度 = 该卷自己的物理值（按抗晕层标签取）', not _bad,
-          '；'.join(_bad) if _bad else ' / '.join(_seen),
-          '人像提示原话「拍人别超 8，超了脸上高光泛红」⇒ 过火档会让人像高光泛红；'
-          '要改先回 `调研与设计_光晕与白平衡.md` 写清依据')
-    # ★ 倍率**必须留在合理带内**（不是 1.0，但也不许回到过火档：GUI 人像提示 1.2~1.3 是上限）
-    check('★ 光晕强度倍率留在带内（1.0~1.4，不回到过火档）',
-          all(1.0 - 1e-9 <= float(presets.digested(n).film_render.halation.halation_amount) <= 1.4 + 1e-9
-              for n in ns),
-          ' / '.join('%.1f' % float(presets.digested(n).film_render.halation.halation_amount) for n in ns),
-          'GUI 人像提示：「halation_amount 人像最容易翻车的一根：1.2~1.3 是上限；2 以上脸上高光泛红」')
+    # ★★ 光晕幅度必须**在物理带内**（人像上限 8）。出处（README / GUI tooltip）：
+    #   红通道典型值：弱 AH 2-8，无 AH 8-25；人像提示「拍人别超 8，超了脸上高光泛红」。
+    #   ★ 10-15 从零重立后它是**引擎 schema 默认 5/1.5/0**（不是按卷标签手工抄的那档：
+    #     `config.PRESET_APPLY_STOCK_SPECIFICS=False` ⇒ 卷的 AH 标签在生产链上一次都不执行）。
+    #   ⇒ 这里钉的是**带**（物理事实），不是某个具体值（值属于创作，改它不用改自检）。
+    _hs = tuple(round(float(v) * 100.0, 4) for v in p.film_render.halation.halation_strength)
+    _amt = float(p.film_render.halation.halation_amount)
+    check('★ 光晕幅度在物理带内（R 通道 2~8%，人像上限 8）', 2.0 <= _hs[0] <= 8.0,
+          'R/G/B = %s ｜ 倍率 %.2f' % (_hs, _amt),
+          '超 8 ⇒ 脸上高光泛红（GUI 人像提示原话）；超 25 ⇒ 只有"完全无抗晕层"的卷才允许')
+    check('★ 光晕强度倍率在带内（1.0~1.4）', 1.0 - 1e-9 <= _amt <= 1.4 + 1e-9, '%.2f' % _amt,
+          '`halation_amount` 是人像最容易翻车的一根：1.2~1.3 是上限，2 以上脸上高光泛红')
 
-    # ★★ 09-29：**「整张冷暖基准」的落点 = 印相端校色滤片**（负片→印相体系里"白平衡"本来就是它）。
-    #   钉两件事：① 这个落点**真通电**（`_apply` 读进 params，不是又一组假旋钮）；
-    #            ② 它**不是常量**（10 条不全同）—— 否则"逐预设的冷暖基准"就是句空话。
-    #   ⚠ 同一支卷的几条**允许相同**（C200 三条都是 y=3/m=2）：那是同一底片的同一次印相配平。
-    #   ★ 10-08 追加：params 里的 m shift = `JSON print_m_filter_shift` **+ `PRESET_FILTER_M_TRIM`**
-    #     （印相品红底座补偿，见 `config.py` 同名常量与 `presets.py` 接线处的注释）。
-    #     ⇒ 断言必须按「JSON 原值 + 剂量」比，否则那条会红 —— 红的是**断言的算法**，不是接线。
+    # ★★ 「整张冷暖基准」的落点 = 印相端校色滤片（负片→印相体系里"白平衡"本来就是它）。
+    #    钉两件事：① 这个落点**真通电**；② 它带 `PRESET_FILTER_M_TRIM` 的剂量（现在是 0.0）。
     _trim = float(getattr(C, 'PRESET_FILTER_M_TRIM', 0.0))
-    _wb, _wbb = [], []
-    for n in ns:
-        _q = presets.digested(n)
-        _sim = presets.load_raw(n)['simulation']
-        _wb.append((round(float(_q.enlarger.y_filter_shift), 3),
-                    round(float(_q.enlarger.m_filter_shift), 3)))
-        _wbb.append((round(float(_sim['print_y_filter_shift']), 3),
-                     round(float(_sim['print_m_filter_shift']) + _trim, 3)))
+    _sim = d['simulation']
+    _wb = (round(float(p.enlarger.y_filter_shift), 3), round(float(p.enlarger.m_filter_shift), 3))
+    _wbb = (round(float(_sim['print_y_filter_shift']), 3),
+            round(float(_sim['print_m_filter_shift']) + _trim, 3))
     check('★ 整张冷暖基准落在印相滤片上（Y/M **真进 params**，不是假旋钮）', _wb == _wbb,
-          ' / '.join('%s y=%.1f m=%.1f' % (n[4:] if len(n) > 4 else n, w[0], w[1])
-                     for n, w in zip(ns, _wb))[:160],
-          'JSON 写了但 params 里不是那个数 ⇒ 又是一组"改了没反应"的假旋钮；'
-          '注意 m 端要比 `JSON + PRESET_FILTER_M_TRIM`（底座补偿）')
-    check('★ 而且它**不是常量**（10 条的冷暖基准不全同）', len(set(_wb)) >= 2,
-          '%d 种组合' % len(set(_wb)),
-          '全同 ⇒ "逐预设的冷暖基准"是句空话；改冷暖请改 `simulation.print_y_filter_shift`'
-          '（映射见 §`_note_load_raw`），别去动 `load_raw` 那三个死键')
-    # ★★★★ 10-08 晚：配平基准**换源** —— 从"一对硬编码常数"改成**引擎数据库逐条查**。
-    #   为什么换：`neutral` 的语义（作者 README）是「让 18% 灰在最终印相里完全中性的起始设置」，
-    #   而引擎按 **(相纸, 放大机光源, 底片)** 三维查表。原来关掉 DB、把 public 0.3.2 的
-    #   `fujifilm_pro_400h` 那一对发给**全部 10 条**（见 `config.PRESET_NEUTRAL_FROM_DB` 的注释）。
-    #   实测代价：C200 三条差 −27(M)/−57(Y) ⇒ 它的 18% 灰印出来 **b* +30.0（偏黄）**；
-    #   Ektar 差 −18/−11 ⇒ **a* +12.7**。换 DB 后 C200 的 18% 灰 = a* −0.8 / b* +1.4。
-    #   ⚠ 各预设的 shift 已同步重表成「旧总量 − 新中性(DB)」⇒ **总滤片量不变、画面不变**
-    #     （实测 10 条 18% 灰 Δa*/Δb*/ΔL 全部 = 0.00）。⇒ 这是换参数化，不是改观感。
-    _dbn, _neu = [], []
-    for n in ns:
-        _q = presets.digested(n)
-        _dbn.append(bool(_q.settings.neutral_print_filters_from_database))
-        _neu.append((round(float(_q.enlarger.m_filter_neutral), 3),
-                     round(float(_q.enlarger.y_filter_neutral), 3)))
-    check('★★ 配平基准**走引擎数据库**（逐 相纸/光源/底片，不是一对硬编码常数）',
-          all(_dbn), '%d/%d 条开着' % (sum(_dbn), len(_dbn)),
-          '关掉就会退回"一对常数发给 10 条不同底片" —— 那正是 18% 灰偏黄 30 格的原因')
-    check('★★ 而且它**逐卷真的不同**（证明是查表，不是又被换成了常数）',
-          len(set(_neu)) >= 2,
-          ' / '.join('%s M%.2f Y%.2f' % (n, v[0], v[1]) for n, v in list(zip(ns, _neu))[:4]),
-          '全同 ⇒ 数据库那条路没生效（或 vendor 换版后 DB 没跟着换）')
-    # 绝对锚：钉死一对已知的 DB 值，防「Y/M 对调」——自证式检查看不出来（09-23 踩过一次）。
-    #   读 DB 的顺序是 `c_filter, m_filter, y_filter`（vendor `apply_database_neutral_print_filters`）
-    #   ⇒ 0.3.4 库里 `kodak_portra_endura / TH-KG3 / kodak_portra_400` = [0, 51.568(M), 52.534(Y)]。
-    _anchor = [v for n, v in zip(ns, _neu)
-               if presets.load_raw(n)['simulation']['film_stock'] == 'kodak_portra_400'
-               and presets.load_raw(n)['simulation']['print_paper'] == 'kodak_portra_endura']
-    check('★★ 而且 Y/M **不许对调**（绝对锚：portra400+endura ⇒ M 51.568 / Y 52.534）',
-          bool(_anchor) and all(abs(v[0] - 51.568) < 5e-3 and abs(v[1] - 52.534) < 5e-3
-                                for v in _anchor),
-          '%s' % (_anchor[:1] if _anchor else '没找到 portra400+endura 的预设'),
-          '对调了整张偏色，而"逐卷不同"那条看不出来')
+          'params y=%.3f m=%.3f ｜ JSON y=%.3f m=%.3f' % (_wb + _wbb),
+          'JSON 写了但 params 里不是那个数 ⇒ 又是一组"改了没反应"的假旋钮')
 
-    # 每条都得能被 spektrafilm 认得（负片 / 相纸 profile 名拼错 = 渲染那一步直接崩）
+    # ★★★★ 配平基准**走引擎数据库**（逐 (相纸, 光源, 底片) 查表）。
+    #   绝对锚：本链 = fujifilm_crystal_archive_typeii / TH-KG3 / kodak_ultramax_400
+    #   ⇒ 库里是 [C, M, Y] = [0, 74.946, 85.099]（读 DB 的顺序是 c,m,y ⇒ **不许按 y/m 猜**）。
+    #   为什么要绝对锚：光看"开着 DB"看不出 **Y/M 对调**（09-23 踩过一次）。
+    check('★★ 配平基准走引擎数据库（不是一对硬编码常数）',
+          bool(p.settings.neutral_print_filters_from_database),
+          'db=%s' % p.settings.neutral_print_filters_from_database,
+          '关掉就会退回"一对常数发给不同底片" —— 那正是 18%% 灰偏色的原因')
+    check('★★ 而且 Y/M 不许对调（绝对锚：CAII/TH-KG3/ultramax400 ⇒ M 74.946 / Y 85.099）',
+          abs(float(p.enlarger.m_filter_neutral) - 74.946) < 5e-3
+          and abs(float(p.enlarger.y_filter_neutral) - 85.099) < 5e-3,
+          'M=%.3f Y=%.3f' % (p.enlarger.m_filter_neutral, p.enlarger.y_filter_neutral),
+          '对调了整张偏色；换卷/换纸都要来这里更新锚值（路径：data/filters/neutral_print_filters.json）')
+
+    # 负片 / 相纸 profile 名拼错 = 渲染那一步直接崩
     bad = []
     for n in ns:
         try:
@@ -939,21 +870,29 @@ def t_presets():
             assert presets.film_of(n) and presets.paper_of(n)
         except Exception as e:                                    # noqa: BLE001
             bad.append('%s(%s)' % (n, e))
-    check('每条的负片 / 相纸名字都能被 spektrafilm 认得', not bad, '、'.join(bad),
+    check('负片 / 相纸名字都能被 spektrafilm 认得', not bad, '、'.join(bad),
           'profile 名拼错 ⇒ 渲染那一步 FileNotFoundError')
 
 
-def t_preset_differs():
-    """换胶片风格 ⇒ 画面必须真的换（防"九条其实是同一份"）。"""
-    lin = _lin_from_disp(_gray_img())
-    outs = {n: presets.render(lin, n, C) for n in presets.names()}
-    a = presets.names()[0]
-    diffs = {n: float(np.max(np.abs(outs[n] - outs[a]))) for n in presets.names() if n != a}
-    lo = min(diffs.values())
-    check('换一条预设 ⇒ 画面真的不同（最小的那对也有肉眼可见的差）', lo > 0.005,
-          '最小 %s %.4f' % (min(diffs, key=diffs.get), lo),
-          '两条渲染结果几乎一样 ⇒ 预设 JSON 是同一份拷的')
+def t_override_bites():
+    """★★ 10-15：预设只剩一条 ⇒ 旧的「换预设 ⇒ 画面不同」没法测了（n=1）。
 
+    换成**创作模式真正依赖的那根线**：`overrides` 必须真的改得动画面。
+    为什么它不冗余：`overrides` 是**整份替换**（`presets.render` 的契约），
+    少传基线会让 `print_render.density_curves_morph` **整根静默死掉** —— 表现正是
+    "改完看不出变化 ⇒ 以为这根旋钮没用"（已坑过两个人）。
+    """
+    from . import targets
+    lin = _lin_from_disp(_gray_img(seed=23))
+    ov0 = dict(targets.scene_engine({}, stock=_PRESET, cfg=C))
+    base = presets.render(lin, _PRESET, C, overrides=ov0)
+    ov1 = dict(ov0)
+    ov1['film_render.dir_couplers.amount'] = 0.5
+    alt = presets.render(lin, _PRESET, C, overrides=ov1)
+    _d = float(np.max(np.abs(alt - base)))
+    check('★★ 改一根旋钮（`couplers.amount` 1.0 → 0.5）⇒ 画面真的变', _d > 0.005,
+          'max|Δ| = %.4f' % _d,
+          '没变化 ⇒ overrides 没接上（最常见的成因：只传了要动的那一根、把基线丢了 ⇒ morph 静默死）')
 
 # ---------------------------------------------------------------------------
 # 2. 删层纪律：影调层 / 肤色层 / 认人认脸 **真的删了**（不是关开关）
@@ -1183,23 +1122,26 @@ def t_hist():
 
 
 def t_targets():
-    """靶按预设分组（`targets.py`）：换预设必须换靶。
+    """靶（`targets.json`）：**唯一那条预设必须有自己的靶，且数字来自它自己那 26 张**。
 
-    ★★ 10-10：颜色层删掉后，靶里**只剩 `span`（跨度）还有消费者**（`scorecard.py`）。
-      那些分色 / 彩度靶（`sh_abs` / `hi_abs` / `mid_abs` / `band_gain` / `zone_abs` …）
-      已随颜色层一起从 `targets.json` 清掉 ⇒ 这一组现在只钉 `span`。
+    ★ 旧版要求"三条大师预设各自有专属靶 + 换预设 span 真的不一样" —— 预设只剩一条后
+      那两条都测不了。现在钉的是**靶的出处**（26 张那批的 span 是外部真值），
+      而不是"A 与 B 不同"。
     """
     from . import targets
 
-    check('★★ 三条大师预设各自有专属靶；其余预设落回 `_default`',
-          targets.for_stock('Pro400H清风')['own'] and targets.for_stock('GOLD200暖橙')['own']
-          and targets.for_stock('Ultramax400沉褐')['own']
-          and targets.for_stock('C200过曝')['own'] is False)
-    b, z = targets.for_stock('Pro400H清风'), targets.for_stock('GOLD200暖橙')
-    check('★★ 换个预设 ⇒ `span` 靶**真的不一样**（不是把同一个文件复制了两份）',
-          abs(float(b['span']) - float(z['span'])) > 1.0,
-          'span %.2f vs %.2f' % (b['span'], z['span']),
-          '两条预设的靶一模一样 ⇒ 多半是把同一个文件复制了两份（靶没分开）')
+    t = targets.for_stock(_PRESET)
+    check('★ 唯一那条预设是**专属靶**（不是落回 `_default`）', bool(t['own']),
+          'own=%s' % t['own'],
+          '落回 `_default` ⇒ 靶文件中那条不见了，或名字对不上（静默用到别人的靶）')
+    check('★ 靶带 `span`，且数字来自那 26 张（逐张 p95−p5 的中位 = 85.613）',
+          'span' in t and abs(float(t.get('span', 0.0)) - 85.61) < 0.5,
+          'span=%r' % t.get('span'),
+          '对不上 ⇒ 靶被换成了别的语料（或 span 的口径改了没写进 `span_note`）')
+    _lb = (targets.load().get('_lc_band') or {}).get('groups') or {}
+    check('★ 大师 `lc` 带（`_lc_band`）三位都在（数据块没被清账顺手删掉）',
+          set(_lb) == {'鹿井', '増田彩来', '滨田英明'}, '%s' % sorted(_lb),
+          '`scorecard` 读它；丢了 ⇒ 局部对比那道尺子静默失效')
 
 
 def t_by_modulation():
@@ -1269,7 +1211,7 @@ def t_by_modulation():
     #     ② 光晕幅度在引擎里是 **0~1 的元组**（预设 JSON 的 8/2/0 是 ×100 过的）
     #        ⇒ Δ 必须**逐通道给列表**，给标量会默默改掉 R:G:B 比例。
     key = 'film_render.halation.halation_strength'
-    base = list(getattr(*_PR._walk(_PR._params_for('Ultramax400沉褐', _C), key)))
+    base = list(getattr(*_PR._walk(_PR._params_for(_PRESET, _C), key)))
     delta = [0.04, 0.02, 0.0]
     star = d.setdefault('_scene_engine', {}).setdefault('*', {})
     assert key not in star, '预计 `"*"` 层里没有这个键'
@@ -1278,7 +1220,7 @@ def t_by_modulation():
     def _run(deg, hit=True):
         sc = {'back': ('侧光' if hit else None),
               'raw': {'light': ({'deg_back': deg} if deg is not None else {})}}
-        return targets.scene_engine(sc, stock='Ultramax400沉褐', cfg=_C).get(key)
+        return targets.scene_engine(sc, stock=_PRESET, cfg=_C).get(key)
 
     try:
         got = [_run(x) for x in (0.0, 0.25, 0.5, 1.0)]
@@ -1310,7 +1252,7 @@ def t_by_modulation():
         try:
             check('★★ 老契约不变：`{"add"}` 的基准不在前面的层里 ⇒ **忽略**（不半生效）',
                   targets.scene_engine({'span': '平', 'back': None, 'raw': {}},
-                                       stock='Ultramax400沉褐', cfg=_C).get(key) is None,
+                                       stock=_PRESET, cfg=_C).get(key) is None,
                   '（`{"add"}` 只在基准已存在时生效 —— 与 `{"by"}` 不同，见 docstring）')
         finally:
             se2.pop(key, None)
@@ -1420,8 +1362,8 @@ def t_cache():
     r2 = pipeline.run_from(s, stock=_PRESET, cache=c)
     check('同参数 ⇒ 命中缓存（切回来不用重跑）',
           bool(r2.report['stage_cache']['hit']))
-    r4 = pipeline.run_from(s, stock='C200青蓝', cache=c)
-    check('★ 换胶片风格 ⇒ **不**命中', not r4.report['stage_cache']['hit'])
+    # ★ 10-15：原来这里有一条「换胶片风格 ⇒ 不命中缓存」—— 预设只剩一条 ⇒ 删。
+    #   靶 / 场景覆盖那条（下面）仍然钉着「缓存键必须含靶」。
 
     # ★ 10-10：原来这里有一条"换 `GRADE_ENABLE` ⇒ 不许命中缓存"的断言，随颜色层一起删
     #   （那个开关已经不存在了）。"引擎 overrides / 靶必须进键"那条**保留**（见下）。
@@ -1502,13 +1444,10 @@ def t_tooling_1012():
     _lc = 'io.output_gamut_compress.lightness_compression'
 
     # ---- ① 基线**只能有一个来源**：`_base_overrides` ≡ `scene_engine({})` ----
-    _names = [k for k in (_T.load().get('_stock_engine') or {})
-              if not str(k).startswith('_')]
-    check('`_stock_engine` 里登记了预设（否则下面几条测的是空气）',
-          len(_names) >= 3, '%d 条' % len(_names))
-
+    #   ★ 10-15：`_stock_engine` 的生产数据已清（只剩一条预设 ⇒ 那一层没有信息）。
+    #     但 `_base_overrides(stock)` 这条 API 还在被脚本用 ⇒ 仍然要验它 == 生产基线。
     _bad, _unres = [], []
-    for _n in _names:
+    for _n in (_PRESET,):
         try:
             _a = presets._base_overrides(_C, _n)
         except Exception as _e:                              # noqa: BLE001
@@ -1534,19 +1473,29 @@ def t_tooling_1012():
         _exc = '抛的是 %s（要 ValueError）' % type(_e).__name__
     check('★★ `_base_overrides(cfg)`（**没给 stock**）当场抛 `ValueError`',
           not _exc, _exc,
-          '静默返回「跟预设无关」的基线 ⇒ 增田/滨田会拿到鹿井那份值（10-12 前的真实缺陷）')
+          '静默返回「跟预设无关」的基线 ⇒ 拿到的可能是别人的那份值')
 
-    # ---- ③ 破法：证明上面那两条**不是恒真** ----
-    #   10-12 前的旧写法 = 去 `_scene_engine` **里面**找 `_stock_engine`（找不到 ⇒ 整层丢）
-    #   ⇒ 拿到的是 `["*"]` 里那份。要求**至少有一条预设与它不同**，否则这条钉子什么都没测。
-    _star = ((_T.load().get('_scene_engine') or {}).get('*') or {}).get(_lc)
-    _diff = [_n for _n in _names
-             if presets._base_overrides(_C, _n).get(_lc) != _star]
-    check('★★★ 破法：至少有一条预设的 `lc` **不等于** `["*"]` 里那个值',
-          bool(_diff), '与 ["*"] 不同：%s' % (_diff or '无'),
-          '全都一样 ⇒ 「逐位一致」那条恒真，测不出「丢了 _stock_engine 那一层」')
+    # ---- ③ 破法：**注入**一层 `_stock_engine` 证明上面两条不是恒真 ----
+    #   ★ 10-15：生产数据里已经没有 `_stock_engine`（只剩一条预设） ⇒ 不能靠"生产里有两条不同的值"
+    #     来证明；改成**临时注入一条**（改内存里的 targets 字典，跑完还原），
+    #     断言 `_base_overrides` 真的会用到它。层序机制仍然活着，只是当前没有数据。
+    _d0 = _T.load()
+    _star = ((_d0.get('_scene_engine') or {}).get('*') or {}).get(_lc)
+    _save_sk = _d0.get('_stock_engine')
+    try:
+        _d0['_stock_engine'] = {_PRESET: {_lc: [0.9, 1.0, 2.0]}}
+        _hit = presets._base_overrides(_C, _PRESET).get(_lc)
+        check('★★★ 破法（注入式）：`_stock_engine[预设]` 一旦有值，`_base_overrides` 会用它（层序没死）',
+              _hit != _star and list(_hit) == [0.9, 1.0, 2.0],
+              '注入后 = %r ｜ `["*"]` = %r' % (_hit, _star),
+              '拿到的还是 `["*"]` 那份 ⇒ `_stock_engine` 那一层被静默丢了（10-12 前的真实缺陷）')
+    finally:
+        if _save_sk is None:
+            _d0.pop('_stock_engine', None)
+        else:
+            _d0['_stock_engine'] = _save_sk
 
-    # ---- ④ `targets.load()` 必须有文件指纹（T6）：**同一进程内**改文件要立刻生效 ----
+    # ---- ④    # ---- ④ `targets.load()` 必须有文件指纹（T6）：**同一进程内**改文件要立刻生效 ----
     _save = _T._P
     _fd, _tmp = _tf.mkstemp(suffix='.json', prefix='_selftest_tg_')
     os.close(_fd)

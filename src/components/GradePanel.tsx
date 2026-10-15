@@ -3,20 +3,11 @@ import { useStore } from '../store/useStore';
 
 /**
  * 每卷代表色。形状用 jiaopian.svg 的三条路径，灌各卷颜色。
- * ⚠ 卷表 09-23 起是 public GUI 的 9 条预设（名字 =「胶卷 + 风格」，**不带作者名**）。
+ * ⚠ 卷表 10-15 起只剩一条「鹿井预设」（旧 10 条已删，见分支 feature/kashii-create）。
  *   卷名改了要同步这里，否则图标退回中性灰（不会报错，只是看不出是哪一卷）。
  */
 const STOCK_COLORS: Record<string, { a: string; b: string; t: string }> = {
-  GOLD200暖橙: { a: '#e0a878', b: '#b9703f', t: 'G200 暖橙' },
-  Pro400H马卡龙: { a: '#a8c8b8', b: '#5f8f7a', t: '400H 马卡龙' },
-  Portra400淡雅: { a: '#e6c39a', b: '#c09a6a', t: 'P400 淡雅' },
-  Ultramax400沉褐: { a: '#c9a284', b: '#8a5f3f', t: 'UM400 沉褐' },
-  Pro400H清风: { a: '#9ec9c0', b: '#5d9a90', t: '400H 清风' },
-  C200过曝: { a: '#8fc9a8', b: '#4f9c74', t: 'C200 过曝' },
-  Portra400空气感: { a: '#dfc3a8', b: '#b8946f', t: 'P400 空气感' },
-  Ektar100浓彩: { a: '#d98878', b: '#b04a42', t: 'Ektar 浓彩' },
-  C200青蓝: { a: '#8fb4c9', b: '#4f7a9c', t: 'C200 青蓝' },
-  C200透明: { a: '#a8cfc9', b: '#6a9a94', t: 'C200 透明' },
+  鹿井预设: { a: '#c9a284', b: '#8a5f3f', t: '鹿井' },
 };
 
 /* 胶卷图形的三条路径（SV 提供的 jiaopian.svg） */

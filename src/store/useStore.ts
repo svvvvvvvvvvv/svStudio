@@ -172,7 +172,7 @@ export const useStore = create<AppState>((set, get) => ({
   engineMsg: '',
   /* ★ 09-29：**曝光风格随影调层一起删了**（引擎那边 `tone.py` 整段删掉、`/styles` 接口也没了）。
      调色台现在只有一个选择器：**胶片风格**。 */
-  grade: { stock: 'GOLD200暖橙' },
+  grade: { stock: '鹿井预设' },
   renderBusy: false,
   renderTick: 0,
 
