@@ -140,7 +140,7 @@
     "camera_lens_blur_um": 0.0,
     "exposure_compensation_ev": 0.0,
     "auto_exposure": true,
-    "auto_exposure_method": "center_weighted",
+    "auto_exposure_method": "subject",
     "print_illuminant": "TH-KG3",
     "print_exposure": 1.0,
     "print_exposure_compensation": true,
