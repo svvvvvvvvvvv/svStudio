@@ -306,6 +306,27 @@ def _apply(p, d, cfg, name=None):
     p.scanner.black_level = black
     p.scanner.white_level = white
 
+    # ---- 印相密度曲线的 morph（形状层）—— **可选键**：缺省 ⇒ 完全不碰
+    #   机制（`utils/morph_curves.py:13-16,212-231`）：**fast 子层 = 最低 μ = 负性 profile 的趾部（亮端）**；
+    #   **slow = 最高 μ = 肩部（暗端）**，且 `g_mid = g_slow`（slow 同时管 mid 与 slow 两层）；
+    #   `sigmas /= g; centers /= g` ⇒ g↑ 让该层更陡、转折更早。
+    #   实测（2 张，中位）：`gamma_factor_slow` **0.85 → p5 13.71 ｜ 1.00 → 9.60 ｜ 1.15 → 6.51**
+    #   ⇒ **它是黑端的真刀（−24 L*/单位）**，而 `scanner.black_level` 只是微调（−0.6 L*/0.01）。
+    #   ⚠ `active` 是**结构性必需**（引擎 schema 默认 False）⇒ 它在 `targets._scene_engine["*"]` 里，
+    #     不要在这里重复设；这里只调形状。
+    _morph = {k: si[k] for k in ('print_morph_gamma', 'print_morph_gamma_fast',
+                                 'print_morph_gamma_slow') if k in si}
+    if _morph:
+        _new = dataclasses.replace(
+            p.print_render.density_curves_morph,
+            gamma_factor=float(_morph.get('print_morph_gamma',
+                                          p.print_render.density_curves_morph.gamma_factor)),
+            gamma_factor_fast=float(_morph.get('print_morph_gamma_fast',
+                                               p.print_render.density_curves_morph.gamma_factor_fast)),
+            gamma_factor_slow=float(_morph.get('print_morph_gamma_slow',
+                                               p.print_render.density_curves_morph.gamma_factor_slow)))
+        p.print_render.density_curves_morph = _new
+
     # ---- 输出色域压缩的"压顶"膝（扫描段）—— **可选键**：缺省 ⇒ 吃引擎 schema 默认 (0.7, 1.0, 2.2)
     #   机制（`utils/gamut_compression.py:297-304`，ACES RGC 的 Reinhard knee）：
     #     `threshold` 越低 ⇒ 高光压得越狠、越容易挤成一坨贴顶的白（clip% 上升、p95 反而低）；
