@@ -1,5 +1,5 @@
 {
-  "_note_self": "★★★ 10-15 从零重立（分支 feature/kashii-create；旧 10 条预设已删）。\n值 = spektrafilm 引擎 schema 默认，一个都不手改；生成器 = _lib/mkpreset.py（verify() 逐字段比默认，不一致 0）。\n只有两个键是「选」的：\n· film_stock = kodak_ultramax_400（柯达全能400）—— 依据：本人惯用卷（用户级，胶片型号调研_1012）\n· print_paper = fujifilm_crystal_archive_typeii —— 依据：冲扫链 = 富士 SP-3000 ⇒ 富士水晶纸\n靶 = 鹿井两个作品集 26 张，逐图 [P25,P75]（鹿井收敛_1014/26张靶_完整表.md）。\n⚠ 仍吃 targets.json 的 _scene_engine[\"*\"] 基线层（morph.active 等结构性键在那里）。",
+  "_note_self": "★★★ 10-15 从零重立（分支 feature/kashii-create；旧 10 条预设已删）。\n值 = spektrafilm 引擎 schema 默认，一个都不手改；生成器 = _lib/mkpreset.py（verify() 逐字段比默认，不一致 0）。\n只有两个键是「选」的：\n· film_stock = kodak_ultramax_400（柯达全能400）—— 依据：本人惯用卷（用户级，胶片型号调研_1012）\n· print_paper = fujifilm_crystal_archive_typeii —— 依据：冲扫链 = 富士 SP-3000 ⇒ 富士水晶纸\n另有两根**有意偏离默认**（不是风格，是**接线**）：scan_white_correction / scan_black_correction = **True**。\n  为什么：False 时 scanner.white_level / black_level 是**死键**（color_reference.py:139-145 直接覆盖）⇒ 白锚退化、\"三通道都高\"上界 237→227、整张暗 ~3 L*、L95 −3.5~−4.0。\n靶 = 鹿井两个作品集 26 张，逐图 [P25,P75]（鹿井收敛_1014/26张靶_完整表.md）。\n⚠ 基线层（targets.json 的 _scene_engine[\"*\"]）10-15 已清零，只剩 morph.active —— 见该文件的 _note_baseline_1015。",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -147,8 +147,8 @@
     "print_y_filter_shift": 0.0,
     "print_m_filter_shift": 0.0,
     "scan_lens_blur": 0.0,
-    "scan_white_correction": false,
-    "scan_black_correction": false,
+    "scan_white_correction": true,
+    "scan_black_correction": true,
     "scan_unsharp_mask": [
       0.7,
       0.7

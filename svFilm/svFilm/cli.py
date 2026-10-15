@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
-"""命令行入口。
+r"""命令行入口。
 
-  python -m svFilm.cli probe  <img...>                 只看数，不写文件
-  python -m svFilm.cli one    <img> -o out.jpg
-  python -m svFilm.cli dir    <in_dir> -o <out_dir> [--jobs 4]
+  python -m svFilm.cli probe <img...> | one <img> -o out.jpg | dir <in> -o <out> [--jobs 4]
 """
 from __future__ import annotations
 
@@ -17,8 +15,7 @@ from . import config as C, io, presets
 
 
 def _fmt_probe(res):
-    # ★ 10-10：读数原来来自颜色层的报告（`report['grade']['L50_out']`），颜色层删掉后
-    #   **直接从成片量** —— 这才是「落点 L*」该有的意思。
+    # ★ 落点 L* **直接从成片量**。
     import numpy as _np
     from . import color
     _l50 = float(_np.median(color.to_lab(_np.clip(res.disp, 0.0, 1.0))[..., 0]))
@@ -40,7 +37,7 @@ def cmd_probe(args):
 
 
 def cmd_calib(args):
-    """量机型表用的基线增益：拿 RAW 与"同名 JPG"对齐中灰。"""
+    r"""量机型表用的基线增益：拿 RAW 与"同名 JPG"对齐中灰。"""
     import glob as _g
     import os as _os
 
@@ -97,8 +94,7 @@ def _worker(t):
     from . import pipeline
     src, max_side, outdir, p, stock = t
     name = os.path.splitext(os.path.basename(p))[0]
-    # 输出名带 _svFilm 后缀：不能叫 <名字>.jpg —— 那会和"相机直出同名 JPG"撞名字，
-    # 下游一旦按"同名 JPG = 机内直出"去解读，就会把自己的产出当成相机底来看
+    # 输出名带 _svFilm 后缀：**不能叫 <名字>.jpg**（会和"相机直出同名 JPG"撞名）。
     suffix = '_svFilm' + (('_' + stock) if stock else '')
     out = os.path.join(outdir, name + suffix + '.jpg')
     if os.path.abspath(out) == os.path.abspath(p):
@@ -112,11 +108,7 @@ def _worker(t):
 
 
 def _pair_resolve(paths, pair_dir):
-    """给一批 JPG，去 pair_dir 里找**同名 RAW**（找不到就保留原文件）。
-
-    用途：选片目录（只有 JPG）里的文件名 → 上一层拍摄目录里的同名 RAW。
-    这是"RAW 优先、JPG 替补"的落地方式：能拿到 RAW 就一定用 RAW 走管线。
-    """
+    r"""给一批 JPG，去 pair_dir 里找**同名 RAW**（找不到就保留原文件）。"""
     out = []
     for p in paths:
         try:
@@ -154,7 +146,6 @@ def cmd_dir(args):
             except ValueError:
                 pass
         ps = keep
-    # 配对/过滤后再去一次重（两张不同 JPG 可能配到同一张 RAW）
     seen, uniq = set(), []
     for p in ps:
         k = os.path.abspath(p).lower()
@@ -170,7 +161,6 @@ def cmd_dir(args):
     os.makedirs(args.out, exist_ok=True)
     jobs = max(1, int(args.jobs))
 
-    # 先拿第一张热身，把可能的解码错误暴露在串行阶段
     print('共 %d 个文件，并发 %d' % (len(ps), jobs))
     sys.stdout.flush()
 
@@ -197,7 +187,7 @@ def cmd_dir(args):
 
 
 def cmd_stocks(args):
-    """列出所有胶片风格（9 条预设）。"""
+    """列出所有胶片风格。"""
     print('%-16s %-16s %s' % ('胶片风格', '中文名', '一句话'))
     print('-' * 92)
     for n in presets.names():
@@ -228,7 +218,7 @@ def _expand(inputs, recursive, pattern='*.jpg'):
         k = os.path.abspath(p).lower()
         if k in seen:
             continue
-        # 自家产出树整棵跳过：否则第二次跑目录会把上一轮的对照图/成片当素材再处理一遍
+        # 自家产出树整棵跳过（否则第二次跑目录会把上一轮的成片当素材再处理一遍）。
         if paths.TOP.lower() in [s.lower() for s in os.path.abspath(p).split(os.sep)]:
             continue
         seen.add(k)
@@ -248,7 +238,7 @@ def build_parser():
 
     ap.add_argument('--version', action='version', version='svFilm ' + C.VERSION)
 
-    # ⚠ 09-30：原来是写死的「9 条预设」，实际已有 10 条 —— **写死的数会过期** ⇒ 改成运行时数出来。
+    # ⚠ **不许写死预设条数**（写死的数会过期）⇒ 运行时数出来。
     p = sub.add_parser('stocks', help='列出所有胶片风格（%d 条预设）' % len(presets.names()))
     p.add_argument('--stock', default=None)
     p.set_defaults(func=cmd_stocks)

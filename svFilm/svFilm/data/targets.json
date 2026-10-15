@@ -64,29 +64,9 @@
     }
   },
   "_scene_engine": {
-    "_note_baseline_1015": "★★ 本层 = **基线（补偿 + 保护）**，不是风格；按轴那层故意空着。\n· 层序：`_scene_engine[\"*\"]` → `_stock_engine[预设名]` → 按轴覆盖（**后者盖前者**）。\n· `morph.active = true`：**结构性必需**（预设 JSON 里没这个键、schema 默认 False ⇒ 没它整根 morph 死）。\n· 其余每一根都带自己的 `_note_*`（为什么是这个值、代价是什么）—— **改之前先读它**。\n· ★ 10-15：_stock_engine 那一层**当前没有数据**（只剩一条预设 ⇒ 它没有信息）；**机制仍在**（\targets.scene_engine 照读，自检用注入法验过）。",
-    "_note_print_exposure_1012": "★★★★ `enlarger.print_exposure = {\"mul\": 1.15}` = 一个**全局 0.2018 EV 压暗**（负片：值越大越暗）。\n· ★ **依据：无** —— 当初唯一理由是「换测光（hw→matrix）会让同一 pe 更亮，必须重新配对」，而那件事**从未发生**（中灰锚一上，测光就不再进入画面）。\n· ★ **不能直接删**（实测 6 次渲染 / 三条预设 / 同进程）：删它 = **−0.2018 EV** ⇒ 颊 L* **+6.15 / +3.39 / +5.97**、整张 L50 +6.8/+4.9/+6.4；同内容配对到相机直出三条链**一致变差**。\n· ⚠ 中灰锚的回归 `g·b = 27.14` **是在 ×1.15 在位时拟合的**。⇒ 处置：**值保留、依据写明\"无\"、挂等拍板**。",
-    "_note_matrix_1015": "★★ `camera.auto_exposure_method = \"matrix\"`：亮度保证。依据 = 7 种测光 × 4 张 vs 机内 JPG，`matrix` 8.5 最好 / `highlight_weighted` 37.9 最差。引擎默认是 `center_weighted`（从零起步时它是\"引擎默认\"，这里是\"量过\"的值）。",
-    "_note_preflash_1015": "★ `enlarger.preflash_exposure = 0.01`：作者意图（预闪保高光）。⚠ **极敏感**：0.05 就压过头 ⇒ **上限 0.03**。",
-    "_note_grain_1009": "★ `film_render.grain.blur = 3.0`：**交付口径 = 全长边 6264** 下调的（同内容配对：尺子标定 1.2 ⇒ 0.89/1.61 ｜ 2.0 ⇒ 0.79/1.47 ｜ **3.0 ⇒ 0.61/1.23**，靶 = 全图 0.63 / 中调 1.18）。\n· ★★ **结构缺陷**：它的**单位是像素** ⇒ 本该随渲染分辨率缩放 ⇒ **每个渲染尺寸的颗粒都不一样**；正确修法是改成\"画面宽度比例\"。⚠ **所以判颗粒必须用全长边**。",
-    "_note_lightness_compression_1011": "★ `lightness_compression = [0.80, 1.0, 2.2]`（CAM16-UCS 的 Jp 单侧软压缩）。依据：条件直方图 20 个内容层——白端**层内一致地差** ⇒ 真风格差；同内容配对：机内 `code233%` 2.8~17.9 → 我们 **0.0000**（链把输入侧的纸白整片抹掉）；迁移性 17/17 同向。等级：**查证（方法）· 幅度待拍板**。",
-    "_note_lc_ceiling_1012": "★★★★★ **负向碑**：把 `lightness_compression` 的 threshold 抬到 0.90 —— **试过、撤回、别再加回来。**\n· 同像素传递实测（11 张、按输入 L* 分箱）它不是\"抬白点\"，是**\"输入 L* 45 以上整段平移\"**（< L*30 一格不动；≥60 段 +1.4~+3.2），且**平台宽度一点没变**（0.42 → 0.39 格）—— 大师那边是缓坡。\n· ★ 白端要修只能**形状与位置一起做** ⇒ 走 `gamma_factor × gamma_factor_fast`。**不许单独抬 threshold。**\n· ⚠ 量的陷阱：尺子 `minRGB>=235%`（≈L* 93.06）**恰好压在天花板高度上** ⇒ 被夹到天花板的像素全算纸白 ⇒ **量不出天花板高低**。",
-    "_note_no_lighttype_tone_1011": "★★★★★ **第一原理**：任何「读图像统计量 → 反馈到全局参数」的规则**必然振荡**（没有不动点）。\n实证：引擎的锚是**写死的 `0.184` 常量**（`filming.py:126`）——纯色块输入 0.05 与 0.90 输出 L* **逐位相同** ⇒ **它不读图**。光型对影调落点的 **SNR 只有 0.79**（判据 >1.5）⇒ **光型不该驱动影调**。（曾按 `lighttype=逆光` 给过 `gamma_factor: 1.28`，已撤。）",
+    "_note_baseline_1015": "★★ 本层 = 基线（**补偿 + 保护**），不是风格。★ 10-15 用户拍板：**清零**，只留结构性必需的那一根。\n· `morph.active = true`：**结构性必需** —— 预设 JSON 里没有这个键、引擎 schema 默认 False，没它整根 `density_curves_morph` **静默死掉**（改 gamma 看不出变化）。\n· 同批回引擎默认的 6 根（都是**为旧 10 条标的**，随预设一起删）：`gamma_factor` 1.0 ｜ `gamma_factor_slow` 1.0 ｜ `lightness_compression` [0.7,1,2.2] ｜ `grain.blur` 0.65 ｜ `preflash_exposure` 0.0 ｜ `print_exposure {\"mul\":1.15}`（**孤儿补偿、依据：无**）｜ `camera.auto_exposure_method` center_weighted（引擎默认）。\n· ⇒ **要加回来，必须一根一根单独给依据**（谁的值、为什么是这个值、代价是什么），加之前先读它当年的 `_note_*`（git 历史里）。⚠ 两条禁令：① 不许写「读图像统计量 → 反馈到全局参数」的规则（**必然振荡**，没有不动点）；② `preflash_exposure` 极敏感（0.05 就压过头）⇒ 上限 0.03。\n· ★ 层序不变：`_scene_engine[\"*\"]` → `_stock_engine[预设名]`（当前空）→ 按轴覆盖（后者盖前者）。\n· ⚠ 白/黑校正（`scanner.white_correction` / `black_correction`）**不在这一层**，它在预设 JSON 里 —— 现值 = **True/True**（否则 `white_level` / `black_level` 是死键、白端天花板低 6 L*）。",
     "*": {
-      "print_render.density_curves_morph.active": true,
-      "print_render.density_curves_morph.gamma_factor_slow": 0.85,
-      "print_render.density_curves_morph.gamma_factor": 0.98,
-      "io.output_gamut_compress.lightness_compression": [
-        0.8,
-        1.0,
-        2.2
-      ],
-      "camera.auto_exposure_method": "matrix",
-      "enlarger.preflash_exposure": 0.01,
-      "enlarger.print_exposure": {
-        "mul": 1.15
-      },
-      "film_render.grain.blur": 3.0
+      "print_render.density_curves_morph.active": true
     }
   },
   "_provenance": {

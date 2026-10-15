@@ -1,32 +1,10 @@
 # -*- coding: utf-8 -*-
-r"""spektrafilm 装载器 + 大图条带包装 —— **这一层不再做"选卷/配纸/调旋钮"**。
+r"""spektrafilm 装载器 + 大图条带包装 —— **这一层不做"选卷/配纸/调旋钮"**。
 
-## 09-23 边界重划后它只剩两件事
-
-  1. `_sf()` —— 懒加载 spektrafilm，并**钉死加载的是仓库自带那一份**（别被 pip 装的老副本抢先）。
-  2. `_install_band()` —— 大图按行切条带（原图尺寸出图靠它才跑得动，且逐位不变）。
-
-**胶片风格怎么来的**：不在这一层。`presets.py` 直接读 `data/presets/*.json`
-（public GUI 导出的完整参数快照，9 条），`_sf()` 只是给它把 spektrafilm 找出来。
-
-## spektrafilm 是什么
-
-不用 LUT，**重建整条光化学管线**：负片曝光 → 显影 → 印相 → 扫描，
-全部从 `density_curves`(H&D) + `log_sensitivity`(光谱) + 染料密度推出来。
-所以它自带：H&D 曲线、`dir_couplers`（彩度）、分通道颗粒、halation、柔光、输出锐化
-⇒ 我们自己**不许再叠一层**（历史上叠过，09-23 全删了）。
-
-## ⚠ 许可
-spektrafilm 的 profiles 与生成的 LUT = **CC BY-SA 4.0 + 自定义前言**
-（署名 + 相同方式共享）。用了它，我们仓库的分发也要跟着这条。
-
-## ⚠ 落点谁定
-**曝光 / 反差归 spektrafilm 自己那套测光 + H&D 曲线**（`camera.auto_exposure` +
-`enlarger.print_exposure` + `normalize_print_exposure`）—— 它是"负片正确曝光"。
-`presets._render_locked` **保留**它（实测关掉中位会低 **5.1** 个 L*）。
-⚠ 09-29：原来那套"影调层在引擎之前定落点"（`tone.py`）**已整段删除**。
-★ 10-10：`grade.py`（颜色层）也**整段删除**了（分支 `drop-grade`）⇒ svFilm 现在
-**一条链只到引擎**：解码 + 白平衡 + 护栏 → 判场景 → 引擎 → 出图（+ `scanfx` 的扫描段后处理）。
+只剩两件事：`_sf()` 懒加载并**钉死仓库自带那一份**；`_install_band()` 大图按行切条带（原图尺寸出图
+靠它才跑得动，且逐位不变）。胶片风格不在这层：`presets.py` 直接读 `data/presets/*.json`。
+spektrafilm 不用 LUT，**重建整条光化学管线** ⇒ 自带 H&D 曲线、颗粒、halation、柔光、锐化 ⇒ 我们自己
+**不许再叠一层**；⚠ profiles / LUT = CC BY-SA 4.0 + 自定义前言。
 """
 from __future__ import annotations
 
@@ -45,14 +23,8 @@ _SF = [None]          # 懒加载的 spektrafilm 模块
 
 
 def _sf():
-    """懒加载 spektrafilm（**注意**：必须能找到它的 src 目录）。
-
-    找的顺序（第一个存在的胜出）：
-      ① 环境变量 `SPEKTRAFILM_ROOT`
-      ② `<本仓库根>/_tools/spektrafilm/src`       ← 仓库自带（vendor 进来的，clone 完就有）
-      ③ `<本仓库根的上级>/_tools/spektrafilm/src` ← 老布局（引擎当年住在 摄影助手/svFilm 时用的）
-    都没有 ⇒ 直接报清楚该怎么办，别让它冒一个莫名其妙的 ImportError。
-    """
+    r"""懒加载 spektrafilm（**必须能找到它的 src 目录**）：① `SPEKTRAFILM_ROOT`；② `<仓库根>/_tools/
+    spektrafilm/src`；③ `<上级>/_tools/spektrafilm/src`。"""
     if _SF[0] is None:
         here = os.path.abspath(__file__)
         repo = os.path.dirname(os.path.dirname(here))          # .../svFilm（仓库根）
@@ -72,12 +44,7 @@ def _sf():
         if root not in sys.path:
             sys.path.insert(0, root)
         from spektrafilm.runtime import init_params, simulate    # noqa: E402
-        # ★★ 断言真的加载到了 `root` 那一份 —— **别再让它静默拿别的副本**。
-        #   本机 spektrafilm 是 `pip install -e` 装的，而那个 editable 安装指向一个
-        #   **已经退休的老目录**（site-packages 里 `__editable__*.pth` 只有一行老路径）。
-        #   我们把仓库自带那份插进 `sys.path` 最前 ⇒ 正常情况加载的就是它。
-        #   但只要有谁"直接 import 一下"（不走这个函数），就会拿到老副本且**不报错**
-        #   ⇒ 验的是老代码、结论不可信（又一种"假绿"）。这里钉死它。
+        # ★★ 断言真加载到了 `root` 那一份（`pip install -e` 的 `.pth` 可能指向已退休的老目录）。
         import spektrafilm as _sfmod                              # noqa: E402
         _got = os.path.abspath(getattr(_sfmod, '__file__', '') or '')
         _want = os.path.abspath(root)
@@ -92,30 +59,13 @@ def _sf():
     return _SF[0]
 
 
-# =====================================================================================
-# ★★★ 大图按行切条带：干掉「整张画面 × 81 光谱波段」那个中间量（09-15 选「A」）
-# -------------------------------------------------------------------------------------
-# 为什么必须切（**实测撞出来的，不是保守估计**）：原图尺寸 7752×5178 出图会当场死 ——
-#   `spektrafilm/model/develop.py` 的
-#       density_spectral = contract('ijk, lk->ijl', density_cmy, channel_density)
-#   对每个像素拿 3 个 CMY 密度值，乘 (81 波段 × 3) 的密度谱 ⇒ 得到 81 个波段。
-#   `(7752 × 5178) × 81 × 8B = 24.2 GiB` 一次分配，而本机提交上限只剩 ~10 GB。
-#
-# 为什么切了**逐位不变**（关键，别当近似看）：
-#   出问题的那条链是 `printing.py` 的 `_film_cmy_to_print_log_raw`（以及 scanning.py 里
-#   对应的 `cmy_to_log_xyz`），**整条链全是逐像素的**：3 通道进 → 81 波段 → 3 通道出
-#   （`contract("ijk, kl->ijl", light, sensitivity)`），81 **纯属中间量**；
-#   `_compute_exposure_factor_midgray` 只依赖固定数据、跟像素无关。
-#   ⇒ 每个输出像素**只依赖同一个输入像素** ⇒ 按行切开分别算，拼回来数学上完全相同。
-#   实测（(935,1400,3)，整张 vs 条带）：**最大逐位差 0.000e+00**。
-#
-# ⚠⚠ **绝不改 vendor 文件**：`_tools/README.md` 写明 spektrafilm 是「改动：无，原样拷的」，
-#   升级就靠重新 `git archive` 覆盖 ⇒ 在它上面动刀 = 升级必冲突 + 那句话变假。
-#   所以在这里做**类级 monkey-patch**（`selftest` 有检查钉着 vendor 里不许出现我们的标记）。
-#
-# ⚠ 只在 `use_lut=False` 那条路拦：LUT 那条路本来就在 3 维 CMY 空间里查表，不展开 81 波段。
-# ⚠ 影响面：`spectral_compute_enlarger`（印相/放大机）与 `spectral_compute_scanner`（扫描）。
-# =====================================================================================
+# ★★★ 大图按行切条带：干掉「整张画面 × 81 光谱波段」那个中间量
+# 为什么必须切：`develop.py` 把每个像素的 3 个 CMY 密度乘成 81 波段 ⇒ (像素数 × 81 × 8B)
+#   一次分配，原图尺寸就是几十 GB。
+# 为什么**逐位不变**：那条链（`printing._film_cmy_to_print_log_raw` /
+#   `scanning.cmy_to_log_xyz`）**全是逐像素的**（3 通道进 → 81 波段 → 3 通道出，81 纯属
+#   中间量）⇒ 按行切开算完拼回来数学上完全相同。
+# ⚠⚠ **绝不改 vendor 文件** ⇒ 这里做**类级 monkey-patch**（升级靠 `git archive` 覆盖）。
 BAND_ROWS = 192          # 一条带多少行（192 行 × 7752 宽 × 81 波段 × 8B ≈ 0.9 GB 中间量）
 BAND_MIN_PX = 1000000    # 小于这么多像素**不切** —— 700 预览那档保持原来那条路，行为一模一样
 _BAND_LOCK = threading.Lock()
@@ -124,12 +74,12 @@ _VENDOR_MARK = 'SVFILM_BAND'      # 只允许出现在我们自己文件里的�
 
 
 def band_on():
-    """自检用：条带包装**装上了没有**（装上 = 大图能出原图尺寸）。"""
+    r"""自检用：条带包装装上了没有。"""
     return bool(_BANDED[0])
 
 
 def _install_band():
-    """给 spektrafilm 的两个逐像素「3 → 81 → 3」运算套上按行切条带的外壳。幂等。"""
+    r"""给那两个逐像素「3 → 81 → 3」运算套上按行切条带的外壳。幂等。"""
     with _BAND_LOCK:
         if _BANDED[0]:
             return
@@ -160,9 +110,7 @@ def _install_band():
                         if out is None:
                             out = np.empty(cmy.shape[:2] + (int(part.shape[-1]),), part.dtype)
                         out[y0:y1] = part
-                    # ★ 那条 `@timeit` 装饰器是 `timings[key] = elapsed`（**覆盖**）⇒
-                    #   我们逐条带调用它，留下的会是**最后一条带**的时间（假数）。
-                    #   这里把**总时间**写回去，别让计时骗人。
+                    # ★ `@timeit` 是 `timings[key] = elapsed`（覆盖）⇒ 逐条带调用只留最后一条带。
                     try:
                         self.timings['%s.%s' % (type(self).__name__, name)] = \
                             time.perf_counter() - t0

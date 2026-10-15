@@ -1,11 +1,8 @@
 # -*- coding: utf-8 -*-
-"""入口关口 + 出口。**整个工程里唯一允许出现"机型"三个字的地方。**
+r"""入口关口 + 出口。**整个工程里唯一允许出现"机型"三个字的地方。**
 
-入口要做完三件事，做完之后下游不许再关心这张图是谁拍的：
-  1) 解码：RAW 走 rawpy（线性、相机白平衡、关自动亮度）；JPG 走 PIL。
-  2) IDT（输入设备变换）：白平衡 + 色彩矩阵 + 黑白电平 —— RAW 由 rawpy 一次做完；
-     JPG 已经在相机里做完，拿不回来，所以是"显式降级"。
-  3) 归一：对外只吐 lin（白点 1.0）、disp（0~1）两个域。
+入口做完三件事，之后下游不许再关心这张图是谁拍的：① 解码（RAW 走 rawpy；JPG 走 PIL）② IDT
+（白平衡 + 色彩矩阵 + 黑白电平：RAW 由 rawpy 一次做完，JPG 已在相机里做完 ⇒ "显式降级"）③ 归一。
 """
 from __future__ import annotations
 
@@ -50,7 +47,7 @@ def kind_of(path):
 
 
 def _resize(arr, max_side):
-    """缩到长边 max_side。大图先缩后转浮点 —— 40MP 转 float32 再缩要多花好几秒。"""
+    r"""缩到长边 max_side。大图先缩后转浮点（否则多花好几秒）。"""
     h, w = arr.shape[:2]
     long_side = max(h, w)
     if max_side is None or long_side <= max_side:
@@ -70,7 +67,7 @@ def _resize(arr, max_side):
 
 
 def _exif_orientation_fixed(im):
-    """exif_transpose 之后把 orientation 标签抹成 1，否则存回去会被转两次。"""
+    r"""exif_transpose 后把 orientation 抹成 1，否则存回去会被转两次。"""
     ex = im.getexif()
     if not ex:
         return None
@@ -89,8 +86,7 @@ def load_std(path, max_side=C.MAX_SIDE):
     arr = np.asarray(im, np.float64) / 255.0
     arr = _resize(arr, max_side)
     disp = np.clip(arr, 0.0, 1.0)
-    # ★★ 09-28 瘦身：**不做二次白平衡**（中性色偏由解码那一步的 PUBLIC_WB 负责）。
-    #   旧的 `idt_wb`（近中性灰世界）已删 —— 它和入口白平衡是同一件事、且实测几乎没在工作。
+    # ★★ **不做二次白平衡**：中性色偏由解码那一步的 `PUBLIC_WB` 负责。
     lin = color.s2l(disp)
     return Sample(lin, disp, 'jpg', path, _exif_orientation_fixed(im),
                   dict(kind='jpg', note='无 IDT 余量（相机曲线已压过）'))
@@ -100,21 +96,8 @@ def load_std(path, max_side=C.MAX_SIDE):
 def load_raw(path, max_side=C.MAX_SIDE):
     r"""RAW → **场景线性**（只有这一条路，没有开关）。
 
-    ★★ 09-30 删掉「`public` / `own` 二选一」+ 本仓库自己那条 `'own'` 入口路
-      —— **只留一条：RAW → 场景线性 → 引擎**。
-      连带删掉：入口提亮 / 入口成形 / 逐张落点 / 高光护栏 `clip_guard` / 机型基线曝光
-                / `ENTRY_LOADER` / `ENTRY_CLIP_*` / `CLIP_GUARD_ITERS` / `RAW_DECODE` /
-                `rawmeta.py`。
-      为什么（三条）：
-        ① `ENTRY_LOADER` 早已是 `'public'` ⇒ 那条路**永不进入，是死代码**；
-        ② 9 条预设的印相曝光 `pe` 是按**这个输入**标定的（线性中位 Y≈0.056）；
-           自己那条会把画面提到 Y≈0.42（**差 2.9 档**）⇒ 喂预设就过曝发白；
-        ③ **能在引擎里实现的就别自己再留一套** —— 入口提亮本来就由
-           `camera.auto_exposure`（7 种测光）在做；高光该由引擎的 `preflash_exposure`
-           / `lightness_compression` 负责。
-      ⚠ 白平衡仍在这一步（`PUBLIC_WB` 那组 config），它直接喂给 vendor 的加载器。
-      依据与理由见技能 §144。
-    """
+    ★★ **只留一条：RAW → 场景线性 → 引擎**（public GUI 的加载口径）：自己那条入口提亮路是死代码；
+      预设的印相曝光 `pe` 按**这个输入**标定，提亮好几档就过曝发白。"""
     import rawpy
     from . import cameras
     from . import spektra
@@ -158,7 +141,6 @@ def load_raw(path, max_side=C.MAX_SIDE):
 
 
 def load(path, max_side=C.MAX_SIDE, src=None):
-    """src: None/'auto' | 'raw' | 'jpg'（jpg = 走解码器出来的显示域，不是机内 JPEG）"""
     k = kind_of(path)
     if src in (None, 'auto'):
         src = 'raw' if k == 'raw' else 'jpg'
@@ -170,7 +152,6 @@ def load(path, max_side=C.MAX_SIDE, src=None):
 
 
 def find_pair(path, prefer='raw'):
-    """给一个 stem 或任一路径，找同名的 RAW/JPG 对。返回实际存在的路径。"""
     stem, ext = os.path.splitext(path)
     ext = ext.lower()
     if prefer == 'raw' and ext in RAW_EXT:
@@ -189,7 +170,7 @@ def find_pair(path, prefer='raw'):
 def save(disp, path, exif=None, quality=C.JPEG_QUALITY):
     os.makedirs(os.path.dirname(os.path.abspath(path)) or '.', exist_ok=True)
     im = Image.fromarray(color.display_to_u8(disp))
-    kw = dict(quality=int(quality), subsampling=0, optimize=True)
+    kw = dict(quality=int(quality), subsampling=0, optimize=True)   # subsampling=0 = 4:4:4
     if exif:
         kw['exif'] = exif
     im.save(path, **kw)

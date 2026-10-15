@@ -1,43 +1,16 @@
 # -*- coding: utf-8 -*-
 r"""**扫描仪段补偿**（`scan_film=True` 时用）—— 在 svFilm 这层做，**不动 vendored 的 spektrafilm**。
 
-## 为什么需要（10-09 实测）
-
-上游 `color_reference.py` 在"扫负片"这条路上**故意不做黑白校正**（两处写死 `return`，
-注释原文 "do not correct negative film scans"）。原因也合理：**负片没有绝对的黑白参考** ——
-它的黑白是由冲扫流程与**扫描仪软件**定的，上游没法替扫描仪做。
-
-⇒ 后果：`io.scan_film = True` 时引擎输出**没有被锚定**。合成图实测（未加本模块）：
-   纯白 → L\*32（RGB≈109）· 中灰 b\* **+27**（严重偏黄）⇒ 画面塌掉。
-
-## 这一步补的是什么
-
-**真实冲扫店扫描仪对负片做的事**，就三件：
-  ① **反相**（引擎已做：它扫的就是底片密度）
-  ② **按片基定黑白点**（片基是未曝光的边缘，**中性灰**）
-  ③ **每通道自动色阶**（因为底片的片基密度每通道不同 ⇒ 必须每通道独立拉，否则偏色）
-
-⇒ 本模块实现 ② ③：**每通道按分位定黑白点，线性拉伸到 [0,1]**。
-   这正是"Fiona 味"里最物理、最可复现的那一半；**剩下的色彩处理仍交给颜色层**（按 A3 的约定）。
-
-## 用法
-
-在引擎输出之后、颜色层之前调用（`rgb` 为 display-referred 0~1）：
-
-    from svFilm import scanfx
-    rgb = scanfx.auto_levels(rgb, cfg)
-
-默认**关**（`SCANFIX_ENABLE=False`），打开才生效 ⇒ 对现有 10 条预设**逐位无影响**。
+上游 `color_reference.py` 对负片**故意不做黑白校正**（负片没有绝对的黑白参考，黑白由冲扫流程与
+**扫描仪软件**定）⇒ `io.scan_film = True` 时引擎输出**没有被锚定**。真实扫描仪做：① 反相（引擎已做）
+② 按片基定黑白点 ③ 每通道自动色阶 ⇒ 本模块实现 ② ③：**每通道按分位定黑白点、线性拉伸**（默认**关**）。
 """
 from __future__ import annotations
 
 import numpy as np
 
-# ★ 10-10：**诊断变量** —— 本模块有两处"静默降级"（缺 scipy / 缺 color），
-#   它们**不抛异常**、只是原样返回 ⇒ 调用方 `presets._post_scan` 的 try/except
-#   **抓不到**，于是 `CHROMA_BLUR_ENABLE=True` 设了也白设、而且没人知道。
-#   ⇒ 每次调用前清空、降级时写入原因；`presets._post_scan` 读它并打一行 warning。
-#   值 = None（正常或本来就没开）｜ 字符串（降级原因）。
+# ★ **诊断变量**：本模块的"静默降级"（缺 scipy / 缺 color）**不抛异常**、只原样返回 ⇒
+#   调用方的 try/except **抓不到** ⇒ 调用前清空、降级时写原因，由 `presets._post_scan` 报警。
 _CHROMA_LAST_ERROR: str | None = None
 
 
@@ -46,28 +19,12 @@ def _pct(a, q):
 
 
 def chroma_blur(rgb, cfg):
-    r"""★★★ 10-09：**扫描色度模糊** —— 补上真实胶片扫描的"色度被模糊"这一层。
+    r"""★★★ **扫描色度模糊** —— 补上真实胶片扫描的"色度被模糊"这一层。
 
-    ## 为什么（用户点破「没有质感」，尺子库量出来的第一条）
-    新增的尺子「**色度/亮度 锐度比**」（高通 σ=1.5px 的色度能量 ÷ 亮度能量）：
-        鹿井大师 **0.60** ｜ 我们 **1.03** ｜ 用户的 LR **0.94** ｜ 相机直出 0.71
-    ⇒ **我们的色度比大师锐 70%。**
-    真实扫描链里色度分辨率天然低于亮度（CCD 的色度采样、扫描软件的色度降噪、
-    冲印机的色度处理）⇒ **"胶片质感"里包含"色度更柔"这一层，而我们完全没有。**
-
-    ## 做法
-    在 **CIELAB 的 a*/b* 上**做高斯模糊（亮度 L* 不动）⇒ 只动色度、不动细节。
-    ★ σ 用**画面宽度的比例**表示（`CHROMA_BLUR_W`），与分辨率无关 ——
-      否则换渲染尺寸数值就变了（这是本项目 `lc` 已经吃过一次亏的地方）。
-
-    ★★★ 10-14 更正：**现值 `CHROMA_BLUR_ENABLE=True` ⇒ 本函数在跑**。
-      旧注记写的"默认关（`CHROMA_BLUR_ENABLE=False`）⇒ 对现有行为逐位无影响"
-      **与事实相反**。
-      ★ 要不要关它 = **目标性**（会改观感）⇒ **待用户拍板，别自己动**。
-
-    ★ 10-10：缺 scipy 那条路原来**静默返回**（不改画面、也不吭声）⇒ 现在写
-      `_CHROMA_LAST_ERROR`，由 `presets._post_scan` 报一行 warning。**行为不变**（仍返回原图）。
-    """
+    真实扫描链里色度分辨率天然低于亮度 ⇒ "胶片质感"含"色度更柔"这一层（尺子 =「色度/亮度锐度比」）。
+    做法：在 **CIELAB 的 a*/b* 上**做高斯模糊（L* 不动）；σ 用**画面宽度比例**。
+    ⚠⚠ 这是**减弱型效果**：失效时（缺 scipy / σ=0 / 开关关）画面只是"更锐"、**不会报警** ⇒ 必须把
+      原因记进 `_CHROMA_LAST_ERROR` 让调用方喊一声。"""
     global _CHROMA_LAST_ERROR
     _CHROMA_LAST_ERROR = None
     if not bool(getattr(cfg, 'CHROMA_BLUR_ENABLE', False)):
@@ -83,7 +40,7 @@ def chroma_blur(rgb, cfg):
     try:
         from scipy.ndimage import gaussian_filter
     except Exception as e:                                                 # noqa: BLE001
-        # ⚠ 不抛（调用方是批处理路径）—— 但**记下来**，否则这一层永远静默失效
+        # ⚠ 不抛（调用方是批处理路径）—— 但**记下来**，否则永远静默失效。
         _CHROMA_LAST_ERROR = ('scipy 不可用（%s: %s）⇒ 色度模糊被跳过；'
                               'CHROMA_BLUR_ENABLE=True 也**不会**生效'
                               % (type(e).__name__, e))
@@ -96,15 +53,8 @@ def chroma_blur(rgb, cfg):
 
 
 def auto_levels(rgb, cfg, mask=None):
-    """每通道自动色阶（模拟扫描仪的负片转正）。`rgb` 为 0~1 display-referred。
-
-    `cfg` 读这几个键（都在 `config.py`）：
-      · `SCANFIX_ENABLE` 总开关（默认关 ⇒ 原样返回）
-      · `SCANFIX_MODE`   `'per_channel'`（默认，模拟片基中性）/ `'luma'`（单条亮度拉伸）
-      · `SCANFIX_LO` / `SCANFIX_HI`  取哪两个分位当黑白点（默认 0.5 / 99.5）
-      · `SCANFIX_CLIP`  拉伸后的软限幅（避免把噪声顶成纯白，默认 0.0 = 不额外限）
-      · `SCANFIX_ONLY_DARK` 只抬黑点不压白点（调试用）
-    """
+    r"""每通道自动色阶（模拟扫描仪的负片转正）。`cfg` 键：`SCANFIX_ENABLE`（默认关）·
+    `SCANFIX_MODE` `'per_channel'`/`'luma'` · `SCANFIX_LO`/`HI` 分位 · `SCANFIX_ONLY_DARK`（调试）。"""
     if not bool(getattr(cfg, 'SCANFIX_ENABLE', False)):
         return rgb
     a = np.asarray(rgb, np.float64)
