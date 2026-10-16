@@ -1,5 +1,5 @@
 {
-  "_note_self": "【终点态 10-17（第 3 步：色相/彩度定稿）】person_pe_band [77,84] + target_l 80.5 ｜ couplers.amount **0.80** ｜\nprint_m_filter_shift **+3CC** ｜ print_y_filter_shift **+3CC** ｜ output_lightness_compression **off**（保持）。\n依据（11 张同口径整批中位；靶 = 滨田 22 张逐图 [P25,P75]）：实测 render/m3y3 = **18/22**（起点 13/22，第一刀 15/22）。\n四点是选出来的：amount 0.55/0.80/1.00 ⇒ 0.80 时不压脸C*/脸a*、也不挤脸b*；\nm 6/4/3/2 ⇒ +3 最好（60_80 a* −2.06 进带、脸C* 10.09 与脸a* 6.52 坐带中、80_100 a* −0.36 仍进带）；\ny 3 vs 0 ⇒ 保 +3（脸C* 10.09 vs 9.76、脸b* 8.17 vs 7.12，且 40_60 b* 0.74 进带）。\n未达标 4 条（如实记，不当验收）：A4 中/亮 1.31↓（离下沿 0.08）· NA 0_20 a* −2.81↓ · 20_40 a* −3.50↓ · 蓝/橙比 3.40↓。\n蓝/橙的病根 = 橙带占比 8.0% vs 他 1.8%（非缺蓝），靠滤片救不回来 —— 见报告 §4.3。\n回退 = 逐格改回（amount 0.55 / m 6 / y 0）｜报告 滨田_1017/报告.md。",
+  "_note_self": "值：film_format_mm 70（6×7 物理事实）｜ person_pe_band [77,84] + target_l 80.5（只提不压）｜ couplers.amount 0.80 ｜ print_m_filter_shift +3CC ｜ print_y_filter_shift +3CC ｜ 其余承「鹿井预设」。依据：靶 = 滨田 22 张逐图 [P25,P75]（同口径）；11 张整批判分 18/22（起点 13/22）。代价（未达标 4 条，如实记、不当验收）：A4 中/亮 1.31 贴下沿 0.08 ｜ NA 0_20 a* 与 20_40 a* 偏低 ｜ 蓝/橙 3.40 偏低（病根是橙带占比 8.0% vs 他 1.8%，非缺蓝，靠滤片救不回）。回退：逐格改回（amount 0.9 / m 0 / y 0 / 删 person_pe_*）。报告 = 滨田_1017\\报告.md。",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,

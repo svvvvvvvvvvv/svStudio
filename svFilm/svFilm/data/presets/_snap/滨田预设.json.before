@@ -1,5 +1,5 @@
 {
-  "_note_self": "★★★ 「滨田预设」= 从「鹿井预设」逐字节复制（只换本注记）⇒ 起点读数 = 22 条中 17 条已落带（鹿井的带）。\n★ 本次只换注记、**一个值都不动** ⇒ 大方向（曝光落点 / 入口白平衡 / 卷纸）尚未为滨田定过。\n「选」：film_stock = kodak_portra_400 ｜ print_paper = kodak_portra_endura（承自鹿井，未为滨田翻案）。\n「画幅」：film_format_mm = 70.0（6x7 · Pentax 67，**用户给的物理事实**）⇒ 相对 135 空间族尺度 x0.514。\n「大方向」（**不在这份文件里**）：入口白平衡 config.PUBLIC_WB_TEMPERATURE/TINT 是**全局**的（4600/0.97，为鹿井调的）⇒ 给滨田调白平衡**不许动 config**，要用本预设的 print_y_filter_shift / print_m_filter_shift（Kodak CC，100CC=1.0 密度）当本预设自己的白平衡代理。动态印相曝光 PERSON_PE_DYNAMIC 的目标脸 L* / 带也**同属全局**。\n「承自鹿井的值」：print_exposure 0.694 · couplers.amount 1.15 · 印相端逐通道 γ 红1.15/绿1.10/蓝1.12 · camera_diffusion_filter black_pro_mist 0.25 · halation_strength 1.5/0.5/0（手写）。\n「未写 = 吃引擎默认」：output_lightness_compression（0.7/1.0/2.2）· output_gamut_knee（0/1/6）。\n靶 = 滨田 22 张逐图 [P25,P75]（分析目录 滨田_1017 / 滨田靶带.json），**不用并集界**。\n【第一刀 10-17】按实测偏导反解落 4 根：person_pe_band=false + target_l=80.5（脸L* 69→~80.5；代价 clip% 0.07→0.26，待配白端收）· amount 0.9→0.55（脸C* 17.4→~13.7）· m_filter_shift +6CC（NA60_80 a* +0.29→~−2.2，∂a/∂m≈−0.40/CC）· y_filter_shift +3CC（蓝/橙 2.37→~9.5）｜起点基线 13/22（render/base70）｜回退=把这几格删掉/改回。",
+  "_note_self": "【曝光落点 10-17】person_pe_band [77,84] + target_l 80.5（取「带」，不关窗）。\n依据：11 张同口径实测（render/e80，带 [75,84]）落带 13→16/22；脸 L* 68.99→78.93 · C* 17.41→9.72 · a* 10.79→3.36。\n下沿取 77：75 太低，本就够亮的脸被再抬（1665 77.9→86.0 越过他带 P75 82.5，且 1627 丢脸读数）；上沿 84 作逆光上限。\n回退 = 这两格删掉或改回｜报告 滨田_1017/报告.md。\n【终点态1】amount 0.80（0.55/0.80/1.00 三点峰在中间；0.55 压过脸C*下沿、1.00 挤掉脸b*）· y_filter 归零（没救回蓝/橙且与 m 打架）· m +6→+4CC（+6 使 NA a* 五档全↓过头）｜起点 13/22（render/base70）｜依据与逐条账见 ds/photo/滨田_1017/对账_轨迹.md",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -94,7 +94,7 @@
   },
   "couplers": {
     "active": true,
-    "amount": 0.55,
+    "amount": 0.8,
     "inhibition_samelayer": 1.0,
     "inhibition_interlayer": 1.0,
     "gamma_samelayer_rgb": [
@@ -145,8 +145,8 @@
     "print_exposure": 0.694,
     "output_lightness_compression": "off",
     "print_exposure_compensation": true,
-    "print_y_filter_shift": 3.0,
-    "print_m_filter_shift": 6.0,
+    "print_y_filter_shift": 0.0,
+    "print_m_filter_shift": 3.0,
     "scan_lens_blur": 0.0,
     "scan_white_correction": true,
     "scan_black_correction": true,
@@ -185,7 +185,10 @@
     "diffusion_filter_bloom_size": 1.0,
     "film_stock": "kodak_portra_400",
     "print_paper": "kodak_portra_endura",
-    "person_pe_band": false,
+    "person_pe_band": [
+      77.0,
+      84.0
+    ],
     "person_pe_target_l": 80.5
   },
   "display": {
