@@ -158,6 +158,7 @@
     "output_color_space": "sRGB",
     "scan_film": false,
     "print_morph_gamma_red": 1.15,
+    "output_lightness_compression": [0.8, 1.0, 2.2],
     "print_morph_gamma_blue": 1.12,
     "camera_diffusion_filter_active": false,
     "camera_diffusion_filter_family": "black_pro_mist",
