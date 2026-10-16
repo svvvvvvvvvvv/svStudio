@@ -159,6 +159,7 @@
     "scan_film": false,
     "print_morph_gamma_red": 1.15,
     "print_morph_gamma_blue": 1.12,
+    "output_gamut_knee": [0.0, 1.0, 3.0],
     "output_lightness_compression": [
       0.8,
       1.0,

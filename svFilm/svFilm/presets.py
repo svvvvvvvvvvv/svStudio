@@ -340,6 +340,10 @@ def _apply(p, d, cfg, name=None):
     #       0.70 → 90.4 / 0.06% ｜ 0.75 → 91.8 ｜ 0.80 → 93.4 / 0.16% ｜ 0.85 → 95.0 ｜ 0.90 → 96.6
     #   ⇒ 它是**白端唯一有效的单根**（+21 L*/单位）。⚠ 改它 = 改"什么形状" ⇒ 目标性（要拍板）。
     #   ⚠ 传 `"off"` = 关掉压顶（超白会被显示端裁掉，clip% 飙到 8% ⇒ 只给诊断用）。
+    #   ★ 同组还有**彩度膝** `knee`（`(threshold, limit, power)`，默认 (0.0,1.0,6.0)）：
+    #     它是"按 `C/C_max(L,h)` 选择性"压彩度 ⇒ **幂越低咬得越早**。实测（11 张整批）：
+    #     幂 6→3 ⇒ 22 条落带 10→**11**（`脸C*` 从压顶 26.59 拉回带内）；
+    #     幂 6→10 ⇒ 9（反向过头）；⚠ 它对 `A4 中/亮` 与 `脸C*` 是**反向拉扯**（实测）。
     _lcv = si.get('output_lightness_compression')
     if _lcv is not None:
         _lc = None if str(_lcv) == 'off' else tuple(float(v) for v in _lcv)
@@ -348,6 +352,13 @@ def _apply(p, d, cfg, name=None):
         except dataclasses.FrozenInstanceError:
             p.io.output_gamut_compress = dataclasses.replace(
                 p.io.output_gamut_compress, lightness_compression=_lc)
+    _kn = si.get('output_gamut_knee')
+    if _kn is not None:
+        try:
+            p.io.output_gamut_compress.knee = tuple(float(v) for v in _kn)
+        except dataclasses.FrozenInstanceError:
+            p.io.output_gamut_compress = dataclasses.replace(
+                p.io.output_gamut_compress, knee=tuple(float(v) for v in _kn))
 
     # ---- halation（⚠ 这两个字段 GUI 里是 ×100 的，这里要除回去）----
     h = p.film_render.halation
