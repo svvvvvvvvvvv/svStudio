@@ -142,6 +142,16 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
         # ★ **不许静默**：这里失败 ⇒ 全局 `"*"`**整批失效**，记进报告。
         _ov, _ov_err = {}, '%s: %s' % (type(_e).__name__, str(_e)[:160])
 
+    # ---- ★★★ **光位程度量**（`deg_back`）—— 10-16 起它**真的进生产**（= 印相曝光的"力度"）----
+    #   ⚠ 它是**光位**（几何），**不是**"脸比背景暗"：判据 = 人的**轮廓光 / 发丝光**
+    #     （`scene.light_evidence`，只看人自己）。拿不到 / 弃权 ⇒ **0.0**（顺光档 = 只保下限）。
+    _pe_back = 0.0
+    try:
+        _pe_back = float((((_sc or {}).get('raw') or {}).get('light') or {}
+                          ).get('deg_back') or 0.0)
+    except Exception:                                        # noqa: BLE001
+        _pe_back = 0.0
+
     _ckey, _entry = None, None
     if cache is not None:
         # ★ 键里带**判据版本号**；★★ **开关 / overrides / 靶 / config 签名都必须进键**（漏一项 = 拧了没反应）。
@@ -154,16 +164,26 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
             _tg_key = _TS.cache_key(name, _sc)
         except Exception as _e:                        # noqa: BLE001
             _tg_key = ('tg-err', name, type(_e).__name__, repr(_sc)[:200])
+        # ★★ 出图现在**还依赖光位**（`deg_back` 定印相曝光的力度）⇒ 必须进键，
+        #    否则改了 `light_evidence` 的判据、缓存里还是老图（"拧了没反应"）。
+        _pe_key = ('pe', int(getattr(scene, 'LIGHT_VERSION', 0) or 0), round(_pe_back, 3))
         _ckey = ('film', _sample_uid(s), name, tuple(np.shape(s.lin)),
                  int(getattr(scene, 'VERSION', 0)),
-                 C.key_signature(cfg), _ov_key, _tg_key)
+                 C.key_signature(cfg), _ov_key, _tg_key, _pe_key)
         _entry = cache.get(_ckey)
 
     if _entry is not None:
         disp = _entry['disp']
     else:
         # ========== 跑链 ==========  引擎出图 = 成片。
-        disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg, overrides=(_ov or None))
+        # ★★★ **「以人为本」的印相曝光落点（10-16 上线）**：印相曝光**不再写死** ——
+        #   先按预设印一遍 → 量成片里**那张脸**多亮（口径 = 测光同一块分割掩膜）→ 偏暗就按脸
+        #   重算 `print_exposure`**再印一遍**（= 暗房的"试条"）。**力度由光位给**：
+        #   逆光 ⇒ 提亮目标推到带的**亮端**、单张上限放大（背景反正要被顶曝，脸不能暗）；
+        #   顺光 ⇒ 只保"脸别再暗下去"的下限。**只提不压**（`print_exposure` 是整张一起动的）。
+        #   ⚠ `PERSON_PE_DYNAMIC=False` ⇒ **逐位退回** `render()`；没人脸 / 量不到 ⇒ **只印一遍**。
+        disp = presets.render_person_pe(np.clip(s.lin, 0.0, None), name, cfg,
+                                        overrides=(_ov or None), back=_pe_back)
         if _ckey is not None:
             cache.put(_ckey, disp=disp)
 
@@ -175,6 +195,9 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
         stock_label=presets.label_of(name)[0],
         stock_desc=presets.label_of(name)[1],
         scene=(None if _sc is None else dict(_sc)),
+        # ★★★ 「按脸反解印相曝光」到底动没动、动了多少（`presets._LAST_PERSON_PE` 的留痕）
+        person_pe=dict(presets._LAST_PERSON_PE) if presets._LAST_PERSON_PE else None,
+        light_back=round(_pe_back, 3),
         stage_cache=dict(hit=bool(_entry is not None)),
         # ★ `scene_engine` 失败**必须能看见**（否则全局 `"*"` 整批失效）。
         scene_engine_error=_ov_err,

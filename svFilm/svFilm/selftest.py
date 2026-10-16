@@ -53,8 +53,10 @@ def _mk_sample(disp, path='<自检>'):
 
 
 def _pure_engine_same(res, sample, style=None):
-    """整条链上**只有引擎在动像素** ⇒ 出图应当**就是** `presets.render` 的输出。
+    """整条链上**只有引擎在动像素** ⇒ 出图应当**就是** `presets.render_person_pe` 的输出。
 
+    ★ 10-16 改了契约：生产走的是**「按脸反解印相曝光」**（两遍印相；力度 = 报告里的 `light_back`）
+      ⇒ 参照物必须**同参**跑 `render_person_pe`。没人脸 / 量不到 ⇒ 它只印一遍 = `render()`。
     ⚠ 颗粒随机 ⇒ 判据是"差值在引擎自身噪声量级内"；参照物必须带**生产那份引擎覆盖**。
     """
     lin = np.clip(sample.lin, 0.0, None)
@@ -63,8 +65,9 @@ def _pure_engine_same(res, sample, style=None):
     _sc = res.report.get('scene')
     ov = _TS.scene_engine(_sc, stock=res.report['stock'], cfg=C) or None
     stock = res.report['stock']
-    b = np.asarray(presets.render(lin, stock, C, overrides=ov))
-    c = np.asarray(presets.render(lin, stock, C, overrides=ov))
+    _back = float(res.report.get('light_back') or 0.0)
+    b = np.asarray(presets.render_person_pe(lin, stock, C, overrides=ov, back=_back))
+    c = np.asarray(presets.render_person_pe(lin, stock, C, overrides=ov, back=_back))
     noise = float(np.max(np.abs(b - c)))          # 引擎自身不可复现的那点
     diff = float(np.max(np.abs(a - b)))
     return diff <= max(noise * 2.5, 5e-3)
@@ -709,13 +712,18 @@ def t_dropped_layers():
         check('★ 模块 `svFilm.%s` 已经删掉（import 不进来）' % m, _ok, '',
               '还在 ⇒ 影调层 / 肤色层 / 认人那套随时会被接回链上')
 
-# ★ `PERSON_*` / `SCENE_BACK_*` **不在黑名单里** —— 光位判据是重新加回来的。
+# ★ 例外名单：`PERSON_*` / `SCENE_BACK_*` / `SCENE_LIGHT_RIM_*`（光位判据，重新加回来的）
+#   + `FACE_FALLBACK_*`（找脸兜底 —— SV 10-16 令「提高找人找脸准确率」）。
+#   ⚠ 别把 `FACE_*` 整段解禁 —— 那一段是**删掉的肤色层**，解禁 = 那层随时能被接回来。
+    _EXEMPT = ('PERSON_', 'SCENE_BACK_', 'SCENE_LIGHT_RIM_', 'FACE_FALLBACK')
     _bad = [k for k in dir(C) if k.startswith(('TONE_', 'FACE_', 'SKIN_', 'GRADE_',
-                                               'ANCHOR_', 'SCENE_SHOT_'))]
+                                               'ANCHOR_', 'SCENE_SHOT_'))
+            and not k.startswith(_EXEMPT)]
     _bad += [k for k in ('STYLE', 'PRESET_MID_SHIFT', 'TARGET_BLACK_FLOOR_L',
                          'TARGET_HI_FLOOR_L', 'GRADE_REGION_SCOPE', 'GRADE_SCOPE')
              if hasattr(C, k)]
-    check('★★ config 里那几个键一个都不剩（`PERSON_*` / `SCENE_BACK_*` 例外：光位加回来了）',
+    check('★★ config 里那几个键一个都不剩（例外：`PERSON_*` / `SCENE_BACK_*` / '
+          '`SCENE_LIGHT_RIM_*` / `FACE_FALLBACK*`）',
           not _bad, '还剩: %s' % (_bad or '无'),
           '留着就是"没人读的开关"—— 改了没反应（本项目第 4 类坑）')
 
@@ -746,20 +754,32 @@ def t_person_light():
     from . import person as _pmod
     from . import scene
 
-    # ① ★★★ 只做"人在哪"：源码里（**剥掉注释与文档串之后**）不许有人脸检测 / birefnet
+    # ① ★★★ 10-16 新契约：**两档都允许，高开销那条仍然禁止**。
+    #   允许：mediapipe `selfie_multiclass`（人在哪 + 脸上的皮肤，256×256，~20 ms）
+    #        + **YuNet 人脸定位器**（~20 ms，SV 10-16 令「提高找人找脸准确率」的兜底）。
+    #   禁止：birefnet / onnxruntime / landmark —— 那条 ~7 s，就是这个契约存在的理由。
     _raw = inspect.getsource(_pmod)
     _code = _re.sub(r'r?"""[\s\S]*?"""', '', _raw)
     _code = '\n'.join(l.split('#')[0] for l in _code.splitlines())
-    _bad = [n for n in ('FaceDetector', 'yunet', 'YuNet', 'birefnet', 'onnxruntime',
-                        'face_skin', 'landmark', 'FaceLandmarker') if n in _code]
-    check('★★★ `person.py` **只做人在哪**：不许有人脸检测 / birefnet / onnxruntime',
+    _bad = [n for n in ('birefnet', 'onnxruntime', 'face_skin',
+                        'landmark', 'FaceLandmarker') if n in _code]
+    check('★★★ `person.py` **不许把高开销那条接回来**（birefnet / onnxruntime / landmark）',
           not _bad, '命中: %s' % (_bad or '无'),
-          '又把高开销那条接回来了 ⇒ 不要那个开销')
-    check('★ 低开销那条 = mediapipe `selfie_multiclass`（输入固定 256×256）',
+          '那条 ~7 s ⇒ 不要那个开销')
+    check('★★ 低开销那条 = mediapipe `selfie_multiclass`（输入固定 256×256）',
           'selfie_multiclass' in _code and 'SEG_SIDE = 256' in _code,
           '模型 = %s' % os.path.basename(_pmod.SELFIE))
-    check('★ 模型文件在仓库里（不靠 pip / 不靠下载）', os.path.exists(_pmod.SELFIE),
-          _pmod.SELFIE)
+    # ★★ 找脸兜底的**契约**：定位器只许 YuNet；**框只用来指路**（还要过同一个分割模型 ⇒
+    #    口径与一级同源，锚不用重标）。⚠ 直接把框当测光区会系统性暗 0.13~0.28 EV（见文档串）。
+    check('★★★ 人脸定位器**只许 YuNet**（`cv2.FaceDetectorYN`，~20 ms）',
+          'FaceDetectorYN' in _code and 'yunet' in _code,
+          '模型 = %s' % os.path.basename(getattr(_pmod, 'YUNET', '') or ''))
+    check('★★★ 定位框**只用来指路**：裁块后仍走同一个分割模型（口径与一级同源）',
+          'face_mask_in' in _code and 'face_fallback' in _code,
+          '直接把检测框当测光区 ⇒ 比皮肤掩膜系统性暗 0.13~0.28 EV，会把调好的图推亮')
+    check('★ 模型文件在仓库里（不靠 pip / 不靠下载）',
+          os.path.exists(_pmod.SELFIE) and os.path.exists(getattr(_pmod, 'YUNET', '')),
+          '%s ／ %s' % (_pmod.SELFIE, getattr(_pmod, 'YUNET', '')))
 
 
     H, W = 120, 160
@@ -1065,11 +1085,40 @@ def t_scene():
 def t_contract():
 # ① ★★ 整条链上**只有引擎在动像素** ⇒ 出图 = `presets.render` 的输出。
     _r_pure = pipeline.run_from(_mk_sample(_gray_img(seed=11)), stock=_PRESET)
-    check('★★★ 整条链上**只有引擎在动像素**：出图 = `presets.render` 的输出',
+    check('★★★ 整条链上**只有引擎在动像素**：出图 = `presets.render_person_pe` 的输出',
           _pure_engine_same(_r_pure, _mk_sample(_gray_img(seed=11))),
-          '与"只跑 presets.render"的差超出了引擎自身噪声',
+          '与"同参只跑 presets.render_person_pe"的差超出了引擎自身噪声',
           '还有别的层在偷偷改像素 ⇒ 颜色层没删干净')
 
+    # ② ★★★ 10-16：**「以人为本」的印相曝光真的进了生产**（力度 = 光位；留痕 + 缓存键都要有）
+    _s23 = _mk_sample(_gray_img(seed=23))
+    _r23 = pipeline.run_from(_s23, stock=_PRESET)
+    _ppe = _r23.report.get('person_pe')
+    check('★★★ 报告里有「按脸反解印相曝光」的留痕（`person_pe` / `light_back`）',
+          ('person_pe' in _r23.report) and ('light_back' in _r23.report),
+          'person_pe=%r ｜ light_back=%r' % (_ppe, _r23.report.get('light_back')),
+          '没有留痕 ⇒ "两遍印相一次都没动"也看不出来')
+    check('★★ 没人的图上**只印一遍、一个像素不动**（脸量不到 ⇒ 退回 `render`）',
+          (isinstance(_ppe, dict) and _ppe.get('acted') is False),
+          'person_pe=%r' % (_ppe,),
+          '没人脸却在动像素 ⇒ 掩膜 / 判定链出问题（弃权必须走安全侧）')
+
+    # ③ ★★★ 光位现在**真的定画面** ⇒ 它必须进缓存键（否则改了判据还是老图 = 第 4 类坑）
+    from . import scene as _scmod
+    _cc = pipeline.StageCache()
+    _s29 = _mk_sample(_gray_img(seed=29))
+    _h1 = pipeline.run_from(_s29, stock=_PRESET, cache=_cc).report['stage_cache']['hit']
+    _h2 = pipeline.run_from(_s29, stock=_PRESET, cache=_cc).report['stage_cache']['hit']
+    _lv = int(getattr(_scmod, 'LIGHT_VERSION', 0) or 0)
+    try:
+        _scmod.LIGHT_VERSION = _lv + 1
+        _h3 = pipeline.run_from(_s29, stock=_PRESET, cache=_cc).report['stage_cache']['hit']
+    finally:
+        _scmod.LIGHT_VERSION = _lv
+    check('★★★ 同参第二次**命中**缓存；改 `scene.LIGHT_VERSION` ⇒ **必须不命中**',
+          (_h1 is False) and (_h2 is True) and (_h3 is False),
+          '首跑 hit=%s ／ 同参 hit=%s ／ 版本+1 hit=%s' % (_h1, _h2, _h3),
+          '光位进了生产却不在缓存键里 ⇒ 改了 `light_evidence` 还是老图（"拧了没反应"）')
 
     try:
         pipeline.run_from(_mk_sample(_gray_img(seed=13)), stock='根本没有这一条')

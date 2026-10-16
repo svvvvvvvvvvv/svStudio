@@ -16,6 +16,10 @@ from . import config as C
 
 VERSION = 8                          # ★ 换判据就要 +1（缓存键带它）
 AXES = ('exp', 'span', 'back', 'overwhite')
+#: ★★★ **光位证据（`light_evidence`）的版本号**。它**不是** `AXES` 里的一条（不进 `scene['key']`），
+#   但 10-16 起**生产输出依赖它**（`pipeline` 把 `deg_back` 交给「按脸反解印相曝光」当力度）
+#   ⇒ 改 `light_evidence` 的判据必须 `+= 1`，并由调用方把它 + `deg_back` **一起放进缓存键**。
+LIGHT_VERSION = 1
 #: **光型**（见 `lighttype.py`）也进 key（第 5 个 token），但 `AXES` 不动。
 LIGHTTYPE_KEY = True
 
@@ -305,6 +309,24 @@ def _face_evidence(L, sub, face, cfg):
     return out
 
 
+def _rim_band(L, sub, k):
+    r"""**轮廓光 / 发丝光** —— 人掩膜「外缘带」亮度 − 「核心」亮度（正 ⇒ 光从背后来）。
+
+    `sub` 是主体（= 人）的布尔掩膜。`k` = 环带宽度（像素）。拿不到 ⇒ `None`。
+    物理：光以掠射角打到人的轮廓上，反射率从正视的 4~5% 升到 20%+ ⇒ 逆光时边缘比内部亮。
+    """
+    import cv2
+    u8 = np.ascontiguousarray((np.asarray(sub) > 0.5).astype(np.uint8))
+    k = max(1, int(k))
+    core1 = cv2.erode(u8, np.ones((k + 1, k + 1), np.uint8))
+    core2 = cv2.erode(u8, np.ones((2 * k + 1, 2 * k + 1), np.uint8))
+    ring = (u8 > 0) & (core1 == 0)
+    core = core2 > 0
+    if int(ring.sum()) < 150 or int(core.sum()) < 250:
+        return None
+    return float(np.median(L[ring]) - np.median(L[core]))
+
+
 def light_evidence(d, L, person=None, face=None, cfg=C):
     r"""多线索光位证据 → **程度量** → 分级（**不改 `back`、不进缓存键**）：软或 + **降级路径**。"""
     H, W = L.shape
@@ -320,6 +342,7 @@ def light_evidence(d, L, person=None, face=None, cfg=C):
 
     # ---- ★ 主体：优先「人在哪」，拿不到 ⇒ 降级用中心区 ----
     sub = None
+    sub_real = False
     if person is not None:
         per = np.asarray(person, np.float64)
         if per.ndim == 2 and tuple(per.shape[:2]) == (H, W):
@@ -327,6 +350,7 @@ def light_evidence(d, L, person=None, face=None, cfg=C):
             if (int(s.sum()) >= int(getattr(cfg, 'SCENE_BACK_MIN_SUB_PX', 500))
                     and int((~s).sum()) >= 500):
                 sub = s
+                sub_real = True
     if sub is None:
         sub = np.zeros((H, W), bool)
         sub[H // 3:2 * H // 3, W // 3:2 * W // 3] = True
@@ -355,6 +379,25 @@ def light_evidence(d, L, person=None, face=None, cfg=C):
               E_lr_t=round(bf['E_lr_t'], 1), E_tb_t=round(bf['E_tb_t'], 1), nblk=n2)
     ev['E_bg'] = round(float(np.median(L[bak]) - np.median(L[sub])), 1)
 
+    # ---- ★★★ 「看人」的逆光证据：**轮廓光 / 发丝光**（人的外缘带 vs 人的内部）----
+    #   参照物是**人自己** ⇒ 不看背景 ⇒ 不会被"白衣服"反号、不会漏掉"逆光但背景暗 / 补了光"。
+    #   阈值按**画面自身明暗跨度**归一（域无关），见 config 的 `SCENE_LIGHT_RIM_*`。
+    #   ⚠ **不加"人掩膜可靠"的门**：实测分割模型会把树叶 / 滑梯 / 街景算成"头发 / 衣服"
+    #     （各类占比挡不住），硬加门只会挡掉真逆光（肩胸特写）。**没人的图上光位给错也无害**——
+    #     光位只用来定"提亮脸能使多大劲"，而没脸就没有这一步。
+    _span = float(np.percentile(L, 95) - np.percentile(L, 5))
+    ev['span'] = round(_span, 1)
+    rim = None
+    rim_t = 0.0
+    if (sub_real and bool(getattr(cfg, 'SCENE_LIGHT_RIM', True))
+            and int(sub.sum()) >= int(getattr(cfg, 'SCENE_LIGHT_RIM_MIN_PX', 400))):
+        _k = max(2, int(round(float(getattr(cfg, 'SCENE_LIGHT_RIM_BAND_REL', 0.010)) * H)))
+        rim = _rim_band(L, sub, _k)
+        if rim is not None:
+            rim_t = float(getattr(cfg, 'SCENE_LIGHT_RIM_REL', 0.05)) * max(_span, 1e-6)
+    ev['rim'] = None if rim is None else round(rim, 1)
+    ev['rim_t'] = round(rim_t, 2)
+
     _bot = _sub_bottom_row(sub, n2)
     ev['sub_bot_blk'] = _bot
     cz, _n_clip = _blk_off(cl, sub, n2, float(getattr(cfg, 'SCENE_BACK_CLIP_PCT', 3.0)),
@@ -377,11 +420,21 @@ def light_evidence(d, L, person=None, face=None, cfg=C):
         v = fe.get(key)
         return (w, _ramp(sign * v, 2.0 * tb)) if (fe['ok'] and v is not None) else (0.0, 0.0)
 
-    # ★★★ **因果证据必须是必要条件**：逆光 ⇒ 必然"主体（尤其脸）比它身后暗"；否则"上亮下暗"
-    #   单独就能顶出逆光族。掩膜混衣服 ⇒ 以**脸**为主证据。
-    if fe['ok'] and fe.get('E_bg') is not None:
+    # ★★★ **因果证据**：逆光 ⇒ **光从主体（尤其脸）背后射向相机**。
+    #   ★ 10-16 改：主证据从「主体比背景暗」换成 **「看人」的轮廓光/发丝光**（`rim`）——
+    #     "脸比背景暗"只是逆光在**没补光**时的**结果**，用它当必要条件会漏掉
+    #     "逆光 + 补光（人像常态）"和"逆光 + 暗背景"两类，还会被浅色衣服反号。
+    #     「主体 / 脸 vs 背景」保留，但**降为弱支持**（`SCENE_LIGHT_RIM_W_BG`）。
+    _w_bg = float(getattr(cfg, 'SCENE_LIGHT_RIM_W_BG', 0.35))
+    if rim is not None:
         causal = _soft_or([
-            (1.0, _ramp(fe['E_bg'], 2.0 * tb)),                       # ★ 脸比背景暗（主）
+            (1.0, _ramp(rim, 3.0 * rim_t)),                           # ★★ 轮廓光（看人，主）
+            (_w_bg, _ramp(ev['E_bg'], 2.0 * tb)),                     # 主体比背景暗（弱支持）
+            _face('E_bg', _w_bg, +1.0),                               # 脸比背景暗（弱支持）
+        ])
+    elif fe['ok'] and fe.get('E_bg') is not None:
+        causal = _soft_or([
+            (1.0, _ramp(fe['E_bg'], 2.0 * tb)),                       # 脸比背景暗（主）
             (float(getattr(cfg, 'SCENE_LIGHT_EBG_W_FACE', 0.35)),
              _ramp(ev['E_bg'], 2.0 * tb)),                            # 主体比背景暗（弱支持）
         ])
@@ -400,10 +453,17 @@ def light_evidence(d, L, person=None, face=None, cfg=C):
         (1.0, _ramp(abs(bf['E_lr_t']), 2.0 * ts)),   # ★ **趋势量**（不是边条）：抗"某一侧有亮物体"
         _face('E_lr', 0.7, +1.0),                    # ★ 脸上左右明暗差
     ])
-    deg_front = _soft_or([                            # "明确顺光/面光"的**正面证据**
-        (1.0, _ramp(-ev['E_bg'], 2.0 * tb)),          # 背景比主体暗 ⇒ 光从相机方向来
-        _face('E_bg', 0.7, -1.0),                     # 脸比背景亮
-    ])
+    if rim is not None:
+        deg_front = _soft_or([                        # "明确顺光/面光"的**正面证据**
+            (1.0, _ramp(-rim, 3.0 * rim_t)),          # ★★ 人的**内部比边缘亮** ⇒ 正面受光（看人）
+            (_w_bg, _ramp(-ev['E_bg'], 2.0 * tb)),    # 背景比主体暗（弱支持）
+            _face('E_bg', _w_bg, -1.0),               # 脸比背景亮（弱支持）
+        ])
+    else:
+        deg_front = _soft_or([
+            (1.0, _ramp(-ev['E_bg'], 2.0 * tb)),      # 背景比主体暗 ⇒ 光从相机方向来
+            _face('E_bg', 0.7, -1.0),                 # 脸比背景亮
+        ])
     out['deg_back'], out['deg_side'] = round(deg_back, 3), round(deg_side, 3)
     out['conf'] = round(max(deg_back, deg_side, deg_front), 3)
     out['deg_front'] = round(deg_front, 3)

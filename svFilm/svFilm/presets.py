@@ -27,6 +27,11 @@ _LOCKS: dict = {}
 # `_post_scan` 的**诊断变量**：减弱型效果失效时画面 / 直方图都不报警，只能靠它留证。
 _POST_SCAN_ERROR: str | None = None
 
+# ★★★ **上一次「按脸反解印相曝光」的决策留痕**（`render_person_pe` 写、`pipeline` 读进报告）。
+#   它**不影响像素**，只是把"这张到底动没动、动了多少"暴露给调用方 / 自检（否则两遍印相一次都没动
+#   也看不出来）。形状：`dict(back, L0, target, pe0, pe1, acted, why)` 或 `None`（没走这条路）。
+_LAST_PERSON_PE: dict | None = None
+
 # 白端门控警告的**进程内去重表**（见 `_check_white_gate`）：同一预设名只警告一次。
 # ⚠ **不许用 `_LOCK` 保护它** —— 本表用在 `_apply()` 里，而 `_params_for()` 是**持锁**调 `_apply()`
 #   的 ⇒ 在那里取 `_LOCK`（**非重入**）= **当场自死锁**（连同进程其它线程一起堵死）。
@@ -632,32 +637,166 @@ def _person_metering(lin, overrides, cfg):
             _m, _mf = _P.person_face(_disp)
         except Exception:                                                    # noqa: BLE001
             _m, _mf = _P.person(_disp), None
-        if _m is None:
-            return overrides, None
-        # ★★★ **掩膜占比守卫 [0.005, 0.70]**（按 `m>0.5` 算 —— 它返回的是 **0~1 浮点置信度**、
-        #   不是布尔掩膜）：整幅掩膜 = 分割失败 ⇒ 会让"测光看人"退化成"按整幅测光"却看着合理
-        #   ⇒ **超出即弃权**并留 stderr 痕迹。
-        _cov = float(_np.mean(_np.asarray(_m) > 0.5))
-        if not (0.005 <= _cov <= 0.70):
-            import sys as _sys
-            print('[svFilm 警告] presets._person_metering: 人掩膜占比 %.3f 不合理 '
-                  '⇒ **弃权，改走原测光路径**（本次不做"测光看人"）' % _cov, file=_sys.stderr)
+        if _m is None and _mf is None:
             return overrides, None
         _ov = dict(overrides)
         _ov['camera.auto_exposure_method'] = 'subject'
-        # ★★★ **有脸就用脸**（二值 `>0.5` 的占比落在 `[EXPOSURE_FACE_MIN_COVER, …_MAX_COVER]`）：
+        # ★★★ 判定顺序：**①一级的脸 → ②第二级找脸兜底 → ③人档 → 弃权**。
+        #   ★ ①成事 ⇒ ②一次都不跑 ⇒ **其余图逐位不变**。
+        _use, _reg, _ref = None, 'person', None
+
+        # ---- ① 一级：分割模型的 `FACE` 类（"脸上的皮肤"）----
+        #   **有脸就用脸**（二值 `>0.5` 的占比落在 `[EXPOSURE_FACE_MIN_COVER, …_MAX_COVER]`）：
         #   `r2(颊 ~ 脸)` 二值 **0.890** / 软 **0.310** ⇒ 用二值；两档共用 `ev' = (1-w)·ev + b`。
-        _use, _reg = _m, 'person'
+        #   ★ 口径必须是**二值 >0.5**（见 config 注记：软口径 r2 只有 0.310）。
         if bool(getattr(cfg, 'EXPOSURE_METER_FACE', False)) and _mf is not None:
             _fcov = float(_np.mean(_np.asarray(_mf) > 0.5))
             if (float(getattr(cfg, 'EXPOSURE_FACE_MIN_COVER', 0.005)) <= _fcov
                     <= float(getattr(cfg, 'EXPOSURE_FACE_MAX_COVER', 0.50))):
-                # ★ 口径必须是**二值 >0.5**（见 config 注记：软口径 r2 只有 0.310）
                 _use, _reg = (_np.asarray(_mf, _np.float64) > 0.5).astype(_np.float32), 'face'
-        _EX.set_mask(_use, _reg)
+
+        # ---- ② ★ 第二级：找脸兜底（只在①没成时跑）----
+        #   用**专门的人脸检测器**回答"脸在哪" → 按框裁块 → **同一个分割模型**再认一次皮肤
+        #   ⇒ 口径与①同源（所以锚 `w/b` 不用重标）。`_ref` = 裁块面积，交给 `exposure.set_mask`
+        #   当覆盖率分母 —— 小脸本来只占画面千分之几，拿整幅当分母必然被 `_MIN_MASK_COVER` 误判。
+        if _use is None and bool(getattr(cfg, 'FACE_FALLBACK', False)):
+            try:
+                _fb = _P.face_fallback(_disp)
+            except Exception:                                                # noqa: BLE001
+                _fb = None
+            if _fb is not None:
+                _use, _reg, _ref = _fb[0], 'face', _fb[1]
+                print('[svFilm] presets._person_metering: 一级没拿到脸档 ⇒ **第二级（找脸兜底）接手**，'
+                      '覆盖率分母改用检测框面积 %d px' % _ref, file=sys.stderr)
+
+        # ---- ③ 人档（脸两级都没成、但"人在哪"合理）----
+        # ★★★ **掩膜占比守卫 [0.005, 0.70]**（按 `m>0.5` 算 —— 它返回的是 **0~1 浮点置信度**、
+        #   不是布尔掩膜）：整幅掩膜 = 分割失败 ⇒ 会让"测光看人"退化成"按整幅测光"却看着合理
+        #   ⇒ **超出即弃权**并留 stderr 痕迹。
+        if _use is None:
+            if _m is None:
+                return overrides, None
+            _cov = float(_np.mean(_np.asarray(_m) > 0.5))
+            if not (0.005 <= _cov <= 0.70):
+                print('[svFilm 警告] presets._person_metering: 人掩膜占比 %.3f 不合理 '
+                      '⇒ **弃权，改走原测光路径**（本次不做"测光看人"）' % _cov, file=sys.stderr)
+                return overrides, None
+            _use, _reg = _m, 'person'
+
+        _EX.set_mask(_use, _reg, cover_ref=_ref)
         return _ov, _use
     except Exception:                                                    # noqa: BLE001
         return overrides, None
+
+
+def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
+                     target_L=None, band=None, back=None):
+    r"""★★ **按脸反解印相曝光**（两遍印相 = 暗房的"试条"）—— 以人为本的**落点**。
+
+    先把这张按预设的 `print_exposure` 正常印一遍，**量成片里那张脸有多亮**（用与测光**同一块**
+    分割 `FACE` 掩膜）；脸掉出**合理窗** ⇒ 按实测斜率反解一个新的 `print_exposure`，**再印一遍**。
+    脸量不到（弃权）⇒ 原样返回第一遍（= 退回普通 `render()`）。
+
+    ★★ 为什么必须"印一遍量一遍"：**负片测光那一层对成片的脸亮度几乎无影响** —— 实测 14 张，
+    脸的测光结果与成片脸 L* 只有 `r2 = 0.17`；而**输入**脸亮度更预测不了成片脸 L*（`r2 = 0.08`，
+    因为印相端的中灰归一化把负片层的改动吃掉了）⇒ 脸最后落在哪，**零渲染推不出来**。
+    能搬动脸的开关只有 `print_exposure`（实测 `d(脸L*)/d(pe) = −79`）。
+    ★ 出处：暗房彩色分析仪（用标准负片试印 → 换片后把探头压在**脸颊**上读数）；
+    专利 CN109918993B「使人脸区域亮度值趋于一个曝光目标值」；CN112584089B「人脸亮度误差阈值」。
+    ★ 它是**单张一次求解**（没有跨帧反馈）⇒ 不存在"读统计量反馈全局参数"那种振荡。
+
+    @param target_L {float|None} 目标 L*（None = `cfg.PERSON_PE_TARGET_L`），口径 = 测光掩膜
+    @param band {tuple|None|False} 合理窗；`False` = **关掉窗、逐图拉到 target**；
+        `None` = 用 `cfg.PERSON_PE_BAND`；`(lo, hi)` = 用给定窗
+    @param back {float|None} ★★★ **光位 → 力度**（0~1 = 逆光程度，取 `scene.light_evidence`
+        的 `deg_back`）。脸管"差多少"，**光位只管"能使多大劲"**：
+        · **只有脸真的暗（`L < 窗下沿`）才动手，且只提不压**（`print_exposure` 是全局的）
+        · 逆光 ⇒ 提亮目标上移到窗的**亮端**、单张上限放大（背景反正要曝，脸不能暗）
+        · 顺光（`back≈0`）⇒ **逐位回到旧行为**（目标 = 下沿、上限 = `MAX_DP`）
+    @returns {ndarray} 显示域成片（与 `render()` 同契约）
+    """
+    global _LAST_PERSON_PE
+    _LAST_PERSON_PE = None                                 # ★ 先清账（没走这条路 = None）
+    out = render(lin, name, cfg, print_profile=print_profile, overrides=overrides)
+    if not bool(getattr(cfg, 'PERSON_PE_DYNAMIC', False)):
+        return out
+    from . import color as _col, exposure as _EX
+    _lin = np.clip(np.asarray(lin, np.float64), 0.0, None)
+    _ov, _m = _person_metering(_lin, {}, cfg)
+    try:
+        if _m is None:
+            _LAST_PERSON_PE = dict(back=None, why='no_face', acted=False)
+            return out                                     # 脸量不到 ⇒ 不动（安全侧）
+        H, W = out.shape[:2]
+        _mm = np.asarray(_m, np.float64)
+        if _mm.shape[:2] != (H, W):
+            import cv2
+            _mm = cv2.resize(_mm, (W, H), interpolation=cv2.INTER_AREA)
+        _sel = _mm > 0.5
+        if int(_sel.sum()) < 30:
+            _LAST_PERSON_PE = dict(back=None, why='mask_too_small', acted=False)
+            return out
+        _lab = _col.to_lab(np.clip(np.asarray(out, np.float64), 0.0, 1.0))
+        _L = float(np.median(_lab[..., 0][_sel]))
+
+        # ★★★ **光位 → 力度**：`back` = 逆光程度（0~1）。逆光时**提亮目标上移**（窗内也往亮端推）
+        #   —— 用户令「**脸不能暗 暗就不好看**」+「**逆光时 背景肯定会有些曝 人也得多提亮**」。
+        #   ⚠ 顺光 `back≈0` ⇒ `_up == 下沿` ⇒ 窗内的脸 **一个像素不动**（老行为逐位保留）。
+        _bk = 0.0 if back is None else max(0.0, min(1.0, float(back)))
+        _tgt = float(target_L if target_L is not None
+                     else getattr(cfg, 'PERSON_PE_TARGET_L', 66.96))
+        if band is False:
+            _band = None
+        else:
+            _band = band if band is not None else getattr(cfg, 'PERSON_PE_BAND', (53.5, 76.0))
+        if _band is not None:
+            _lo, _hi = float(_band[0]), float(_band[1])
+            # ★★★ **光位 → 目标**（`_bk` = 逆光程度）：顺光 ⇒ 只保下限（脸别再暗下去）；
+            #     逆光 ⇒ 目标推到**亮端**（用户令「**逆光时 背景肯定会有些曝 人也得多提亮**」）。
+            _up = _lo + (_hi - _lo) * _bk
+            if _L >= _up:
+                _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), band=[_lo, _hi],
+                                       target=round(_up, 2), acted=False,
+                                       why='bright_enough')
+                return out                                 # ★★ **够亮 ⇒ 一个像素不动**
+                #   —— 只做「脸不能暗」，所以**只提不压**（`print_exposure` 是**全局**的）：
+                #     把"偏亮的脸"压回去 = 整张一起压暗（实测 DSCF1744 顺光片被压 −8.8 L*，
+                #     起因就是掩膜把亮处当成脸）⇒ 压的收益小、风险大 ⇒ 不做。
+            _tgt = _up
+        _d = _tgt - _L
+        #   ★ 符号：`print_exposure ↑ ⇒ 印得暗 ⇒ 脸 L* ↓`，实测 `d(脸L*)/d(pe) = −79`
+        #   （1665：pe 0.620→0.579 实测脸 +3.19 L*）⇒ 要 ΔL*，就得 `Δpe = −ΔL*/79`。
+        _sl = abs(float(getattr(cfg, 'PERSON_PE_SLOPE', 79.0) or 79.0))
+        _mx = abs(float(getattr(cfg, 'PERSON_PE_MAX_DP', 0.20) or 0.0))
+        # ★ 逆光敢使劲：单张上限随逆光程度放大
+        _mx *= 1.0 + float(getattr(cfg, 'PERSON_PE_BACK_GAIN', 1.0) or 0.0) * _bk
+        _dpe = max(-_mx, min(_mx, -_d / _sl))
+        if abs(_dpe) < 1e-4:
+            _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), target=round(_tgt, 2),
+                                   acted=False, why='delta_tiny')
+            return out
+        _sh = 1.0
+        if bool(getattr(cfg, 'PRESET_PE_SHIFT_FROM_SPEK', True)):
+            _sh = float(getattr(cfg, 'SPEK_PE_SHIFT', 1.0) or 1.0)
+        _pe0 = pe_of(name) * _sh
+        _pe1 = _pe0 + _dpe
+        _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), target=round(_tgt, 2),
+                               pe0=round(_pe0, 4), pe1=round(_pe1, 4),
+                               acted=True, why='applied')
+        import sys as _sys
+        print('[svFilm] presets.render_person_pe: 脸 L* %.1f ⇒ 目标 %.1f ⇒ 印相曝光 %.4f → %.4f'
+              '（第二遍印）' % (_L, _tgt, _pe0, _pe1), file=_sys.stderr)
+        return render(_lin, name, cfg, print_exposure=_pe1, print_profile=print_profile,
+                      overrides=overrides)
+    except Exception as _e:                                              # noqa: BLE001
+        _LAST_PERSON_PE = dict(back=None, why='error: %s' % type(_e).__name__,
+                               acted=False)
+        return out
+    finally:
+        try:
+            _EX.clear()
+        except Exception:                                                # noqa: BLE001
+            pass
 
 
 def _post_scan(out, cfg):

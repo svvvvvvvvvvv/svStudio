@@ -14,8 +14,12 @@ _MASK = [None]          # 当前这张的"人"掩膜（0~1，与输入图同尺�
 _INSTALLED = [False]
 _REGIME = ['person']    # 'face' / 'person' —— 决定用哪一对 (w, b)；渲染串行，逐张设置
 
-# ★★ 掩膜占比下限（`m.sum()/m.size`）：低于它 ⇒ **弃权**走 `matrix`（与外层守卫同一落点）。
+# ★★ 掩膜占比下限（`m.sum()/ref`）：低于它 ⇒ **弃权**走 `matrix`（与外层守卫同一落点）。
+#   `ref` 默认 = 整幅像素数；**第二级找脸兜底**会传"检测框面积"当 `ref` —— 理由：兜底的那张脸
+#   本来就可能只占画面千分之几（实测 1150 = 0.20%），拿整幅当分母必然把它误判成"掩膜坏了"；
+#   而这时**"脸在哪"已经有专门检测器背书**，合理性的分母应当是"我们真正查找过的范围"。
 _MIN_MASK_COVER = 0.003
+_COVER_REF = [None]     # None ⇒ 用 m.size（默认口径，逐位等于修复前）
 _ABSTAIN = [0, None]    # [次数, 上次原因] —— 观察者状态，只计数不改画面
 
 
@@ -48,15 +52,20 @@ def regime():
     return _REGIME[0]
 
 
-def set_mask(m, regime='person'):
-    r"""渲染前把这张的测光掩膜放进来（`None` ⇒ `subject` 退回原实现）。"""
+def set_mask(m, regime='person', cover_ref=None):
+    r"""渲染前把这张的测光掩膜放进来（`None` ⇒ `subject` 退回原实现）。
+
+    `cover_ref` = 覆盖率判据的分母（像素数）；`None` ⇒ 整幅（**默认口径，逐位等于修复前**）。
+    ★ 只有"第二级找脸兜底"会传一个更小的 `cover_ref`（= 检测框面积）—— 见 `_MIN_MASK_COVER` 注记。"""
     _MASK[0] = None if m is None else np.asarray(m, np.float32)
     _REGIME[0] = 'face' if str(regime) == 'face' else 'person'
+    _COVER_REF[0] = None if cover_ref is None else float(cover_ref)
 
 
 def clear():
     _MASK[0] = None
     _REGIME[0] = 'person'
+    _COVER_REF[0] = None
 
 
 def abstain_count():
@@ -99,7 +108,9 @@ def install():
             m = cv2.resize(m, (W, H), interpolation=cv2.INTER_AREA)
         m = np.clip(m.astype(np.float64), 0.0, 1.0)
         # ★★ 掩膜太小时 ⇒ **弃权**退回 `matrix`（同一落点）+ 计数告警；退回别的 method 就是两条落点。
-        cover = float(m.sum()) / max(float(m.size), 1.0)
+        #   分母 = `_COVER_REF`（默认整幅；第二级兜底传"检测框面积"，见 `_MIN_MASK_COVER` 注记）。
+        _ref = float(m.size if _COVER_REF[0] is None else _COVER_REF[0])
+        cover = float(m.sum()) / max(_ref, 1.0)
         if cover < _MIN_MASK_COVER:
             _ABSTAIN[0] += 1
             _ABSTAIN[1] = ('mask_cover=%.5f < %.5f' % (cover, _MIN_MASK_COVER))
