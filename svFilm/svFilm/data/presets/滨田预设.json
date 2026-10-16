@@ -1,5 +1,5 @@
 {
-  "_note_self": "【曝光落点 10-17】person_pe_band [77,84] + target_l 80.5（取「带」，不关窗）。\n依据：11 张同口径实测（render/e80，带 [75,84]）落带 13→16/22；脸 L* 68.99→78.93 · C* 17.41→9.72 · a* 10.79→3.36。\n下沿取 77：75 太低，本就够亮的脸被再抬（1665 77.9→86.0 越过他带 P75 82.5，且 1627 丢脸读数）；上沿 84 作逆光上限。\n回退 = 这两格删掉或改回｜报告 滨田_1017/报告.md。",
+  "_note_self": "【曝光落点 10-17】person_pe_band [77,84] + target_l 80.5（取「带」，不关窗）。\n依据：11 张同口径实测（render/e80，带 [75,84]）落带 13→16/22；脸 L* 68.99→78.93 · C* 17.41→9.72 · a* 10.79→3.36。\n下沿取 77：75 太低，本就够亮的脸被再抬（1665 77.9→86.0 越过他带 P75 82.5，且 1627 丢脸读数）；上沿 84 作逆光上限。\n回退 = 这两格删掉或改回｜报告 滨田_1017/报告.md。\n【终点态1】amount 0.80（0.55/0.80/1.00 三点峰在中间；0.55 压过脸C*下沿、1.00 挤掉脸b*）· y_filter 归零（没救回蓝/橙且与 m 打架）· m +6→+4CC（+6 使 NA a* 五档全↓过头）｜起点 13/22（render/base70）｜依据与逐条账见 ds/photo/滨田_1017/对账_轨迹.md",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -94,7 +94,7 @@
   },
   "couplers": {
     "active": true,
-    "amount": 0.55,
+    "amount": 0.8,
     "inhibition_samelayer": 1.0,
     "inhibition_interlayer": 1.0,
     "gamma_samelayer_rgb": [
@@ -145,8 +145,8 @@
     "print_exposure": 0.694,
     "output_lightness_compression": "off",
     "print_exposure_compensation": true,
-    "print_y_filter_shift": 3.0,
-    "print_m_filter_shift": 6.0,
+    "print_y_filter_shift": 0.0,
+    "print_m_filter_shift": 4.0,
     "scan_lens_blur": 0.0,
     "scan_white_correction": true,
     "scan_black_correction": true,
@@ -185,7 +185,10 @@
     "diffusion_filter_bloom_size": 1.0,
     "film_stock": "kodak_portra_400",
     "print_paper": "kodak_portra_endura",
-    "person_pe_band": [77.0, 84.0],
+    "person_pe_band": [
+      77.0,
+      84.0
+    ],
     "person_pe_target_l": 80.5
   },
   "display": {
