@@ -458,6 +458,26 @@ def _apply(p, d, cfg, name=None):
     p.debug.deactivate_spatial_effects = False
     p.debug.deactivate_stochastic_effects = False
 
+    # ---- 「以人为本」的动态印相曝光（**可选键**：缺省 ⇒ 一个字段都不碰）----
+    #   机制：这 6 根**不是引擎字段**（两遍印相是 svFilm 自己的事），所以不灌进任何 dataclass，
+    #   而是挂成 `params.settings.person_pe` 这个运行期 dict（`SettingsParams` 无 `__slots__`），
+    #   由 `render_person_pe` 读。落点必须**按预设**给：`config.PERSON_PE_*` 是**全局**的
+    #   （别的调用方还在读它）⇒ 给一条风格改落点 = 连带改掉所有风格的落点。
+    #   ★ 只在键存在时才建这个 dict ⇒ 缺省 = 属性不存在 = `render_person_pe` 逐位回到 `cfg.*`。
+    #   ★ 在这里定类型（float/bool/二元组）：JSON 是弱类型的，读的那头不该再猜一遍。
+    _ppe = {}
+    for _k, _cast in (('person_pe_dynamic', bool), ('person_pe_target_l', float),
+                      ('person_pe_slope', float), ('person_pe_max_dp', float),
+                      ('person_pe_back_gain', float)):
+        if _k in si:
+            _ppe[_k] = _cast(si[_k])
+    if 'person_pe_band' in si:
+        # `false` = **关掉合理窗**（与 `render_person_pe(band=False)` 同一语义），其余按二元组收
+        _b = si['person_pe_band']
+        _ppe['person_pe_band'] = False if _b is False else tuple(float(v) for v in _b)
+    if _ppe:
+        p.settings.person_pe = _ppe
+
 
 _PARAMS_SIG = [None]          # 上次建缓存用的 config 指纹（变了就整体作废）
 _PARAMS_FSIG = {}             # 预设名 -> 该预设文件的指纹（mtime_ns, size）
@@ -705,20 +725,28 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
     专利 CN109918993B「使人脸区域亮度值趋于一个曝光目标值」；CN112584089B「人脸亮度误差阈值」。
     ★ 它是**单张一次求解**（没有跨帧反馈）⇒ 不存在"读统计量反馈全局参数"那种振荡。
 
-    @param target_L {float|None} 目标 L*（None = `cfg.PERSON_PE_TARGET_L`），口径 = 测光掩膜
+    @param target_L {float|None} 目标 L*（None = 该预设的可选键 `person_pe_target_l`，
+        再缺省 = `cfg.PERSON_PE_TARGET_L`），口径 = 测光掩膜
     @param band {tuple|None|False} 合理窗；`False` = **关掉窗、逐图拉到 target**；
-        `None` = 用 `cfg.PERSON_PE_BAND`；`(lo, hi)` = 用给定窗
+        `None` = 该预设的可选键 `person_pe_band`，再缺省 = `cfg.PERSON_PE_BAND`；`(lo, hi)` = 给定窗
     @param back {float|None} ★★★ **光位 → 力度**（0~1 = 逆光程度，取 `scene.light_evidence`
         的 `deg_back`）。脸管"差多少"，**光位只管"能使多大劲"**：
         · **只有脸真的暗（`L < 窗下沿`）才动手，且只提不压**（`print_exposure` 是全局的）
         · 逆光 ⇒ 提亮目标上移到窗的**亮端**、单张上限放大（背景反正要曝，脸不能暗）
         · 顺光（`back≈0`）⇒ **逐位回到旧行为**（目标 = 下沿、上限 = `MAX_DP`）
+    ★★ 六个旋钮（目标 / 带 / 斜率 / 上限 / 逆光增益 / 总开关）都有**两条来源**，优先级 =
+        **形参 > 本预设的可选键（`_apply` 收的 `simulation.person_pe_*`）> `cfg.PERSON_PE_*`**。
+        预设那层是给"**每条风格自己的落点**"用的（不同大师的脸本来就落在不同的 L*）；
+        `cfg` 那层是全局缺省，**别在这里改**（其它调用方还在读它）。
     @returns {ndarray} 显示域成片（与 `render()` 同契约）
     """
     global _LAST_PERSON_PE
     _LAST_PERSON_PE = None                                 # ★ 先清账（没走这条路 = None）
     out = render(lin, name, cfg, print_profile=print_profile, overrides=overrides)
-    if not bool(getattr(cfg, 'PERSON_PE_DYNAMIC', False)):
+    # ★★ 本预设给的那一份（`_apply` 收的**可选键**）：缺省 ⇒ 空 dict ⇒ 逐位回落 `cfg.*`。
+    #    ⚠ 挂在 `params.settings.person_pe` 上，不是 dataclass 字段（见 `_apply` 那段）。
+    _ppe = getattr(getattr(_params_for(name, cfg), 'settings', None), 'person_pe', None) or {}
+    if not bool(_ppe.get('person_pe_dynamic', getattr(cfg, 'PERSON_PE_DYNAMIC', False))):
         return out
     from . import color as _col, exposure as _EX
     _lin = np.clip(np.asarray(lin, np.float64), 0.0, None)
@@ -743,12 +771,16 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         #   —— 用户令「**脸不能暗 暗就不好看**」+「**逆光时 背景肯定会有些曝 人也得多提亮**」。
         #   ⚠ 顺光 `back≈0` ⇒ `_up == 下沿` ⇒ 窗内的脸 **一个像素不动**（老行为逐位保留）。
         _bk = 0.0 if back is None else max(0.0, min(1.0, float(back)))
-        _tgt = float(target_L if target_L is not None
-                     else getattr(cfg, 'PERSON_PE_TARGET_L', 66.96))
-        if band is False:
-            _band = None
+        _tgt = float(target_L if target_L is not None else
+                     _ppe.get('person_pe_target_l', getattr(cfg, 'PERSON_PE_TARGET_L', 66.96)))
+        if band is not None:                               # 形参最强（`False` = 关窗，见下）
+            _band = band
+        elif 'person_pe_band' in _ppe:                     # ★ 预设给的（缺省时**不在这个 dict 里**）
+            _band = _ppe['person_pe_band']
         else:
-            _band = band if band is not None else getattr(cfg, 'PERSON_PE_BAND', (53.5, 76.0))
+            _band = getattr(cfg, 'PERSON_PE_BAND', (53.5, 76.0))
+        if _band is False:
+            _band = None                                   # 「关掉窗」= 逐图直接拉到 `_tgt`
         if _band is not None:
             _lo, _hi = float(_band[0]), float(_band[1])
             # ★★★ **光位 → 目标**（`_bk` = 逆光程度）：顺光 ⇒ 只保下限（脸别再暗下去）；
@@ -766,10 +798,13 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         _d = _tgt - _L
         #   ★ 符号：`print_exposure ↑ ⇒ 印得暗 ⇒ 脸 L* ↓`，实测 `d(脸L*)/d(pe) = −79`
         #   （1665：pe 0.620→0.579 实测脸 +3.19 L*）⇒ 要 ΔL*，就得 `Δpe = −ΔL*/79`。
-        _sl = abs(float(getattr(cfg, 'PERSON_PE_SLOPE', 79.0) or 79.0))
-        _mx = abs(float(getattr(cfg, 'PERSON_PE_MAX_DP', 0.20) or 0.0))
+        _sl = abs(float(_ppe.get('person_pe_slope',
+                                 getattr(cfg, 'PERSON_PE_SLOPE', 79.0)) or 79.0))
+        _mx = abs(float(_ppe.get('person_pe_max_dp',
+                                 getattr(cfg, 'PERSON_PE_MAX_DP', 0.20)) or 0.0))
         # ★ 逆光敢使劲：单张上限随逆光程度放大
-        _mx *= 1.0 + float(getattr(cfg, 'PERSON_PE_BACK_GAIN', 1.0) or 0.0) * _bk
+        _mx *= 1.0 + float(_ppe.get('person_pe_back_gain',
+                                    getattr(cfg, 'PERSON_PE_BACK_GAIN', 1.0)) or 0.0) * _bk
         _dpe = max(-_mx, min(_mx, -_d / _sl))
         if abs(_dpe) < 1e-4:
             _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), target=round(_tgt, 2),
