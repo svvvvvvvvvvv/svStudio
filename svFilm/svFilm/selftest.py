@@ -553,7 +553,7 @@ def t_r1_neutral_end_1013():
 
 def _main():
     groups = [
-        ('胶片风格：只有一条预设（鹿井预设）', t_presets),
+        ('胶片风格：预设集 = 已知清单', t_presets),
         ('胶片风格：改一根旋钮真的改画面（`overrides` 接线）', t_override_bites),
         ('直方图（LR 画法：亮度 + RGB 叠加 + 5 个区）', t_hist),
         ('靶按预设分组', t_targets),
@@ -591,12 +591,18 @@ def _main():
     return 0
 
 
-# ---- 1. 胶片风格（只有一条：鹿井预设）----
+# ---- 1. 胶片风格（已知的预设）----
+
+# ★ 锁的是"**不许出现计划外的预设**"（静默多出来的第 N 条 = 有人手滑落了一份），
+#   不是"只能有一条"。加新预设 = **有意的动作** ⇒ 必须同时把它写进这个清单。
+_PRESETS = (_PRESET, '滨田预设')
+
 
 def t_presets():
-    """唯一那条预设的接线 —— 钉的都是"静默失效"那一类：字段名写错 / 被卷标签冲掉 / 假旋钮。"""
+    """已知预设的接线 —— 钉的都是"静默失效"那一类：字段名写错 / 被卷标签冲掉 / 假旋钮。"""
     ns = presets.names()
-    check('预设目录 = 只有一条「鹿井预设」', ns == [_PRESET], '、'.join(ns) or '（空）',
+    check('预设目录 = 已知清单（%s）' % '、'.join(_PRESETS), sorted(ns) == sorted(_PRESETS),
+          '、'.join(ns) or '（空）',
           '10-15 从零重立：旧 10 条已删（分支 feature/kashii-create；原样留在 data/_archive/pre_clean_slate/）')
     check('它的 JSON 真在磁盘上', presets.has(_PRESET))
 
