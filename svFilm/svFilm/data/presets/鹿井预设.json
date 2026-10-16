@@ -150,10 +150,7 @@
     "scan_lens_blur": 0.0,
     "scan_white_correction": true,
     "scan_black_correction": true,
-    "scan_unsharp_mask": [
-      0.7,
-      0.7
-    ],
+    "scan_unsharp_mask": [0.4, 0.4],
     "scan_black_level": 0.01,
     "scan_white_level": 0.98,
     "output_color_space": "sRGB",
