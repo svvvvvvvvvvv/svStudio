@@ -1,5 +1,5 @@
 {
-  "_note_self": "【曝光落点 10-17】person_pe_band [77,84] + target_l 80.5（取「带」，不关窗）。\n依据：11 张同口径实测（render/e80，带 [75,84]）落带 13→16/22；脸 L* 68.99→78.93 · C* 17.41→9.72 · a* 10.79→3.36。\n下沿取 77：75 太低，本就够亮的脸被再抬（1665 77.9→86.0 越过他带 P75 82.5，且 1627 丢脸读数）；上沿 84 作逆光上限。\n回退 = 这两格删掉或改回｜报告 滨田_1017/报告.md。\n【终点态1】amount 0.80（0.55/0.80/1.00 三点峰在中间；0.55 压过脸C*下沿、1.00 挤掉脸b*）· y_filter 归零（没救回蓝/橙且与 m 打架）· m +6→+4CC（+6 使 NA a* 五档全↓过头）｜起点 13/22（render/base70）｜依据与逐条账见 ds/photo/滨田_1017/对账_轨迹.md",
+  "_note_self": "【终点态 10-17（第 3 步：色相/彩度定稿）】person_pe_band [77,84] + target_l 80.5 ｜ couplers.amount **0.80** ｜\nprint_m_filter_shift **+3CC** ｜ print_y_filter_shift **+3CC** ｜ output_lightness_compression **off**（保持）。\n依据（11 张同口径整批中位；靶 = 滨田 22 张逐图 [P25,P75]）：实测 render/m3y3 = **18/22**（起点 13/22，第一刀 15/22）。\n四点是选出来的：amount 0.55/0.80/1.00 ⇒ 0.80 时不压脸C*/脸a*、也不挤脸b*；\nm 6/4/3/2 ⇒ +3 最好（60_80 a* −2.06 进带、脸C* 10.09 与脸a* 6.52 坐带中、80_100 a* −0.36 仍进带）；\ny 3 vs 0 ⇒ 保 +3（脸C* 10.09 vs 9.76、脸b* 8.17 vs 7.12，且 40_60 b* 0.74 进带）。\n未达标 4 条（如实记，不当验收）：A4 中/亮 1.31↓（离下沿 0.08）· NA 0_20 a* −2.81↓ · 20_40 a* −3.50↓ · 蓝/橙比 3.40↓。\n蓝/橙的病根 = 橙带占比 8.0% vs 他 1.8%（非缺蓝），靠滤片救不回来 —— 见报告 §4.3。\n回退 = 逐格改回（amount 0.55 / m 6 / y 0）｜报告 滨田_1017/报告.md。",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -145,7 +145,7 @@
     "print_exposure": 0.694,
     "output_lightness_compression": "off",
     "print_exposure_compensation": true,
-    "print_y_filter_shift": 0.0,
+    "print_y_filter_shift": 3.0,
     "print_m_filter_shift": 3.0,
     "scan_lens_blur": 0.0,
     "scan_white_correction": true,
