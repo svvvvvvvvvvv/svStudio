@@ -143,6 +143,7 @@
     "auto_exposure_method": "subject",
     "print_illuminant": "TH-KG3",
     "print_exposure": 0.694,
+    "output_lightness_compression": "off",
     "print_exposure_compensation": true,
     "print_y_filter_shift": 0.0,
     "print_m_filter_shift": 0.0,
