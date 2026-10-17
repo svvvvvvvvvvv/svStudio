@@ -114,12 +114,28 @@ def person(disp):
     return np.clip(1.0 - masks(disp, (BG,))[BG], 0.0, 1.0)
 
 
-def skin_like(disp):
-    r"""**肤色近似掩膜**（YCbCr 经典规则，0..1 RGB）—— 只用来**收窄 FACE 掩膜**。
+# ★★ YCbCr 肤色规则的**亮度下限口径** = 「参考区（同一块 `FACE > 0.5`）的 Y 中位 × `SKIN_Y_FRAC`」。
+#   为什么是**相对**的：眼/眉/唇/牙/鼻孔的暗是**相对脸**暗（物理上就是脸的 30~50%），不是某个
+#   绝对电平；而绝对门槛（原来写死 `y >= 0.20`）会随"这张拍多亮"漂 ⇒ 低键片整块脸被判
+#   "非肤色"删掉（实测 DSCF1231 删 78.8%、DSCF1665 删 21.5%，被删像素 L* 只有 18.4 = 暗部皮肤）。
+#   ★ 比值量还对曝光 / 反射率免疫（整幅乘一个系数，掩膜逐位不变）—— 这条口径喂着测光锚，
+#     绝不能一碰到暗片就换一套。
+SKIN_Y_FRAC = 0.5           # 低于「参考区 Y 中位 × 0.5」⇒ 不当皮肤（眼/眉/唇/牙/发际）
+SKIN_Y_MIN = 0.004          # 绝对兜底：连"暗"都算不上（纯黑 / 噪声），不分肤色
+SKIN_Y_REF_MIN_PX = 64      # 参考区小于这么多像素 ⇒ 退回整幅中位（小样本中位会被噪声带跑）
+
+
+def skin_like(disp, ref=None, frac=None):
+    r"""**肤色近似掩膜**（YCbCr 经典规则 + **相对亮度下限**，0..1 RGB）—— 只用来**收窄 FACE 掩膜**。
 
     ★ 为什么需要：`FACE` 类含**眼/眉/唇/牙/鼻孔**；实测（2328）FACE 区 12538 px 里只有 1558 px
       是"皮肤似"像素，其余把**眼睛的高光**混进测光 ⇒ 脸读数失真（皮肤中位 80 vs 圆口径 71）。
-    ★ 本函数**不改任何值时/门限/斜率**，只把"脸上哪些像素算脸"从"整块 FACE"改成"FACE ∩ 肤色"。
+    ★ 本函数只回答"脸上哪些像素算肤色"，**不改**曝光 / 值时 / 门限 / 斜率。
+    ★★ **亮度下限是相对的**（见 `SKIN_Y_FRAC`）：`y >= frac × median(y[ref])`，`ref` = 同一块
+      `FACE > 0.5`。原来那句写死 `y >= 0.20` ⇒ 暗片整块脸被删（1231 删 78.8%）⇒ 现在按
+      "脸自己的中位"判，**曝光不变**（整幅乘系数，掩膜逐位不变）。
+    @param ref {ndarray|None} 参考区布尔掩膜（与 `disp` 同尺寸）；None / 太小 ⇒ 用整幅中位
+    @param frac {float|None} 相对下限；None ⇒ `SKIN_Y_FRAC`
     ⚠ 判据用 sRGB 域（`disp` 就是显示参考），与 `_lib/measure` 的 Lab 窗**精神一致、数值不等**
       —— 两侧各在自己的域里自洽（纪律：两套度量不可互驱）。
     """
@@ -130,7 +146,16 @@ def skin_like(disp):
     y = 0.299 * r + 0.587 * g + 0.114 * b
     cb = -0.168736 * r - 0.331264 * g + 0.5 * b + 0.5
     cr = 0.5 * r - 0.418688 * g - 0.081312 * b + 0.5
-    return (y >= 0.20) & (cb >= 0.33) & (cb <= 0.53) & (cr >= 0.50) & (cr <= 0.72)
+    m = (cb >= 0.33) & (cb <= 0.53) & (cr >= 0.50) & (cr <= 0.72)
+    # ---- 亮度下限：相对参考区（脸）的中位 ----
+    _rf = None
+    if ref is not None:
+        _rb = np.asarray(ref, bool)
+        if _rb.shape == y.shape and int(_rb.sum()) >= int(SKIN_Y_REF_MIN_PX):
+            _rf = y[_rb]
+    _ym = float(np.median(y if _rf is None else _rf))
+    _fr = float(SKIN_Y_FRAC if frac is None else frac)
+    return m & (y >= max(float(SKIN_Y_MIN), _fr * _ym))
 
 
 def person_face(disp):
@@ -142,7 +167,7 @@ def person_face(disp):
     m = masks(disp, (BG, FACE))
     f = np.asarray(m[FACE], np.float64)
     if bool(getattr(C, 'PERSON_FACE_SKIN', True)):
-        sk = skin_like(disp)
+        sk = skin_like(disp, ref=(f > 0.5))     # ★ 亮度下限按**这张脸自己**的中位（不是绝对数）
         if sk is not None and sk.shape == f.shape:
             f = f * sk.astype(f.dtype)
     return np.clip(1.0 - m[BG], 0.0, 1.0), f
@@ -216,7 +241,8 @@ def face_mask_in(disp, box, margin=None):
     #    不接这一句，兜底那一路会把眼/眉/唇/牙/鼻孔一起当脸测 ⇒ 与一级是**两套口径**，
     #    锚 `(w, b)` 也就不同源（一级已经去掉了这些高光/暗腔，兜底没去 ⇒ 系统性偏低）。
     #    ⚠ `cover` 所以是「**skin 覆盖率**」= skin∩FACE 占裁块，判据 `FACE_FALLBACK_*_COVER` 不变。
-    _sk = skin_like(crop) if bool(getattr(C, 'PERSON_FACE_SKIN', True)) else None
+    _sk = (skin_like(crop, ref=(_f > 0.5))
+           if bool(getattr(C, 'PERSON_FACE_SKIN', True)) else None)
     if _sk is not None and _sk.shape == _f.shape:
         _f = _f * _sk.astype(_f.dtype)
     b = _f > 0.5
