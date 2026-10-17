@@ -888,6 +888,15 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         _mx *= 1.0 + float(_ppe.get('person_pe_back_gain',
                                     getattr(cfg, 'PERSON_PE_BACK_GAIN', 1.0)) or 0.0) * _bk
         _dpe = max(-_mx, min(_mx, -_d / _sl))
+        # ★★★ **只提不压 —— 由代码保证，不靠调用方自觉**：`_dpe > 0` = "脸比目标亮 ⇒ 想压"，
+        #   而 `print_exposure` 是**整张一起动**的（压脸 = 压整幅，实测 DSCF1744 被压 −8.8 L*）。
+        #   ⚠ 上面那道"窗内够亮就早退"只兜得住 `band` 那条路；`band=False`（关窗直拉目标）
+        #     没有窗兜着 ⇒ 实测 `band=False + target_L=40` 把脸 69.5 → 56.74（方向正好反了）。
+        if _dpe > 0.0:
+            _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), target=round(_tgt, 2),
+                                   dpe_asked=round(_dpe, 4), acted=False,
+                                   why='positive_only')
+            return out
         if abs(_dpe) < 1e-4:
             _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), target=round(_tgt, 2),
                                    acted=False, why='delta_tiny')
