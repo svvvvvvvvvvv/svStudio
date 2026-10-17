@@ -380,6 +380,9 @@ PRESET_FILTER_M_TRIM = 0.0
 #   · 预闪同文件 `:31-32` ⇒ 只读 `neutral + preflash_shift`（**不看 `shift`**）。
 #   ⚠ **不许把预设的 `shift` 一起归零** —— 那是把预设的冷暖身份抹平。
 PRESET_PE_SHIFT_FROM_SPEK = True    # 预设自带 pe 是否再乘 `SPEK_PE_SHIFT`
+# 界面上「胶片风格」那排图标默认选哪一条 —— **默认值必须由引擎给**（前端不许写死卷名）。
+# 这一条不存在时 `/stocks` 会退到"第一条"，保证永远有且只有一条 `isDefault`。
+PRESET_DEFAULT = '鹿井预设'
 # 全部预设的落点平移系数。1.0 = 照用预设自带的印相曝光。
 # ⚠ **只许 ±0.3EV 微调**；粗定位归引擎的 `print_exposure`。
 SPEK_PE_SHIFT = 1.0

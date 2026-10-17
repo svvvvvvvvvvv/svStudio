@@ -197,10 +197,12 @@ await page.addInitScript(() => {
        一张图都渲染不出来，**自检却全绿**。改 main.js 的返回，必须同步改这里。 */
     engineStocks: async () => ({
       ok: true,
+      /* ★★ 照**生产端数据**抄（10-17）：引擎 `/stocks` 现在就是这两条，`label_of` 里的说明原样。
+         ⚠ 默认那条（`isDefault`）**故意排在第二个** —— 只有这样才区分得出"读了 isDefault"
+         和"腿短取 items[0]"（后者会选成滨田，而用户要的是鹿井那条）。 */
       items: [
-        { name: 'GOLD200暖橙', label: 'GOLD200 · 暖橙', desc: '暖调', engine: true },
-        { name: 'C200青蓝', label: 'C200 · 青蓝', desc: '青绿', engine: true },
-        { name: 'Ektar100浓彩', label: 'Ektar100 · 浓彩', desc: '浓', engine: true },
+        { name: '滨田预设', label: '滨田预设', desc: '照滨田正和的作品立靶（22 张）；6×7 画幅、略偏暖；10-17 立，整批判分 18/22', engine: true, isDefault: false },
+        { name: '鹿井预设', label: '鹿井预设', desc: '照鹿井屿渔的作品立靶（26 张，大师逐图 [P25,P75]）；10-15 从零重立', engine: true, isDefault: true },
       ],
     }),
     /* ★★ 基准列表**照生产端数据**抄：`main.js` 转发引擎 `/bases`，引擎现在每条带
@@ -395,14 +397,18 @@ if (await gradeTab.count()) {
   await page.waitForTimeout(600);
   const txt = await page.evaluate(() => document.body.innerText);
   check('切到调色台后出现「胶片风格」', txt.includes('胶片风格'));
-  check('出现「曝光风格」', txt.includes('曝光风格'));
   /* ★★ 回归：以前只查"标题在不在"—— 标题当然在，里面的列表是空的。
-     必须查**列表里真的有东西**（拿 mock 里那几条的文案当探针）。 */
-  check('★ 胶片风格列表真有内容（拿 mock 里那句描述当探针）',
-    txt.includes('暖调') || txt.includes('青绿'),
+     必须查**列表里真的有东西**（拿 mock 里那条**真实说明**当探针）。 */
+  check('★ 胶片风格列表真有内容（拿他说明里那句当探针）',
+    txt.includes('照鹿井屿渔') || txt.includes('照滨田正和'),
     '', '风格列表是空的 ⇒ 前端读的字段名跟 main.js 对不上');
-  check('★ 曝光风格列表真有内容', txt.includes('暗调') || txt.includes('高长调'),
-    '', '曝光风格列表是空的');
+  /* ★★ 默认卷**由引擎给**（`isDefault`）：mock 把默认那条排在第二个 ⇒ 只有真读 isDefault 才对。
+     取 items[0] 会落在滨田上 —— 那不是用户要的默认线。 */
+  const nOn = await page.locator('[data-stock-on="1"]').count();
+  const onName = nOn ? await page.locator('[data-stock-on="1"]').first().getAttribute('data-stock') : '';
+  check('★★ 默认卷是引擎标的 `isDefault` 那条（不是列表第一条）',
+    nOn === 1 && onName === '鹿井预设', `选中 ${nOn} 条：${onName}`,
+    '两条预设之后，按顺序取第一条会把默认卷悄悄换成滨田那条');
   /* ★ 调色台**不该再有任何滑杆**（曝光 + 影调全归引擎）。 */
   const nSlider3 = await page.locator('[role="slider"]').count();
   check('★★ 右栏一根滑杆都没有（滑杆全删了）', nSlider3 === 0, `${nSlider3} 根`,
@@ -902,9 +908,10 @@ console.log('\n[13] 右栏：两个按钮 / 按目录存配方');
   check('★ 曝光风格 chips 确实拿掉了（影调层删了 ⇒ 不该还留着这个选择器）',
     (await chips13.count()) === 0, `还剩 ${await chips13.count()} 个`);
 
-  /* ★ 胶片风格的选择器还在 */
+  /* ★ 胶片风格的选择器还在。⚠ 阈值别再写死条数（曾写 `>= 3`，卷表缩到 2 条后就恒红）；
+     这里只判"不为空"，条数以引擎 `/stocks` 为准。 */
   const nStock = await page.locator('[data-stock]').count();
-  check('★ 右栏有胶片风格可选（否则下面几条全是空转）', nStock >= 3, `${nStock} 支`);
+  check('★ 右栏有胶片风格可选（否则下面几条全是空转）', nStock >= 1, `${nStock} 支`);
   const stockOn13 = () => page.locator('[data-stock][data-stock-on="1"]').first()
     .getAttribute('data-stock').catch(() => null);
   const onCount13 = await page.locator('[data-stock][data-stock-on="1"]').count();

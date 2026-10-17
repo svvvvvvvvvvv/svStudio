@@ -8,6 +8,7 @@ import { useStore } from '../store/useStore';
  */
 const STOCK_COLORS: Record<string, { a: string; b: string; t: string }> = {
   鹿井预设: { a: '#c9a284', b: '#8a5f3f', t: '鹿井' },
+  滨田预设: { a: '#d8c48f', b: '#8a7440', t: '滨田' },
 };
 
 /* 胶卷图形的三条路径（SV 提供的 jiaopian.svg） */

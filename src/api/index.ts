@@ -153,6 +153,10 @@ export interface Stock {
   /** true = **走引擎物理链**（预设 `preset=` / 老真卷 `spek=`）；false/undefined = neutral。
    *  ⚠ 09-23 前叫 `spek` 且只看真卷 —— 卷表换成 9 条预设后会全判成中性卷。 */
   engine?: boolean;
+  /** ★★ 引擎标的那条默认卷（`config.PRESET_DEFAULT`）—— **有且只有一条为 true**。
+   *  前端取默认卷只许用它，不许写死卷名、也不许取 `items[0]`
+   *  （10-17 起有两条预设，按名字排序滨田在前 ⇒ 取第一条会悄悄换成另一条线）。 */
+  isDefault?: boolean;
 }
 
 /**

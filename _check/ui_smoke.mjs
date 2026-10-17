@@ -261,8 +261,16 @@ check('★ 滑杆 / 相纸 / 成色基准那三条路由确实删了（别留在
 check('★ 引擎里 **`tone.py` 整个删了**（不是关开关）',
   !exists('svFilm/svFilm/tone.py'), '',
   '文件还在 ⇒ 影调层随时会被接回链上（SV 要的是删掉）');
-check('★ 胶片风格是 9 条预设（不是几个名字抄几遍）',
-  /for n in presets\.names\(\)/.test(svcSrc) && /C200过曝/.test(presetsSrc));
+// ★ 10-17：卷表从「1 条（鹿井）」变成「2 条（鹿井 + 滨田）」，老检查还在找早已删掉的 `C200过曝`
+//   ⇒ 它变成了一条**恒红**的检查（红着就没人看了，等于没这条闸）。改成钉今天真正会坏的两件事：
+//     ① 卷表**现读**、service.py 里不许写死卷名（写死过就"删了这条预设变 500 / 列表永远一条"）；
+//     ② 默认卷**由引擎给**（`isDefault`）—— 两条之后按名字排序滨田在前，取 `items[0]` 会悄悄换线。
+check('★ 胶片风格从 `presets.names()` 现读，`service.py` 里不写死卷名',
+  /presets\.names\(\)/.test(svcSrc) && !/鹿井预设|滨田预设/.test(svcSrc), '',
+  '写死卷名 ⇒ 预设一改名/一删，要么 500、要么列表里永远只有那一条');
+check('★★ 默认卷由引擎给（`/stocks` 带 `isDefault`）',
+  /isDefault=\(n == _dflt\)/.test(svcSrc) && /getattr\(C, 'PRESET_DEFAULT'/.test(svcSrc), '',
+  '没有 isDefault ⇒ 前端只能写死卷名或取 items[0]，两条预设时会悄悄换掉默认卷');
 check('★ 右栏**没有滑杆了**（Slider 一次都不许出现）',
   !/Slider/.test(gpCode), '', '又出现滑杆 ⇒ 有人把老控件捡回来了');
 check('★★ 右栏只允许批量出片那两个下拉（相纸 / 成色基准不许回来）',

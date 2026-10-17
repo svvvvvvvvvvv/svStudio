@@ -605,6 +605,12 @@ def t_presets():
           '、'.join(ns) or '（空）',
           '10-15 从零重立：旧 10 条已删（分支 feature/kashii-create；原样留在 data/_archive/pre_clean_slate/）')
     check('它的 JSON 真在磁盘上', presets.has(_PRESET))
+    # ★ 10-17：卷表变两条之后，`_DESC` 少写一条 ⇒ 界面那行说明是**空的**（不报错、只是空着）。
+    #   同族坑：`_param_defs` 少写一条 ⇒ 滑杆静默消失。凡是"表驱动的显示"，都要钉"表覆盖全"。
+    _miss = [n for n in ns if not str(presets.label_of(n)[1] or '').strip()]
+    check('每条预设都有一句人话说明（`_DESC` 覆盖全）', not _miss,
+          '缺：%s' % ('、'.join(_miss) or '（无）'),
+          '漏写说明 ⇒ 右栏那行字是空的，界面上看不出是"没写"还是"这条预设没内容"')
 
 # ★★ 关键字段必须**真的落到 params 上**（`GrainParams`/`HalationParams` 是普通 dataclass、
 #   没有 `__slots__` ⇒ 字段名写错**不报错**，只会静默多出一个没人读的属性）

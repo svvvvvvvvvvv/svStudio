@@ -172,7 +172,7 @@ export const useStore = create<AppState>((set, get) => ({
   engineMsg: '',
   /* ★ 09-29：**曝光风格随影调层一起删了**（引擎那边 `tone.py` 整段删掉、`/styles` 接口也没了）。
      调色台现在只有一个选择器：**胶片风格**。 */
-  grade: { stock: '鹿井预设' },
+  grade: { stock: '' },   // ★ 空 = 还没问引擎；进调色台拿到 `/stocks` 后按 `isDefault` 填（不写死卷名）
   renderBusy: false,
   renderTick: 0,
 
@@ -458,7 +458,15 @@ export const useStore = create<AppState>((set, get) => ({
       }
       // ★ main.js 给的键是 items（不是 stocks）—— 09-15 名字对不上过一次，列表会永远是空的。
       const s = await API.engineStocks();
-      set({ engineOk: true, engineMsg: '', stocks: s?.items || [] });
+      const items = s?.items || [];
+      // ★★ 默认卷**由引擎给**（`isDefault`）：前端一个卷名都不许写死，也**不许取 items[0]**
+      //    （10-17 起有两条预设，按名字排序「滨田」在前 ⇒ 取第一条会把默认卷悄悄换成另一条线）。
+      //    当前选中的那条如果还在表里就**保留**（别把用户选的卷冲掉）。
+      const dflt = items.find((x) => x.isDefault)?.name || items[0]?.name || '';
+      const cur = get().grade.stock;
+      const keep = items.some((x) => x.name === cur) ? cur : dflt;
+      set({ engineOk: true, engineMsg: '', stocks: items,
+            grade: { ...get().grade, stock: keep } });
     } catch {
       set({ engineOk: false, engineMsg: '引擎未启动' });
     }

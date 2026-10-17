@@ -277,9 +277,16 @@ class _H(BaseHTTPRequestHandler):
                                        stage_cache=(_STAGES[0].stats() if _STAGES[0] else None)))
             if u.path == '/stocks':
                 # ★ 从 `presets` 现读（写死名字会在风格删掉后 500）。
+                # ★★ 默认哪一条**由引擎给**（`config.PRESET_DEFAULT`）—— 前端不许写死卷名，
+                #    也不许按列表顺序取（两条之后排序会变，默认卷会悄悄换掉）。
+                _ns = presets.names()
+                _dflt = str(getattr(C, 'PRESET_DEFAULT', '') or '')
+                if _dflt not in _ns:
+                    _dflt = (_ns[0] if _ns else '')
                 return self._json([dict(name=n, label=presets.label_of(n)[0],
-                                        desc=presets.label_of(n)[1], engine=True)
-                                   for n in presets.names()])
+                                        desc=presets.label_of(n)[1], engine=True,
+                                        isDefault=(n == _dflt))
+                                   for n in _ns])
             if u.path in ('/', '/index.html') and _WEB[0]:
                 fp = os.path.join(_WEB[0], 'index.html')
                 if os.path.exists(fp):
