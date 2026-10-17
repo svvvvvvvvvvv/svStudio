@@ -114,12 +114,38 @@ def person(disp):
     return np.clip(1.0 - masks(disp, (BG,))[BG], 0.0, 1.0)
 
 
+def skin_like(disp):
+    r"""**肤色近似掩膜**（YCbCr 经典规则，0..1 RGB）—— 只用来**收窄 FACE 掩膜**。
+
+    ★ 为什么需要：`FACE` 类含**眼/眉/唇/牙/鼻孔**；实测（2328）FACE 区 12538 px 里只有 1558 px
+      是"皮肤似"像素，其余把**眼睛的高光**混进测光 ⇒ 脸读数失真（皮肤中位 80 vs 圆口径 71）。
+    ★ 本函数**不改任何值时/门限/斜率**，只把"脸上哪些像素算脸"从"整块 FACE"改成"FACE ∩ 肤色"。
+    ⚠ 判据用 sRGB 域（`disp` 就是显示参考），与 `_lib/measure` 的 Lab 窗**精神一致、数值不等**
+      —— 两侧各在自己的域里自洽（纪律：两套度量不可互驱）。
+    """
+    d = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
+    if d.ndim != 3 or d.shape[2] < 3:
+        return None
+    r, g, b = d[..., 0], d[..., 1], d[..., 2]
+    y = 0.299 * r + 0.587 * g + 0.114 * b
+    cb = -0.168736 * r - 0.331264 * g + 0.5 * b + 0.5
+    cr = 0.5 * r - 0.418688 * g - 0.081312 * b + 0.5
+    return (y >= 0.20) & (cb >= 0.33) & (cb <= 0.53) & (cr >= 0.50) & (cr <= 0.72)
+
+
 def person_face(disp):
     r"""**一次前向**同时给「人在哪」与「脸上的皮肤在哪」—— 边际成本 0。
 
-    ★ 光位判据的第三条线索 = **脸上的受光**（见 `scene.light_evidence`）。"""
+    ★ 光位判据的第三条线索 = **脸上的受光**（见 `scene.light_evidence`）。
+    ★★ `getattr(C, 'PERSON_FACE_SKIN', True)`：把 FACE 掩膜**再与肤色近似取交**
+       （去掉眼/眉/唇/牙/鼻孔；关掉即逐位回到旧行为）。"""
     m = masks(disp, (BG, FACE))
-    return np.clip(1.0 - m[BG], 0.0, 1.0), m[FACE]
+    f = np.asarray(m[FACE], np.float64)
+    if bool(getattr(C, 'PERSON_FACE_SKIN', True)):
+        sk = skin_like(disp)
+        if sk is not None and sk.shape == f.shape:
+            f = f * sk.astype(f.dtype)
+    return np.clip(1.0 - m[BG], 0.0, 1.0), f
 
 
 # ---------------------------------------------------------------------------
