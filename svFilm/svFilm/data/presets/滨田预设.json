@@ -1,5 +1,5 @@
 {
-  "_note_self": "值：film_format_mm 70（6×7 物理事实）｜ person_pe_band [77,84] + target_l 80.5（只提不压）｜ couplers.amount 0.80 ｜ print_m_filter_shift +3CC ｜ print_y_filter_shift +3CC ｜ 其余承「鹿井预设」。依据：靶 = 滨田 22 张逐图 [P25,P75]（同口径）；11 张整批判分 18/22（起点 13/22）。代价（未达标 4 条，如实记、不当验收）：A4 中/亮 1.31 贴下沿 0.08 ｜ NA 0_20 a* 与 20_40 a* 偏低 ｜ 蓝/橙 3.40 偏低（病根是橙带占比 8.0% vs 他 1.8%，非缺蓝，靠滤片救不回）。回退：逐格改回（amount 0.9 / m 0 / y 0 / 删 person_pe_*）。报告 = 滨田_1017\\报告.md。",
+  "_note_self": "值：film_format_mm 70（6×7）｜ person_pe_band [77,84] + target_l 80.5（只提不压）｜ couplers.amount 0.65 ｜ m +3CC ｜ y +1CC ｜ 其余承「鹿井预设」。依据：靶 = 滨田 22 张逐图 [P25,P75]（肤色口径）；11 张同批同尺 16/22（对照 amount.80/y+3 = 15、amount1.0/y+3 = 15、amount.65/y+3 = 15）。代价（未达标 6 条，不当验收）：A4 中/亮 1.31 ｜ NA 0_20 a* −3.15、20_40 a* −3.65（y 减小把暗端 a* 推更负）｜ NA 80_100 a* −0.35 贴亮端 ｜ 蓝/橙 1.65（与抬 b* 反着走，滤片救不回）｜ 脸−臂 dC −1.39。回退：amount 0.8 / y +3.0。报告 = 滨田_1017。",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -94,7 +94,7 @@
   },
   "couplers": {
     "active": true,
-    "amount": 0.8,
+    "amount": 0.65,
     "inhibition_samelayer": 1.0,
     "inhibition_interlayer": 1.0,
     "gamma_samelayer_rgb": [
@@ -145,7 +145,7 @@
     "print_exposure": 0.694,
     "output_lightness_compression": "off",
     "print_exposure_compensation": true,
-    "print_y_filter_shift": 3.0,
+    "print_y_filter_shift": 1.0,
     "print_m_filter_shift": 3.0,
     "scan_lens_blur": 0.0,
     "scan_white_correction": true,
