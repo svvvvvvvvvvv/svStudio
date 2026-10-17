@@ -211,7 +211,15 @@ def face_mask_in(disp, box, margin=None):
     if x1 - x0 < 8 or y1 - y0 < 8:
         return None, 0.0, 0
     crop = d[y0:y1, x0:x1]
-    b = np.asarray(masks(crop, (FACE,))[FACE], np.float32) > 0.5
+    _f = np.asarray(masks(crop, (FACE,))[FACE], np.float32)
+    # ★★ **与一级同一句口径**：`FACE ∩ 肤色近似`（`person_face` 收的就是这一交）——
+    #    不接这一句，兜底那一路会把眼/眉/唇/牙/鼻孔一起当脸测 ⇒ 与一级是**两套口径**，
+    #    锚 `(w, b)` 也就不同源（一级已经去掉了这些高光/暗腔，兜底没去 ⇒ 系统性偏低）。
+    #    ⚠ `cover` 所以是「**skin 覆盖率**」= skin∩FACE 占裁块，判据 `FACE_FALLBACK_*_COVER` 不变。
+    _sk = skin_like(crop) if bool(getattr(C, 'PERSON_FACE_SKIN', True)) else None
+    if _sk is not None and _sk.shape == _f.shape:
+        _f = _f * _sk.astype(_f.dtype)
+    b = _f > 0.5
     cover = float(b.mean())
     out = np.zeros((H, W), np.float32)
     out[y0:y1, x0:x1] = b.astype(np.float32)
