@@ -1,5 +1,5 @@
 {
-  "_note_self": "★★★ 从零重立（分支 feature/kashii-create）。值 = spektrafilm schema 默认，生成器 _lib/mkpreset.py。\n「选」：film_stock = kodak_portra_400 ｜ print_paper = kodak_portra_endura。\n★ 10-17 拍板：**保持这一对**。同口径 A/B 实测过「换成他实拍的 全能400 + 富士水晶」⇒ 22 条落带 17→20，\n  但**用户目检不采**（目标性由用户定）⇒ 记录在此，勿再翻案。\n「大方向」（不在本文件里）：入口白平衡 config.PUBLIC_WB_TEMPERATURE/TINT = 4600/0.97 ｜ 动态印相曝光 PERSON_PE_DYNAMIC（目标脸 L* 66.96 · 带 (61.88,76.0) · 力度由光位 deg_back 给）。\n「定」：print_exposure = 0.694 · couplers.amount = 1.15 · 印相端逐通道 γ = 红 1.15 / 绿 1.10 / 蓝 1.12 · camera_diffusion_filter = black_pro_mist 0.25（相机端 1/4 黑柔）。\n「未写 = 吃引擎默认」：output_lightness_compression（默认 0.7/1.0/2.2；本文件无此键）· output_gamut_knee（默认 0/1/6）· halation_strength 1.5/0.5/0（**手写的值**，非引擎按卷表 —— 那条路被 PRESET_APPLY_STOCK_SPECIFICS=False 关死）。\n接线：scan_white/black_correction = True。靶 = 鹿井 26 张逐图 [P25,P75]。",
+  "_note_self": "★★★ 从零重立（分支 feature/kashii-create）。值 = spektrafilm schema 默认，生成器 _lib/mkpreset.py。\n「选」：film_stock = kodak_portra_400 ｜ print_paper = kodak_portra_endura。\n★ 10-17 拍板：**保持这一对**。同口径 A/B 实测过「换成他实拍的 全能400 + 富士水晶」⇒ 22 条落带 17→20，\n  但**用户目检不采**（目标性由用户定）⇒ 记录在此，勿再翻案。\n「大方向」（不在本文件里）：入口白平衡 config.PUBLIC_WB_TEMPERATURE/TINT = 4600/0.97 ｜ 动态印相曝光 PERSON_PE_DYNAMIC（目标脸 L* 66.96 · 带 (61.88,76.0) · 力度由光位 deg_back 给）。\n「定」：print_exposure = 0.694 · couplers.amount = 1.15 · 印相端逐通道 γ = 红 1.15 / 绿 1.10 / 蓝 1.12 · camera_diffusion_filter = black_pro_mist 0.25（相机端 1/4 黑柔）。\n「未写 = 吃引擎默认」：output_lightness_compression（默认 0.7/1.0/2.2；本文件无此键）· output_gamut_knee（默认 0/1/6）· halation_strength 1.5/0.5/0（**手写的值**，非引擎按卷表 —— 那条路被 PRESET_APPLY_STOCK_SPECIFICS=False 关死）。\n接线：scan_white/black_correction = True。靶 = 鹿井 26 张逐图 [P25,P75]。\n【抬脸 10-17】person_pe_band (61.88,76.0) → (67.0,78.0)：顺光片目标 = 下沿，原 61.88 低于鹿井脸带 P25(65.13) ⇒ 用户目检「脸有点偏暗」⇒ 下沿抬到 67.0、上沿 78.0。只改本预设可选键，不动 config；报告 滨田_1017/对账_轨迹.md",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -150,7 +150,10 @@
     "scan_lens_blur": 0.0,
     "scan_white_correction": true,
     "scan_black_correction": true,
-    "scan_unsharp_mask": [0.4, 0.4],
+    "scan_unsharp_mask": [
+      0.4,
+      0.4
+    ],
     "scan_black_level": 0.01,
     "scan_white_level": 0.98,
     "output_color_space": "sRGB",
@@ -181,7 +184,11 @@
     "diffusion_filter_bloom_intensity": 1.0,
     "diffusion_filter_bloom_size": 1.0,
     "film_stock": "kodak_portra_400",
-    "print_paper": "kodak_portra_endura"
+    "print_paper": "kodak_portra_endura",
+    "person_pe_band": [
+      67.0,
+      78.0
+    ]
   },
   "display": {
     "preview_max_size": 640
