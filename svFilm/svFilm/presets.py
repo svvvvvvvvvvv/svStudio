@@ -711,6 +711,23 @@ def _person_metering(lin, overrides, cfg):
         return overrides, None
 
 
+# ★★★ `print_exposure` 的**两个写法**（运行时字段路径 / 预设 JSON 里的段名）—— 都是"印相曝光"。
+#   `render_person_pe` **独占**这个字段：`_render_locked` 是"先设 `print_exposure`、后应用 overrides"
+#   ⇒ overrides 里再写一次就把第二遍印相**顶掉**，而 `_LAST_PERSON_PE` 照旧报 `acted=True`
+#   （静默无效 + 报告说谎）⇒ 检出即抛，**不许默默忽略**。
+_PE_OVERRIDE_KEYS = ('enlarger.print_exposure', 'simulation.print_exposure')
+
+
+def _pe_override_clash(overrides):
+    r"""`overrides` 里有没有"印相曝光"这个键（有 ⇒ 返回命中的键名，没有 ⇒ None）。"""
+    if not isinstance(overrides, dict):
+        return None
+    for _k in overrides:
+        if str(_k).strip() in _PE_OVERRIDE_KEYS:
+            return str(_k).strip()
+    return None
+
+
 def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
                      target_L=None, band=None, back=None):
     r"""★★ **按脸反解印相曝光**（两遍印相 = 暗房的"试条"）—— 以人为本的**落点**。
@@ -741,9 +758,19 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         预设那层是给"**每条风格自己的落点**"用的（不同大师的脸本来就落在不同的 L*）；
         `cfg` 那层是全局缺省，**别在这里改**（其它调用方还在读它）。
     @returns {ndarray} 显示域成片（与 `render()` 同契约）
+    @raises ValueError `overrides` 里带了 `enlarger.print_exposure` / `simulation.print_exposure`
+        —— 那会顶掉第二遍印相（静默无效），要指定落点请用形参 / 预设键
     """
     global _LAST_PERSON_PE
     _LAST_PERSON_PE = None                                 # ★ 先清账（没走这条路 = None）
+    _clash = _pe_override_clash(overrides)
+    if _clash is not None:
+        raise ValueError(
+            'overrides 里带了 %r ⇒ 会**禁用本函数的动态印相曝光**：第二遍印相算出的 '
+            '`print_exposure` 会被它顶掉，而 `_LAST_PERSON_PE` 仍报 acted=True（静默无效）。'
+            '要指定落点，请走**形参 / 预设键**（`target_L=` / `band=` / `back=`，或预设里的 '
+            '`person_pe_target_l` / `person_pe_band`）；要自己钉死某一遍的印相曝光，请改用 '
+            '`presets.render(..., print_exposure=…)`。' % _clash)
     out = render(lin, name, cfg, print_profile=print_profile, overrides=overrides)
     # ★★ 本预设给的那一份（`_apply` 收的**可选键**）：缺省 ⇒ 空 dict ⇒ 逐位回落 `cfg.*`。
     #    ⚠ 挂在 `params.settings.person_pe` 上，不是 dataclass 字段（见 `_apply` 那段）。
