@@ -728,6 +728,38 @@ def _pe_override_clash(overrides):
     return None
 
 
+def _validate_override_paths(p, name, overrides):
+    r"""**跑之前**把 `overrides` 的每个键路径在 params 上走一遍；非法 ⇒ 立刻 `KeyError`（带键名）。
+
+    ★ 为什么前置：`_render_locked` 里那句校验要**等到真正应用 overrides** 才执行 ⇒ 错键在
+      "第一遍印相"里才炸，错误从渲染机制深处冒出来，调用方看不出是**自己给错了键**。
+    ★ 只读：一个字段都不写（真正应用 + 逆序还原仍归 `_render_locked`）。"""
+    if not isinstance(overrides, dict):
+        return
+    for _dotted in overrides:
+        _parts = [s for s in str(_dotted).split('.') if s]
+        if not _parts:
+            raise KeyError('overrides 的字段路径是空的')
+        _holder = p
+        for _k in _parts[:-1]:
+            if not hasattr(_holder, _k):
+                raise KeyError('overrides 的字段路径走不通: %s（在 %r 处断了）'
+                               % (_dotted, _k))
+            _holder = getattr(_holder, _k)
+        if not hasattr(_holder, _parts[-1]):
+            raise KeyError('overrides 里这个字段不存在: %s（预设 %s）' % (_dotted, name))
+
+
+def _print_pe_error(stage, exc):
+    r"""`render_person_pe` 出错时的**一行 stderr**（`_LAST_PERSON_PE` 里的 `why` 只有程序读）；
+    ★ 失败**不许静默** —— 静默的话现场只看到"第二遍没生效"，查不到任何线索。"""
+    try:
+        print('[svFilm] presets.render_person_pe: **%s失败** ⇒ 本张「按脸反解印相曝光」未完成：'
+              '%s: %s' % (stage, type(exc).__name__, str(exc)[:200]), file=sys.stderr)
+    except Exception:                                                    # noqa: BLE001
+        pass
+
+
 def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
                      target_L=None, band=None, back=None):
     r"""★★ **按脸反解印相曝光**（两遍印相 = 暗房的"试条"）—— 以人为本的**落点**。
@@ -763,6 +795,8 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
     @returns {ndarray} 显示域成片（与 `render()` 同契约）
     @raises ValueError `overrides` 里带了 `enlarger.print_exposure` / `simulation.print_exposure`
         —— 那会顶掉第二遍印相（静默无效），要指定落点请用形参 / 预设键
+    @raises KeyError `overrides` 的键路径在 params 上走不通（**跑之前**就抛，报出键名与断点）
+    @raises Exception 第一遍 / 第二遍印相内部的异常 —— **记账 + stderr 一行 + 抛出**，不许吞
     """
     global _LAST_PERSON_PE
     _LAST_PERSON_PE = None                                 # ★ 先清账（没走这条路 = None）
@@ -774,16 +808,22 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
             '要指定落点，请走**形参 / 预设键**（`target_L=` / `band=` / `back=`，或预设里的 '
             '`person_pe_target_l` / `person_pe_band`）；要自己钉死某一遍的印相曝光，请改用 '
             '`presets.render(..., print_exposure=…)`。' % _clash)
-    out = render(lin, name, cfg, print_profile=print_profile, overrides=overrides)
-    # ★★ 本预设给的那一份（`_apply` 收的**可选键**）：缺省 ⇒ 空 dict ⇒ 逐位回落 `cfg.*`。
-    #    ⚠ 挂在 `params.settings.person_pe` 上，不是 dataclass 字段（见 `_apply` 那段）。
-    _ppe = getattr(getattr(_params_for(name, cfg), 'settings', None), 'person_pe', None) or {}
-    if not bool(_ppe.get('person_pe_dynamic', getattr(cfg, 'PERSON_PE_DYNAMIC', False))):
-        return out
+    # ★★ **跑之前**先把 overrides 的键路径验一遍（错键立刻抛并指出键名）
+    _p = _params_for(name, cfg)
+    _validate_override_paths(_p, name, overrides)
     from . import color as _col, exposure as _EX
     _lin = np.clip(np.asarray(lin, np.float64), 0.0, None)
-    _ov, _m = _person_metering(_lin, {}, cfg)
+    _stage = ['第一遍印相']            # 出错时打哪一句（下面**只**有一个 except，别重复喊）
     try:
+        # ★★★ **第一遍印相也在 try 里**：它一炸，`_LAST_PERSON_PE` 原来是一片空白
+        #   （连"为什么没走两遍"都记不下来），调用方只看到一个从渲染机制深处冒出来的异常。
+        out = render(lin, name, cfg, print_profile=print_profile, overrides=overrides)
+        # ★★ 本预设给的那一份（`_apply` 收的**可选键**）：缺省 ⇒ 空 dict ⇒ 逐位回落 `cfg.*`。
+        #    ⚠ 挂在 `params.settings.person_pe` 上，不是 dataclass 字段（见 `_apply` 那段）。
+        _ppe = getattr(getattr(_p, 'settings', None), 'person_pe', None) or {}
+        if not bool(_ppe.get('person_pe_dynamic', getattr(cfg, 'PERSON_PE_DYNAMIC', False))):
+            return out
+        _ov, _m = _person_metering(_lin, {}, cfg)
         if _m is None:
             _LAST_PERSON_PE = dict(back=None, why='no_face', acted=False)
             return out                                     # 脸量不到 ⇒ 不动（安全侧）
@@ -863,12 +903,16 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         import sys as _sys
         print('[svFilm] presets.render_person_pe: 脸 L* %.1f ⇒ 目标 %.1f ⇒ 印相曝光 %.4f → %.4f'
               '（第二遍印）' % (_L, _tgt, _pe0, _pe1), file=_sys.stderr)
+        _stage[0] = '第二遍印相'
         return render(_lin, name, cfg, print_exposure=_pe1, print_profile=print_profile,
                       overrides=overrides)
     except Exception as _e:                                              # noqa: BLE001
-        _LAST_PERSON_PE = dict(back=None, why='error: %s' % type(_e).__name__,
-                               acted=False)
-        return out
+        # ★★★ **异常不许吞**：原来这里 `return out`（静默回第一遍，只在 `_LAST` 里留一个
+        #   `why='error:…'`、stderr 一行都没有）⇒ 现场只看到"第二遍没生效"，查不到任何线索。
+        _LAST_PERSON_PE = dict(back=None, acted=False,
+                               why='error: %s: %s' % (type(_e).__name__, str(_e)[:160]))
+        _print_pe_error(_stage[0], _e)
+        raise
     finally:
         try:
             _EX.clear()
