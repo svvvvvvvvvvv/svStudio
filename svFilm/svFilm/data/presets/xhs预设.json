@@ -47,7 +47,8 @@
       0.99,
       0.97
     ],
-    "blur": 0.65
+    "blur": 0.65,
+    "blur_dye_clouds_um": 8.0
   },
   "preflashing": {
     "exposure": 0.0,
@@ -151,8 +152,8 @@
     "scan_white_correction": true,
     "scan_black_correction": true,
     "scan_unsharp_mask": [
-      0.4,
-      0.4
+      15.0,
+      -0.35
     ],
     "scan_black_level": 0.01,
     "scan_white_level": 0.98,
@@ -193,5 +194,10 @@
   "display": {
     "preview_max_size": 640
   },
-  "_note_dead_keys": "死键不写：`load_raw.*` 整段 ｜ `special.print_gamma_factor` ｜ `couplers.diffusion_tail_um` ｜ `display.{use_display_transform,gray_18_canvas,white_padding,output_interpolation}` ｜ `simulation.{auto_preview,saving_color_space,saving_cctf_encoding}` ｜ `grain.{particle_scale_layers,blur_dye_clouds_um,micro_structure}`（`sublayers_active=False` 时引擎不读）。"
+  "_note_dead_keys": "死键不写：`load_raw.*` 整段 ｜ `special.print_gamma_factor` ｜ `couplers.diffusion_tail_um` ｜ `display.{use_display_transform,gray_18_canvas,white_padding,output_interpolation}` ｜ `simulation.{auto_preview,saving_color_space,saving_cctf_encoding}` ｜ `grain.{particle_scale_layers,blur_dye_clouds_um,micro_structure}`（`sublayers_active=False` 时引擎不读）。",
+  "export": {
+    "long_side": 1080,
+    "jpeg_quality": 84,
+    "px_ref_long_side": 1080
+  }
 }
