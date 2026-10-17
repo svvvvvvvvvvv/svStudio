@@ -24,6 +24,12 @@ contextBridge.exposeInMainWorld('api', {
   getExif: (sessionPath, rel) =>
     ipcRenderer.invoke('get-exif', sessionPath, rel),
   saveRatings: (ratings) => ipcRenderer.invoke('save-ratings', ratings),
+  /** 星级写进主题根目录的 星级.json（不改动任何目录） */
+  writeRatingsJson: (opts) => ipcRenderer.invoke('write-ratings-json', opts),
+  /** 读回 星级.json（外部改完后回灌界面用） */
+  readRatingsJson: (dirPath) => ipcRenderer.invoke('read-ratings-json', dirPath),
+  /** 外部改了 星级.json ⇒ 主进程推这个事件，界面重载 */
+  onRatingsJsonChanged: (cb) => ipcRenderer.on('ratings-json-changed', (_e, o) => cb(o)),
   archivePhotos: (opts) => ipcRenderer.invoke('archive-photos', opts),
   confirmDialog: (opts) => ipcRenderer.invoke('confirm-dialog', opts),
   resetColorGrade: (dirPath) => ipcRenderer.invoke('reset-color-grade', dirPath),

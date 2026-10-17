@@ -422,7 +422,7 @@ export const useStore = create<AppState>((set, get) => ({
    *   漏一个就出现"底栏星标没更新"这类 bug。现在界面自动跟着 ratings 走。
    */
   rate: (v) => {
-    const { sessionName, photos, cur, ratings } = get();
+    const { sessionName, photos, cur, ratings, filter } = get();
     const p = photos[cur];
     if (!p) return;
     const k = ratingKey(sessionName, p.rel);
@@ -432,6 +432,28 @@ export const useStore = create<AppState>((set, get) => ({
     set({ ratings: next });
     // 落盘（异步，不阻塞 UI）
     API.saveRatings(next).catch(() => {});
+
+    /* **在星级筛选下打星，要自动落到下一张**。
+       起因：筛「★1」、把当前这张改成 ★2 ⇒ 它不符合筛选、从列表里消失，
+       而 `cur` 还指着原来的 photos 下标 ⇒ 画面跳到不相干的片，或者干脆空着。
+       做法：算出打星前后**筛选列表里的位置**；这张被筛掉了就把 `cur` 挪到
+       「同一位置上顶上来的那张」（= 原来的下一张）；到末尾就停在最后一张。
+       `filter === 'all'` 时图不会消失，什么都不做。 */
+    if (String(filter) === 'all') return;
+    const before = visiblePhotos(photos, sessionName, ratings, filter);
+    const after = visiblePhotos(photos, sessionName, next, filter);
+    if (after.includes(cur)) return;          // 这张还在列表里 ⇒ 不动
+    if (!after.length) return;                // 整个筛选空了 ⇒ 停在原处
+    /* ⚠ `cur` 本来就不在筛选列表里时（`pos === -1`）**不能落到 after[0]** ——
+       那会跳到列表第一张，看起来就是"选中的都是零星的"。
+       改成「往后找第一张 >= cur 的」，没有就往回找最后一张。 */
+    const pos = before.indexOf(cur);
+    if (pos >= 0) {
+      get().setCur(after[Math.min(pos, after.length - 1)]);
+    } else {
+      const fwd = after.find((x) => x > cur);
+      get().setCur(fwd !== undefined ? fwd : after[after.length - 1]);
+    }
   },
 
   setFilter: (f) => set({ filter: f }),
@@ -460,7 +482,7 @@ export const useStore = create<AppState>((set, get) => ({
       const s = await API.engineStocks();
       const items = s?.items || [];
       // ★★ 默认卷**由引擎给**（`isDefault`）：前端一个卷名都不许写死，也**不许取 items[0]**
-      //    （10-17 起有两条预设，按名字排序「滨田」在前 ⇒ 取第一条会把默认卷悄悄换成另一条线）。
+      //    （有两条预设，按名字排序「滨田」在前 ⇒ 取第一条会把默认卷悄悄换成另一条线）。
       //    当前选中的那条如果还在表里就**保留**（别把用户选的卷冲掉）。
       const dflt = items.find((x) => x.isDefault)?.name || items[0]?.name || '';
       const cur = get().grade.stock;

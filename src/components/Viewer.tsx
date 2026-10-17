@@ -59,10 +59,12 @@ export function Viewer() {
         background: 'var(--bg)',
       }}
     >
-      {/* ⚠ 选片台读的是**原始文件**（`rel` 那条路）—— 这是 SV 定的「选片台优先读 jpg 展示」，
-          出图源那件事只对**调色台**生效，别顺手改这里。 */}
+      {/* ⚠ 大图用 **真实文件名**（`p.dir + p.name`），不能用 `p.rel`：
+          `rel` 是**身份键**（去扩展名 + 大写，如 `DSCF2446`），拼成 `file:///…/DSCF2446`
+          是不存在的路径 ⇒ 大图 404（缩略图走 IPC 所以看不出来）。
+          新库布局（`JPG\` + `RAF\`）下 `p.dir` 就是 JPG 子目录。 */}
       <FitImage
-        src={'file:///' + (sessionPath + '\\' + p.rel).replace(/\\/g, '/')}
+        src={'file:///' + ((p.dir || sessionPath) + '\\' + p.name).replace(/\\/g, '/')}
         alt={p.name}
         pad={18}
       />

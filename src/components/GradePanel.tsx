@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore';
 
 /**
  * 每卷代表色。形状用 jiaopian.svg 的三条路径，灌各卷颜色。
- * ⚠ 卷表 10-15 起只剩一条「鹿井预设」（旧 10 条已删，见分支 feature/kashii-create）。
+ * ⚠ 卷表目前只有一条「鹿井预设」（旧的 10 条已删）。
  *   卷名改了要同步这里，否则图标退回中性灰（不会报错，只是看不出是哪一卷）。
  */
 const STOCK_COLORS: Record<string, { a: string; b: string; t: string }> = {

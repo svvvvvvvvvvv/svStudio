@@ -18,20 +18,17 @@ export function TopBar() {
   const setBusy = useStore((s) => s.setBusy);
   const showToast = useStore((s) => s.showToast);
 
-  /** 同步星级：把当前目录里每张的星级与物理目录对齐 */
+  /** 同步星级：**只把星级写进主题根的 `星级.json`，不动任何目录**
+   *  同步星级只写 JSON、不动目录；`archive-photos`（复制/删除桶文件）不再调用。 */
   const syncStars = async () => {
     if (!sessionName || !photos.length) return;
-    setBusy(true, '同步星级…');
+    setBusy(true, '写星级…');
     try {
-      const items = photos.map((p) => ({
-        rel: p.rel,
-        star: ratings[ratingKey(sessionName, p.rel)] || 0,
-      }));
-      const r = await API.archivePhotos({ dirPath: sessionPath, items });
-      const nFail = r?.failed?.length || 0;
-      showToast(`已同步 ${r?.done || 0} 张${nFail ? `，${nFail} 张失败` : ''}`);
+      const r = await API.writeRatingsJson({ dirPath: sessionPath, sessionName, ratings });
+      if (!r?.ok) { showToast('写星级失败：' + String(r?.error || '原因没返回')); return; }
+      showToast(`星级已写入 星级.json · ${r.count} 条`);
     } catch (e) {
-      showToast('同步失败：' + String(e));
+      showToast('写星级失败：' + String(e));
     } finally {
       setBusy(false);
     }

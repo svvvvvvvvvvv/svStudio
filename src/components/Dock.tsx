@@ -20,7 +20,13 @@ import { HoverPreview } from './HoverPreview';
 
 const THUMB_W = 260;
 
-function Thumb({ p, active }: { p: Photo; active: boolean }) {
+function Thumb({ p, gi }: { p: Photo; gi: number }) {
+  /* ★★ **选中框自己订阅 `cur`**，不靠父组件传 `active`。
+     原因：底栏是 react-virtuoso，它只在 `totalCount` 变化时重渲 item
+     ⇒ `cur` 变了 `itemContent` 不会重跑 ⇒ **左键点缩略图，大图换了但框不动**；
+     右键会走别的路径触发重渲，所以看起来"右键正常、左键不正常"。 */
+  const cur = useStore((s) => s.cur);
+  const active = gi === cur;
   const sessionPath = useStore((s) => s.sessionPath);
   const sessionName = useStore((s) => s.sessionName);
   const star = useStore((s) => s.ratings[ratingKey(sessionName, p.rel)] || 0);
@@ -44,7 +50,9 @@ function Thumb({ p, active }: { p: Photo; active: boolean }) {
         width: 118,
         padding: 3,
         borderRadius: 'var(--r-sm)',
-        border: active ? '2px solid var(--accent)' : '2px solid transparent',
+        /* 选中要**一眼看出来**：4px 边（未选中用 transparent 占位，布局不跳）+ 外发光。 */
+        border: active ? '4px solid var(--accent)' : '4px solid transparent',
+        boxShadow: active ? '0 0 10px 1px var(--accent)' : 'none',
         background: 'var(--bg-panel)',
         cursor: 'pointer',
       }}
@@ -103,7 +111,7 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
   const idxInList = list.indexOf(cur);
   useEffect(() => {
     if (idxInList >= 0 && virtuoso.current) {
-      virtuoso.current.scrollToIndex({ index: idxInList, align: 'center' });
+      virtuoso.current.scrollToIndex({ index: idxInList, align: 'center', behavior: 'auto' });
     }
   }, [idxInList, virtuoso]);
 
@@ -166,7 +174,7 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
               data-idx={gi}
               style={{ padding: '0 3px' }}
             >
-              <Thumb p={photos[gi]} active={gi === cur} />
+              <Thumb p={photos[gi]} gi={gi} />
             </div>
           );
         }}

@@ -34,6 +34,9 @@ declare global {
       ) => Promise<Thumb | null>;
       getExif: (sessionPath: string, rel: string) => Promise<ExifInfo | null>;
       saveRatings: (ratings: Record<string, number>) => Promise<boolean>;
+  writeRatingsJson: (opts: { dirPath: string; sessionName: string; ratings: Record<string, number> }) => Promise<{ ok: boolean; file?: string; count?: number; error?: string }>;
+  readRatingsJson: (dirPath: string) => Promise<{ ok: boolean; session?: string; updated?: string; ratings?: Record<string, number>; error?: string }>;
+  onRatingsJsonChanged: (cb: (d: { session: string; updated: string; ratings: Record<string, number> }) => void) => void;
       archivePhotos: (opts: ArchiveOpts) => Promise<ArchiveResult>;
       confirmDialog: (opts: ConfirmOpts) => Promise<boolean>;
       resetColorGrade: (dirPath: string) => Promise<any>;
@@ -155,7 +158,7 @@ export interface Stock {
   engine?: boolean;
   /** ★★ 引擎标的那条默认卷（`config.PRESET_DEFAULT`）—— **有且只有一条为 true**。
    *  前端取默认卷只许用它，不许写死卷名、也不许取 `items[0]`
-   *  （10-17 起有两条预设，按名字排序滨田在前 ⇒ 取第一条会悄悄换成另一条线）。 */
+   *  （有两条预设，按名字排序滨田在前 ⇒ 取第一条会悄悄换成另一条线）。 */
   isDefault?: boolean;
 }
 
@@ -303,6 +306,9 @@ export const API = {
 
   /* 星级与归位 */
   saveRatings: (ratings: Record<string, number>) => api().saveRatings(ratings),
+  writeRatingsJson: (opts) => api().writeRatingsJson(opts),
+  readRatingsJson: (dirPath) => api().readRatingsJson(dirPath),
+  onRatingsJsonChanged: (cb) => api().onRatingsJsonChanged(cb),
   archivePhotos: (opts: ArchiveOpts) => api().archivePhotos(opts),
   resetColorGrade: (dirPath: string) => api().resetColorGrade(dirPath),
 

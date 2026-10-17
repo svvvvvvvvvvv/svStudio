@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Box, Flex, Text } from '@radix-ui/themes';
 import type { VirtuosoHandle } from 'react-virtuoso';
-import { useStore } from '../store/useStore';
+import { useStore, visiblePhotos } from '../store/useStore';
 import { API } from '../api';
 import { TopBar } from './TopBar';
 import { HomeView } from './HomeView';
@@ -34,6 +34,8 @@ export function App() {
   const cur = useStore((s) => s.cur);
   const setCur = useStore((s) => s.setCur);
   const rate = useStore((s) => s.rate);
+  const ratings = useStore((s) => s.ratings);
+  const filter = useStore((s) => s.filter);
 
   const virtuoso = useRef<VirtuosoHandle>(null);
 
@@ -41,6 +43,28 @@ export function App() {
     loadSessions();
     loadEngine();
   }, [loadSessions, loadEngine]);
+
+  /* **外部改了 `星级.json` ⇒ 界面实时回灌**。
+     主进程 `fs.watch` 那个目录、认得出是不是自己写的（比 md5），是外部改才推过来。
+     这里做「按 session 整体替换」而不是 merge —— 因为 JSON 里删掉一条（改成 0）
+     也必须跟着消失，merge 是删不掉的。 */
+  useEffect(() => {
+    const off = (window as any).api?.onRatingsJsonChanged;
+    if (typeof off !== 'function') return;
+    off((d: { session: string; updated: string; ratings: Record<string, number> }) => {
+      const st = useStore.getState();
+      if (!st.sessionName || !d || d.session !== st.sessionName) return;
+      const pre = st.sessionName + '||';
+      const next: Record<string, number> = { ...st.ratings };
+      for (const k of Object.keys(next)) if (k.startsWith(pre)) delete next[k];
+      for (const [rel, v] of Object.entries(d.ratings || {})) {
+        const n = Number(v);
+        if (n > 0) next[pre + rel] = Math.max(1, Math.min(5, n));
+      }
+      useStore.setState({ ratings: next });
+      useStore.getState().showToast('星级.json 被外部修改，已重新载入');
+    });
+  }, []);
 
   /* 库外·纯 RAW 目录生成预览小图：进度是**主进程推的事件**，不是 invoke 的返回值 ——
      一次几百张要转几十秒，等返回值才刷新的话遮罩上一直是刚开头那行字（看着像卡死）。 */
@@ -74,19 +98,28 @@ export function App() {
     })();
   }, [mode, ensureEngine]);
 
-  /* 键盘：←/→ 翻页，1~5 打星，0 清星 */
+  /* 键盘：←/→ 翻页，1~5 打星，0 清星
+     ★★ ←/→ **必须在「当前筛选后的列表」里走**，不能在 `photos` 全量里 ±1。
+     原来筛了 ★1、按 → 会落到一张 ★0/★5 的片上 —— 那张不在底栏列表里
+     ⇒ 缩略图不显示选中、也不滚动，看起来"方向键把选中态弄丢了"。 */
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!photos.length) return;
-      if (e.key === 'ArrowLeft') setCur(Math.max(0, cur - 1));
-      else if (e.key === 'ArrowRight')
-        setCur(Math.min(photos.length - 1, cur + 1));
-      else if (e.key >= '1' && e.key <= '5') rate(Number(e.key));
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        const list = visiblePhotos(photos, sessionName, ratings, filter, mode === 'grade');
+        if (!list.length) return;
+        const i = list.indexOf(cur);
+        const at = i < 0 ? 0 : i;          // 当前不在列表里 ⇒ 从列表头算
+        const n = e.key === 'ArrowLeft' ? at - 1 : at + 1;
+        setCur(list[Math.max(0, Math.min(list.length - 1, n))]);
+        return;
+      }
+      if (e.key >= '1' && e.key <= '5') rate(Number(e.key));
       else if (e.key === '0') rate(0);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [photos.length, cur, setCur, rate]);
+  }, [photos, sessionName, ratings, filter, mode, cur, setCur, rate]);
 
   return (
     <Flex direction="column" style={{ height: '100%' }}>
