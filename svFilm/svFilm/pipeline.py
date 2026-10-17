@@ -167,9 +167,13 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
         # ★★ 出图现在**还依赖光位**（`deg_back` 定印相曝光的力度）⇒ 必须进键，
         #    否则改了 `light_evidence` 的判据、缓存里还是老图（"拧了没反应"）。
         _pe_key = ('pe', int(getattr(scene, 'LIGHT_VERSION', 0) or 0), round(_pe_back, 3))
+        # ★★ **预设文件本身的指纹**（`os.stat` 的 mtime_ns + size）：`person_pe_band` /
+        #    `person_pe_target_l` 这些可选键只影响 `presets._params_for` 与两遍印相，
+        #    **不经过** cfg 签名 / overrides / targets ⇒ 不带它 = 改了预设、缓存里还是老图。
+        _pf_key = ('pf', presets._file_sig(name))
         _ckey = ('film', _sample_uid(s), name, tuple(np.shape(s.lin)),
                  int(getattr(scene, 'VERSION', 0)),
-                 C.key_signature(cfg), _ov_key, _tg_key, _pe_key)
+                 C.key_signature(cfg), _ov_key, _tg_key, _pe_key, _pf_key)
         _entry = cache.get(_ckey)
 
     if _entry is not None:

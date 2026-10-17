@@ -52,8 +52,10 @@ VERSION = '3.0'
 # 段缓存键必须覆盖「任何改了就会换出图的东西」；手抄元组必然漏 ⇒ 由「**前缀表 + 显式补遗**」
 # 生成（`key_signature()`），它同时当 `presets._params_for` 的缓存键。
 # ⚠ **新增旋钮必须补前缀**，否则就是"改了没反应"。
+# ★★ `PERSON_` / `FACE_` 是 10-17 补的：`PERSON_PE_*` 定印相曝光落点、`FACE_*` 定"脸算不算数"
+#    ⇒ 两者都会改出图，却**一个都不在原前缀里**（缓存键看不出变化 ⇒ 改了还是老图）。
 CACHE_KEY_PREFIXES = ('SPEK_', 'PRESET_', 'PUBLIC_', 'SCANFIX_', 'CHROMA_', 'GRAIN_',
-                      'LENS_', 'HALATION_', 'EXPOSURE_')
+                      'LENS_', 'HALATION_', 'EXPOSURE_', 'PERSON_', 'FACE_')
 CACHE_KEY_EXTRA = ('MAX_SIDE', 'STOCK')
 
 
