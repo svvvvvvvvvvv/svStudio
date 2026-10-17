@@ -31,6 +31,9 @@ _POST_SCAN_ERROR: str | None = None
 #   它**不影响像素**，只是把"这张到底动没动、动了多少"暴露给调用方 / 自检（否则两遍印相一次都没动
 #   也看不出来）。形状：`dict(back, L0, target, pe0, pe1, acted, why)` 或 `None`（没走这条路）。
 _LAST_PERSON_PE: dict | None = None
+# ★★ **上一遍印相真正写进 params 的 `print_exposure`**（`_render_locked` 写，`render_person_pe` 读）：
+#   别处重算（`pe_of()·SPEK_PE_SHIFT`）看不见 overrides / 归一后的实际值 ⇒ 报告与画面会两张皮。
+_LAST_RENDER_PE: float | None = None
 
 # 白端门控警告的**进程内去重表**（见 `_check_white_gate`）：同一预设名只警告一次。
 # ⚠ **不许用 `_LOCK` 保护它** —— 本表用在 `_apply()` 里，而 `_params_for()` 是**持锁**调 `_apply()`
@@ -798,8 +801,9 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
     @raises KeyError `overrides` 的键路径在 params 上走不通（**跑之前**就抛，报出键名与断点）
     @raises Exception 第一遍 / 第二遍印相内部的异常 —— **记账 + stderr 一行 + 抛出**，不许吞
     """
-    global _LAST_PERSON_PE
+    global _LAST_PERSON_PE, _LAST_RENDER_PE
     _LAST_PERSON_PE = None                                 # ★ 先清账（没走这条路 = None）
+    _LAST_RENDER_PE = None                                 # ★ 同上（第一遍印过之后才有值）
     _clash = _pe_override_clash(overrides)
     if _clash is not None:
         raise ValueError(
@@ -901,10 +905,15 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
             _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), target=round(_tgt, 2),
                                    acted=False, why='delta_tiny')
             return out
-        _sh = 1.0
-        if bool(getattr(cfg, 'PRESET_PE_SHIFT_FROM_SPEK', True)):
-            _sh = float(getattr(cfg, 'SPEK_PE_SHIFT', 1.0) or 1.0)
-        _pe0 = pe_of(name) * _sh
+        # ★★ `_pe0` 取**第一遍真正用的那个 pe**（`_render_locked` 回传的 `_LAST_RENDER_PE`）：
+        #    在这里重算 `pe_of()·SPEK_PE_SHIFT` 看不见 overrides / 归一后的实际值 ⇒ 报告与画面两张皮。
+        _pe0 = _LAST_RENDER_PE
+        if _pe0 is None:                                   # 兜底（正常路径走不到：第一遍刚印过）
+            _sh = 1.0
+            if bool(getattr(cfg, 'PRESET_PE_SHIFT_FROM_SPEK', True)):
+                _sh = float(getattr(cfg, 'SPEK_PE_SHIFT', 1.0) or 1.0)
+            _pe0 = pe_of(name) * _sh
+        _pe0 = float(_pe0)
         _pe1 = _pe0 + _dpe
         _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), target=round(_tgt, 2),
                                pe0=round(_pe0, 4), pe1=round(_pe1, 4),
@@ -1035,6 +1044,7 @@ def _halation_kernel_shape(p, cfg, _ovs):
 
 
 def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
+    global _LAST_RENDER_PE
     _p0 = p.enlarger.print_exposure
     _pp0 = p.print
     _ovs = []                       # [(对象, 属性名, 原值)] —— 还原用
@@ -1088,6 +1098,10 @@ def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
         # ★★ halation 绿层核收窄，同样在 overrides 之后 —— 要读**最终**那份 σ。
         _halation_kernel_shape(p, cfg, _ovs)
 
+        # ★★ **记下这一遍真正写进 params 的印相曝光**（在 overrides 之后、离屏之前）：
+        #    形参 `print_exposure` 可能被 overrides 顶掉 ⇒ 只有 params 上这个是引擎实际读的
+        #    （`printing.py:54` 那句 `raw *= self._enlarger.print_exposure`）。
+        _LAST_RENDER_PE = float(p.enlarger.print_exposure)
         out = _simulate_once(p, np.clip(np.asarray(lin, np.float64), 0.0, None),
                              bool(getattr(cfg, 'PRESET_APPLY_STOCK_SPECIFICS', False)))
     finally:
