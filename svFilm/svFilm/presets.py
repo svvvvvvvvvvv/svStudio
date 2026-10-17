@@ -745,7 +745,10 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
     ★ 它是**单张一次求解**（没有跨帧反馈）⇒ 不存在"读统计量反馈全局参数"那种振荡。
 
     @param target_L {float|None} 目标 L*（None = 该预设的可选键 `person_pe_target_l`，
-        再缺省 = `cfg.PERSON_PE_TARGET_L`），口径 = 测光掩膜
+        再缺省 = `cfg.PERSON_PE_TARGET_L`），口径 = 测光掩膜。
+        ★★ **显式给的**（形参 / 预设键）= **把合理窗的下沿抬到它**（`lo = max(lo, target)`、
+        `hi = max(hi, lo)`）⇒ 顺光时目标就是它，逆光仍沿窗推到亮端。
+        **只有 `cfg` 的缺省值不算显式**（不碰窗 ⇒ 没显式键的预设逐位保持原行为）。
     @param band {tuple|None|False} 合理窗；`False` = **关掉窗、逐图拉到 target**；
         `None` = 该预设的可选键 `person_pe_band`，再缺省 = `cfg.PERSON_PE_BAND`；`(lo, hi)` = 给定窗
     @param back {float|None} ★★★ **光位 → 力度**（0~1 = 逆光程度，取 `scene.light_evidence`
@@ -800,8 +803,13 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         #   —— 用户令「**脸不能暗 暗就不好看**」+「**逆光时 背景肯定会有些曝 人也得多提亮**」。
         #   ⚠ 顺光 `back≈0` ⇒ `_up == 下沿` ⇒ 窗内的脸 **一个像素不动**（老行为逐位保留）。
         _bk = 0.0 if back is None else max(0.0, min(1.0, float(back)))
-        _tgt = float(target_L if target_L is not None else
-                     _ppe.get('person_pe_target_l', getattr(cfg, 'PERSON_PE_TARGET_L', 66.96)))
+        # ★★★ **显式目标 vs 缺省目标**（必须分清，否则 `target_L` 是死键）：
+        #   · **显式** = 形参 `target_L` 或本预设的可选键 `person_pe_target_l` ⇒ 语义 = **把窗口下沿抬到它**
+        #   · **缺省** = `cfg.PERSON_PE_TARGET_L` ⇒ 只当"没有窗时的落点"，**不参与**抬下沿
+        #     （否则每条风格都会被一个全局数顶掉自己带的窗 ⇒ 滨田的 band 立刻失效）。
+        _tgt_e = target_L if target_L is not None else _ppe.get('person_pe_target_l')
+        _tgt = float(_tgt_e if _tgt_e is not None
+                     else getattr(cfg, 'PERSON_PE_TARGET_L', 66.96))
         if band is not None:                               # 形参最强（`False` = 关窗，见下）
             _band = band
         elif 'person_pe_band' in _ppe:                     # ★ 预设给的（缺省时**不在这个 dict 里**）
@@ -812,6 +820,11 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
             _band = None                                   # 「关掉窗」= 逐图直接拉到 `_tgt`
         if _band is not None:
             _lo, _hi = float(_band[0]), float(_band[1])
+            # ★★ **显式目标 = 把窗口下沿抬到它**（上沿跟着抬，保证 `lo <= hi`）：
+            #    只抬下沿 ⇒ 顺光（`_bk≈0`）的目标就是它，逆光仍沿窗推到亮端 ⇒ 两种光位都不丢。
+            if _tgt_e is not None:
+                _lo = max(_lo, float(_tgt_e))
+                _hi = max(_hi, _lo)
             # ★★★ **光位 → 目标**（`_bk` = 逆光程度）：顺光 ⇒ 只保下限（脸别再暗下去）；
             #     逆光 ⇒ 目标推到**亮端**（用户令「**逆光时 背景肯定会有些曝 人也得多提亮**」）。
             _up = _lo + (_hi - _lo) * _bk
