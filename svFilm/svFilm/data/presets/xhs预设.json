@@ -1,5 +1,5 @@
 {
-  "_note_self": "值：film_stock kodak_gold_200（CP200 = ColorPlus 200 **没有 profile**：盘上 28 卷里无此卷；最近同门 = 柯达同门 ISO200 消费线 Gold 200，且它的 target_print 也是 endura；`fujifilm_c200` 是富士 C200，厂商都不对，不采）｜film_format_mm 36（器材 = Minolta Capios 75，135 卷，画幅长边 36mm）｜print_paper 沿用 kodak_portra_endura。其余承「鹿井预设」= **起步臂**，收敛过程见后续 commit。靶 = 不詹锅 55 张逐图 [P25,P75]（肤色口径，脸门 >=300px 通过 29/55）。报告 = xhs_1018。",
+  "_note_self": "值：film_format_mm 36 ｜ film_stock kodak_gold_200（CP200=ColorPlus 200 无 profile，取柯达同门同 ISO 消费线，target_print 同为 endura；fujifilm_c200 是富士，不采）｜ print_paper kodak_portra_endura ｜ person_pe_band [74.3,84] ｜ amount 1.15 ｜ m +2CC ｜ y 0 ｜ lc off。依据：靶 = 不詹锅 50 张逐图 [P25,P75]（肤色口径，水印压脸失 5 张）；11 张 15/22（起点 13/22）。代价：脸 C* 15.2（带 16.3+，偏淡）｜ 脸−臂 dC −9.1 ｜ NA 20_40 b* 2.07 ｜ NA 80_100 a* −0.55。回退：amount 0.90 + band (67,78)。报告 xhs_1018",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
