@@ -1,5 +1,5 @@
 {
-  "_note_self": "值：dev 基线（6cd00c8；10-18 重标）。film_format 36 ｜ film_stock kodak_gold_200（CP200 无 profile，取柯达同门同 ISO；target_print 同为 endura）｜ print_paper kodak_portra_endura（10-18 纸 A 案实测无净收益，不换）｜ person_pe_band [74.3,84] ｜ couplers.amount 1.20（Langmuir K=1 后扫档；1.00 偏离大、1.30 A5 过冲 +1.8）｜ m +2CC ｜ y 0 ｜ lc off ｜ Y2 光学档：scan_unsharp_mask (15, −0.35) · blur_dye_clouds_um 8µm ｜ 颗粒 rms_granularity (9.699, 8.958, 14.526)（48µm 孔径；blur 0.65 px，mult_usm 0）｜ export 1080 / jpeg84。\n靶 = xhs 50 张逐图 [P25,P75]（水印压脸弃 5 张）；自有靶带 12/22（升级前后同）。\n代价：脸 C* 12.8（带 16.3+, 偏淡）｜ 脸−臂 dC 4.18。报告 xhs_1018 · 引擎升级_1018。",
+  "_note_self": "值：dev 基线（6cd00c8；10-18 重标）。film_format 36 ｜ film_stock kodak_gold_200（CP200 无 profile，取柯达同门同 ISO；target_print 同为 endura）｜ print_paper kodak_portra_endura（10-18 纸 A 案实测无净收益，不换）｜ person_pe_band [74.3,84] ｜ couplers.amount 1.20（Langmuir K=1 后扫档；1.00 偏离大、1.30 A5 过冲 +1.8）｜ m +2CC ｜ y 0 ｜ lc off ｜ Y2 光学档：scan_unsharp_mask (15, −0.35) · blur_dye_clouds_um 8µm ｜ 颗粒 = dev 原生：卷表 rms (5.0, 5.0, 5.0) · blur 0.8 · mult_usm 0.7/1.5 · dye 8µm（xhs 光学选择）· uniformity 0.97 · scanner USM (15,-0.35) 保留｜ export 1080 / jpeg84。\n靶 = xhs 50 张逐图 [P25,P75]（水印压脸弃 5 张）；自有靶带 11/22（颗粒重标后；旧颗粒 12/22）。\n代价：脸 C* 11.8（带 16.3+, 偏淡）｜ 脸−臂 dC 4.18。报告 xhs_1018 · 引擎升级_1018。",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -22,9 +22,9 @@
   "grain": {
     "active": true,
     "rms_granularity": [
-      9.699349,
-      8.957917,
-      14.526405
+      5.0,
+      5.0,
+      5.0
     ],
     "particle_scale_sublayers": [
       1.0,
@@ -38,12 +38,12 @@
     ],
     "uniformity": [
       0.97,
-      0.99,
+      0.97,
       0.97
     ],
-    "blur": 0.65,
+    "blur": 0.8,
     "mult_usm_sigma": 0.7,
-    "mult_usm_amount": 0.0,
+    "mult_usm_amount": 1.5,
     "blur_dye_clouds_um": 8.0,
     "micro_sublayers": 1
   },

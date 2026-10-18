@@ -1,5 +1,5 @@
 {
-  "_note_self": "值：dev 基线（6cd00c8；10-18 重标）。film_format 70（6×7）｜ person_pe_band [77,84] + target_l 80.5（只提不压）｜ couplers.amount 0.65（Langmuir K=1 默认；10-18 扫档 0.55/0.65/0.75/0.85 中 0.65 与已验收最近）｜ m +3CC ｜ y +1CC ｜ 其余承鹿井预设（同卷/纸/化学/颗粒）。\n靶 = 滨田 22 张逐图 [P25,P75]；11 张同批同尺 21/22 带内、0 真越界（升级后复核）。\n未达标（不当验收）：A4 中/亮 1.31 ｜ NA 0_20 / 20_40 a* 偏负 ｜ 蓝/橙 1.65 ｜ 脸−臂 dC −1.39。报告 滨田_1017。",
+  "_note_self": "值：dev 基线（6cd00c8；10-18 重标）。film_format 70（6×7）｜ person_pe_band [77,84] + target_l 80.5（只提不压）｜ couplers.amount 0.65（Langmuir K=1 默认；10-18 扫档 0.55/0.65/0.75/0.85 中 0.65 与已验收最近）｜ m +3CC ｜ y +1CC ｜ 其余承鹿井预设（同卷/纸/化学/颗粒）。\n靶 = 滨田 22 张逐图 [P25,P75]；11 张同批同尺 20/22 带内、0 真越界（升级后复核）。\n未达标（不当验收）：A4 中/亮 1.31 ｜ NA 0_20 / 20_40 a* 偏负 ｜ 蓝/橙 1.65 ｜ 脸−臂 dC −1.39。报告 滨田_1017。\n颗粒 = dev 原生（同鹿井卷）：rms (4.5, 4.5, 4.5) · blur 0.8 · mult_usm 0.7/1.5 · dye 2µm · uniformity 0.97 · scanner USM 0",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -22,9 +22,9 @@
   "grain": {
     "active": true,
     "rms_granularity": [
-      10.954995,
-      10.037624,
-      16.866679
+      4.5,
+      4.5,
+      4.5
     ],
     "particle_scale_sublayers": [
       1.0,
@@ -38,13 +38,13 @@
     ],
     "uniformity": [
       0.97,
-      0.99,
+      0.97,
       0.97
     ],
-    "blur": 0.65,
+    "blur": 0.8,
     "mult_usm_sigma": 0.7,
-    "mult_usm_amount": 0.0,
-    "blur_dye_clouds_um": 1.0,
+    "mult_usm_amount": 1.5,
+    "blur_dye_clouds_um": 2.0,
     "micro_sublayers": 1
   },
   "preflashing": {
@@ -166,8 +166,8 @@
     "scan_white_correction": true,
     "scan_black_correction": true,
     "scan_unsharp_mask": [
-      0.4,
-      0.4
+      0.0,
+      0.0
     ],
     "scan_black_level": 0.01,
     "scan_white_level": 0.98,
