@@ -459,6 +459,9 @@ def _apply(p, d, cfg, name=None):
         # `false` = 关掉服装约束；其余按二元组收（服装（亮中性）L50 的 [下沿, 上沿]，只用上沿截断偏好）
         _w = si['person_pe_white_band']
         _ppe['person_pe_white_band'] = False if _w is False else tuple(float(v) for v in _w)
+    if 'person_pe_lc' in si:
+        # "off" | "auto"：只在脸已在带内时，用 lc 压白服（默认 off）
+        _ppe['person_pe_lc'] = str(si['person_pe_lc']).lower()
     if _ppe:
         p.settings.person_pe = _ppe
 
@@ -743,6 +746,112 @@ def _print_pe_error(stage, exc):
         pass
 
 
+def _lc_apply(d, t=0.7, limit=1.0, p=2.2):
+    r"""lc 的精确软膝（与 `gamut_compression.reinhard_knee` 同式）：
+    d ≤ t 恒等；d > t：`d' = t + s·y`，`s=limit-t`，`x=(d-t)/s`，`y=x/(1+x^p)^(1/p)`。
+    ⚠ 引擎的 `limit` 是**渐近线**，不是 ACES RGC 的输入上限（见 `lc理论地基.md` §0）。"""
+    d = np.asarray(d, dtype=float)
+    s = float(limit) - float(t)
+    if s <= 0.0:
+        return d.copy()
+    x = np.maximum((d - float(t)) / s, 0.0)
+    y = x / np.power(1.0 + np.power(x, float(p)), 1.0 / float(p))
+    return np.where(d > float(t), float(t) + s * y, d)
+
+
+def _solve_lc(white_ok, face_ok, target_ok, face_lo_ok=None, *,
+              t=0.7, p=2.2, limits=(1.0, 0.98, 0.96, 0.94), face_drop=0.013):
+    r"""在**实际白服像素**上解一档 lc（固定 t/p，只解 limit）。
+
+    @param white_ok {ndarray} 白服（CLOTH∩L*≥65∩C*≤15）像素的 OkLab L
+    @param face_ok  {ndarray} 脸（FACE∩skin）像素的 OkLab L
+    @param target_ok {float} 白服上沿换算到 OkLab：`(white_hi+16)/116`（近中性）
+    @param face_lo_ok {float|None} 脸下沿换算值；压后脸中位不得低于它
+    @param face_drop {float} 脸中位最多降多少 OkLab（0.013 ≈ 1.5 L*）
+    @returns {(tuple|None, dict)} `(t, limit, p)` 或 None；dict 带 white0/1、face0/1、span0/1、why
+    """
+    w = np.asarray(white_ok, dtype=float).ravel()
+    f = np.asarray(face_ok, dtype=float).ravel()
+    w = w[np.isfinite(w)]
+    f = f[np.isfinite(f)]
+    diag = dict(white0=None, white1=None, face0=None, face1=None,
+                span0=None, span1=None, why='no_pixels')
+    if w.size < 32 or f.size < 32:
+        return None, diag
+    w0, f0 = float(np.median(w)), float(np.median(f))
+    s0 = float(np.percentile(w, 90) - np.percentile(w, 10))
+    diag.update(white0=w0, face0=f0, span0=s0)
+    for lim in limits:
+        w1 = _lc_apply(w, t=t, limit=lim, p=p)
+        m1 = float(np.median(w1))
+        if m1 > float(target_ok):
+            continue
+        f1 = _lc_apply(f, t=t, limit=lim, p=p)
+        fm1 = float(np.median(f1))
+        drop = f0 - fm1
+        if drop > float(face_drop):
+            diag['why'] = 'face_drop'
+            continue
+        if face_lo_ok is not None and fm1 < float(face_lo_ok):
+            diag['why'] = 'face_below_lo'
+            continue
+        diag.update(white1=m1, face1=fm1,
+                    span1=float(np.percentile(w1, 90) - np.percentile(w1, 10)),
+                    why='applied')
+        return (float(t), float(lim), float(p)), diag
+    diag['why'] = diag['why'] if diag['why'] != 'no_pixels' else 'unrecoverable'
+    return None, diag
+
+
+def _lc_from_out(out, sel, white_hi, lo_face, cfg, P):
+    r"""在**脸已经在带内**的 pass1 成片上，量白服/脸并解一档 lc。
+    只在 `person_pe_lc="auto"` 时调用；默认 off ⇒ 零开销。
+    @returns {(tuple|None, dict)} `(t, limit, p)` 或 None；dict 带 why/white0/…/face0/…
+    """
+    diag = dict(why='no_white', white_lab50=None, white_ok=None,
+                face_ok=None, lc=None)
+    try:
+        from . import color as _col
+        rgb = np.clip(np.asarray(out, np.float64), 0.0, 1.0)
+        _cm = np.asarray(P.masks(rgb, (P.CLOTH,))[P.CLOTH], np.float64) > 0.5
+        lab = _col.to_lab(rgb)
+        Lc = np.asarray(lab[..., 0], np.float64)
+        Cc = np.hypot(np.asarray(lab[..., 1], np.float64),
+                      np.asarray(lab[..., 2], np.float64))
+        wh = _cm & (Lc >= 65.0) & (Cc <= 15.0)
+        fsel = np.asarray(sel, bool)
+        if int(wh.sum()) < 300 or int(fsel.sum()) < 32:
+            return None, diag
+        # OkLab L（与引擎 lc 同一坐标；1.0 = 白）
+        import colour as _colour
+        _xyz = _colour.RGB_to_XYZ(rgb, 'sRGB', apply_cctf_decoding=True)
+        _ok = np.asarray(_colour.XYZ_to_Oklab(_xyz)[..., 0], np.float64)
+        w50 = float(np.median(Lc[wh]))
+        diag.update(white_lab50=w50, white_ok=_ok[wh], face_ok=_ok[fsel])
+        if w50 <= float(white_hi) + float(getattr(cfg, 'PERSON_PE_LC_DEADBAND', 2.5)):
+            diag['why'] = 'deadband'
+            return None, diag
+        if float(np.median(_ok[fsel])) > float(getattr(cfg, 'PERSON_PE_LC_FACE_MAX', 0.75)):
+            diag['why'] = 'face_far'
+            return None, diag
+        target_ok = (float(white_hi) + 16.0) / 116.0
+        flo_ok = None if lo_face is None else (float(lo_face) + 16.0) / 116.0
+        lc, sd = _solve_lc(
+            _ok[wh], _ok[fsel], target_ok, flo_ok,
+            t=float(getattr(cfg, 'PERSON_PE_LC_T', 0.7)),
+            p=float(getattr(cfg, 'PERSON_PE_LC_P', 2.2)),
+            limits=tuple(getattr(cfg, 'PERSON_PE_LC_LIMITS', (1.0, 0.98, 0.96, 0.94))),
+            face_drop=float(getattr(cfg, 'PERSON_PE_LC_FACE_DROP', 0.013)),
+        )
+        diag.update(sd)
+        diag['why'] = sd.get('why', 'unrecoverable')
+        diag['lc'] = lc
+        return lc, diag
+    except Exception as _e:                                              # noqa: BLE001
+        diag['why'] = 'error: %s: %s' % (type(_e).__name__, str(_e)[:120])
+        return None, diag
+
+
 def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
                      target_L=None, band=None, back=None):
     r"""★★ **按脸反解印相曝光**（两遍印相 = 暗房的"试条"）—— 以人为本的**落点**。
@@ -827,6 +936,18 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
             return out
         _lab = _col.to_lab(np.clip(np.asarray(out, np.float64), 0.0, 1.0))
         _L = float(np.median(_lab[..., 0][_sel]))
+        # ★ lc 动态（A 方案）：只在脸已在带内的分支用；这里先把开关/白服上沿取出来。
+        _lc_mode = str(_ppe.get('person_pe_lc',
+                                getattr(cfg, 'PERSON_PE_LC', 'off')) or 'off').lower()
+        _wb0 = _ppe.get('person_pe_white_band')
+        if _wb0 is None:
+            _wb0 = getattr(cfg, 'PERSON_PE_WHITE_BAND', None)
+        _white_hi_early = None
+        if _wb0 is not None and _wb0 is not False:
+            try:
+                _white_hi_early = float(_wb0[1])
+            except (TypeError, ValueError, IndexError):
+                _white_hi_early = None
 
         # ★★★ **光位 → 力度**：`back` = 逆光程度（0~1）。逆光时**提亮目标上移**（窗内也往亮端推）
         #   —— 用户令「**脸不能暗 暗就不好看**」+「**逆光时 背景肯定会有些曝 人也得多提亮**」。
@@ -867,10 +988,50 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
                            and _L > float(_hi)
                            + float(getattr(cfg, 'PERSON_PE_DARKEN_MARGIN', 1.0)))
                 if not _pre_dn:
+                    _lc_why = None
+                    if (_lc_mode == 'auto' and _white_hi_early is not None
+                            and _EX.regime() == 'face'):
+                        _lc, _lcd = _lc_from_out(out, _sel, _white_hi_early,
+                                                 _lo_face, cfg, _P)
+                        _lc_why = _lcd.get('why')
+                        if _lc is not None:
+                            _pe0 = _LAST_RENDER_PE
+                            if _pe0 is not None:
+                                _LAST_PERSON_PE = dict(
+                                    back=_bk, L0=round(_L, 2), band=[_lo, _hi],
+                                    target=round(_up, 2), pe0=round(_pe0, 4),
+                                    pe1=round(_pe0, 4),
+                                    lc=tuple(round(float(v), 4) for v in _lc),
+                                    lc0=round(float(_lcd['white0']), 4),
+                                    lc1=round(float(_lcd['white1']), 4),
+                                    lc_face0=round(float(_lcd['face0']), 4),
+                                    lc_face1=round(float(_lcd['face1']), 4),
+                                    lc_span0=round(float(_lcd['span0']), 4),
+                                    lc_span1=round(float(_lcd['span1']), 4),
+                                    acted=True, why='applied_lc')
+                                _ov2 = dict(overrides or {})
+                                _ov2['io.output_gamut_compress.lightness_compression'] = tuple(_lc)
+                                try:
+                                    print('[svFilm] presets.render_person_pe: **服装 lc** %s：'
+                                          '白服 L* %.1f → %.1f（预测；目标 %.1f），脸 %.1f → %.1f，'
+                                          '跨度 %.1f → %.1f（第二遍印，pe 不变）'
+                                          % (_lc,
+                                             116.0 * _lcd['white0'] - 16.0,
+                                             116.0 * _lcd['white1'] - 16.0,
+                                             _white_hi_early,
+                                             116.0 * _lcd['face0'] - 16.0,
+                                             116.0 * _lcd['face1'] - 16.0,
+                                             116.0 * _lcd['span0'],
+                                             116.0 * _lcd['span1']), file=sys.stderr)
+                                except Exception:                    # noqa: BLE001
+                                    pass
+                                _stage[0] = '第二遍印相（lc）'
+                                return render(_lin, name, cfg, print_exposure=_pe0,
+                                              print_profile=print_profile, overrides=_ov2)
                     _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), band=[_lo, _hi],
                                            target=round(_up, 2), acted=False,
-                                           why='bright_enough')
-                    return out                             # ★★ **够亮且在带内 ⇒ 一个像素不动**
+                                           why='bright_enough', lc_why=_lc_why)
+                    return out
             _tgt = _up
         _d = _tgt - _L
         #   ★ 符号：`print_exposure ↑ ⇒ 印得暗 ⇒ 脸 L* ↓`，实测 `d(脸L*)/d(pe) = −79`

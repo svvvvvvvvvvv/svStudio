@@ -390,6 +390,18 @@ PERSON_PE_MAX_DN = 0.12
 #   脸要比上沿高多少才压（1.0 L*，防噪声/边界抖动）。
 PERSON_PE_DARKEN_MARGIN = 1.0
 
+# ---- lc 动态（服装专用；A 方案，10-18）----
+# ★ 只在**脸已经在带内**的分支开：pass1 就是 pre-lc 图，白服/脸 OkLab 精确；
+#   脸要 PE 的图不走（脸优先；要覆盖得加第三遍）。默认 off，按预设键 `person_pe_lc` 开。
+PERSON_PE_LC = "off"                 # "off" | "auto"
+PERSON_PE_LC_T = 0.7                 # 拐点：2572 脸 OkLab 0.734，g=0.988
+PERSON_PE_LC_P = 2.2                 # 引擎默认软膝幂
+PERSON_PE_LC_DEADBAND = 2.5          # L*：白服只超 1~2 的不动（2807 超 1.3、1526 超 2.1）
+PERSON_PE_LC_FACE_MAX = 0.75         # 脸 OkLab 中位上限（t+0.05）；再亮 lc 会压脸
+PERSON_PE_LC_FACE_DROP = 0.013       # OkLab（≈1.5 L*）：脸中位降超过就不开
+PERSON_PE_LC_LIMITS = (1.0, 0.98, 0.96, 0.94)   # 从最轻开始解 limit
+PERSON_PE_LC_LIMIT_MIN = 0.94        # 再低会发灰
+
 
 # ---- 出图缓存（只给常驻服务用）----
 # ---- 出图缓存（只给常驻服务用）----
