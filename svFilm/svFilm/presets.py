@@ -80,28 +80,6 @@ def _base_overrides(cfg, stock=None):
     return out
 
 
-def _warn_if_morph_dead(overrides):
-    """★ 开发期守卫：`overrides` 给了 `…density_curves_morph.*` 却**没带 `active`** ⇒ 喊一声
-    （**只警告、不改行为** —— 自动补 `active` = 悄悄改画面）。"""
-    if not overrides:
-        return
-    _has_morph = False
-    _has_active = False
-    for _k in overrides:
-        _s = str(_k)
-        if 'print_render.density_curves_morph' not in _s:
-            continue
-        _has_morph = True
-        if _s.endswith('.active') or _s == 'print_render.density_curves_morph':
-            _has_active = True
-    if _has_morph and not _has_active:
-        print('[svFilm 警告] overrides 里给了 `print_render.density_curves_morph.*` '
-              '却**没有带 `active`** ⇒ **morph 很可能是死的**（引擎默认 active=False，'
-              '而 True 只写在 `targets._scene_engine["*"]` 基线层里，直接调 render 不会铺它）。\n'
-              '  ⇒ 正确写法：`ov = presets._base_overrides(cfg, stock=预设名); '
-              'ov.update({...})`。', file=sys.stderr)
-
-
 def _check_white_gate(name, wc, bc, white_level):
     r"""**白端门控警告** —— 预设把 `scan_white_correction` 关掉时喊一声。
 
@@ -242,6 +220,35 @@ def _diffusion(dst, src, prefix):
     dst.bloom_size = float(src[prefix + '_bloom_size'])
 
 
+def _legacy_grain_rms(p, gr):
+    r"""旧 `particle_area_um2` 模型 → dev `rms_granularity`（保持**同一颗粒场**的换算）。
+
+    旧模型（3bb2c2d `grain.py`）用固定粒子面积 a 与每像素粒子数
+    `N = pixel_area·frac/a`；dev 改用 48 µm 孔径 RMS 粒度高 `rms_granularity` 作规格，
+    再由 `_coarsest_area_from_curves` 反推最粗子层面积 a₁。两者共用
+    `layer_particle_model` ⇒ **只要最粗子层面积相同，颗粒场的统计就相同**。
+    旧面积 = `particle_area_um2 × particle_scale[ch] × particle_scale_layers[0]`。
+    """
+    import numpy as np
+    from spektrafilm.model.grain import _coarsest_area_from_curves
+    scale = np.asarray(gr.get('particle_scale', (1.6, 1.6, 3.2)), float)
+    layers = np.asarray(gr.get('particle_scale_layers', (2.0, 1.0, 0.5)), float)
+    pss = tuple(float(v) for v in (layers / layers[0]))
+    dc = np.nan_to_num(np.asarray(p.film.data.density_curves_layers, float))   # [le,sub,ch]
+    n_ch = dc.shape[2]
+    dmax_layers = np.nanmax(dc, axis=0)                    # [sub,ch]
+    dmax_total = dmax_layers.sum(axis=0)                   # [ch]
+    frac = dmax_layers / dmax_total
+    dmin = np.asarray(gr['density_min'], float)[:n_ch]
+    unif = np.asarray(gr['uniformity'], float)[:n_ch]
+    dmin_layers = frac * dmin[None, :]
+    dmax_abs = dmax_layers + dmin_layers
+    # rms=1000 时的 a₁（面积 ∝ rms² ⇒ 直接用比例反解）
+    a1000 = _coarsest_area_from_curves(dc, dmin_layers, dmax_abs, frac, pss, unif, 1000.0)
+    a_t = float(gr['particle_area_um2']) * scale[:n_ch] * float(layers[0])
+    return tuple(float(v) for v in 1000.0 * np.sqrt(a_t / a1000))
+
+
 def _apply(p, d, cfg, name=None):
     """把预设 JSON 的字段逐条灌进 params（对应关系写死在下面）。`name` **只**用于诊断
     （见 `_check_white_gate`），不参与任何赋值。"""
@@ -258,16 +265,21 @@ def _apply(p, d, cfg, name=None):
     p.film = _profile_swap(p.film, sp['film_channel_swap'])
     p.print = _profile_swap(p.print, sp['print_channel_swap'])
 
-    # ---- special：**胶片端**密度曲线 gamma（下限 0.01）----
-    # 标量或**逐通道 3 元组**都接受（只放宽类型、不改语义；底层本就把标量铺成 `[g,g,g]`）。
+    # ---- special：**胶片端**密度曲线化学（dev：`film_render.chemistry`，frozen dataclass）----
+    # 旧 3bb2c2d 是标量 `film_render.density_curve_gamma`；dev 合到 `FilmChemistryParams`：
+    # 标量落 `gamma_factor`，3 元组落逐通道 `gamma_factor_{red,green,blue}`。
+    # 下限 0.01 = 旧行为（0 会把曲线压成一条线）。
     _fg = sp['film_gamma_factor']
+    _fch = p.film_render.chemistry
     if isinstance(_fg, (list, tuple)):
-        p.film_render.density_curve_gamma = tuple(max(float(_v), 0.01) for _v in _fg)
+        _fgv = tuple(max(float(_v), 0.01) for _v in _fg)
+        p.film_render.chemistry = dataclasses.replace(
+            _fch, gamma_factor=1.0,
+            gamma_factor_red=_fgv[0], gamma_factor_green=_fgv[1], gamma_factor_blue=_fgv[2])
     else:
-        p.film_render.density_curve_gamma = max(float(_fg), 0.01)
-    # ⚠ **不要加回** `p.print_render.density_curve_gamma = ...`：它**没有任何消费者**（0.3.4 的
-    #   `PrintRenderingParams` 只有 `glare` / `density_curves_morph`）；`RuntimePhotoParams` 无
-    #   `__slots__` ⇒ 写了不报错、只挂一个**没人读**的属性 ⇒ 预设的 `print_gamma_factor` 从未生效。
+        p.film_render.chemistry = dataclasses.replace(
+            _fch, gamma_factor=max(float(_fg), 0.01))
+
 
     # ---- camera ----
     p.camera.lens_blur_um = float(si['camera_lens_blur_um'])
@@ -275,8 +287,14 @@ def _apply(p, d, cfg, name=None):
     p.camera.auto_exposure = bool(si['auto_exposure'])
     p.camera.auto_exposure_method = si['auto_exposure_method']
     p.camera.film_format_mm = float(si['film_format_mm'])
-    p.camera.filter_uv = tuple(ii['filter_uv'])
-    p.camera.filter_ir = tuple(ii['filter_ir'])
+    # dev：`filter_uv` / `filter_ir` 两个带通参数合并为 `camera.color_filter`（滤镜库名字，
+    # `"none"` = 不加）。旧预设 `(amp, wl, width)` 的 amp=0 就是"不加滤片" ⇒ 等价 `"none"`；
+    # amp>0 无法映射到命名滤镜 ⇒ **当场抛**（不静默丢一根）。
+    if float(ii['filter_uv'][0]) > 0 or float(ii['filter_ir'][0]) > 0:
+        raise ValueError('预设的 filter_uv/filter_ir 非零幅度（%r / %r），dev 的 '
+                         'camera.color_filter 无法等价映射' % (ii['filter_uv'], ii['filter_ir']))
+    p.camera.color_filter = 'none'
+
     _diffusion(p.camera.diffusion_filter, si, 'camera_diffusion_filter')
 
     # ---- io ----
@@ -319,14 +337,14 @@ def _apply(p, d, cfg, name=None):
     p.scanner.black_level = black
     p.scanner.white_level = white
 
-    # ---- 印相密度曲线的 morph（形状层）—— **可选键**：缺省 ⇒ 完全不碰
-    #   机制（`utils/morph_curves.py:13-16,212-231`）：**fast 子层 = 最低 μ = 负性 profile 的趾部（亮端）**；
-    #   **slow = 最高 μ = 肩部（暗端）**，且 `g_mid = g_slow`（slow 同时管 mid 与 slow 两层）；
-    #   `sigmas /= g; centers /= g` ⇒ g↑ 让该层更陡、转折更早。
+    # ---- 印相密度曲线的 morph（形状层）—— dev：`print_render.chemistry`（frozen）----
+    #   旧 `PrintCurvesMorphParams`（`density_curves_morph`）在 dev 合并进
+    #   `PrintChemistryParams`，字段同名（`gamma_factor{,_fast,_slow,_red,_green,_blue}`）。
+    #   机制（`utils/morph_curves.py`）：**fast 子层 = 最低 μ = 负性 profile 的趾部（亮端）**；
+    #   **slow = 最高 μ = 肩部（暗端）**，且 `g_mid = g_slow`；`sigmas /= g; centers /= g`
+    #   ⇒ g↑ 让该层更陡、转折更早。`active` 在 dev 默认 True（旧 schema 默认 False）。
     #   实测（2 张，中位）：`gamma_factor_slow` **0.85 → p5 13.71 ｜ 1.00 → 9.60 ｜ 1.15 → 6.51**
     #   ⇒ **它是黑端的真刀（−24 L*/单位）**，而 `scanner.black_level` 只是微调（−0.6 L*/0.01）。
-    #   ⚠ `active` 是**结构性必需**（引擎 schema 默认 False）⇒ 它在 `targets._scene_engine["*"]` 里，
-    #     不要在这里重复设；这里只调形状。
     #   ★ 逐通道那一组（`gamma_factor_{red,green,blue}`，`morph_curves.py:26-32` 逐通道相乘）
     #     是**改中性轴黄绿的刀**：实测 `red +0.10` ⇒ 中性轴 `0_20 a*` −0.68 → −1.89（进大师带）、
     #     `80_100 a*` → −0.35（进带）；`−0.10` 完全镜像 ⇒ **"绕 L*≈54 旋转"**（与负片端那根的单瓣不同）。
@@ -335,16 +353,15 @@ def _apply(p, d, cfg, name=None):
                                  'print_morph_gamma_slow', 'print_morph_gamma_red',
                                  'print_morph_gamma_green', 'print_morph_gamma_blue') if k in si}
     if _morph:
-        _cur = p.print_render.density_curves_morph
-        _new = dataclasses.replace(
-            _cur,
-            gamma_factor=float(_morph.get('print_morph_gamma', _cur.gamma_factor)),
-            gamma_factor_fast=float(_morph.get('print_morph_gamma_fast', _cur.gamma_factor_fast)),
-            gamma_factor_slow=float(_morph.get('print_morph_gamma_slow', _cur.gamma_factor_slow)),
-            gamma_factor_red=float(_morph.get('print_morph_gamma_red', _cur.gamma_factor_red)),
-            gamma_factor_green=float(_morph.get('print_morph_gamma_green', _cur.gamma_factor_green)),
-            gamma_factor_blue=float(_morph.get('print_morph_gamma_blue', _cur.gamma_factor_blue)))
-        p.print_render.density_curves_morph = _new
+        _cch = p.print_render.chemistry
+        p.print_render.chemistry = dataclasses.replace(
+            _cch,
+            gamma_factor=float(_morph.get('print_morph_gamma', _cch.gamma_factor)),
+            gamma_factor_fast=float(_morph.get('print_morph_gamma_fast', _cch.gamma_factor_fast)),
+            gamma_factor_slow=float(_morph.get('print_morph_gamma_slow', _cch.gamma_factor_slow)),
+            gamma_factor_red=float(_morph.get('print_morph_gamma_red', _cch.gamma_factor_red)),
+            gamma_factor_green=float(_morph.get('print_morph_gamma_green', _cch.gamma_factor_green)),
+            gamma_factor_blue=float(_morph.get('print_morph_gamma_blue', _cch.gamma_factor_blue)))
 
     # ---- 输出色域压缩的"压顶"膝（扫描段）—— **可选键**：缺省 ⇒ 吃引擎 schema 默认 (0.7, 1.0, 2.2)
     #   机制（`utils/gamut_compression.py:297-304`，ACES RGC 的 Reinhard knee）：
@@ -393,28 +410,27 @@ def _apply(p, d, cfg, name=None):
     h.halation_renormalize = bool(ha['halation_renormalize'])
 
     # ---- grain ----
-    # ⚠⚠ 字段名**必须跟 vendor 版本对得上**：**0.3.2 = `agx_particle_*`、0.3.4 去掉 `agx_` 前缀
-    #   ⇒ 一律写 `particle_*`**。`GrainParams` 无 `__slots__` ⇒ 写错**不报错**，只静默多出几个
-    #   **没人读**的属性 ⇒ **颗粒参数一点没生效**（写 2.5，vendor 实读 schema 默认 0.2）。
+    # ⚠⚠ dev 换了颗粒规格：`particle_area_um2` / `sublayers_active` / `particle_scale`
+    #   / `particle_scale_layers` 全部删除，改成 48 µm 孔径 **RMS 粒度高**
+    #   `rms_granularity`（千分之一密度单位）+ 子层比例 `particle_scale_sublayers`。
+    #   `GrainParams` 无 `__slots__` ⇒ 写旧字段**不报错**、只是没人读（颗粒静默回默认）。
+    #   ★ 换算 `_legacy_grain_rms()` 保持同一颗粒场；新增的 mass-conserving mult-USM 默认
+    #     1.5 是配合 dev 的 blur=0.8 的，本预设 blur=0.65 ⇒ 关掉，避免叠一层锐化。
     g = p.film_render.grain
-    # ⚠ 下面这 3 个键是**死键**：`sublayers_active=False` 时引擎一个都不读（`grain.py:179` 的分支），
-    # 已搬进 `_archive/B7_dead_keys_grain.json`。缺省时**不写**（保持引擎 schema 默认），
-    # 否则从 JSON 删掉这些键会让 `_apply` 当场 KeyError。
     if float(gr['particle_area_um2']) <= 0:
         # 粒子面积为 0 物理上无意义（grain.py 里会除以零）⇒ 等同关掉
         g.active = False
     else:
         g.active = bool(gr['active'])
-        g.sublayers_active = bool(gr['sublayers_active'])
-        g.particle_area_um2 = float(gr['particle_area_um2'])
-        g.particle_scale = tuple(gr['particle_scale'])
-        if 'particle_scale_layers' in gr:
-            g.particle_scale_layers = tuple(gr['particle_scale_layers'])
+        g.rms_granularity = _legacy_grain_rms(p, gr)
+        _layers = np.asarray(gr.get('particle_scale_layers', (2.0, 1.0, 0.5)), float)
+        g.particle_scale_sublayers = tuple(float(v) for v in (_layers / _layers[0]))
         g.density_min = tuple(gr['density_min'])
         g.uniformity = tuple(gr['uniformity'])
         g.blur = float(gr['blur'])
-        if 'blur_dye_clouds_um' in gr:
-            g.blur_dye_clouds_um = float(gr['blur_dye_clouds_um'])
+        # 旧引擎默认 blur_dye_clouds_um=1.0（本预设多数没写）；dev 默认 2.0。
+        g.blur_dye_clouds_um = float(gr.get('blur_dye_clouds_um', 1.0))
+        g.mult_usm_amount = 0.0
         if 'micro_structure' in gr:
             g.micro_structure = tuple(gr['micro_structure'])
 
@@ -428,7 +444,17 @@ def _apply(p, d, cfg, name=None):
     c.gamma_interlayer_r_to_gb = tuple(co['gamma_interlayer_r_to_gb'])
     c.gamma_interlayer_g_to_rb = tuple(co['gamma_interlayer_g_to_rb'])
     c.gamma_interlayer_b_to_rg = tuple(co['gamma_interlayer_b_to_rg'])
+    # dev 新增 Langmuir 饱和（`couplers.py:langmuir_donor/receiver`）：K=∞ ⇒ 退化成
+    # 旧线性模型。本预设的 gamma/amount 是在**旧线性模型**下标定的 ⇒ 这里钉 ∞ 保持旧响应；
+    # 要试饱和，在预设 `couplers` 里给可选键 `langmuir_donor_k_rgb` /
+    # `langmuir_receiver_k_rgb`（单位 = 各自 d_max 的倍数，1.0 = 作者默认）。
+    _inf = float('inf')
+    c.langmuir_donor_k_rgb = tuple(
+        float(v) for v in co.get('langmuir_donor_k_rgb', (_inf, _inf, _inf)))
+    c.langmuir_receiver_k_rgb = tuple(
+        float(v) for v in co.get('langmuir_receiver_k_rgb', (_inf, _inf, _inf)))
     c.diffusion_size_um = float(co['diffusion_size_um'])
+
 
     # ---- glare（JSON 里是印相端那一份）----
     p.print_render.glare.active = bool(gl['active'])
@@ -612,11 +638,10 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=
     `print_exposure` 不传 = 「预设的 pe × `SPEK_PE_SHIFT`」；`overrides` = {字段路径: 值}，
     **跑完一定还原**、取值不对**当场报错**（不静默）。
     ★★ **`overrides` 是"整份替换"、不是"叠加"** ⇒ **别只传一根**：它的产出 = `"*"` 基线层 ＋
-      场景轴覆盖；只传"要动的那一根" = **丢了整条基线** ⇒ `…density_curves_morph` **整根死掉**
-      （输出与不带 override 在噪声内相同）。✅ `ov = presets._base_overrides(cfg, stock=预设名)`。
-      ⚠ 命中时只**警告**、不自动补 `active`（自动补 = 悄悄改画面）。"""
+      场景轴覆盖；只传"要动的那一根" = **丢了整条基线** ⇒ `print_render.chemistry` 的覆盖
+      只落在孤立值上（输出与不带 override 在噪声内相同）。
+      ✅ `ov = presets._base_overrides(cfg, stock=预设名)`。"""
     p = _params_for(name, cfg)
-    _warn_if_morph_dead(overrides)
 
     # ★★★ **按预设名加锁**：「临时改写共享的 `p` → 跑 → 还原」在多线程服务下必须串行；
     #   ★ 测光看人用**副本** `dict(overrides)` 注入（不改调用方的字典）。

@@ -82,7 +82,14 @@ def _reset_abstain():
 
 
 def install():
-    r"""把引擎的测光换成「支持 `subject` + 中灰锚」的版本。幂等。"""
+    r"""把引擎的测光换成「支持 `subject` + 中灰锚」的版本。幂等。
+
+    ★ dev（6cd00c8）把**拍摄端**测光从「显示域 RGB」搬到了「胶片 raw」：
+    `filming.py` 现在 from-import `measure_raw_autoexposure_ev`（raw 已按中灰=1 归一）。
+    所以这里**两个入口都包**：显示域那个（预览/GUI 还会用）+ raw 那个（生产真正走的路）。
+    raw 的 `subject` 在 dev 里没有实现（`_metered_value` 返回 None ⇒ EV=0）——这就是那个
+    "静默失效（EV=0）"的落点。
+    """
     if _INSTALLED[0]:
         return True
     try:
@@ -93,41 +100,74 @@ def install():
         from spektrafilm.runtime.stages import filming as _fm
     except Exception:                                                        # noqa: BLE001
         return False
-    orig = _ae.measure_autoexposure_ev
+    _orig_disp = _ae.measure_autoexposure_ev
+    _orig_raw = getattr(_ae, 'measure_raw_autoexposure_ev', None)
+
+    def _abstain(cover):
+        _ABSTAIN[0] += 1
+        _ABSTAIN[1] = ('mask_cover=%.5f < %.5f' % (cover, _MIN_MASK_COVER))
+        if _ABSTAIN[0] == 1 or _ABSTAIN[0] % 100 == 0:
+            import sys as _sys
+            print('[svFilm 警告] exposure: 测光掩膜太小（占比 %.5f < %.5f）⇒ '
+                  '弃权，退回 matrix（本进程第 %d 次）'
+                  % (cover, _MIN_MASK_COVER, _ABSTAIN[0]), file=_sys.stderr)
+
+    def _masked_ev(field, target, mask):
+        r"""按掩膜测一个 2D 场的 EV；返回 `(ev|None, cover)`。None = 掩膜太小要弃权。"""
+        import cv2
+        H, W = field.shape
+        m = np.asarray(mask, np.float64)
+        if m.shape[:2] != (H, W):                     # 掩膜要缩到引擎这次用的尺寸
+            m = cv2.resize(mask, (W, H), interpolation=cv2.INTER_AREA)
+        m = np.clip(m.astype(np.float64), 0.0, 1.0)
+        # ★★ 掩膜太小时 ⇒ **弃权**退回 `matrix`（同一落点）+ 计数告警。
+        #   分母 = `_COVER_REF`（默认整幅；第二级兜底传"检测框面积"，见 `_MIN_MASK_COVER` 注记）。
+        _ref = float(m.size if _COVER_REF[0] is None else _COVER_REF[0])
+        cover = float(m.sum()) / max(_ref, 1.0)
+        if cover < _MIN_MASK_COVER:
+            return None, cover
+        metered = float(np.sum(field * m) / max(m.sum(), 1e-9))
+        ev = -np.log2(max(metered / float(target), 1e-9))
+        return (0.0 if not np.isfinite(ev) else float(ev)), cover
 
     def measure_autoexposure_ev(image, color_space='sRGB', apply_cctf_decoding=True,
                                 method='center_weighted'):
         # ★★★ **两条出口都要过锚**（锚对**所有** method 生效）。
         if method != 'subject' or _MASK[0] is None:
-            return anchor_ev(orig(image, color_space, apply_cctf_decoding, method))
-        import cv2
+            return anchor_ev(_orig_disp(image, color_space, apply_cctf_decoding, method))
         import colour
-        H, W = image.shape[:2]
-        m = _MASK[0]
-        if m.shape[:2] != (H, W):                     # 掩膜要缩到引擎这次用的尺寸
-            m = cv2.resize(m, (W, H), interpolation=cv2.INTER_AREA)
-        m = np.clip(m.astype(np.float64), 0.0, 1.0)
-        # ★★ 掩膜太小时 ⇒ **弃权**退回 `matrix`（同一落点）+ 计数告警；退回别的 method 就是两条落点。
-        #   分母 = `_COVER_REF`（默认整幅；第二级兜底传"检测框面积"，见 `_MIN_MASK_COVER` 注记）。
-        _ref = float(m.size if _COVER_REF[0] is None else _COVER_REF[0])
-        cover = float(m.sum()) / max(_ref, 1.0)
-        if cover < _MIN_MASK_COVER:
-            _ABSTAIN[0] += 1
-            _ABSTAIN[1] = ('mask_cover=%.5f < %.5f' % (cover, _MIN_MASK_COVER))
-            if _ABSTAIN[0] == 1 or _ABSTAIN[0] % 100 == 0:
-                import sys as _sys
-                print('[svFilm 警告] exposure: 测光掩膜太小（占比 %.5f < %.5f）⇒ '
-                      '弃权，退回 matrix（本进程第 %d 次）'
-                      % (cover, _MIN_MASK_COVER, _ABSTAIN[0]), file=_sys.stderr)
-            return anchor_ev(orig(image, color_space, apply_cctf_decoding, 'matrix'))
         xyz = colour.RGB_to_XYZ(np.clip(image, 0, 1), color_space,
                                 apply_cctf_decoding=apply_cctf_decoding)
-        Y = xyz[:, :, 1]
-        exposure = float(np.sum(Y * m) / max(m.sum(), 1e-9)) / 0.184
-        ev = -np.log2(max(exposure, 1e-9))
-        return anchor_ev(0.0 if not np.isfinite(ev) else float(ev))
+        ev, cover = _masked_ev(xyz[:, :, 1], 0.184, _MASK[0])
+        if ev is None:
+            _abstain(cover)
+            return anchor_ev(_orig_disp(image, color_space, apply_cctf_decoding, 'matrix'))
+        return anchor_ev(ev)
+
+    def measure_raw_autoexposure_ev(raw, method='center_weighted', target=1.0):
+        r"""dev 生产路径：`raw` 是胶片曝光（中灰=1），按掩膜测 `mean(raw)`。
+
+        ⚠ 1×1 中灰探针（`filming._midgray_autoexposure_scale()` 建的）**必须原样返回**：
+        dev 对未知 method 返回 0 EV，这里若加锚会把印相归一整体平移。
+        """
+        if _orig_raw is None:
+            return 0.0
+        if method != 'subject' or _MASK[0] is None:
+            return anchor_ev(_orig_raw(raw, method, target))
+        arr = np.asarray(raw)
+        field = np.mean(arr, axis=2) if arr.ndim == 3 else arr
+        if field.ndim != 2 or field.size < 16:        # 中灰探针，不是整幅
+            return _orig_raw(raw, method, target)
+        ev, cover = _masked_ev(field, target, _MASK[0])
+        if ev is None:
+            _abstain(cover)
+            return anchor_ev(_orig_raw(raw, 'matrix', target))
+        return anchor_ev(ev)
 
     _ae.measure_autoexposure_ev = measure_autoexposure_ev
-    _fm.measure_autoexposure_ev = measure_autoexposure_ev   # ★ filming 里是 from-import 的名字
+    _ae.measure_raw_autoexposure_ev = measure_raw_autoexposure_ev
+    _fm.measure_autoexposure_ev = measure_autoexposure_ev       # 旧版（3bb2c2d）是 from-import 的名字
+    if hasattr(_fm, 'measure_raw_autoexposure_ev'):
+        _fm.measure_raw_autoexposure_ev = measure_raw_autoexposure_ev   # dev 生产路径
     _INSTALLED[0] = True
     return True

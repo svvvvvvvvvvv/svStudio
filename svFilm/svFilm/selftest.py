@@ -172,7 +172,7 @@ def t_review_1008():
           '加法需要一个数值底。没有底 ⇒ 该 add 会被静默忽略（"写了没反应"），'
           '所以必须静态钉住：**要叠加的键，先在 `"*"` 里给基准值**')
 #   ⚠ `_se` 是**活对象**：临时造轴要**就地改、跑完还原**，不能整体换 dict。
-    _GN = 'print_render.density_curves_morph.gamma_factor'
+    _GN = 'print_render.chemistry.gamma_factor'
     _has_span = 'span=平' in _se
     _span_save = _se.get('span=平')
     #   ★★ 10-15：基线层（`_scene_engine["*"]`）已**清零**（只剩 `morph.active`）
@@ -182,7 +182,7 @@ def t_review_1008():
     _star_blk = _se.setdefault('*', {})
     _had_base = _GN in _star_blk
     _base_save = _star_blk.get(_GN)
-    _inj = {'print_render.density_curves_morph.gamma_factor': {'add': 0.07}}
+    _inj = {'print_render.chemistry.gamma_factor': {'add': 0.07}}
     try:
         _star_blk[_GN] = 0.98
         _se['span=平'] = {_GN: 1.23}
@@ -617,19 +617,21 @@ def t_presets():
 #   ⇒ ★★★ 必须验 **vendor 真正读的那个名字**，不能验"我们写进去的那个"（那是假绿）。
     p = presets.digested(_PRESET)
     d = presets.load_raw(_PRESET)
-    check('颗粒真落到 vendor 实读的字段（particle_*，不是 agx_particle_*）',
-          abs(float(p.film_render.grain.particle_area_um2)
-              - float(d['grain']['particle_area_um2'])) < 1e-9,
-          '%.3f vs %.3f' % (p.film_render.grain.particle_area_um2,
-                            d['grain']['particle_area_um2']),
-          '颗粒字段对不上 ⇒ 有人改了 vendor 的字段名（0.3.2 叫 agx_particle_*、0.3.4 叫 particle_*）')
-    check('颗粒不许再有 agx_ 死属性（防回退到"写了没人读"）',
-          not hasattr(p.film_render.grain, 'agx_particle_area_um2')
-          and abs(float(p.film_render.grain.particle_scale[0])
-                  - float(d['grain']['particle_scale'][0])) < 1e-9,
-          'agx_ 残留=%s ｜ scale %.2f vs %.2f'
-          % (hasattr(p.film_render.grain, 'agx_particle_area_um2'),
-             p.film_render.grain.particle_scale[0], d['grain']['particle_scale'][0]))
+    check('颗粒规格真落到 vendor 实读字段（dev：`rms_granularity`，不是旧 `particle_area_um2`）',
+          all(float(v) > 0.0 for v in p.film_render.grain.rms_granularity)
+          and not hasattr(p.film_render.grain, 'particle_area_um2'),
+          'rms=%r ｜ 旧字段残留=%s'
+          % (tuple(p.film_render.grain.rms_granularity),
+             hasattr(p.film_render.grain, 'particle_area_um2')),
+          'dev 把颗粒改成 48 µm RMS 粒度高；旧 particle_area_um2 已删，写了不报错也不生效')
+    check('颗粒 blur / uniformity 真落到 params（= 预设值）',
+          abs(float(p.film_render.grain.blur) - float(d['grain']['blur'])) < 1e-9
+          and tuple(float(v) for v in p.film_render.grain.uniformity)
+          == tuple(float(v) for v in d['grain']['uniformity']),
+          'blur %.2f vs %.2f ｜ uniformity %r'
+          % (p.film_render.grain.blur, d['grain']['blur'],
+             tuple(p.film_render.grain.uniformity)),
+          '字段名对不上 ⇒ 写进去的是没人读的属性（静默回引擎默认）')
     check('光晕强度真落到 params（不被卷的抗晕层标签冲掉）',
           abs(float(p.film_render.halation.halation_strength[0]) * 100.0
               - float(d['halation']['halation_strength'][0])) < 1e-6,
@@ -979,7 +981,7 @@ def t_by_modulation():
                 and isinstance(blk, dict)):
             continue
         for kk in blk:
-            if 'density_curves_morph' not in kk:
+            if 'chemistry' not in kk:
                 continue
             if kk in (_allow.get(k) or []):
                 allowed.append('%s.%s' % (k, kk))
