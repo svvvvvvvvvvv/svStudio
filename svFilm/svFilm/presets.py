@@ -31,6 +31,8 @@ _POST_SCAN_ERROR: str | None = None
 #   它**不影响像素**，只是把"这张到底动没动、动了多少"暴露给调用方 / 自检（否则两遍印相一次都没动
 #   也看不出来）。形状：`dict(back, L0, target, pe0, pe1, acted, why)` 或 `None`（没走这条路）。
 _LAST_PERSON_PE: dict | None = None
+# ★ 成片 CLOTH 分割失败的**进程内去重**警告（退回输入侧掩膜 = 服装帽口径会偏 2~3 L*）。
+_CLOTH_WARN = [False]
 # ★★ **上一遍印相真正写进 params 的 `print_exposure`**（`_render_locked` 写，`render_person_pe` 读）：
 #   别处重算（`pe_of()·SPEK_PE_SHIFT`）看不见 overrides / 归一后的实际值 ⇒ 报告与画面会两张皮。
 _LAST_RENDER_PE: float | None = None
@@ -752,10 +754,15 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
     ★★ 为什么必须"印一遍量一遍"：**负片测光那一层对成片的脸亮度几乎无影响** —— 实测 14 张，
     脸的测光结果与成片脸 L* 只有 `r2 = 0.17`；而**输入**脸亮度更预测不了成片脸 L*（`r2 = 0.08`，
     因为印相端的中灰归一化把负片层的改动吃掉了）⇒ 脸最后落在哪，**零渲染推不出来**。
-    能搬动脸的开关只有 `print_exposure`（实测 `d(脸L*)/d(pe) = −79`）。
+    能搬动脸的开关只有 `print_exposure`（实测 `d(脸L*)/d(pe) = −93`；旧记的 −79 已作废）。
     ★ 出处：暗房彩色分析仪（用标准负片试印 → 换片后把探头压在**脸颊**上读数）；
     专利 CN109918993B「使人脸区域亮度值趋于一个曝光目标值」；CN112584089B「人脸亮度误差阈值」。
     ★ 它是**单张一次求解**（没有跨帧反馈）⇒ 不存在"读统计量反馈全局参数"那种振荡。
+    ★★ **A1/A1.1（10-18）**：除了脸，还会量**成片的服装**（同一次前向取 `CLOTH`）：
+      · 亮中性子集 L50 带（`person_pe_white_band`）——中间调，**只截亮端偏好、不截脸下限**；
+      · 全色 p99/clip 硬帽（`person_pe_cloth_p99_max` / `..._clip_max`）——天花板；
+      · `p1` 只报（`cloth_p1` / `cloth_crushed`；黑衣本来就该接近 0）；
+      · 冲突时 P1 脸赢：`white_ok` / `cloth_ok` 如实记（`None` = 抬过、但 pass1 未超帽，结果未知）。
 
     @param target_L {float|None} 目标 L*（None = 该预设的可选键 `person_pe_target_l`，
         再缺省 = `cfg.PERSON_PE_TARGET_L`），口径 = 测光掩膜。
@@ -916,8 +923,14 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
             try:
                 _cmm = np.asarray(_P.masks(np.clip(out, 0.0, 1.0), (_P.CLOTH,))[_P.CLOTH],
                                   np.float64)
-            except Exception:                                            # noqa: BLE001
+            except Exception as _e:                                      # noqa: BLE001
                 _cmm = _P.last_cloth()
+                if not _CLOTH_WARN[0]:
+                    _CLOTH_WARN[0] = True
+                    import sys as _sys
+                    print('[svFilm 警告] presets.render_person_pe: **成片 CLOTH 分割失败** ⇒ '
+                          '退回输入侧掩膜（服装帽口径会偏 2~3 L*）：%s: %s'
+                          % (type(_e).__name__, str(_e)[:160]), file=_sys.stderr)
             if _cmm is not None and _cmm.shape[:2] != (H, W):
                 import cv2
                 _cmm = cv2.resize(_cmm, (W, H), interpolation=cv2.INTER_AREA)
@@ -1002,7 +1015,11 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
                                cloth_ok=_cloth_ok,
                                cloth_crushed=bool(_cloth_crushed),
                                acted=True,
-                               why=('applied_white_capped' if _white_cut else 'applied'))
+                               why=('applied_white+cloth_capped'
+                                    if (_white_cut and _cloth_cut)
+                                    else 'applied_white_capped' if _white_cut
+                                    else 'applied_cloth_capped' if _cloth_cut
+                                    else 'applied'))
         import sys as _sys
         print('[svFilm] presets.render_person_pe: 脸 L* %.1f ⇒ 目标 %.1f ⇒ 印相曝光 %.4f → %.4f'
               '（第二遍印）' % (_L, _tgt, _pe0, _pe1), file=_sys.stderr)
