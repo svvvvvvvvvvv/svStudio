@@ -93,8 +93,11 @@ def load_std(path, max_side=C.MAX_SIDE):
 
 
 
-def load_raw(path, max_side=C.MAX_SIDE):
+def load_raw(path, max_side=C.MAX_SIDE, wb=None):
     r"""RAW → **场景线性**（只有这一条路，没有开关）。
+
+    ★ `wb`（可选）= 该**预设**自己的白平衡：`{white_balance, temperature, tint}`；
+      缺省/None ⇒ 回退全局 `PUBLIC_WB*`。★ 这是“每条预设一个白点”的落点。
 
     ★★ **只留一条：RAW → 场景线性 → 引擎**（public GUI 的加载口径）：自己那条入口提亮路是死代码；
       预设的印相曝光 `pe` 按**这个输入**标定，提亮好几档就过曝发白。"""
@@ -104,6 +107,11 @@ def load_raw(path, max_side=C.MAX_SIDE):
 
     spektra._sf()                       # ★ 先钉扎：保证下面 import 到的是仓库自带那份 vendor
     from spektrafilm.utils import load_and_process_raw_file
+
+    _wb = wb or {}
+    _white_balance = str(_wb.get('white_balance', getattr(C, 'PUBLIC_WB', 'custom')))
+    _temperature = float(_wb.get('temperature', getattr(C, 'PUBLIC_WB_TEMPERATURE', 5200.0)))
+    _tint = float(_wb.get('tint', getattr(C, 'PUBLIC_WB_TINT', 1.0)))
 
     exif = make = model = thumb = None
     with rawpy.imread(path) as raw:     # 只为了抠内嵌 JPG 拿 EXIF / 机型（不解码传感器数据）
@@ -121,9 +129,9 @@ def load_raw(path, max_side=C.MAX_SIDE):
 
     lin = load_and_process_raw_file(
         path,
-        white_balance=str(getattr(C, 'PUBLIC_WB', 'custom')),
-        temperature=float(getattr(C, 'PUBLIC_WB_TEMPERATURE', 5200.0)),
-        tint=float(getattr(C, 'PUBLIC_WB_TINT', 1.0)),
+        white_balance=_white_balance,
+        temperature=_temperature,
+        tint=_tint,
         output_colorspace=str(getattr(C, 'PUBLIC_COLORSPACE', 'ProPhoto RGB')),
         output_cctf_encoding=False,
     )
@@ -132,22 +140,22 @@ def load_raw(path, max_side=C.MAX_SIDE):
 
     cam = dict(cameras.lookup(make, model), make=make, model=model)
     cam['entry_loader'] = 'public'
-    cam['entry_shape'] = 'public GUI 的加载（wb %s %sK / %s / 无 CCTF）' % (
-        getattr(C, 'PUBLIC_WB', 'custom'), getattr(C, 'PUBLIC_WB_TEMPERATURE', 5200.0),
+    cam['entry_shape'] = 'public GUI 的加载（wb %s %sK / tint %s / %s / 无 CCTF）' % (
+        _white_balance, _temperature, _tint,
         getattr(C, 'PUBLIC_COLORSPACE', 'ProPhoto RGB'))
     cam['bias_source'] = '无（输入＝public 的加载，不做入口提亮）'
     disp = np.clip(color.l2s(lin), 0.0, 1.0)
     return Sample(lin, disp, 'raw', path, exif, cam)
 
 
-def load(path, max_side=C.MAX_SIDE, src=None):
+def load(path, max_side=C.MAX_SIDE, src=None, wb=None):
     k = kind_of(path)
     if src in (None, 'auto'):
         src = 'raw' if k == 'raw' else 'jpg'
     if src == 'raw':
         if k != 'raw':
             raise ValueError('要求 RAW，但 %s 不是 RAW' % path)
-        return load_raw(path, max_side)
+        return load_raw(path, max_side, wb=wb)
     return load_std(path, max_side)
 
 

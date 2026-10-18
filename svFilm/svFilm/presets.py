@@ -550,6 +550,19 @@ def pe_of(name):
     return float(load_raw(name)['simulation']['print_exposure'])
 
 
+def wb_of(name):
+    r"""★ 该预设**自己的白平衡**（解码层）：`{white_balance, temperature, tint}`。
+
+    预设 JSON 可选顶层 `wb` 块；缺省 ⇒ 回退全局 `PUBLIC_WB*`（= 旧行为，逐位不变）。
+    ★ 这是“每条预设一个白点”的唯一落点：渲染时传给 `io.load(..., wb=...)`。
+    """
+    d = load_raw(name)
+    wb = d.get('wb') or {}
+    return dict(white_balance=str(wb.get('white_balance', getattr(C, 'PUBLIC_WB', 'custom'))),
+                temperature=float(wb.get('temperature', getattr(C, 'PUBLIC_WB_TEMPERATURE', 5200.0))),
+                tint=float(wb.get('tint', getattr(C, 'PUBLIC_WB_TINT', 1.0))))
+
+
 # ===========================================================================
 # **以人为本的测光入口**（`subject`）
 # ---------------------------------------------------------------------------

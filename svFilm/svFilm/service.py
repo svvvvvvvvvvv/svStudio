@@ -49,9 +49,13 @@ def _decode_sig():
     return tuple((k, getattr(C, k, None)) for k in _DECODE_SIG_KEYS)
 
 
-def _load_key(path, side):
-    r"""键 = 路径 + 尺寸 + **解码签名**（`side=None` = 原图全尺寸，独立成键）。"""
-    return (os.path.abspath(path), 'full' if side is None else int(side), _decode_sig())
+def _load_key(path, side, wb=None):
+    r"""键 = 路径 + 尺寸 + **解码签名** + **每预设 WB**（`side=None` = 原图全尺寸，独立成键）。"""
+    _wb = None
+    if wb:
+        _wb = (str(wb.get('white_balance')), round(float(wb.get('temperature')), 3),
+               round(float(wb.get('tint')), 5))
+    return (os.path.abspath(path), 'full' if side is None else int(side), _decode_sig(), _wb)
 
 
 def _cache_put(path, side, sample):
@@ -82,14 +86,14 @@ def _ensure_decoded(i, row):
     return s
 
 
-def _load_one(path, side):
-    key = _load_key(path, side)
+def _load_one(path, side, wb=None):
+    key = _load_key(path, side, wb)
     with _path_cache_lock:
         hit = _path_cache.get(key)
     if hit is not None:
         return hit['sample'], 0.0
     t = time.perf_counter()
-    s = io.load(path, side, src=None)
+    s = io.load(path, side, src=None, wb=wb)
     ms = (time.perf_counter() - t) * 1000.0
     with _path_cache_lock:
         _path_cache[key] = dict(sample=s, t=time.time())
@@ -118,10 +122,11 @@ def _render_bytes(i, stock, side, fmt, quality):
     if err:
         return None, {'error': err}
     cur_side = int(row.get('side') or DEFAULT_SIDE)
+    _wb = presets.wb_of(stock) if stock and presets.has(stock) else None
     if want is None or want == cur_side:
-        s = _ensure_decoded(i, row)       # ★ 解码阶段参数改了要重新解码（见 _decode_sig）
+        s, _ms = _load_one(row.get('path'), cur_side, wb=_wb)   # ★ 按本预设 WB 解码
     else:
-        s, _ms = _load_one(row.get('path'), want)      # ★ 换尺寸 = 重新解码
+        s, _ms = _load_one(row.get('path'), want, wb=_wb)      # ★ 换尺寸 = 重新解码
     r = pipeline.run_from(s, stock=stock or None, cache=_STAGES[0])
     disp = np.clip(r.disp, 0.0, 1.0)
     arr = (disp * 255.0 + 0.5).astype(np.uint8)
@@ -168,7 +173,8 @@ def _export_one(i, out_path, stock, side, quality, src_path=None):
         if side_clamped:
             side = int(_cap)
     try:
-        s, _ms = _load_one(src, side)
+        _wb = presets.wb_of(stock) if stock and presets.has(stock) else None
+        s, _ms = _load_one(src, side, wb=_wb)
         r = pipeline.run_from(s, stock=stock or None, cache=None)
     except MemoryError:
         return None, {'error': '内存不够跑这个尺寸（%s）。关掉几个占内存的程序再试，'

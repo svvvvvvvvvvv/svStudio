@@ -103,7 +103,9 @@ class StageCache:
 def run(path, src=None, max_side=None, cfg=C, out=None, stock=None):
     r"""一次性：**解码 + 跑完整链**；常驻服务请用 `run_from`（跳过解码）。"""
     t0 = time.perf_counter()
-    s = io.load(path, max_side or cfg.MAX_SIDE, src=src)
+    name = str(stock if stock is not None else cfg.STOCK)
+    wb = presets.wb_of(name) if presets.has(name) else None
+    s = io.load(path, max_side or cfg.MAX_SIDE, src=src, wb=wb)
     return run_from(s, cfg=cfg, stock=stock, out=out, t0=t0, path=path)
 
 
