@@ -19,8 +19,7 @@ QWidget = QtWidgets.QWidget
 Qt = QtCore.Qt
 Signal = QtCore.Signal
 
-from spektrafilm_gui.param_manifest import (
-    CAMERA_EXPOSURE_BORROWED_FIELDS,
+from spektrafilm_gui.params_manifest import (
     CROP_PANEL_FIELDS,
     DISPLAY_PANEL_FIELDS,
     GroupManifest,
@@ -35,7 +34,6 @@ from spektrafilm_gui.param_manifest import (
     SIMULATION_SPECIAL_BORROWED_FIELDS,
     SPECTRAL_PANEL_FIELDS,
     SPECIAL_FIELDS,
-    TUNE_PANEL_FIELDS,
 )
 from spektrafilm_gui.state import (
     DisplayState,
@@ -50,7 +48,7 @@ from spektrafilm_gui.state import (
 from spektrafilm_gui.persistence import load_dialog_dir, save_dialog_dir
 from spektrafilm_gui.theme_palette import SIZE_FOOTER_ITEM_SPACING
 from spektrafilm_gui.options import RawWhiteBalance
-from spektrafilm_gui.widget_editors import BoolEditor, EnumEditor, FloatEditor, FloatTupleEditor, IntEditor, IntTupleEditor, ProfileEnumEditor
+from spektrafilm_gui.widget_editors import BoolEditor, DevelopmentTimeEditor, EnumEditor, FloatEditor, FloatTupleEditor, IntEditor, IntTupleEditor, ProfileEnumEditor
 from spektrafilm_gui.widget_primitives import CollapsibleSection, normalize_ui_text as _normalize_ui_text
 
 
@@ -251,6 +249,10 @@ def _editor_from_param_spec(annotation: Any, spec: ParamSpec, *, label: str) -> 
     sections so the type -> editor mapping lives in one place.
     """
     decimals = 2 if spec.decimals is None else spec.decimals
+    if spec.leaf == 'development_time':
+        # Stock-dependent choices, so the dropdown starts empty (None only) and
+        # the controller repopulates it on profile change.
+        return DevelopmentTimeEditor()
     if spec.enum is not None:
         if spec.leaf in {'film_stock', 'print_paper'}:
             editor = ProfileEnumEditor([member.value for member in spec.enum])
@@ -461,24 +463,21 @@ class ParamsGroupSection(QWidget):
         self._build_ui()
 
     def _build_ui(self) -> None:
-        form = _new_form_layout()
+        # Build editors for every field (so the whole group stays editable,
+        # persisted, and auto-preview wired) regardless of how it is laid out.
         for spec in self._manifest.fields:
             editor = self._build_editor(spec)
             self._editors[spec.leaf] = editor
             setattr(self, spec.leaf, editor)
-        # Build editors for every field (so the whole group stays editable,
-        # persisted, and auto-preview wired) but only lay out panel_fields;
-        # any remaining fields are displayed by a section that borrows them.
-        for spec in self._manifest.panel_fields or self._manifest.fields:
-            editor = self._editors[spec.leaf]
-            label = QLabel(_normalize_ui_text(spec.label or _format_label(spec.leaf)))
-            if spec.tooltip:
-                label.setToolTip(spec.tooltip)
-                editor.setToolTip(spec.tooltip)
-            form.addRow(label, editor)
 
-        content = QWidget()
-        content.setLayout(form)
+        # Only lay out panel_fields; any remaining fields are displayed by a
+        # section that borrows them.
+        panel_specs = self._manifest.panel_fields or self._manifest.fields
+        if self._manifest.subsections:
+            content = self._build_subsectioned_content(panel_specs)
+        else:
+            content = QWidget()
+            content.setLayout(self._build_form(panel_specs))
 
         root = QVBoxLayout()
         root.setContentsMargins(0, 0, 0, 0)
@@ -486,6 +485,44 @@ class ParamsGroupSection(QWidget):
             CollapsibleSection(self._manifest.title, content, expanded=not self._manifest.collapsed_by_default),
         )
         self.setLayout(root)
+
+    def _build_form(self, specs) -> QFormLayout:
+        """A form laying out the editors (already built) for ``specs``, in order."""
+        form = _new_form_layout()
+        for spec in specs:
+            editor = self._editors[spec.leaf]
+            label = QLabel(_normalize_ui_text(spec.label or _format_label(spec.leaf)))
+            if spec.tooltip:
+                label.setToolTip(spec.tooltip)
+                editor.setToolTip(spec.tooltip)
+            form.addRow(label, editor)
+        return form
+
+    def _build_subsectioned_content(self, panel_specs) -> QWidget:
+        """Lay the panel out as loose fields (top) followed by one nested
+        collapsible per :class:`SubSection`. Subsections reference fields by leaf
+        name; anything not grouped renders loose at the top (e.g. ``active``)."""
+        by_leaf = {spec.leaf: spec for spec in panel_specs}
+        grouped = {name for sub in self._manifest.subsections for name in sub.field_names}
+
+        container = QWidget()
+        vbox = QVBoxLayout(container)
+        vbox.setContentsMargins(0, 0, 0, 0)
+        vbox.setAlignment(Qt.AlignTop)
+
+        loose = [spec for spec in panel_specs if spec.leaf not in grouped]
+        if loose:
+            loose_widget = QWidget()
+            loose_widget.setLayout(self._build_form(loose))
+            vbox.addWidget(loose_widget)
+
+        for sub in self._manifest.subsections:
+            specs = [by_leaf[name] for name in sub.field_names if name in by_leaf]
+            sub_content = QWidget()
+            sub_content.setLayout(self._build_form(specs))
+            vbox.addWidget(CollapsibleSection(
+                sub.title, sub_content, expanded=sub.expanded, variant='subsection'))
+        return container
 
     def _build_editor(self, spec: ParamSpec) -> QWidget:
         annotation = self._type_hints[spec.leaf]
@@ -500,6 +537,13 @@ class ParamsGroupSection(QWidget):
         base = self._source if self._source is not None else self._group_cls()
         overrides = {leaf: editor.value for leaf, editor in self._editors.items()}
         return replace(base, **overrides)
+
+    def set_development_time_choices(self, times: Any) -> None:
+        """Repopulate the development-time dropdown (if this group has one) with
+        the loaded stock's available development times. No-op otherwise."""
+        editor = self._editors.get('development_time')
+        if isinstance(editor, DevelopmentTimeEditor):
+            editor.set_choices(None if times is None else [float(t) for t in times])
 
 
 class SpecialSection(QWidget):
@@ -521,8 +565,6 @@ class SpecialSection(QWidget):
             editor = _editor_from_param_spec(_path_annotation(SpecialState, spec.path), spec, label=spec.path)
             self._editors[spec.leaf] = editor
             setattr(self, spec.leaf, editor)
-            if spec.leaf == 'film_gamma_factor':
-                continue
             label = QLabel(_normalize_ui_text(spec.label or _format_label(spec.leaf)))
             if spec.tooltip:
                 label.setToolTip(spec.tooltip)
@@ -550,14 +592,6 @@ class SpectralUpsamplingSection(QWidget):
         super().__init__()
         self.setLayout(
             _build_path_panel('Spectral upsampling', SPECTRAL_PANEL_FIELDS, input_image_section._editors, expanded=False),
-        )
-
-
-class TuneSection(QWidget):
-    def __init__(self, special_section: SpecialSection):
-        super().__init__()
-        self.setLayout(
-            _build_path_panel('Tune', TUNE_PANEL_FIELDS, special_section._editors, expanded=True),
         )
 
 
@@ -835,21 +869,13 @@ class OutputSection(QWidget):
         )
 
 
-class ExposureControlSection(QWidget):
-    def __init__(self, simulation_section: SimulationSection, camera_section: 'ParamsGroupSection'):
-        super().__init__()
-        # auto_exposure / exposure_compensation_ev are CameraParams fields
-        # owned by camera_section; the print-exposure fields are owned by
-        # simulation_section. Render the camera pair on top, then the print
-        # controls, from a merged editor lookup (leaves do not collide).
-        editors = {**camera_section._editors, **simulation_section._editors}
-        fields = CAMERA_EXPOSURE_BORROWED_FIELDS + SIMULATION_EXPOSURE_PANEL_FIELDS
-        self.setLayout(_build_path_panel('Exposure control', fields, editors, expanded=True))
-
-
 class EnlargerSection(QWidget):
     def __init__(self, simulation_section: SimulationSection):
         super().__init__()
+        # Print exposure controls and filter shifts are both owned by
+        # simulation_section; render the exposure pair on top of the filter
+        # shifts.
+        fields = SIMULATION_EXPOSURE_PANEL_FIELDS + SIMULATION_ENLARGER_PANEL_FIELDS
         self.setLayout(
-            _build_path_panel('Enlarger', SIMULATION_ENLARGER_PANEL_FIELDS, simulation_section._editors, expanded=True),
+            _build_path_panel('Enlarger', fields, simulation_section._editors, expanded=True),
         )

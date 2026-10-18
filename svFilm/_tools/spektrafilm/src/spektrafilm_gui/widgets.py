@@ -1,11 +1,13 @@
 from dataclasses import dataclass
 
-from spektrafilm_gui.param_manifest import (
+from spektrafilm_gui.params_manifest import (
+    BASE_MANIFEST,
     CAMERA_DIFFUSION_MANIFEST,
     CAMERA_MANIFEST,
     CHEMISTRY_MANIFEST,
     DIR_COUPLERS_MANIFEST,
     ENLARGER_DIFFUSION_MANIFEST,
+    FILM_CHEMISTRY_MANIFEST,
     GLARE_MANIFEST,
     GRAIN_MANIFEST,
     HALATION_MANIFEST,
@@ -19,7 +21,6 @@ from spektrafilm_gui.widget_sections import (
     ParamsGroupSection,
     DisplaySection,
     EnlargerSection,
-    ExposureControlSection,
     FilePickerSection,
     GuiConfigSection,
     InputImageSection,
@@ -29,7 +30,6 @@ from spektrafilm_gui.widget_sections import (
     SimulationSection,
     SpecialSection,
     SpectralUpsamplingSection,
-    TuneSection,
 )
 
 
@@ -55,6 +55,8 @@ class WidgetBundle:
     halation: ParamsGroupSection
     couplers: ParamsGroupSection
     chemistry: ParamsGroupSection
+    base: ParamsGroupSection
+    film_chemistry: ParamsGroupSection
     glare: ParamsGroupSection
     input_gamut_compress: ParamsGroupSection
     output_gamut_compress: ParamsGroupSection
@@ -62,11 +64,9 @@ class WidgetBundle:
     simulation: SimulationSection
     preview_crop: PreviewCropSection
     camera: ParamsGroupSection
-    exposure_control: ExposureControlSection
     enlarger: EnlargerSection
     scanner: ParamsGroupSection
     spectral_upsampling: SpectralUpsamplingSection
-    tune: TuneSection
     output: OutputSection
 
 
@@ -93,6 +93,8 @@ def create_widget_bundle() -> WidgetBundle:
         halation=ParamsGroupSection(HALATION_MANIFEST),
         couplers=ParamsGroupSection(DIR_COUPLERS_MANIFEST),
         chemistry=ParamsGroupSection(CHEMISTRY_MANIFEST),
+        base=ParamsGroupSection(BASE_MANIFEST),
+        film_chemistry=ParamsGroupSection(FILM_CHEMISTRY_MANIFEST),
         glare=glare,
         input_gamut_compress=ParamsGroupSection(INPUT_GAMUT_COMPRESS_MANIFEST),
         output_gamut_compress=ParamsGroupSection(OUTPUT_GAMUT_COMPRESS_MANIFEST),
@@ -100,10 +102,8 @@ def create_widget_bundle() -> WidgetBundle:
         simulation=simulation,
         preview_crop=PreviewCropSection(input_image),
         camera=camera,
-        exposure_control=ExposureControlSection(simulation, camera),
         enlarger=EnlargerSection(simulation),
         scanner=scanner,
         spectral_upsampling=SpectralUpsamplingSection(input_image),
-        tune=TuneSection(special),
         output=OutputSection(simulation),
     )

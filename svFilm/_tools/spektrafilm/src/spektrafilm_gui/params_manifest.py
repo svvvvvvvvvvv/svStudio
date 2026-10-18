@@ -19,6 +19,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from spektrafilm.runtime.params_schema import (
+    BaseParams,
     EnlargerParams,
     DiffusionFilterParams,
     DirCouplersParams,
@@ -29,9 +30,10 @@ from spektrafilm.runtime.params_schema import (
 )
 from spektrafilm.runtime.params_schema import CameraParams
 from spektrafilm.model.illuminants import Illuminants
+from spektrafilm.model.color_filters import CameraColorFilters
 from spektrafilm.model.stocks import FilmStocks, PrintPapers
 from spektrafilm.utils.gamut_compression import InputGamutCompressSpec, OutputGamutCompressSpec
-from spektrafilm.utils.morph_curves import PrintCurvesMorphParams
+from spektrafilm.utils.morph_curves import FilmChemistryParams, PrintChemistryParams
 from spektrafilm_gui.options import (
     AutoExposureMethods,
     DiffusionFilterFamilies,
@@ -72,6 +74,23 @@ class ParamSpec:
 
 
 @dataclass(frozen=True)
+class SubSection:
+    """A titled, collapsible group of fields shown *inside* a GroupManifest panel.
+
+    ``field_names`` are leaf names — the same leaves as the owning manifest's
+    ``fields`` ParamSpecs — so the full presentation metadata stays declared once
+    in ``fields`` and a subsection only states the grouping and order.
+    ``expanded`` is the default open state of this nested section. Fields not
+    listed in any subsection render loose at the top of the panel (e.g. the
+    group's ``active`` toggle).
+    """
+
+    title: str
+    field_names: tuple[str, ...]
+    expanded: bool = False
+
+
+@dataclass(frozen=True)
 class GroupManifest:
     """A runtime parameter group rendered as one collapsible GUI panel.
 
@@ -96,6 +115,11 @@ class GroupManifest:
     fields: tuple[ParamSpec, ...]
     collapsed_by_default: bool = True
     panel_fields: tuple[ParamSpec, ...] | None = None
+    # Optional nested collapsible sub-groups laid out within this panel. When
+    # empty the panel renders one flat form (the default). Each SubSection
+    # references fields by leaf name; any field not in a subsection renders
+    # loose at the top of the panel.
+    subsections: tuple[SubSection, ...] = ()
 
 
 _DC = "film_render.dir_couplers"
@@ -151,10 +175,45 @@ DIR_COUPLERS_MANIFEST = GroupManifest(
             tooltip="DIR inhibition from the B layer onto the R and G layers respectively (g_B->R, g_B->G).",
         ),
         ParamSpec(
+            f"{_DC}.langmuir_donor_k_rgb",
+            min=0.1,
+            step=0.1,
+            tooltip="NEGATIVE film: per-channel Langmuir saturation of DIR "
+                    "inhibitor release, normalized to each layer's d_max (R, G, B). "
+                    "Lower = earlier, stronger roll-off at high density (gentler "
+                    "shoulder, tames high-amount breakage); large values approach "
+                    "the linear model.",
+        ),
+        ParamSpec(
+            f"{_DC}.langmuir_receiver_k_rgb",
+            min=0.1,
+            step=0.1,
+            tooltip="POSITIVE/reversal film: per-channel receiver-side Langmuir "
+                    "saturation (R, G, B), normalized to the arrived-inhibitor "
+                    "ceiling (the receiver analogue of langmuir_donor_k_rgb's d_max "
+                    "normalization). The donor (silver release) stays linear; "
+                    "this rolls off the receiving layer's response under a pushed "
+                    "amount. Lower = harder, more crash-proof knee (alters the "
+                    "operating-point look); large values approach linear.",
+        ),
+        ParamSpec(
             f"{_DC}.diffusion_size_um",
             min=0,
             step=5,
             tooltip="Sigma in um for the diffusion of the couplers, (5-20 um), controls sharpness and affects saturation.",
+        ),
+        ParamSpec(
+            f"{_DC}.diffusion_tail_um",
+            min=0,
+            step=10,
+            tooltip="Exponential tail scale in um for long-range coupler spread. Larger values extend the rare long-distance inhibition halo beyond the Gaussian core.",
+        ),
+        ParamSpec(
+            f"{_DC}.diffusion_tail_weight",
+            min=0,
+            max=1,
+            step=0.01,
+            tooltip="Fraction of coupler diffusion energy assigned to the long tail. 0 = pure Gaussian spread, higher values add a longer-range inhibition shoulder.",
         ),
     ),
 )
@@ -280,28 +339,33 @@ GRAIN_MANIFEST = GroupManifest(
     title="Grain",
     group_path=_G,
     group_cls=GrainParams,
+    # `active` renders loose at the top; the rest are grouped by `subsections`
+    # below, which mirror the GrainParams schema categories.
     fields=(
         ParamSpec(f"{_G}.active", tier="basic", tooltip="Add grain to the negative"),
-        ParamSpec(f"{_G}.sublayers_active", tier="basic", tooltip="Enable per-sublayer grain structure."),
+        # --- pixel statistics ---
         ParamSpec(
-            f"{_G}.particle_area_um2",
+            f"{_G}.rms_granularity",
             tier="basic",
             min=0,
-            step=0.2,
-            tooltip="Area of the particles in um2, relates to ISO. Approximately 0.1 for ISO 100, 0.1 for ISO 200, 0.4 for ISO 400 and so on.",
+            step=1.0,
+            tooltip="Per-channel (RGB) RMS granularity from the datasheet (sigma_D x 1000, 48 um aperture, net density 1.0). Higher = coarser grain. Typical consumer films ~4 (fine) to ~40 (coarse).",
         ),
         ParamSpec(
-            f"{_G}.particle_scale",
-            tooltip="Scale of particle area for the RGB layers, multiplies particle_area_um2",
+            f"{_G}.density_min",
+            tooltip="Minimum density of the grain, typical values (0.03-0.06).",
         ),
         ParamSpec(
-            f"{_G}.particle_scale_layers",
+            f"{_G}.uniformity",
+            tooltip="Grain uniformity per channel; lower bends the noise curve toward the Selwyn bell, typical values (0.94-0.98).",
+        ),
+        ParamSpec(
+            f"{_G}.particle_scale_sublayers",
             min=0,
             step=0.25,
-            tooltip="Scale of particle area for the sublayers in every color layer, multiplies particle_area_um2",
+            tooltip="Relative particle-area scale per emulsion sublayer (coarsest sublayer = 1, finer sublayers smaller).",
         ),
-        ParamSpec(f"{_G}.density_min", tooltip="Minimum density of the grain, typical values (0.03-0.06)"),
-        ParamSpec(f"{_G}.uniformity", tooltip="Uniformity of the grain, typical values (0.94-0.98)"),
+        # --- texture ---
         ParamSpec(
             f"{_G}.blur",
             tier="basic",
@@ -310,17 +374,64 @@ GRAIN_MANIFEST = GroupManifest(
             tooltip="Sigma of gaussian blur in pixels for the grain, to be increased at high magnifications, (should be 0.8-0.9 at high resolution, reduce down to 0.6 for lower res).",
         ),
         ParamSpec(
+            f"{_G}.mult_usm_sigma",
+            min=0,
+            step=0.1,
+            tooltip="Radius (px) of the density unsharp mask. Broad (default 0.7) puts the acutance in the mid-band, away from Nyquist, so the pixel stays gone while perceived sharpness comes back.",
+        ),
+        ParamSpec(
+            f"{_G}.mult_usm_amount",
+            tier="basic",
+            min=0,
+            step=0.1,
+            tooltip="Strength of the mass-conserving density unsharp mask applied after the grain blur: it makes the pixel/sampling grid disappear while keeping the grain and image content (positive, mass-conserving, not a denoiser). 0 disables. Default 1.5.",
+        ),
+        # --- micro substructure ---
+        ParamSpec(
             f"{_G}.blur_dye_clouds_um",
             min=0,
             step=0.1,
-            tooltip="Scale the sigma of gaussian blur in um for the dye clouds, to be used at high magnifications, (default 1)",
+            tooltip="Scale the sigma of gaussian blur in um for the dye clouds, to be used at high magnifications, (default 1).",
         ),
         ParamSpec(
             f"{_G}.micro_structure",
             min=0,
             step=0.1,
-            tooltip="Parameter for micro-structure due to clumps at the molecular level, [sigma blur of micro-structure / ultimate light-resolution (0.10 um default), size of molecular clumps in nm (30 nm default)]. Only for insane magnifications.",
+            tooltip="Clumps at the molecular level, [sigma blur of micro-structure / ultimate light-resolution (0.10 um default), size of molecular clumps in nm (30 nm default)]. Only for insane magnifications.",
         ),
+    ),
+    subsections=(
+        SubSection(
+            "pixel statistics",
+            ("density_min", "uniformity", "particle_scale_sublayers"),
+            expanded=False,
+        ),
+        SubSection(
+            "texture",
+            ("blur", "mult_usm_amount", "mult_usm_sigma"),
+            expanded=False,
+        ),
+        SubSection(
+            "micro substructure",
+            ("blur_dye_clouds_um", "micro_structure"),
+            expanded=False,
+        ),
+    ),
+)
+
+
+_BD = "film_render.base"
+
+BASE_MANIFEST = GroupManifest(
+    title="Base",
+    group_path=_BD,
+    group_cls=BaseParams,
+    fields=(
+        ParamSpec(f"{_BD}.active", tier="basic", tooltip="Enable base-density (film base + fog / orange mask) tuning."),
+        ParamSpec(f"{_BD}.scale", tier="basic", min=0, step=0.05, tooltip="Overall multiplier on the base density."),
+        ParamSpec(f"{_BD}.cyan", tier="basic", min=0, step=0.05, tooltip="Cyan-channel scale of the base density."),
+        ParamSpec(f"{_BD}.magenta", tier="basic", min=0, step=0.05, tooltip="Magenta-channel scale of the base density."),
+        ParamSpec(f"{_BD}.yellow", tier="basic", min=0, step=0.05, tooltip="Yellow-channel scale of the base density."),
     ),
 )
 
@@ -340,60 +451,68 @@ GLARE_MANIFEST = GroupManifest(
 )
 
 
-_CH = "print_render.density_curves_morph"
+_CH = "print_render.chemistry"
+_MIN_GAMMA = 0.25
+_MAX_GAMMA = 4.0
 
 CHEMISTRY_MANIFEST = GroupManifest(
     title="Chemistry",
     group_path=_CH,
-    group_cls=PrintCurvesMorphParams,
+    group_cls=PrintChemistryParams,
     fields=(
+        ParamSpec(
+            f"{_CH}.development_time",
+            label="Development time",
+            tier="basic",
+            tooltip="Development time for a BW development-time family: selects the density curve and base+fog to render. '—' uses the representative middle development; ignored for single-curve and color stocks.",
+        ),
         ParamSpec(f"{_CH}.active", tier="basic", tooltip="Enable print density-curve morphing."),
         ParamSpec(
             f"{_CH}.gamma_factor",
             label="Gamma factor",
             tier="basic",
-            min=0.5,
-            max=2.0,
+            min=_MIN_GAMMA,
+            max=_MAX_GAMMA,
             step=0.05,
             tooltip="Global coupled gamma multiplier for the print density curves.",
         ),
         ParamSpec(
             f"{_CH}.gamma_factor_fast",
             label="Gamma factor fast",
-            min=0.5,
-            max=2.0,
+            min=_MIN_GAMMA,
+            max=_MAX_GAMMA,
             step=0.05,
             tooltip="Gamma factor applied to the fast sub-layer.",
         ),
         ParamSpec(
             f"{_CH}.gamma_factor_slow",
             label="Gamma factor slow",
-            min=0.5,
-            max=2.0,
+            min=_MIN_GAMMA,
+            max=_MAX_GAMMA,
             step=0.05,
             tooltip="Gamma factor applied to the mid and slow sub-layers.",
         ),
         ParamSpec(
             f"{_CH}.gamma_factor_red",
             label="Gamma factor red",
-            min=0.5,
-            max=2.0,
+            min=_MIN_GAMMA,
+            max=_MAX_GAMMA,
             step=0.02,
             tooltip="Per-channel gamma factor applied to the red channel.",
         ),
         ParamSpec(
             f"{_CH}.gamma_factor_green",
             label="Gamma factor green",
-            min=0.5,
-            max=2.0,
+            min=_MIN_GAMMA,
+            max=_MAX_GAMMA,
             step=0.02,
             tooltip="Per-channel gamma factor applied to the green channel.",
         ),
         ParamSpec(
             f"{_CH}.gamma_factor_blue",
             label="Gamma factor blue",
-            min=0.5,
-            max=2.0,
+            min=_MIN_GAMMA,
+            max=_MAX_GAMMA,
             step=0.02,
             tooltip="Per-channel gamma factor applied to the blue channel.",
         ),
@@ -404,6 +523,81 @@ CHEMISTRY_MANIFEST = GroupManifest(
             max=1.0,
             step=0.02,
             tooltip="Blend all three print sub-layers toward the matched Gumbel shoulder while preserving midgray via a common horizontal offset.",
+        ),
+    ),
+)
+
+
+_FCH = "film_render.chemistry"
+
+FILM_CHEMISTRY_MANIFEST = GroupManifest(
+    title="Chemistry",
+    group_path=_FCH,
+    group_cls=FilmChemistryParams,
+    fields=(
+        ParamSpec(
+            f"{_FCH}.development_time",
+            label="Development time",
+            tier="basic",
+            tooltip="Development time for a BW development-time family: selects the density curve and base+fog to render. '—' uses the representative middle development; ignored for single-curve and color stocks.",
+        ),
+        ParamSpec(f"{_FCH}.active", tier="basic", tooltip="Enable film density-curve morphing."),
+        ParamSpec(
+            f"{_FCH}.gamma_factor",
+            label="Gamma factor",
+            tier="basic",
+            min=_MIN_GAMMA,
+            max=_MAX_GAMMA,
+            step=0.05,
+            tooltip="Global coupled gamma multiplier for the film density curves.",
+        ),
+        ParamSpec(
+            f"{_FCH}.gamma_factor_fast",
+            label="Gamma factor fast",
+            min=_MIN_GAMMA,
+            max=_MAX_GAMMA,
+            step=0.05,
+            tooltip="Gamma factor applied to the fast sub-layer.",
+        ),
+        ParamSpec(
+            f"{_FCH}.gamma_factor_slow",
+            label="Gamma factor slow",
+            min=_MIN_GAMMA,
+            max=_MAX_GAMMA,
+            step=0.05,
+            tooltip="Gamma factor applied to the mid and slow sub-layers.",
+        ),
+        ParamSpec(
+            f"{_FCH}.gamma_factor_red",
+            label="Gamma factor red",
+            min=_MIN_GAMMA,
+            max=_MAX_GAMMA,
+            step=0.02,
+            tooltip="Per-channel gamma factor applied to the red channel.",
+        ),
+        ParamSpec(
+            f"{_FCH}.gamma_factor_green",
+            label="Gamma factor green",
+            min=_MIN_GAMMA,
+            max=_MAX_GAMMA,
+            step=0.02,
+            tooltip="Per-channel gamma factor applied to the green channel.",
+        ),
+        ParamSpec(
+            f"{_FCH}.gamma_factor_blue",
+            label="Gamma factor blue",
+            min=_MIN_GAMMA,
+            max=_MAX_GAMMA,
+            step=0.02,
+            tooltip="Per-channel gamma factor applied to the blue channel.",
+        ),
+        ParamSpec(
+            f"{_FCH}.developer_exhaustion",
+            label="Developer exhaustion",
+            min=0.0,
+            max=1.0,
+            step=0.02,
+            tooltip="Blend all three film sub-layers toward the matched Gumbel shoulder while preserving midgray via a common horizontal offset.",
         ),
     ),
 )
@@ -499,6 +693,19 @@ _CAM = "camera"
 
 CAMERA_PANEL_FIELDS = (
     ParamSpec(
+        f"{_CAM}.exposure_compensation_ev",
+        tier="basic",
+        min=-100,
+        max=100,
+        step=0.25,
+        tooltip="Add a bias to the auto-exposure of the camera.",
+    ),
+    ParamSpec(
+        f"{_CAM}.auto_exposure",
+        tier="basic",
+        tooltip="Use the auto-exposure feature of the virtual camera.",
+    ),
+    ParamSpec(
         f"{_CAM}.film_format_mm",
         tier="basic",
         min=8.0,
@@ -508,36 +715,15 @@ CAMERA_PANEL_FIELDS = (
         tooltip="Long edge of the film format in millimeters, e.g. 8, 16, 35, 60, 120.",
     ),
     ParamSpec(
-        f"{_CAM}.lens_blur_um",
-        min=0,
-        step=0.05,
-        tooltip="Sigma of gaussian filter in um for the camera lens blur. About 5 um for typical lenses, down to 2-4 um for high quality lenses; used for sharp input simulations without lens blur.",
-    ),
-    ParamSpec(
         f"{_CAM}.auto_exposure_method",
         enum=AutoExposureMethods,
         tooltip="Metering method used by the virtual camera's auto-exposure.",
     ),
-)
-
-# Camera-owned exposure controls displayed in the Exposure control panel
-# rather than the Camera panel. They remain CameraParams fields, so the
-# camera section still builds, persists, and auto-preview-wires their
-# editors; CAMERA_MANIFEST.panel_fields keeps them out of the Camera
-# panel so ExposureControlSection can borrow them.
-CAMERA_EXPOSURE_BORROWED_FIELDS = (
     ParamSpec(
-        f"{_CAM}.auto_exposure",
+        f"{_CAM}.color_filter",
         tier="basic",
-        tooltip="Use the auto-exposure feature of the virtual camera.",
-    ),
-    ParamSpec(
-        f"{_CAM}.exposure_compensation_ev",
-        tier="basic",
-        min=-100,
-        max=100,
-        step=0.25,
-        tooltip="Add a bias to the auto-exposure of the camera.",
+        enum=CameraColorFilters,
+        tooltip="Camera taking filter held in front of the lens. Its measured spectral transmittance multiplies the incoming light, so it both darkens and color-casts the exposure (e.g. Hoya Y2/YA3 yellow, R1 red, X0/X1 UV/haze). 'none' = no filter.",
     ),
 )
 
@@ -545,9 +731,8 @@ CAMERA_MANIFEST = GroupManifest(
     title="Camera",
     group_path=_CAM,
     group_cls=CameraParams,
-    collapsed_by_default=True,
-    fields=CAMERA_PANEL_FIELDS + CAMERA_EXPOSURE_BORROWED_FIELDS,
-    panel_fields=CAMERA_PANEL_FIELDS,
+    collapsed_by_default=False,
+    fields=CAMERA_PANEL_FIELDS,
 )
 
 
@@ -634,7 +819,7 @@ OUTPUT_GAMUT_COMPRESS_MANIFEST = GroupManifest(
             f"{_OGC}.algorithm",
             tier="basic",
             enum=OutputGamutCompressAlgorithms,
-            tooltip="off: disable output gamut compression. cam16ucs (default): CAM16-UCS chroma reduction with the smoothest constant-hue behavior. oklch: perceptual chroma reduction in OkLab, preserves hue + lightness. aces_rgc: per-channel ACES RGC v1.3, matches Resolve/Nuke/OCIO. oklrab/jzazbz: alternative perceptual spaces.",
+            tooltip="off: disable output gamut compression. aces_rgc (default): per-channel ACES RGC v1.3, matches Resolve/Nuke/OCIO and is the cheapest per pixel. cam16ucs: CAM16-UCS chroma reduction with the smoothest constant-hue behavior (heaviest). oklch: perceptual chroma reduction in OkLab, preserves hue + lightness. oklrab/jzazbz: alternative perceptual spaces.",
         ),
         ParamSpec(
             f"{_OGC}.knee",
@@ -730,18 +915,7 @@ SPECIAL_PANEL_FIELDS = (
     ),
 )
 
-TUNE_PANEL_FIELDS = (
-    ParamSpec(
-        "film_render.density_curve_gamma",
-        name="film_gamma_factor",
-        label="Film gamma factor",
-        tooltip="Gamma factor of the density curves of the negative, < 1 reduce contrast, > 1 increase contrast",
-        min=0,
-        step=0.05,
-    ),
-)
-
-SPECIAL_FIELDS = SPECIAL_PANEL_FIELDS + TUNE_PANEL_FIELDS
+SPECIAL_FIELDS = SPECIAL_PANEL_FIELDS
 
 
 DISPLAY_PANEL_FIELDS = (
@@ -796,18 +970,18 @@ SIMULATION_SPECIAL_BORROWED_FIELDS = (
 
 SIMULATION_EXPOSURE_PANEL_FIELDS = (
     ParamSpec(
-        "enlarger.print_exposure_compensation",
-        name="print_exposure_compensation",
-        label="Print auto compensation",
-        tooltip="Auto adjust the print exposure for the camera exposure compensation ev",
-    ),
-    ParamSpec(
         "enlarger.print_exposure",
         name="print_exposure",
         label="Print exposure",
         tooltip="Changes the exposure time set in the virtual enlarger",
         min=0,
         step=0.02,
+    ),
+    ParamSpec(
+        "enlarger.print_exposure_compensation",
+        name="print_exposure_compensation",
+        label="Print auto compensation",
+        tooltip="Auto adjust the print exposure for the camera exposure compensation ev",
     ),
 )
 
@@ -863,6 +1037,8 @@ ALL_MANIFESTS = (
     GRAIN_MANIFEST,
     GLARE_MANIFEST,
     CHEMISTRY_MANIFEST,
+    BASE_MANIFEST,
+    FILM_CHEMISTRY_MANIFEST,
     PREFLASHING_MANIFEST,
     CAMERA_MANIFEST,
     CAMERA_DIFFUSION_MANIFEST,

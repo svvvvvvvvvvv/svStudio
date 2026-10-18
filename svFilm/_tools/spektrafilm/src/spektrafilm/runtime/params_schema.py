@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-from spektrafilm.profiles.io import Profile
+from spektrafilm.data.profiles_loader import Profile
 from spektrafilm.utils.gamut_compression import (
     InputGamutCompressSpec,
     OutputGamutCompressSpec,
 )
-from spektrafilm.utils.morph_curves import PrintCurvesMorphParams
+from spektrafilm.utils.morph_curves import FilmChemistryParams, PrintChemistryParams
 
 
 
@@ -52,8 +52,10 @@ class CameraParams:
     auto_exposure_method: str = "center_weighted"
     lens_blur_um: float = 0.0
     film_format_mm: float = 35.0
-    filter_uv: tuple[float, float, float] = (0.0, 410.0, 8.0)
-    filter_ir: tuple[float, float, float] = (0.0, 675.0, 15.0)
+    # color_filter selects a camera taking filter from the color filter library.
+    # Allowed values are the members of `CameraColorFilters` in
+    # spektrafilm.model.color_filters ("none" = no filter).
+    color_filter: str = "none"
     diffusion_filter: DiffusionFilterParams = field(default_factory=DiffusionFilterParams)
 
 
@@ -88,16 +90,19 @@ class ScannerParams:
 @dataclass
 class GrainParams:
     active: bool = True
-    sublayers_active: bool = True
-    particle_area_um2: float = 0.2
-    particle_scale: tuple[float, float, float] = (1.6, 1.6, 3.2)
-    particle_scale_layers: tuple[float, float, float] = (2.0, 1.0, 0.5)
+    # pixel statistics
+    rms_granularity: tuple[float, float, float] = (6, 8, 10)
     density_min: tuple[float, float, float] = (0.03, 0.03, 0.03)
-    uniformity: tuple[float, float, float] = (0.97, 0.99, 0.97)
-    blur: float = 0.65
-    blur_dye_clouds_um: float = 1.0
+    uniformity: tuple[float, float, float] = (0.97, 0.97, 0.97)
+    particle_scale_sublayers: tuple[float, float, float] = (1.0, 0.5, 0.25)
+    # texture
+    blur: float = 0.8 # optimized to go with the mult usm below, see study b80
+    mult_usm_sigma: float = 0.7 # optimized to go with the blur above, see study b80
+    mult_usm_amount: float = 1.5 # Multiplicative (log-domain) density unsharp mask, see study b80
+    # micro substructure
+    blur_dye_clouds_um: float = 2.0 # somewhat resolution of a normal microscope
     micro_structure: tuple[float, float] = (0.2, 30)
-    n_sub_layers: int = 1
+    micro_sublayers: int = 1
 
 
 @dataclass
@@ -136,9 +141,11 @@ class DirCouplersParams:
     gamma_interlayer_r_to_gb: tuple[float, float] = (0.355, 0.305)
     gamma_interlayer_g_to_rb: tuple[float, float] = (0.154, 0.358)
     gamma_interlayer_b_to_rg: tuple[float, float] = (0.171, 0.225)
+    langmuir_donor_k_rgb: tuple[float, float, float] = (1.0, 1.0, 1.0)
+    langmuir_receiver_k_rgb: tuple[float, float, float] = (1.0, 1.0, 1.0)
     diffusion_size_um: float = 20.0
     diffusion_tail_um: float = 200.0 # exponential tail for Lévy-like processes or environmental heterogeneity
-    diffusion_tail_weight: float = 0.06
+    diffusion_tail_weight: float = 0.03
 
 @dataclass
 class GlareParams:
@@ -149,20 +156,33 @@ class GlareParams:
 
 
 @dataclass
+class BaseParams:
+    active: bool = True
+    scale: float = 1.0
+    cyan: float = 1.0
+    magenta: float = 1.0
+    yellow: float = 1.0
+
+
+@dataclass
 class FilmRenderingParams:
-    density_curve_gamma: float = 1.0
+    # Film chemistry: development_time selects which curve / base+fog column of a
+    # BW development-time family to render (matched against
+    # ProfileData.development_time); the remaining fields are the s023 morph,
+    # shared with the print chemistry. Off by default for single-curve/color.
+    chemistry: FilmChemistryParams = field(default_factory=FilmChemistryParams)
     grain: GrainParams = field(default_factory=GrainParams)
     halation: HalationParams = field(default_factory=HalationParams)
     dir_couplers: DirCouplersParams = field(default_factory=DirCouplersParams)
     glare: GlareParams = field(default_factory=GlareParams)
+    # Base density (film base + fog / orange mask) tuning, applied at scan time.
+    base: BaseParams = field(default_factory=BaseParams)
 
 
 @dataclass
 class PrintRenderingParams:
     glare: GlareParams = field(default_factory=GlareParams)
-    density_curves_morph: PrintCurvesMorphParams = field(
-        default_factory=lambda: PrintCurvesMorphParams(active=False)
-    )
+    chemistry: PrintChemistryParams = field(default_factory=PrintChemistryParams)
 
 
 @dataclass

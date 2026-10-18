@@ -1,16 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, is_dataclass, replace
+from dataclasses import dataclass, field, fields, is_dataclass, replace
 from typing import Any, TypeVar
 
 from spektrafilm.model.stocks import FilmStocks, PrintPapers
 from spektrafilm.runtime.api import digest_params, init_params
 from spektrafilm.runtime.params_schema import (
+    BaseParams,
     CameraParams,
     DiffusionFilterParams,
     DirCouplersParams,
     EnlargerParams,
-    FilmRenderingParams,
     GlareParams,
     GrainParams,
     HalationParams,
@@ -20,8 +20,8 @@ from spektrafilm.runtime.params_schema import (
     SettingsParams,
 )
 from spektrafilm.utils.gamut_compression import InputGamutCompressSpec, OutputGamutCompressSpec
-from spektrafilm.utils.morph_curves import PrintCurvesMorphParams
-from spektrafilm_gui.param_manifest import DISPLAY_PANEL_FIELDS, INPUT_IMAGE_FIELDS, SIMULATION_FIELDS, SPECIAL_FIELDS
+from spektrafilm.utils.morph_curves import FilmChemistryParams, PrintChemistryParams
+from spektrafilm_gui.params_manifest import DISPLAY_PANEL_FIELDS, INPUT_IMAGE_FIELDS, SIMULATION_FIELDS, SPECIAL_FIELDS
 
 
 StateSection = TypeVar('StateSection')
@@ -53,7 +53,6 @@ class LoadRawState:
 class SpecialState:
     film_channel_swap: tuple[int, int, int]
     print_channel_swap: tuple[int, int, int]
-    film_render: FilmRenderingParams = field(default_factory=FilmRenderingParams)
 
 
 @dataclass(slots=True)
@@ -135,9 +134,6 @@ def normalize_special_dict(data: dict[str, Any]) -> dict[str, Any]:
     return {
         'film_channel_swap': data.get('film_channel_swap', (0, 1, 2)),
         'print_channel_swap': data.get('print_channel_swap', (0, 1, 2)),
-        'film_render': {
-            'density_curve_gamma': data.get('film_gamma_factor', PROJECT_DEFAULT_GUI_STATE.special.film_render.density_curve_gamma),
-        },
     }
 
 
@@ -204,7 +200,9 @@ class GuiState:
     preflashing: EnlargerParams
     halation: HalationParams
     couplers: DirCouplersParams
-    chemistry: PrintCurvesMorphParams
+    chemistry: PrintChemistryParams
+    base: BaseParams
+    film_chemistry: FilmChemistryParams
     camera: CameraParams
     enlarger_diffusion: DiffusionFilterParams
     camera_diffusion: DiffusionFilterParams
@@ -226,8 +224,6 @@ def clone_state_section(section: StateSection) -> StateSection:
         raise TypeError('Expected a dataclass instance to clone.')
     if isinstance(section, InputImageState):
         return replace(section, io=replace(section.io), settings=replace(section.settings))
-    if isinstance(section, SpecialState):
-        return replace(section, film_render=replace(section.film_render))
     if isinstance(section, SimulationState):
         return replace(
             section,
@@ -255,6 +251,8 @@ def clone_gui_state(state: GuiState) -> GuiState:
         halation=clone_state_section(state.halation),
         couplers=clone_state_section(state.couplers),
         chemistry=clone_state_section(state.chemistry),
+        base=clone_state_section(state.base),
+        film_chemistry=clone_state_section(state.film_chemistry),
         camera=clone_state_section(state.camera),
         enlarger_diffusion=clone_state_section(state.enlarger_diffusion),
         camera_diffusion=clone_state_section(state.camera_diffusion),
@@ -268,6 +266,26 @@ def clone_gui_state(state: GuiState) -> GuiState:
     )
 
 
+def _fill_channel_padding(grain):
+    """Mirror the first real channel across any ``None`` padding in the grain
+    tuples before they reach the GUI.
+
+    A single-channel (B&W) stock's grain preset pads its per-channel tuples to
+    three with ``None`` (e.g. ``uniformity = (0.6, None, None)``); the runtime
+    reads only the first channel, but the GUI editors are typed
+    ``tuple[float, float, float]`` and cannot display ``None``. Repeating the
+    first non-``None`` value presents the single B&W value across the RGB
+    editors and keeps the state type-valid. Always returns a copy.
+    """
+    changes = {}
+    for f in fields(grain):
+        value = getattr(grain, f.name)
+        if isinstance(value, tuple) and any(component is None for component in value):
+            fill = next((component for component in value if component is not None), 0.0)
+            changes[f.name] = tuple(fill if component is None else component for component in value)
+    return replace(grain, **changes)
+
+
 def gui_state_from_params(
     params: RuntimePhotoParams,
     *,
@@ -279,11 +297,13 @@ def gui_state_from_params(
             io=replace(params.io),
             settings=replace(params.settings),
         ),
-        grain=replace(params.film_render.grain),
+        grain=_fill_channel_padding(params.film_render.grain),
         preflashing=replace(params.enlarger),
         halation=replace(params.film_render.halation),
         couplers=replace(params.film_render.dir_couplers),
-        chemistry=replace(params.print_render.density_curves_morph),
+        chemistry=replace(params.print_render.chemistry),
+        base=replace(params.film_render.base),
+        film_chemistry=replace(params.film_render.chemistry),
         camera=replace(params.camera),
         enlarger_diffusion=replace(params.enlarger.diffusion_filter),
         camera_diffusion=replace(params.camera.diffusion_filter),
@@ -294,7 +314,6 @@ def gui_state_from_params(
         special=SpecialState(
             film_channel_swap=(0, 1, 2),
             print_channel_swap=(0, 1, 2),
-            film_render=FilmRenderingParams(density_curve_gamma=params.film_render.density_curve_gamma),
         ),
         simulation=SimulationState(
             selection=SelectionState(

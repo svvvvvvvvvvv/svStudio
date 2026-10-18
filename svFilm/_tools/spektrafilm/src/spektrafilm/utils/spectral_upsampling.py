@@ -7,7 +7,7 @@ from opt_einsum import contract
 import scipy.interpolate
 import scipy.special
 
-from spektrafilm.profiles.io import Hanatos2025SensitivityAdaptation
+from spektrafilm.data.profiles_loader import Hanatos2025SensitivityAdaptation
 from spektrafilm.utils.fast_interp_lut import apply_lut_cubic_2d
 from spektrafilm.config import SPECTRAL_SHAPE, STANDARD_OBSERVER_CMFS
 from spektrafilm.model.illuminants import standard_illuminant
@@ -357,7 +357,7 @@ def compute_hanatos2025_tc_lut(sensitivity, hanatos2025_adaptation, gamut_compre
         spectra_lut = scipy.ndimage.gaussian_filter(spectra_lut,
                         (0, 0, hanatos2025_adaptation.spectral_gaussian_blur))
 
-    if hanatos2025_adaptation.apply_window:
+    if hanatos2025_adaptation.apply_window and hanatos2025_adaptation.window_params is not None:
         window = eval_spectral_bandpass_window(hanatos2025_adaptation.window_params)
         illuminant = standard_illuminant(hanatos2025_adaptation.reference_illuminant)
         normalization = (
@@ -369,7 +369,7 @@ def compute_hanatos2025_tc_lut(sensitivity, hanatos2025_adaptation, gamut_compre
     else:
         raw_lut = contract('ijl,lm->ijm', spectra_lut, sensitivity)
 
-    if hanatos2025_adaptation.apply_surface:
+    if hanatos2025_adaptation.apply_surface and hanatos2025_adaptation.surface_params is not None:
         xy_illu = _illuminant_to_xy(hanatos2025_adaptation.reference_illuminant)
         surface = eval_log_exposure_correction_surface(hanatos2025_adaptation.surface_params,
                                                        illuminant_xy=xy_illu)

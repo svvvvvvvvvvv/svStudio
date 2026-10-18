@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Callable
 import numpy as np
 
-from spektrafilm.profiles.io import Hanatos2025SensitivityAdaptation
+from spektrafilm.data.profiles_loader import Hanatos2025SensitivityAdaptation
 from spektrafilm.utils.gamut_compression import InputGamutCompressSpec
-from spektrafilm.utils.lut import compute_with_lut
+from spektrafilm.utils.lut import compute_with_lut, compute_with_lut_1d
 from spektrafilm.utils.spectral_upsampling import compute_hanatos2025_tc_lut
 from spektrafilm.utils.timings import timeit
 
@@ -36,6 +36,18 @@ class SpectralLUTService:
         self._cmy_test_values = np.array([[[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]],
                                           [[0.7, 0.8, 0.9], [1.0, 1.1, 1.2]]]) # to test if LUTs are identical
 
+    @staticmethod
+    def _supports_3d_lut(cmy_data) -> bool:
+        data = np.asarray(cmy_data)
+        return data.ndim >= 3 and data.shape[-1] == 3
+
+    @staticmethod
+    def _is_single_channel(cmy_data) -> bool:
+        """True for a one-channel (black-and-white) emulsion, which uses the 1D
+        LUT path instead of the 3D one."""
+        data = np.asarray(cmy_data)
+        return data.ndim >= 3 and data.shape[-1] == 1
+
     def set_hanatos2025_adaptation(self, adaptation: Hanatos2025SensitivityAdaptation) -> None:
         adaptation_copy = self._copy_hanatos2025_adaptation(adaptation)
         self.hanatos2025_adaptation = adaptation_copy
@@ -62,9 +74,12 @@ class SpectralLUTService:
     ) -> Hanatos2025SensitivityAdaptation | None:
         if adaptation is None:
             return None
+        # Preserve None (absent adaptation, e.g. BW): np.array(None) would make a
+        # 0-d object array that slips past the `is not None` guards downstream.
+        copy_params = lambda p: None if p is None else np.array(p, copy=True)
         return Hanatos2025SensitivityAdaptation(
-            window_params=np.array(adaptation.window_params, copy=True),
-            surface_params=np.array(adaptation.surface_params, copy=True),
+            window_params=copy_params(adaptation.window_params),
+            surface_params=copy_params(adaptation.surface_params),
             spectral_gaussian_blur=float(adaptation.spectral_gaussian_blur),
             reference_illuminant=adaptation.reference_illuminant,
             apply_window=bool(adaptation.apply_window),
@@ -98,6 +113,11 @@ class SpectralLUTService:
         use_lut: bool = False,
     ):
         if not use_lut:
+            return spectral_calculation(cmy_data)
+        if self._is_single_channel(cmy_data):
+            # B&W: one density channel -> 1D LUT (no full-res spectral cube).
+            return compute_with_lut_1d(cmy_data, spectral_calculation, data_min, data_max)
+        if not self._supports_3d_lut(cmy_data):
             return spectral_calculation(cmy_data)
 
         test_results = spectral_calculation(np.array(self._cmy_test_values))
@@ -136,6 +156,11 @@ class SpectralLUTService:
         use_lut: bool = False,
     ):
         if not use_lut:
+            return spectral_calculation(cmy_data)
+        if self._is_single_channel(cmy_data):
+            # B&W: one density channel -> 1D LUT (no full-res spectral cube).
+            return compute_with_lut_1d(cmy_data, spectral_calculation, data_min, data_max)
+        if not self._supports_3d_lut(cmy_data):
             return spectral_calculation(cmy_data)
 
         test_results = spectral_calculation(np.array(self._cmy_test_values))

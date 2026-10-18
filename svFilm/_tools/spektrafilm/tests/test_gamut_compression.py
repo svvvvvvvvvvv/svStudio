@@ -206,23 +206,29 @@ class TestRemapTcLutForCompression:
         assert out.shape == lut.shape
         assert np.all(np.isfinite(out))
 
-    def test_remap_rejects_non_3_channels(self):
-        lut = np.zeros((32, 32, 4))
+    def test_remap_handles_single_channel_bw(self):
+        # The remap is channel-generic (each channel sampled independently), so a
+        # 1-channel BW tc_lut must remap correctly rather than being rejected.
+        H = W = 32
+        i, _ = np.meshgrid(np.arange(H), np.arange(W), indexing="ij")
+        lut = (i / (H - 1))[..., None].astype(float)  # (32, 32, 1)
         spec = InputGamutCompressSpec()
-        with pytest.raises(AssertionError, match="3 channels"):
-            remap_tc_lut_for_compression(
-                lut, np.array([1 / 3, 1 / 3]), spec,
-            )
+        out = remap_tc_lut_for_compression(
+            lut, np.array([1 / 3, 1 / 3]), spec,
+        )
+        assert out.shape == (H, W, 1)
+        assert out.dtype == lut.dtype
+        assert np.all(np.isfinite(out))
 
 
 class TestOutputGamutCompressSpec:
     def test_default_is_oklch_with_full_range_soft_knee(self):
-        """Default is the CAM16-UCS perceptual-chroma algorithm with the
-        current full-range soft knee. Other algorithms remain available
-        as opt-in overrides."""
+        """Default is the OkLab (oklch) perceptual-chroma algorithm with the
+        current full-range soft knee. Other algorithms (aces_rgc, cam16ucs,
+        jzazbz, oklrab) remain available as opt-in overrides."""
         s = OutputGamutCompressSpec()
         assert s.active is True
-        assert s.algorithm == "cam16ucs"
+        assert s.algorithm == "oklch"
         assert s.knee == (0.0, 1.0, 6.0)
 
     def test_aces_rgc_constructs(self):

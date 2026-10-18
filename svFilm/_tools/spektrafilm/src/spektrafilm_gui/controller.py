@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import threading
 from importlib import import_module
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -10,6 +11,7 @@ from qtpy import QtCore, QtWidgets
 from spektrafilm_gui import controller_persistence as persistence_actions
 from spektrafilm_gui import controller_profile_sync as profile_sync
 from spektrafilm_gui import controller_runtime as runtime
+from spektrafilm_gui.background import BackgroundRunner
 from spektrafilm_gui.controller_layers import (
     INPUT_LAYER_NAME,
     INPUT_PREVIEW_LAYER_NAME,
@@ -28,6 +30,19 @@ from spektrafilm_gui.napari_layout import dialog_parent, reset_viewer_camera, se
 from spektrafilm_gui.params_mapper import build_params_from_state
 from spektrafilm_gui.state_bridge import apply_gui_state, collect_gui_state
 from spektrafilm_gui.widgets import WidgetBundle
+
+def _family_development_times(profile) -> np.ndarray:
+    """A stock's development-time choices as a 1-D array, always non-empty.
+
+    A real B&W family returns all of its times. A stock with no family (color,
+    or single-time B&W) falls back to its own single value, or to ``[1.0]`` when
+    it carries no development time at all — so the dropdown always offers a
+    concrete development time instead of 'none'. (A future push/pull strategy
+    can widen a single entry into a synthesised range.)"""
+    if profile is None or profile.data.development_time is None:
+        return np.array([1.0])
+    return np.asarray(profile.data.development_time, dtype=float)
+
 
 OUTPUT_FLOAT_DATA_KEY = 'pipeline_float_output'
 OUTPUT_COLOR_SPACE_KEY = 'pipeline_output_color_space'
@@ -146,16 +161,20 @@ class GuiController:
             output_display_transform_key=OUTPUT_DISPLAY_TRANSFORM_KEY,
         )
         self._thread_pool = QThreadPool.globalInstance()
-        self._active_simulation_worker: runtime.SimulationWorker | None = None
-        self._active_simulation_label: str | None = None
+        # One runner drives every off-thread operation. Each kind of work runs
+        # on its own channel; within a channel the runner coalesces so a burst
+        # of requests never piles up and only the latest result lands.
+        self._jobs = BackgroundRunner(self._thread_pool, on_busy_changed=self._set_busy)
+        # Preview and Scan run on separate channels (a manual Scan is never
+        # superseded by a preview), but they share one cached simulator, so the
+        # runtime work itself is serialized with this lock.
+        self._runtime_lock = threading.Lock()
         self._runtime_simulator = None
         self._next_runtime_digest_applies_stock_specifics = True
         self._current_input_image: np.ndarray | None = None
         self._current_input_path: str | None = None
         self._current_preview_image: np.ndarray | None = None
         self._auto_preview_scheduled = False
-        self._pending_auto_preview = False
-        self._active_simulation_reports_status = True
 
     def show_startup_placeholder(self) -> None:
         if self._white_border_layer() is not None:
@@ -186,37 +205,49 @@ class GuiController:
     def load_raw_image(self, path: str) -> None:
         gui_state = collect_gui_state(widgets=self._widgets)
         set_status(self._viewer, "Loading raw...", timeout_ms=0)
+        load_raw = gui_state.gui_only.load_raw
+        io = gui_state.input_image.io
+        # The decode is the slow part (rawpy / lensfunpy / scipy); run it off the
+        # GUI thread. The lens-correction result is reported back via this dict.
         lens_info: dict[str, str] = {}
-        try:
-            image = load_and_process_raw_file(
+
+        def decode_raw() -> np.ndarray:
+            return load_and_process_raw_file(
                 path,
-                white_balance=gui_state.gui_only.load_raw.white_balance,
-                temperature=gui_state.gui_only.load_raw.temperature,
-                tint=gui_state.gui_only.load_raw.tint,
-                lens_correction=gui_state.gui_only.load_raw.lens_correction,
-                output_colorspace=gui_state.input_image.io.input_color_space,
-                output_cctf_encoding=gui_state.input_image.io.input_cctf_decoding,
+                white_balance=load_raw.white_balance,
+                temperature=load_raw.temperature,
+                tint=load_raw.tint,
+                lens_correction=load_raw.lens_correction,
+                output_colorspace=io.input_color_space,
+                output_cctf_encoding=io.input_cctf_decoding,
                 lens_info_out=lens_info,
             )
-        except (OSError, ValueError) as exc:
-            QMessageBox.critical(dialog_parent(self._viewer), 'Load raw', f'Failed to load RAW image.\n\n{exc}')
-            set_status(self._viewer, 'Load raw failed')
-            return
 
+        self._jobs.submit(
+            'raw',
+            decode_raw,
+            on_done=lambda image: self._on_raw_loaded(
+                image, path=path, lens_info=lens_info, lens_correction=load_raw.lens_correction
+            ),
+            on_error=self._on_raw_failed,
+        )
+
+    def _on_raw_loaded(self, image, *, path: str, lens_info: dict[str, str], lens_correction: bool) -> None:
         self._current_input_path = path
         self._set_or_add_input_stack(image)
 
         lens_summary = lens_info.get('summary')
         if lens_summary:
-            set_status(
-                self._viewer,
-                f"Loaded raw and applied lens correction: {lens_summary}",
-            )
-        elif gui_state.gui_only.load_raw.lens_correction:
+            set_status(self._viewer, f"Loaded raw and applied lens correction: {lens_summary}")
+        elif lens_correction:
             set_status(self._viewer, "Loaded raw, lens correction not applied")
         else:
             set_status(self._viewer, "Loaded raw")
         self._request_auto_preview_if_enabled()
+
+    def _on_raw_failed(self, message: str) -> None:
+        QMessageBox.critical(dialog_parent(self._viewer), 'Load raw', f'Failed to load RAW image.\n\n{message}')
+        set_status(self._viewer, 'Load raw failed')
 
     def refresh_preview_cache(self, *_args) -> None:
         input_image = self._current_input_image
@@ -253,12 +284,20 @@ class GuiController:
             return
 
         params = build_params_from_state(state)
+        # Read the development-time choices before digest collapses them to one
+        # column. Stocks without a family fall back to a single 1.0 entry.
+        film_times = _family_development_times(params.film)
+        print_times = _family_development_times(params.print)
         synced_state = gui_state_from_params(
             digest_after_selection(params),
             film_stock=state.selection.film_stock,
             print_paper=state.selection.print_paper,
         )
         self._apply_profile_sync_state(synced_state)
+        # Populate the dropdowns last: with no prior selection the editor
+        # defaults to the family's floor-middle development (None when no family).
+        self._widgets.film_chemistry.set_development_time_choices(film_times)
+        self._widgets.chemistry.set_development_time_choices(print_times)
         self._next_runtime_digest_applies_stock_specifics = True
 
     def apply_film_profile_defaults(self, film_stock: str) -> None:
@@ -282,7 +321,7 @@ class GuiController:
         )
 
     def run_scan(self) -> None:
-        self._start_simulation(source_layer_name=INPUT_LAYER_NAME, mode_label='Scan')
+        self._start_simulation(source_layer_name=INPUT_LAYER_NAME, mode_label='Scan', channel='scan')
 
     def request_auto_preview(self, *_args) -> None:
         if self._auto_preview_scheduled:
@@ -536,18 +575,11 @@ class GuiController:
     def _run_scheduled_auto_preview(self) -> None:
         self._auto_preview_scheduled = False
         if not self._auto_preview_enabled() or self._current_preview_image is None:
-            self._pending_auto_preview = False
             return
-        if self._active_simulation_worker is not None:
-            self._pending_auto_preview = True
-            return
+        # The runner coalesces: if a simulation is in flight this preview becomes
+        # the channel's pending request and runs once the current one finishes,
+        # replacing any earlier pending preview so only the latest lands.
         self._run_preview(report_status=False)
-
-    def _replay_pending_auto_preview(self) -> None:
-        if not self._pending_auto_preview:
-            return
-        self._pending_auto_preview = False
-        self.request_auto_preview()
 
     def _output_layer(self) -> NapariImageLayer | None:
         return self._layers.output_layer()
@@ -673,11 +705,15 @@ class GuiController:
         self.set_gray_18_canvas_enabled(bool(is_checked()) if callable(is_checked) else False)
 
     def _execute_simulation_request(self, request: SimulationRequest) -> SimulationResult:
-        return runtime.execute_simulation_request(
-            request,
-            run_simulation_fn=self._process_image_with_runtime,
-            prepare_output_display_image_fn=self._prepare_output_display_image,
-        )
+        # Preview and Scan run on independent channels and can therefore be in
+        # flight on two worker threads at once; the lock serializes their use of
+        # the single shared runtime simulator (and the display path).
+        with self._runtime_lock:
+            return runtime.execute_simulation_request(
+                request,
+                run_simulation_fn=self._process_image_with_runtime,
+                prepare_output_display_image_fn=self._prepare_output_display_image,
+            )
 
     @staticmethod
     def _configure_simulation_params(params, *, source_layer_name: str):
@@ -686,11 +722,14 @@ class GuiController:
             settings.preview_mode = source_layer_name == INPUT_PREVIEW_LAYER_NAME
         return params
 
-    def _start_simulation(self, *, source_layer_name: str, mode_label: str, report_status: bool = True) -> None:
-        if self._active_simulation_worker is not None:
-            set_status(self._viewer, 'Simulation already running')
-            return
-
+    def _start_simulation(
+        self,
+        *,
+        source_layer_name: str,
+        mode_label: str,
+        report_status: bool = True,
+        channel: str = 'simulation',
+    ) -> None:
         image_data = self._simulation_input_image(source_layer_name=source_layer_name)
         if image_data is None:
             QMessageBox.warning(dialog_parent(self._viewer), 'Run simulation', 'Load an input image before running the simulation.')
@@ -712,23 +751,18 @@ class GuiController:
             use_display_transform=state.gui_only.display.use_display_transform,
         )
 
-        worker = runtime.SimulationWorker(request, execute_request=self._execute_simulation_request)
-        worker.signals.finished.connect(self._on_simulation_finished)
-        worker.signals.failed.connect(self._on_simulation_failed)
-        self._active_simulation_worker = worker
-        self._active_simulation_label = mode_label
-        self._active_simulation_reports_status = report_status
-        self._set_simulation_controls_enabled(False)
+        # Button state is driven centrally by the runner's busy listener
+        # (_set_busy); submitting here disables the controls as a side effect.
         if report_status:
             set_status(self._viewer, f'Computing {mode_label.lower()}...', timeout_ms=0)
-        self._thread_pool.start(worker)
+        self._jobs.submit(
+            channel,
+            lambda: self._execute_simulation_request(request),
+            on_done=lambda result: self._on_simulation_finished(result, report_status=report_status),
+            on_error=lambda message: self._on_simulation_failed(message, mode_label=mode_label),
+        )
 
-    def _on_simulation_finished(self, result: SimulationResult) -> None:
-        report_status = self._active_simulation_reports_status
-        self._active_simulation_worker = None
-        self._active_simulation_label = None
-        self._active_simulation_reports_status = True
-        self._set_simulation_controls_enabled(True)
+    def _on_simulation_finished(self, result: SimulationResult, *, report_status: bool = True) -> None:
         self._set_or_add_output_layer(
             result.display_image,
             float_image=result.float_image,
@@ -738,17 +772,16 @@ class GuiController:
         )
         if report_status:
             set_status(self._viewer, f'{result.mode_label} completed. {result.status_message}')
-        self._replay_pending_auto_preview()
 
-    def _on_simulation_failed(self, message: str) -> None:
-        self._active_simulation_worker = None
-        mode_label = self._active_simulation_label or 'Simulation'
-        self._active_simulation_label = None
-        self._active_simulation_reports_status = True
-        self._set_simulation_controls_enabled(True)
+    def _on_simulation_failed(self, message: str, *, mode_label: str = 'Simulation') -> None:
         QMessageBox.critical(dialog_parent(self._viewer), 'Run simulation', f'Simulation failed.\n\n{message}')
         set_status(self._viewer, f'{mode_label} failed')
-        self._replay_pending_auto_preview()
+
+    def _set_busy(self, busy: bool) -> None:
+        """Called by the runner whenever the working thread becomes engaged or
+        idle. Grays out the action buttons so they cannot be triggered while a
+        preview / scan / raw decode / warmup is in flight."""
+        self._set_simulation_controls_enabled(not busy)
 
     def _set_simulation_controls_enabled(self, enabled: bool) -> None:
         simulation_section = getattr(self._widgets, 'simulation', None)
@@ -759,6 +792,19 @@ class GuiController:
             set_enabled = getattr(button, 'setEnabled', None)
             if callable(set_enabled):
                 set_enabled(enabled)
+
+    def start_warmup(self, warmup_fn) -> None:
+        """Run a one-off warmup callable on the working thread so the GUI is
+        usable immediately while libraries / JIT / the first pipeline build
+        prime in the background. The action buttons gray out (busy listener)
+        and the status bar shows progress until it finishes."""
+        set_status(self._viewer, 'Switching on the safe-light...', timeout_ms=0)
+        self._jobs.submit(
+            'warmup',
+            warmup_fn,
+            on_done=lambda _result: set_status(self._viewer, 'Ready'),
+            on_error=lambda _message: set_status(self._viewer, 'Ready'),
+        )
 
     def _run_simulation(self, *, source_layer_name: str) -> None:
         image_data = self._simulation_input_image(source_layer_name=source_layer_name)

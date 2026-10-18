@@ -60,7 +60,7 @@ def _make_state() -> GuiState:
     state.grain.active = False
     state.halation.halation_strength = (7.0, 5.0, 3.0)
     state.couplers.inhibition_interlayer = 1.75
-    # PrintCurvesMorphParams is a frozen runtime dataclass; reassign via replace
+    # PrintChemistryParams is a frozen runtime dataclass; reassign via replace
     state.chemistry = replace(state.chemistry, gamma_factor=1.15)
     state.glare.blur = 0.8
     state.scanner = replace(state.scanner, white_correction=True, white_level=0.9, lens_blur=0.3)
@@ -106,6 +106,8 @@ def _make_widgets(state: GuiState) -> WidgetBundle:
         halation=StubSection(clone_state_section(state.halation)),
         couplers=StubSection(clone_state_section(state.couplers)),
         chemistry=StubSection(clone_state_section(state.chemistry)),
+        base=StubSection(clone_state_section(state.base)),
+        film_chemistry=StubSection(clone_state_section(state.film_chemistry)),
         glare=StubSection(clone_state_section(state.glare)),
         scanner=StubSection(clone_state_section(state.scanner)),
         input_gamut_compress=StubSection(clone_state_section(state.input_gamut_compress)),
@@ -117,10 +119,8 @@ def _make_widgets(state: GuiState) -> WidgetBundle:
             scan_film=state.simulation.io.scan_film,
         ),
         preview_crop=object(),
-        exposure_control=object(),
         enlarger=object(),
         spectral_upsampling=object(),
-        tune=object(),
         output=object(),
     )
 
@@ -135,6 +135,8 @@ def test_gui_state_section_names_match_gui_state_fields() -> None:
         'halation',
         'couplers',
         'chemistry',
+        'base',
+        'film_chemistry',
         'camera',
         'enlarger_diffusion',
         'camera_diffusion',
