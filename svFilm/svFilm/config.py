@@ -376,6 +376,19 @@ PERSON_PE_WHITE_SLOPE = 45.0
 PERSON_PE_CLOTH_P99_MAX = None
 PERSON_PE_CLOTH_CLIP_MAX = None
 PERSON_PE_CLOTH_P1_MIN = None
+# ★★★ **「只提不压」不是用户令，是 agent 自定的规矩**（10-18 用户纠正）：
+#   用户原话是「脸要好看、要正确」「脸不能暗」——**「不能暗」只禁止把脸弄暗，不等于「亮了不许压」**。
+#   这条规矩来自两个事故的安全侧：
+#   ① `band=False + target=40` 的错误配置（DSCF2328 被压 −12.9 L*）；
+#   ② DSCF1744 掩膜把亮处当脸（被压 −8.8 L*；本张输出侧 `face_box=None`，压根没有脸）。
+#   ⇒ 正确做法不是"永远不压"，而是**有门的两侧**：只在 band 在、**脸档**、脸 > 上沿+margin、
+#     且**输出侧检测框与掩膜一致**时才允许压；否则弃权（1744 与旧行为同）。
+#   **默认 True**（10-18 用户纠正后撤掉旧规矩）；正常 30 张没有脸档 > 上沿 ⇒ 行为不变。
+PERSON_PE_ALLOW_DARKEN = True
+#   单张最多压多少 pe（0.12 ≈ 11 L*；只做"纠过曝"，不做"重打光"）。
+PERSON_PE_MAX_DN = 0.12
+#   脸要比上沿高多少才压（1.0 L*，防噪声/边界抖动）。
+PERSON_PE_DARKEN_MARGIN = 1.0
 
 
 # ---- 出图缓存（只给常驻服务用）----

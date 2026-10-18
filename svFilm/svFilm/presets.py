@@ -860,13 +860,17 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
             _lo_face = _lo
             _up = _lo + (_hi - _lo) * _bk
             if _L >= _up:
-                _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), band=[_lo, _hi],
-                                       target=round(_up, 2), acted=False,
-                                       why='bright_enough')
-                return out                                 # ★★ **够亮 ⇒ 一个像素不动**
-                #   —— 只做「脸不能暗」，所以**只提不压**（`print_exposure` 是**全局**的）：
-                #     把"偏亮的脸"压回去 = 整张一起压暗（实测 DSCF1744 顺光片被压 −8.8 L*，
-                #     起因就是掩膜把亮处当成脸）⇒ 压的收益小、风险大 ⇒ 不做。
+                # ★ 旧行为：够亮 ⇒ 一个像素不动（只提不压）。现在只在**允许压且脸高于上沿**
+                #   时不早退；是否真压由下面的"输出侧框∩掩膜"门决定（1744 那种无脸图会弃权）。
+                _pre_dn = (bool(getattr(cfg, 'PERSON_PE_ALLOW_DARKEN', False))
+                           and (_EX.regime() == 'face')
+                           and _L > float(_hi)
+                           + float(getattr(cfg, 'PERSON_PE_DARKEN_MARGIN', 1.0)))
+                if not _pre_dn:
+                    _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), band=[_lo, _hi],
+                                           target=round(_up, 2), acted=False,
+                                           why='bright_enough')
+                    return out                             # ★★ **够亮且在带内 ⇒ 一个像素不动**
             _tgt = _up
         _d = _tgt - _L
         #   ★ 符号：`print_exposure ↑ ⇒ 印得暗 ⇒ 脸 L* ↓`，实测 `d(脸L*)/d(pe) = −79`
@@ -879,15 +883,46 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         _mx *= 1.0 + float(_ppe.get('person_pe_back_gain',
                                     getattr(cfg, 'PERSON_PE_BACK_GAIN', 1.0)) or 0.0) * _bk
         _dpe = max(-_mx, min(_mx, -_d / _sl))
-        # ★★★ **只提不压 —— 由代码保证，不靠调用方自觉**：`_dpe > 0` = "脸比目标亮 ⇒ 想压"，
-        #   而 `print_exposure` 是**整张一起动**的（压脸 = 压整幅，实测 DSCF1744 被压 −8.8 L*）。
-        #   ⚠ 上面那道"窗内够亮就早退"只兜得住 `band` 那条路；`band=False`（关窗直拉目标）
-        #     没有窗兜着 ⇒ 实测 `band=False + target_L=40` 把脸 69.5 → 56.74（方向正好反了）。
+        # ★★★ **旧「只提不压」= 两个事故的安全侧，不是铁律**（10-18 调研）：
+        #   ① `band=False + target_L=40` 的错误配置（DSCF2328 被压 −12.9 L*）；
+        #   ② DSCF1744 掩膜把亮处当脸（被压 −8.8 L*；本张输出侧 `face_box=None`，根本没有脸）。
+        #   ⇒ 改为**有门的两侧**（默认关，`PERSON_PE_ALLOW_DARKEN=False`）：
+        #     band 在 + 脸 > 上沿+margin + 输出侧检测框与掩膜一致（掩膜 ≥80% 像素落在框内）
+        #     ⇒ 允许压；任一不成立 ⇒ 弃权（与旧版逐位相同）。
+        _darken = False
         if _dpe > 0.0:
-            _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), target=round(_tgt, 2),
-                                   dpe_asked=round(_dpe, 4), acted=False,
-                                   why='positive_only')
-            return out
+            _allow_dn = (bool(getattr(cfg, 'PERSON_PE_ALLOW_DARKEN', False))
+                         and (_band is not None) and (_EX.regime() == 'face'))
+            _dn_ok = False
+            if _allow_dn and _L > float(_hi) + float(getattr(cfg, 'PERSON_PE_DARKEN_MARGIN', 1.0)):
+                try:
+                    _bx = _P.face_box(np.clip(out, 0.0, 1.0))
+                except Exception:                                        # noqa: BLE001
+                    _bx = None
+                if _bx is not None:
+                    _x, _y, _w, _h = (float(v) for v in _bx[:4])
+                    _mg = 0.20
+                    _x0 = int(max(0, _x - _w * _mg)); _x1 = int(min(W, _x + _w * (1.0 + _mg)))
+                    _y0 = int(max(0, _y - _h * _mg)); _y1 = int(min(H, _y + _h * (1.0 + _mg)))
+                    _inside = int(_sel[_y0:_y1, _x0:_x1].sum())
+                    _dn_ok = (_inside >= 0.8 * int(_sel.sum())) and (int(_sel.sum()) >= 300)
+            if not _dn_ok:
+                _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), target=round(_tgt, 2),
+                                       dpe_asked=round(_dpe, 4), acted=False,
+                                       why=('positive_only' if not _allow_dn else 'darken_refused'))
+                return out
+            _darken = True
+            # ★ 压暗目标是**上沿 `_hi`**（不是 `_tgt`）：顺光 `_tgt=lo`，若按 `_tgt` 会一路压到 67。
+            _dpe = (_L - float(_hi)) / _sl
+            _mx_dn = abs(float(getattr(cfg, 'PERSON_PE_MAX_DN', 0.12)))
+            _dpe = min(_dpe, _mx_dn)
+            # 不许把脸压到下沿以下（有窗时）
+            if _lo_face is not None:
+                _dpe = min(_dpe, max(0.0, (_L - float(_lo_face)) / _sl))
+            if _dpe < 1e-4:
+                _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), target=round(_tgt, 2),
+                                       acted=False, why='delta_tiny')
+                return out
         if abs(_dpe) < 1e-4:
             _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), target=round(_tgt, 2),
                                    acted=False, why='delta_tiny')
@@ -1015,14 +1050,23 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
                                cloth_ok=_cloth_ok,
                                cloth_crushed=bool(_cloth_crushed),
                                acted=True,
-                               why=('applied_white+cloth_capped'
+                               darken=bool(_darken),
+                               dpe=round(_dpe, 4),
+                               why=('applied_darken' if _darken
+                                    else 'applied_white+cloth_capped'
                                     if (_white_cut and _cloth_cut)
                                     else 'applied_white_capped' if _white_cut
                                     else 'applied_cloth_capped' if _cloth_cut
                                     else 'applied'))
         import sys as _sys
-        print('[svFilm] presets.render_person_pe: 脸 L* %.1f ⇒ 目标 %.1f ⇒ 印相曝光 %.4f → %.4f'
-              '（第二遍印）' % (_L, _tgt, _pe0, _pe1), file=_sys.stderr)
+        if _darken:
+            print('[svFilm] presets.render_person_pe: 脸 L* %.1f > 上沿 %.1f ⇒ **压暗** dpe %.4f'
+                  ' ⇒ 印相曝光 %.4f → %.4f（上限 %.2f；输出侧框∩掩膜一致才动手）'
+                  % (_L, _hi, _dpe, _pe0, _pe1,
+                     abs(float(getattr(cfg, 'PERSON_PE_MAX_DN', 0.12)))), file=_sys.stderr)
+        else:
+            print('[svFilm] presets.render_person_pe: 脸 L* %.1f ⇒ 目标 %.1f ⇒ 印相曝光 %.4f → %.4f'
+                  '（第二遍印）' % (_L, _tgt, _pe0, _pe1), file=_sys.stderr)
         if _white_cut:
             print('[svFilm] presets.render_person_pe: **服装（亮中性）pass1 %.1f ⇒ 提到脸目标会到 %.1f'
                   ' (> 上沿 %.1f)** ⇒ 只提到 pe %.4f（脸停在 ~%.1f；下限 pe %.4f）%s'
