@@ -152,12 +152,17 @@ def install():
         """
         if _orig_raw is None:
             return 0.0
-        if method != 'subject' or _MASK[0] is None:
-            return anchor_ev(_orig_raw(raw, method, target))
+        # ★★ 中灰探针**必须最优先判**：`filming._midgray_autoexposure_scale()` 用 1×1 raw
+        #    问"印相归一倍数"。若先走下面的掩膜/锚分支（无脸时 `_MASK[0] is None`）⇒ 探针
+        #    拿到的是**锚**（subject 锚 +1.118 EV）⇒ 印相归一整体平移 2^1.118 = 2.17×
+        #    ⇒ 平场 18% 灰从 L*88.5 掉到 70.1、暗部 7.1→2.9（10-18 升级后实测）。
+        #    dev 的语义 = 探针原样返回（EV=0）；锚只用于**真正在测的图**。
         arr = np.asarray(raw)
         field = np.mean(arr, axis=2) if arr.ndim == 3 else arr
         if field.ndim != 2 or field.size < 16:        # 中灰探针，不是整幅
             return _orig_raw(raw, method, target)
+        if method != 'subject' or _MASK[0] is None:
+            return anchor_ev(_orig_raw(raw, method, target))
         ev, cover = _masked_ev(field, target, _MASK[0])
         if ev is None:
             _abstain(cover)

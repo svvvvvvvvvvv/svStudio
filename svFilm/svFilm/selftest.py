@@ -668,13 +668,15 @@ def t_presets():
           'JSON 写了但 params 里不是那个数 ⇒ 又是一组"改了没反应"的假旋钮')
 
 # ★★★★ 配平基准**走引擎数据库**；绝对锚 = **本链当前那三联**（换卷/换纸必须来这里同步）。
-#   现值：`kodak_portra_endura` / TH-KG3 / `kodak_portra_400` ⇒ [C,M,Y] = [0, 51.568, 52.534]
+#   现值：`kodak_portra_endura` / TH-KG3 / `kodak_portra_400` ⇒ [C,M,Y] = [0, 51.230, 52.240]
+#   ★ 10-18 引擎升级（dev 6cd00c8）重写了 `neutral_print_filters.json`：全库每格 −0.30±0.02
+#     （旧 [0, 51.568, 52.534]）⇒ 锚跟着 DB 走，不是我们改值。
 #   （**读 DB 顺序是 c,m,y**；路径 data/filters/neutral_print_filters.json）
     check('★★ 配平基准走引擎数据库（不是一对硬编码常数）',
           bool(p.settings.neutral_print_filters_from_database),
           'db=%s' % p.settings.neutral_print_filters_from_database,
           '关掉就会退回"一对常数发给不同底片" —— 那正是 18%% 灰偏色的原因')
-    _nm, _ny = 51.568, 52.534
+    _nm, _ny = 51.230, 52.240
     check('★★ 而且 Y/M 不许对调（绝对锚：portra_endura/TH-KG3/portra_400 ⇒ M %.3f / Y %.3f）'
           % (_nm, _ny),
           abs(float(p.enlarger.m_filter_neutral) - _nm) < 5e-3
