@@ -1,5 +1,5 @@
 {
-  "_note_self": "★★★ dev 基线（引擎 dev 6cd00c8；10-18 重标）。schema 生成器 = _lib/mkpreset.py（值 = 引擎默认 + 下列显式项）。\n「选」kodak_portra_400 + kodak_portra_endura（10-17 用户拍板，勿翻案）。\n「定」print_exposure 0.694 ｜ couplers.amount 1.10（Langmuir K=1 默认；10-18 全 11 张扫 0.90/1.00/1.10/1.20 ⇒ 1.10 落带最多 23/27、B1 缺口收窄）｜ 印相化学 γ_R 1.15 / γ_G 1.10 / γ_B 1.12 ｜ 相机黑柔 black_pro_mist 0.25 ｜ 画幅 35 ｜ 颗粒 = dev 原生：卷表 rms (4.5, 4.5, 4.5) · blur 0.8 · mult_usm 0.7/1.5 · dye 2µm · uniformity 0.97 · scanner USM 0｜ halation (1.5, 0.5, 0)（JSON×100；手写值，非按卷表）｜ 靶 = 鹿井 52 张逐图 [P25,P75]。\n「大方向」（不在本文件）入口 WB 4600/0.97 ｜ 动态 PE：目标脸 66.96 · band (67, 78)（10-17 抬脸）· 服装带（亮中性子集）+ 全色 p99/clip（A1.1） [77.1,88.3]（10-18 A1：只截 back 偏好）。\n接线 scan_white/black_correction = True。报告：引擎升级_1018/报告.md · 五笔_1018。",
+  "_note_self": "★★★ dev 基线（引擎 dev 6cd00c8；10-18 重标）。schema 生成器 = _lib/mkpreset.py（值 = 引擎默认 + 下列显式项）。\n「选」kodak_portra_400 + kodak_portra_endura（10-17 用户拍板，勿翻案）。\n「定」print_exposure 0.694 ｜ couplers.amount 1.10（Langmuir K=1 默认；10-18 全 11 张扫 0.90/1.00/1.10/1.20 ⇒ 1.10 落带最多 23/27、B1 缺口收窄）｜ 印相化学 γ_R 1.15 / γ_G 1.10 / γ_B 1.12 ｜ 相机黑柔 black_pro_mist 0.25 ｜ 画幅 35 ｜ 颗粒 = dev 原生：卷表 rms (4.5, 4.5, 4.5) · blur 0.8 · mult_usm 0.7/1.5 · dye 2µm · uniformity 0.97 · scanner USM 0｜ halation (1.5, 0.5, 0)（JSON×100；手写值，非按卷表）｜ 靶 = 鹿井 52 张逐图 [P25,P75]。\n「大方向」（不在本文件）入口 WB 4600/0.97 ｜ 动态 PE：目标脸 66.96（缺省） · band 接受 [55.0,74.4] · tail [62.0,69.4] · mid 67.2（10-19 重定；旧 67/78 是中位）· 服装带（亮中性子集）+ 全色 p99/clip（A1.1） [77.1,88.3]（10-18 A1：只截 back 偏好）。\n接线 scan_white/black_correction = True。报告：引擎升级_1018/报告.md · 五笔_1018。",
   "wb": {
     "white_balance": "custom",
     "temperature": 4545.0,
@@ -203,15 +203,20 @@
     "film_stock": "kodak_portra_400",
     "print_paper": "kodak_portra_endura",
     "person_pe_band": [
-      67.0,
-      78.0
+      55.0,
+      74.4
     ],
     "person_pe_white_band": [
       77.1,
       88.3
     ],
     "person_pe_cloth_p99_max": 98.6,
-    "person_pe_cloth_clip_max": 1.0
+    "person_pe_cloth_clip_max": 1.0,
+    "person_pe_tail": [
+      62.0,
+      69.4
+    ],
+    "person_pe_mid": 67.2
   },
   "display": {
     "preview_max_size": 640

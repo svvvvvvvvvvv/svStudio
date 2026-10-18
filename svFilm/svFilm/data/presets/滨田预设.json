@@ -1,5 +1,5 @@
 {
-  "_note_self": "值：dev 基线（6cd00c8；10-18 重标）。film_format 70（6×7）｜ person_pe_band [77,84]（10-18 A2：下沿 80.5→77）· 服装带（亮中性子集）+ 全色 p99/clip（A1.1） [77.8,90.2]（A1）｜ couplers.amount 0.65（Langmuir K=1 默认；10-18 扫档 0.55/0.65/0.75/0.85 中 0.65 与已验收最近）｜ m +3CC ｜ y +1CC ｜ 其余承鹿井预设（同卷/纸/化学/颗粒）。\n靶 = 滨田 22 张逐图 [P25,P75]；11 张同批同尺 20/22 带内、0 真越界（升级后复核）。\n未达标（不当验收）：A4 中/亮 1.31 ｜ NA 0_20 / 20_40 a* 偏负 ｜ 蓝/橙 1.65 ｜ 脸−臂 dC −1.39。报告 滨田_1017。\n颗粒 = dev 原生（同鹿井卷）：rms (4.5, 4.5, 4.5) · blur 0.8 · mult_usm 0.7/1.5 · dye 2µm · uniformity 0.97 · scanner USM 0",
+  "_note_self": "值：dev 基线（6cd00c8；10-18 重标）。film_format 70（6×7）｜ person_pe_band 接受 [62.9,83.4] · tail [71.3,79.0] · mid 77.0（10-19 重定；旧 [77,84] 下沿=中位）· 服装带（亮中性子集）+ 全色 p99/clip（A1.1） [77.8,90.2]（A1）｜ couplers.amount 0.65（Langmuir K=1 默认；10-18 扫档 0.55/0.65/0.75/0.85 中 0.65 与已验收最近）｜ m +3CC ｜ y +1CC ｜ 其余承鹿井预设（同卷/纸/化学/颗粒）。\n靶 = 滨田 22 张逐图 [P25,P75]；11 张同批同尺 20/22 带内、0 真越界（升级后复核）。\n未达标（不当验收）：A4 中/亮 1.31 ｜ NA 0_20 / 20_40 a* 偏负 ｜ 蓝/橙 1.65 ｜ 脸−臂 dC −1.39。报告 滨田_1017。\n颗粒 = dev 原生（同鹿井卷）：rms (4.5, 4.5, 4.5) · blur 0.8 · mult_usm 0.7/1.5 · dye 2µm · uniformity 0.97 · scanner USM 0",
   "wb": {
     "white_balance": "custom",
     "temperature": 4663.0,
@@ -203,15 +203,20 @@
     "film_stock": "kodak_portra_400",
     "print_paper": "kodak_portra_endura",
     "person_pe_band": [
-      77.0,
-      84.0
+      62.9,
+      83.4
     ],
     "person_pe_white_band": [
       77.8,
       90.2
     ],
     "person_pe_cloth_p99_max": 99.2,
-    "person_pe_cloth_clip_max": 2.0
+    "person_pe_cloth_clip_max": 2.0,
+    "person_pe_tail": [
+      71.3,
+      79.0
+    ],
+    "person_pe_mid": 77.0
   },
   "display": {
     "preview_max_size": 640

@@ -459,6 +459,13 @@ def _apply(p, d, cfg, name=None):
         # `false` = 关掉服装约束；其余按二元组收（服装（亮中性）L50 的 [下沿, 上沿]，只用上沿截断偏好）
         _w = si['person_pe_white_band']
         _ppe['person_pe_white_band'] = False if _w is False else tuple(float(v) for v in _w)
+    if 'person_pe_tail' in si:
+        # 尾巴目标 [P25,P75]：只在接受范围外才用；不是下沿
+        _t = si['person_pe_tail']
+        _ppe['person_pe_tail'] = tuple(float(v) for v in _t)
+    if 'person_pe_mid' in si:
+        # 中位 P50：逆光提亮目标的上界（顺光 P25，逆光 P50）
+        _ppe['person_pe_mid'] = float(si['person_pe_mid'])
     if 'person_pe_lc' in si:
         # "off" | "auto"：只在脸已在带内时，用 lc 压白服（默认 off）
         _ppe['person_pe_lc'] = str(si['person_pe_lc']).lower()
@@ -982,70 +989,90 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         if _band is False:
             _band = None                                   # 「关掉窗」= 逐图直接拉到 `_tgt`
         _lo_face = None                                    # 服装约束要知道「脸的下限」；无窗 ⇒ 不截断
+        _cap_lo = None                                     # 服装帽的「脸目标」：提亮时=P25（尾巴下限），压暗时=接受下限
         if _band is not None:
             _lo, _hi = float(_band[0]), float(_band[1])
-            # ★★ **显式目标 = 把窗口下沿抬到它**（上沿跟着抬，保证 `lo <= hi`）：
-            #    只抬下沿 ⇒ 顺光（`_bk≈0`）的目标就是它，逆光仍沿窗推到亮端 ⇒ 两种光位都不丢。
-            if _tgt_e is not None:
-                _lo = max(_lo, float(_tgt_e))
-                _hi = max(_hi, _lo)
-            # ★★★ **光位 → 目标**（`_bk` = 逆光程度）：顺光 ⇒ 只保下限（脸别再暗下去）；
-            #     逆光 ⇒ 目标推到**亮端**（用户令「**逆光时 背景肯定会有些曝 人也得多提亮**」）。
+            # ★★ 10-18 重定：band = **接受范围 [P10,P90]**；尾巴目标 P25/P75，中位 P50。
+            #   旧语义（下沿=中位、target_l 抬下沿）已废；target_l 若还给，就当 mid 用。
+            _tail = _ppe.get('person_pe_tail')
+            if _tail is None:
+                _tail = getattr(cfg, 'PERSON_PE_TAIL', None)
+            if _tail is None:
+                _tail = (_lo + 0.25 * (_hi - _lo), _lo + 0.75 * (_hi - _lo))
+            _tail_lo, _tail_hi = float(_tail[0]), float(_tail[1])
+            _mid = _ppe.get('person_pe_mid')
+            if _mid is None:
+                _mid = _tgt_e if _tgt_e is not None else getattr(cfg, 'PERSON_PE_MID', None)
+            if _mid is None:
+                _mid = 0.5 * (_lo + _hi)
+            _mid = float(_mid)
             _lo_face = _lo
-            _up = _lo + (_hi - _lo) * _bk
-            if _L >= _up:
-                # ★ 旧行为：够亮 ⇒ 一个像素不动（只提不压）。现在只在**允许压且脸高于上沿**
-                #   时不早退；是否真压由下面的"输出侧框∩掩膜"门决定（1744 那种无脸图会弃权）。
+            # 提亮目标：顺光 = P25；逆光往 P50 推（不再推到 P90/上沿）
+            _lift_tgt = _tail_lo + (_mid - _tail_lo) * _bk
+            if _L < _lo:
+                _tgt = _lift_tgt
+                _cap_lo = _tail_lo                         # 服装帽最多砍掉 back 偏好，不砍 P25 目标
+            elif _L <= _hi:
+                # ★ 接受范围内：**一个像素不动**；只在白服超时做 lc（A 方案）
+                _lc_why = None
+                if (_lc_mode == 'auto' and _white_hi_early is not None
+                        and _EX.regime() == 'face'):
+                    _lc, _lcd = _lc_from_out(out, _sel, _white_hi_early,
+                                             _lo_face, cfg, _P)
+                    _lc_why = _lcd.get('why')
+                    if _lc is not None:
+                        _pe0 = _LAST_RENDER_PE
+                        if _pe0 is not None:
+                            _LAST_PERSON_PE = dict(
+                                back=_bk, L0=round(_L, 2), band=[_lo, _hi],
+                                tail=[round(_tail_lo, 2), round(_tail_hi, 2)],
+                                mid=round(_mid, 2), target=round(_lift_tgt, 2),
+                                pe0=round(_pe0, 4), pe1=round(_pe0, 4),
+                                lc=tuple(round(float(v), 4) for v in _lc),
+                                lc0=round(float(_lcd['white0']), 4),
+                                lc1=round(float(_lcd['white1']), 4),
+                                lc_face0=round(float(_lcd['face0']), 4),
+                                lc_face1=round(float(_lcd['face1']), 4),
+                                lc_span0=round(float(_lcd['span0']), 4),
+                                lc_span1=round(float(_lcd['span1']), 4),
+                                acted=True, why='applied_lc')
+                            _ov2 = dict(overrides or {})
+                            _ov2['io.output_gamut_compress.lightness_compression'] = tuple(_lc)
+                            try:
+                                print('[svFilm] presets.render_person_pe: **服装 lc** %s：'
+                                      '白服 L* %.1f → %.1f（预测；目标 %.1f），脸 %.1f → %.1f，'
+                                      '跨度 %.1f → %.1f（第二遍印，pe 不变）'
+                                      % (_lc,
+                                         116.0 * _lcd['white0'] - 16.0,
+                                         116.0 * _lcd['white1'] - 16.0,
+                                         _white_hi_early,
+                                         116.0 * _lcd['face0'] - 16.0,
+                                         116.0 * _lcd['face1'] - 16.0,
+                                         116.0 * _lcd['span0'],
+                                         116.0 * _lcd['span1']), file=sys.stderr)
+                            except Exception:                    # noqa: BLE001
+                                pass
+                            _stage[0] = '第二遍印相（lc）'
+                            return render(_lin, name, cfg, print_exposure=_pe0,
+                                          print_profile=print_profile, overrides=_ov2)
+                _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), band=[_lo, _hi],
+                                       tail=[round(_tail_lo, 2), round(_tail_hi, 2)],
+                                       mid=round(_mid, 2), target=round(_lift_tgt, 2),
+                                       acted=False, why='bright_enough', lc_why=_lc_why)
+                return out
+            else:
+                # ★ 高于接受上沿：允许压且有门 ⇒ 压到 P75；否则不动
                 _pre_dn = (bool(getattr(cfg, 'PERSON_PE_ALLOW_DARKEN', False))
                            and (_EX.regime() == 'face')
                            and _L > float(_hi)
                            + float(getattr(cfg, 'PERSON_PE_DARKEN_MARGIN', 1.0)))
                 if not _pre_dn:
-                    _lc_why = None
-                    if (_lc_mode == 'auto' and _white_hi_early is not None
-                            and _EX.regime() == 'face'):
-                        _lc, _lcd = _lc_from_out(out, _sel, _white_hi_early,
-                                                 _lo_face, cfg, _P)
-                        _lc_why = _lcd.get('why')
-                        if _lc is not None:
-                            _pe0 = _LAST_RENDER_PE
-                            if _pe0 is not None:
-                                _LAST_PERSON_PE = dict(
-                                    back=_bk, L0=round(_L, 2), band=[_lo, _hi],
-                                    target=round(_up, 2), pe0=round(_pe0, 4),
-                                    pe1=round(_pe0, 4),
-                                    lc=tuple(round(float(v), 4) for v in _lc),
-                                    lc0=round(float(_lcd['white0']), 4),
-                                    lc1=round(float(_lcd['white1']), 4),
-                                    lc_face0=round(float(_lcd['face0']), 4),
-                                    lc_face1=round(float(_lcd['face1']), 4),
-                                    lc_span0=round(float(_lcd['span0']), 4),
-                                    lc_span1=round(float(_lcd['span1']), 4),
-                                    acted=True, why='applied_lc')
-                                _ov2 = dict(overrides or {})
-                                _ov2['io.output_gamut_compress.lightness_compression'] = tuple(_lc)
-                                try:
-                                    print('[svFilm] presets.render_person_pe: **服装 lc** %s：'
-                                          '白服 L* %.1f → %.1f（预测；目标 %.1f），脸 %.1f → %.1f，'
-                                          '跨度 %.1f → %.1f（第二遍印，pe 不变）'
-                                          % (_lc,
-                                             116.0 * _lcd['white0'] - 16.0,
-                                             116.0 * _lcd['white1'] - 16.0,
-                                             _white_hi_early,
-                                             116.0 * _lcd['face0'] - 16.0,
-                                             116.0 * _lcd['face1'] - 16.0,
-                                             116.0 * _lcd['span0'],
-                                             116.0 * _lcd['span1']), file=sys.stderr)
-                                except Exception:                    # noqa: BLE001
-                                    pass
-                                _stage[0] = '第二遍印相（lc）'
-                                return render(_lin, name, cfg, print_exposure=_pe0,
-                                              print_profile=print_profile, overrides=_ov2)
                     _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), band=[_lo, _hi],
-                                           target=round(_up, 2), acted=False,
-                                           why='bright_enough', lc_why=_lc_why)
+                                           tail=[round(_tail_lo, 2), round(_tail_hi, 2)],
+                                           mid=round(_mid, 2), target=round(_tail_hi, 2),
+                                           acted=False, why='bright_enough')
                     return out
-            _tgt = _up
+                _tgt = _tail_hi
         _d = _tgt - _L
         #   ★ 符号：`print_exposure ↑ ⇒ 印得暗 ⇒ 脸 L* ↓`，实测 `d(脸L*)/d(pe) = −79`
         #   （1665：pe 0.620→0.579 实测脸 +3.19 L*）⇒ 要 ΔL*，就得 `Δpe = −ΔL*/79`。
@@ -1086,8 +1113,8 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
                                        why=('positive_only' if not _allow_dn else 'darken_refused'))
                 return out
             _darken = True
-            # ★ 压暗目标是**上沿 `_hi`**（不是 `_tgt`）：顺光 `_tgt=lo`，若按 `_tgt` 会一路压到 67。
-            _dpe = (_L - float(_hi)) / _sl
+            # ★ 压暗目标是**尾巴 P75 `_tail_hi`**（不是接受上沿，更不是 `_tgt=lo`）
+            _dpe = (_L - float(_tail_hi)) / _sl
             _mx_dn = abs(float(getattr(cfg, 'PERSON_PE_MAX_DN', 0.12)))
             _dpe = min(_dpe, _mx_dn)
             # 不许把脸压到下沿以下（有窗时）

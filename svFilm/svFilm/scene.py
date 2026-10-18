@@ -14,12 +14,12 @@ import numpy as np
 from . import color
 from . import config as C
 
-VERSION = 8                          # ★ 换判据就要 +1（缓存键带它）
+VERSION = 9                          # ★ 换判据就要 +1（缓存键带它；10-18 rim 排 CLOTH / 脸环 / lt 先验）
 AXES = ('exp', 'span', 'back', 'overwhite')
 #: ★★★ **光位证据（`light_evidence`）的版本号**。它**不是** `AXES` 里的一条（不进 `scene['key']`），
 #   但 10-16 起**生产输出依赖它**（`pipeline` 把 `deg_back` 交给「按脸反解印相曝光」当力度）
 #   ⇒ 改 `light_evidence` 的判据必须 `+= 1`，并由调用方把它 + `deg_back` **一起放进缓存键**。
-LIGHT_VERSION = 1
+LIGHT_VERSION = 2
 #: **光型**（见 `lighttype.py`）也进 key（第 5 个 token），但 `AXES` 不动。
 LIGHTTYPE_KEY = True
 
@@ -327,7 +327,7 @@ def _rim_band(L, sub, k):
     return float(np.median(L[ring]) - np.median(L[core]))
 
 
-def light_evidence(d, L, person=None, face=None, cfg=C):
+def light_evidence(d, L, person=None, face=None, cloth=None, cfg=C):
     r"""多线索光位证据 → **程度量** → 分级（**不改 `back`、不进缓存键**）：软或 + **降级路径**。"""
     H, W = L.shape
     tb = float(getattr(cfg, 'SCENE_BACK_TB', 15.0))
@@ -392,7 +392,16 @@ def light_evidence(d, L, person=None, face=None, cfg=C):
     if (sub_real and bool(getattr(cfg, 'SCENE_LIGHT_RIM', True))
             and int(sub.sum()) >= int(getattr(cfg, 'SCENE_LIGHT_RIM_MIN_PX', 400))):
         _k = max(2, int(round(float(getattr(cfg, 'SCENE_LIGHT_RIM_BAND_REL', 0.010)) * H)))
-        rim = _rim_band(L, sub, _k)
+        # ★ 10-18：白衣服会把"人的核心"顶亮 ⇒ rim 反号。把 CLOTH 从 rim 的 subject 里排除。
+        _sub_rim = sub
+        if cloth is not None:
+            _cl = np.asarray(cloth, np.float64) > 0.5
+            if _cl.shape == sub.shape:
+                _cand = sub & ~_cl
+                if int(_cand.sum()) >= int(getattr(cfg, 'SCENE_LIGHT_RIM_MIN_PX', 400)):
+                    _sub_rim = _cand
+        ev['rim_excl_cloth'] = bool(_sub_rim is not sub)
+        rim = _rim_band(L, _sub_rim, _k)
         if rim is not None:
             rim_t = float(getattr(cfg, 'SCENE_LIGHT_RIM_REL', 0.05)) * max(_span, 1e-6)
     ev['rim'] = None if rim is None else round(rim, 1)
@@ -415,6 +424,24 @@ def light_evidence(d, L, person=None, face=None, cfg=C):
     ev['face'] = dict(ok=fe['ok'], n_px=fe['n_px'],
                       **{k: (None if fe[k] is None else round(fe[k], 1))
                          for k in ('E_bg', 'E_lr', 'E_tb', 'E_span')})
+
+    # ★★ 10-18：脸 vs **紧邻环**（同一局部曝光 ⇒ 欠曝不会单独把它顶起来）
+    _er = None
+    if fe['ok'] and face is not None:
+        _fm = np.asarray(face, np.float64) > 0.5
+        if int(_fm.sum()) >= 30:
+            _ys, _xs = np.nonzero(_fm)
+            _y0, _y1, _x0, _x1 = int(_ys.min()), int(_ys.max()), int(_xs.min()), int(_xs.max())
+            _ex = max(2, int(0.25 * max(_y1 - _y0 + 1, _x1 - _x0 + 1)))
+            _ry0, _ry1 = max(0, _y0 - _ex), min(H, _y1 + _ex + 1)
+            _rx0, _rx1 = max(0, _x0 - _ex), min(W, _x1 + _ex + 1)
+            _ring = np.zeros((H, W), bool)
+            _ring[_ry0:_ry1, _rx0:_rx1] = True
+            _ring &= ~_fm
+            if int(_ring.sum()) >= 100:
+                _er = float(np.percentile(L[_ring], 75) - np.median(L[_fm]))
+    ev['face_ring'] = None if _er is None else round(_er, 1)
+    _ring_ev = 0.0 if _er is None else _ramp(_er, 2.0 * tb)
 
     def _face(key, w=1.0, sign=1.0):
         v = fe.get(key)
@@ -440,6 +467,9 @@ def light_evidence(d, L, person=None, face=None, cfg=C):
         ])
     else:
         causal = _ramp(ev['E_bg'], 2.0 * tb)
+    # ★ 脸比紧邻环暗：逆光/高反差的**相对**证据（0.5；不是必要条件）
+    if _ring_ev > 0.0:
+        causal = _soft_or([(1.0, causal), (0.5, _ring_ev)])
     support = _soft_or([
         (1.0, _ramp(-e_tb, 2.0 * ts)),               # 上亮下暗
         (1.0, _ramp(cz, 2.0 * t_off)),               # 过曝区在主体之外（**底部已排除**）
@@ -464,6 +494,9 @@ def light_evidence(d, L, person=None, face=None, cfg=C):
             (1.0, _ramp(-ev['E_bg'], 2.0 * tb)),      # 背景比主体暗 ⇒ 光从相机方向来
             _face('E_bg', 0.7, -1.0),                 # 脸比背景亮
         ])
+    # ★ 脸明显比紧邻环暗 ⇒ 不可能是顺光；按相对量把 front 压回（不用绝对脸 L）
+    if _er is not None:
+        deg_front *= max(0.0, 1.0 - 0.8 * _ramp(_er, 2.0 * tb))
     out['deg_back'], out['deg_side'] = round(deg_back, 3), round(deg_side, 3)
     out['conf'] = round(max(deg_back, deg_side, deg_front), 3)
     out['deg_front'] = round(deg_front, 3)
@@ -506,9 +539,9 @@ def light_evidence(d, L, person=None, face=None, cfg=C):
     return out
 
 
-def classify(disp, cfg=C, lin=None, person=None, face=None):
+def classify(disp, cfg=C, lin=None, person=None, face=None, cloth=None):
     r"""量四根轴：`lin`（线性图）只给 `overwhite`；`person`（粗掩膜）只给 `back`（拿不到 ⇒ 弃权）；
-    `face` 只给并列的 `light_evidence`。"""
+    `face` 只给并列的 `light_evidence`；`cloth` 只用于把白衣服从 rim 里排除。"""
     d = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
     lab = color.to_lab(np.ascontiguousarray(d))
     L = lab[..., 0]
@@ -529,7 +562,7 @@ def classify(disp, cfg=C, lin=None, person=None, face=None):
     # ---- ★ 并列的第二条光位实现（不影响 `back` / `key` / 下游取参）----
     if bool(getattr(cfg, 'SCENE_LIGHT_EVIDENCE', False)):
         try:
-            out['raw']['light'] = light_evidence(d, L, person=person, face=face, cfg=cfg)
+            out['raw']['light'] = light_evidence(d, L, person=person, face=face, cloth=cloth, cfg=cfg)
             out['back2'] = out['raw']['light'].get('label')
         except Exception as _e:                             # noqa: BLE001
             out['raw']['light'] = dict(label=None, why='error: %s' % type(_e).__name__)
@@ -553,6 +586,21 @@ def classify(disp, cfg=C, lin=None, person=None, face=None):
     except Exception as _e:                                                  # noqa: BLE001
         out['lighttype'] = {'type': '未知', 'why': 'lighttype_failed: %s' % _e}
     _lttype = (out.get('lighttype') or {}).get('type') or '-'
+    # ★ 10-18：lighttype 判逆光 + 相对证据（rim>0 或 脸比环暗）⇒ **弱先验**，只抬到 0.35
+    try:
+        _lgt = out['raw'].get('light') or {}
+        _ev = _lgt.get('ev') or {}
+        _rim, _er = _ev.get('rim'), _ev.get('face_ring')
+        if (_lttype in ('正逆光', '侧逆光')
+                and ((_rim is not None and float(_rim) > 0.0)
+                     or (_er is not None and float(_er) > 0.0))):
+            _lgt['deg_back'] = round(max(float(_lgt.get('deg_back') or 0.0),
+                                         float(getattr(cfg, 'SCENE_LIGHT_LTYPE_PRIOR', 0.35))), 3)
+            _lgt['why'] = ((_lgt.get('why') or '') + ';lt_prior').lstrip(';')
+            if (_lgt.get('label') or '面光/顺平光') in (None, '面光/顺平光'):
+                _lgt['label'] = _lttype
+    except Exception:                                                  # noqa: BLE001
+        pass
     out['key'] = 'v%d|%s|%s' % (VERSION,
                                  '|'.join(token(k, out.get(k)) for k in AXES), _lttype)
     return out

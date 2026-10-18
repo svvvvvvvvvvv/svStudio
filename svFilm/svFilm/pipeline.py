@@ -123,15 +123,20 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
     # ---- ★★ 「人在哪」（`person.py`）—— **只给光位那一轴用**。
     try:
         from . import person as _per
-        _pz, _pface = _per.person_face(s.disp)
+        _pz, _pface = _per.person_face(s.disp, with_cloth=True)
+        _pcloth = _per.last_cloth()
+        if _pface is None:
+            _fb = _per.face_fallback(s.disp)
+            if _fb is not None:
+                _pface = _fb[0]
     except Exception:                                        # noqa: BLE001
-        _pz, _pface = None, None
+        _pz, _pface, _pcloth = None, None, None
 
     # ---- ★★★ 场景判据（「按场景分参数」的入口）----
     #   场景 → **引擎参数覆盖**（`_scene_engine`）；当前只有一条**全局 `"*"`**，无条件生效。
     #   ⚠⚠ 场景**必须在算缓存键之前**算，否则异常被吞 ⇒ overrides / 靶**永远进不了缓存键**。
     try:
-        _sc = scene.classify(s.disp, cfg, lin=s.lin, person=_pz, face=_pface)
+        _sc = scene.classify(s.disp, cfg, lin=s.lin, person=_pz, face=_pface, cloth=_pcloth)
     except Exception:                                        # noqa: BLE001
         _sc = None
 
