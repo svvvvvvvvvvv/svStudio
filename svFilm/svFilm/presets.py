@@ -452,7 +452,7 @@ def _apply(p, d, cfg, name=None):
         _b = si['person_pe_band']
         _ppe['person_pe_band'] = False if _b is False else tuple(float(v) for v in _b)
     if 'person_pe_white_band' in si:
-        # `false` = 关掉白裙约束；其余按二元组收（白裙 L50 的 [下沿, 上沿]，只用上沿截断偏好）
+        # `false` = 关掉服装约束；其余按二元组收（服装（亮中性）L50 的 [下沿, 上沿]，只用上沿截断偏好）
         _w = si['person_pe_white_band']
         _ppe['person_pe_white_band'] = False if _w is False else tuple(float(v) for v in _w)
     if _ppe:
@@ -634,7 +634,7 @@ def _person_metering(lin, overrides, cfg):
         _m, _mf = None, None
         try:
             # ★ 同一次前向多取 CLOTH（人物内部的服装子区域）；`person.last_cloth()` 给 `render_person_pe` 读。
-            #   ⚠ 失败退回旧路径（没有 CLOTH ⇒ 白裙约束静默跳过，不影响脸/人档判决）。
+            #   ⚠ 失败退回旧路径（没有 CLOTH ⇒ 服装约束静默跳过，不影响脸/人档判决）。
             _m, _mf = _P.person_face(_disp, with_cloth=True)
         except Exception:                                                    # noqa: BLE001
             _m, _mf = _P.person(_disp), None
@@ -838,7 +838,7 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
             _band = getattr(cfg, 'PERSON_PE_BAND', (53.5, 76.0))
         if _band is False:
             _band = None                                   # 「关掉窗」= 逐图直接拉到 `_tgt`
-        _lo_face = None                                    # 白裙约束要知道「脸的下限」；无窗 ⇒ 不截断
+        _lo_face = None                                    # 服装约束要知道「脸的下限」；无窗 ⇒ 不截断
         if _band is not None:
             _lo, _hi = float(_band[0]), float(_band[1])
             # ★★ **显式目标 = 把窗口下沿抬到它**（上沿跟着抬，保证 `lo <= hi`）：
@@ -893,12 +893,12 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
             _pe0 = pe_of(name) * _sh
         _pe0 = float(_pe0)
         _pe1 = _pe0 + _dpe
-        _pe_face = _pe1                                    # 脸的落点（白裙约束可能把它拉回来）
-        # ★★★ **P2 服装（白裙）约束：只截「带内亮端偏好」，不截「脸的下限」** -------------
-        #   人物 = 脸 ∪ 头发 ∪ 皮肤 ∪ 服装；白裙是人物内部面积最大的子区域之一。
-        #   pass1 已经量到它的 L50（同一块 CLOTH 掩膜、同一张成片）；若高于本预设的白裙带上沿，
+        _pe_face = _pe1                                    # 脸的落点（服装约束可能把它拉回来）
+        # ★★★ **P2 服装（亮中性子集）约束：只截「带内亮端偏好」，不截「脸的下限」** -------------
+        #   人物 = 脸 ∪ 头发 ∪ 皮肤 ∪ 服装；服装（亮中性子集）是人物内部面积最大的子区域之一。
+        #   pass1 已经量到它的 L50（同一块 CLOTH 掩膜、同一张成片）；若高于本预设的服装带（亮中性子集）上沿，
         #   就反解一个 pe 把它压回上沿 —— 但**不许把脸压到 `_lo` 以下**（P1 永远赢）。
-        #   ⚠ 只许「别提过头」：`_pe_w` 夹到 `_pe0`，不会为了白裙把整张压暗（只提不压的既有安全侧）。
+        #   ⚠ 只许「别提过头」：`_pe_w` 夹到 `_pe0`，不会为了服装把整张压暗（只提不压的既有安全侧）。
         _white0 = _white_hi = _pe_w = _pe_floor = _white_at_face = None
         _white_cut = False
         _white_ok = None
@@ -906,7 +906,7 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         if _wb is None:
             _wb = getattr(cfg, 'PERSON_PE_WHITE_BAND', None)
         if _wb and _lo_face is not None:
-            # ★ 用**成片自己**的 CLOTH（不是输入侧掩膜）：白裙带是按成片域标的，
+            # ★ 用**成片自己**的 CLOTH（不是输入侧掩膜）：服装带是按成片域标的，
             #   输入/成片两次分割会差 2~3 L*（输入掩膜含更多阴影/衣缘）⇒ 用成片掩膜才同尺。
             #   代价 = 多一次 256 前向（~0.3 s），相对一次印相可忽略。
             try:
@@ -926,23 +926,23 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
                     _white_hi = float(_wb[1])
                     _sw = abs(float(_ppe.get('person_pe_white_slope',
                                              getattr(cfg, 'PERSON_PE_WHITE_SLOPE', 45.0)) or 45.0))
-                    #   提到「脸目标」时白裙会到哪（用于日志说清"为什么截"）
+                    #   提到「脸目标」时服装（亮中性）会到哪（用于日志说清"为什么截"）
                     _white_at_face = _white0 + (_pe0 - _pe_face) * _sw
-                    #   pe↑ = 印得暗；白裙 L50 高于上沿 ⇒ 需要更大的 pe（往 base 回，不更暗）
+                    #   pe↑ = 印得暗；服装（亮中性）L50 高于上沿 ⇒ 需要更大的 pe（往 base 回，不更暗）
                     _pe_w = min(_pe0, _pe0 + (_white0 - _white_hi) / _sw)
                     #   脸下限对应的 pe：再大就把脸压到 `_lo` 以下 ⇒ 那是 P1 的地盘，不许越过
                     _pe_floor = _pe0 if _L >= _lo_face else _pe0 - (_lo_face - _L) / _sl
                     _pe_floor = min(_pe_floor, _pe0)
                     _pe_cut = max(_pe_face, _pe_w)
-                    # 白裙帽要求比「脸下限」更暗 ⇒ 脸下限赢；但 max_dp 已经把脸限在
+                    # 服装帽要求比「脸下限」更暗 ⇒ 脸下限赢；但 max_dp 已经把脸限在
                     # `_pe_face` 时，不能再往暗里推（那只会让脸更低于下限）⇒ 取较亮的那个。
                     if _pe_cut > _pe_floor:
                         _pe_cut = max(_pe_face, _pe_floor)
                     if _pe_cut > _pe_face + 1e-4:
                         _white_cut = True
                         _pe1 = _pe_cut
-                    # 白裙是否真的落回上沿：`_pe1 >= _pe_w` ⇒ 白裙 ≤ 上沿；
-                    # 若被 `_pe_floor` 截住（脸下限优先），白裙仍会超 ⇒ 如实记 False。
+                    # 服装是否真的落回上沿：`_pe1 >= _pe_w` ⇒ 服装 ≤ 上沿；
+                    # 若被 `_pe_floor` 截住（脸下限优先），服装仍会超 ⇒ 如实记 False。
                     _white_ok = bool(_pe1 >= _pe_w - 1e-4)
         _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), target=round(_tgt, 2),
                                pe0=round(_pe0, 4), pe1=round(_pe1, 4),
@@ -960,11 +960,11 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         print('[svFilm] presets.render_person_pe: 脸 L* %.1f ⇒ 目标 %.1f ⇒ 印相曝光 %.4f → %.4f'
               '（第二遍印）' % (_L, _tgt, _pe0, _pe1), file=_sys.stderr)
         if _white_cut:
-            print('[svFilm] presets.render_person_pe: **白裙 pass1 %.1f ⇒ 提到脸目标会到 %.1f'
+            print('[svFilm] presets.render_person_pe: **服装（亮中性）pass1 %.1f ⇒ 提到脸目标会到 %.1f'
                   ' (> 上沿 %.1f)** ⇒ 只提到 pe %.4f（脸停在 ~%.1f；下限 pe %.4f）%s'
                   % (_white0, _white_at_face, _white_hi, _pe1,
                      _L + (_pe0 - _pe1) * _sl, _pe_floor,
-                     '，白裙已压回带上沿' if _white_ok else '，**白裙仍超上沿（脸下限优先）**'),
+                     '，服装已压回带上沿' if _white_ok else '，**服装仍超上沿（脸下限优先）**'),
                   file=_sys.stderr)
         _stage[0] = '第二遍印相'
         return render(_lin, name, cfg, print_exposure=_pe1, print_profile=print_profile,
