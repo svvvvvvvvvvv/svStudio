@@ -1,0 +1,213 @@
+{
+  "_note_self": "★★★ dev 基线（引擎 dev 6cd00c8；10-18 重标）。schema 生成器 = _lib/mkpreset.py（值 = 引擎默认 + 下列显式项）。\n「选」kodak_portra_400 + kodak_portra_endura（10-17 用户拍板，勿翻案）。\n「定」print_exposure 0.694 ｜ couplers.amount 1.10（Langmuir K=1 默认；10-18 全 11 张扫 0.90/1.00/1.10/1.20 ⇒ 1.10 落带最多 23/27、B1 缺口收窄）｜ 印相化学 γ_R 1.15 / γ_G 1.10 / γ_B 1.12 ｜ 相机黑柔 black_pro_mist 0.25 ｜ 画幅 35 ｜ 颗粒 = dev 原生：卷表 rms (4.5, 4.5, 4.5) · blur 0.8 · mult_usm 0.7/1.5 · dye 2µm · uniformity 0.97 · scanner USM 0｜ halation (1.5, 0.5, 0)（JSON×100；手写值，非按卷表）｜ 靶 = 鹿井 52 张逐图 [P25,P75]。\n「大方向」（不在本文件）入口 WB 4600/0.97 ｜ 动态 PE：目标脸 66.96 · band (67, 78)（10-17 抬脸）。\n接线 scan_white/black_correction = True。报告：引擎升级_1018/报告.md · 五笔_1018。",
+  "input_image": {
+    "upscale_factor": 1.0,
+    "crop": false,
+    "crop_center": [
+      0.5,
+      0.5
+    ],
+    "crop_size": [
+      0.1,
+      0.1
+    ],
+    "input_color_space": "ProPhoto RGB",
+    "apply_cctf_decoding": false,
+    "spectral_upsampling_method": "hanatos2025",
+    "apply_hanatos2025_adaptation_window": true,
+    "apply_hanatos2025_adaptation_surface": false,
+    "spectral_gaussian_blur": 0.0,
+    "color_filter": "none"
+  },
+  "grain": {
+    "active": true,
+    "rms_granularity": [
+      4.5,
+      4.5,
+      4.5
+    ],
+    "particle_scale_sublayers": [
+      1.0,
+      0.5,
+      0.25
+    ],
+    "density_min": [
+      0.03,
+      0.03,
+      0.03
+    ],
+    "uniformity": [
+      0.97,
+      0.97,
+      0.97
+    ],
+    "blur": 0.8,
+    "mult_usm_sigma": 0.7,
+    "mult_usm_amount": 1.5,
+    "blur_dye_clouds_um": 2.0,
+    "micro_sublayers": 1
+  },
+  "preflashing": {
+    "exposure": 0.0,
+    "y_filter_shift": 0.0,
+    "m_filter_shift": 0.0
+  },
+  "halation": {
+    "active": true,
+    "scatter_amount": 1.0,
+    "scatter_spatial_scale": 1.0,
+    "halation_amount": 1.0,
+    "halation_spatial_scale": 1.0,
+    "boost_ev": 0.0,
+    "protect_ev": 4.0,
+    "boost_range": 0.3,
+    "scatter_core_um": [
+      2.2,
+      2.0,
+      1.6
+    ],
+    "scatter_tail_um": [
+      9.3,
+      9.7,
+      9.1
+    ],
+    "scatter_tail_weight": [
+      78.0,
+      65.0,
+      67.0
+    ],
+    "halation_strength": [
+      1.5,
+      0.5,
+      0.0
+    ],
+    "halation_first_sigma_um": [
+      65.0,
+      65.0,
+      65.0
+    ],
+    "halation_n_bounces": 3,
+    "halation_bounce_decay": 0.5,
+    "halation_renormalize": true
+  },
+  "couplers": {
+    "active": true,
+    "amount": 1.1,
+    "inhibition_samelayer": 1.0,
+    "inhibition_interlayer": 1.0,
+    "gamma_samelayer_rgb": [
+      0.341,
+      0.324,
+      0.273
+    ],
+    "gamma_interlayer_r_to_gb": [
+      0.355,
+      0.305
+    ],
+    "gamma_interlayer_g_to_rb": [
+      0.154,
+      0.358
+    ],
+    "gamma_interlayer_b_to_rg": [
+      0.171,
+      0.225
+    ],
+    "diffusion_size_um": 20.0,
+    "langmuir_donor_k_rgb": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "langmuir_receiver_k_rgb": [
+      1.0,
+      1.0,
+      1.0
+    ]
+  },
+  "glare": {
+    "active": true,
+    "percent": 0.03,
+    "roughness": 0.7,
+    "blur": 0.5
+  },
+  "film_chemistry": {
+    "gamma_factor": 1.0
+  },
+  "special": {
+    "film_channel_swap": [
+      0,
+      1,
+      2
+    ],
+    "print_channel_swap": [
+      0,
+      1,
+      2
+    ]
+  },
+  "print_chemistry": {
+    "gamma_factor_red": 1.15,
+    "gamma_factor_green": 1.1,
+    "gamma_factor_blue": 1.12
+  },
+  "simulation": {
+    "film_format_mm": 35.0,
+    "camera_lens_blur_um": 0.0,
+    "exposure_compensation_ev": 0.0,
+    "auto_exposure": true,
+    "auto_exposure_method": "subject",
+    "print_illuminant": "TH-KG3",
+    "print_exposure": 0.694,
+    "output_lightness_compression": "off",
+    "print_exposure_compensation": true,
+    "print_y_filter_shift": 0.0,
+    "print_m_filter_shift": 0.0,
+    "scan_lens_blur": 0.0,
+    "scan_white_correction": true,
+    "scan_black_correction": true,
+    "scan_unsharp_mask": [
+      0.0,
+      0.0
+    ],
+    "scan_black_level": 0.01,
+    "scan_white_level": 0.98,
+    "output_color_space": "sRGB",
+    "scan_film": false,
+    "camera_diffusion_filter_active": true,
+    "camera_diffusion_filter_family": "black_pro_mist",
+    "camera_diffusion_filter_strength": 0.25,
+    "camera_diffusion_filter_spatial_scale": 1.0,
+    "camera_diffusion_filter_halo_warmth": 0.0,
+    "camera_diffusion_filter_core_intensity": 1.0,
+    "camera_diffusion_filter_core_size": 1.0,
+    "camera_diffusion_filter_halo_intensity": 1.0,
+    "camera_diffusion_filter_halo_size": 1.0,
+    "camera_diffusion_filter_bloom_intensity": 1.0,
+    "camera_diffusion_filter_bloom_size": 1.0,
+    "diffusion_filter_active": false,
+    "diffusion_filter_family": "black_pro_mist",
+    "diffusion_filter_strength": 0.5,
+    "diffusion_filter_spatial_scale": 1.0,
+    "diffusion_filter_halo_warmth": 0.0,
+    "diffusion_filter_core_intensity": 1.0,
+    "diffusion_filter_core_size": 1.0,
+    "diffusion_filter_halo_intensity": 1.0,
+    "diffusion_filter_halo_size": 1.0,
+    "diffusion_filter_bloom_intensity": 1.0,
+    "diffusion_filter_bloom_size": 1.0,
+    "film_stock": "kodak_portra_400",
+    "print_paper": "kodak_portra_endura",
+    "person_pe_band": [
+      67.0,
+      78.0
+    ],
+    "person_pe_white_band": [
+      77.1,
+      88.3
+    ]
+  },
+  "display": {
+    "preview_max_size": 640
+  },
+  "_note_dead_keys": "死键不写：`load_raw.*` 整段 ｜ `special.print_gamma_factor` ｜ `couplers.diffusion_tail_um` ｜ `display.{use_display_transform,gray_18_canvas,white_padding,output_interpolation}` ｜ `simulation.{auto_preview,saving_color_space,saving_cctf_encoding}`。\n★ dev 原生：颗粒用 `rms_granularity`（48µm 孔径）、相机滤镜用 `color_filter`、两端化学用 `film_chemistry` / `print_chemistry`、Langmuir 显式 K=1.0。"
+}

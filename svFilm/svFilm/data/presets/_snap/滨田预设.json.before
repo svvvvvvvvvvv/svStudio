@@ -1,5 +1,5 @@
 {
-  "_note_self": "【曝光落点 10-17】person_pe_band [77,84] + target_l 80.5（取「带」，不关窗）。\n依据：11 张同口径实测（render/e80，带 [75,84]）落带 13→16/22；脸 L* 68.99→78.93 · C* 17.41→9.72 · a* 10.79→3.36。\n下沿取 77：75 太低，本就够亮的脸被再抬（1665 77.9→86.0 越过他带 P75 82.5，且 1627 丢脸读数）；上沿 84 作逆光上限。\n回退 = 这两格删掉或改回｜报告 滨田_1017/报告.md。\n【终点态1】amount 0.80（0.55/0.80/1.00 三点峰在中间；0.55 压过脸C*下沿、1.00 挤掉脸b*）· y_filter 归零（没救回蓝/橙且与 m 打架）· m +6→+4CC（+6 使 NA a* 五档全↓过头）｜起点 13/22（render/base70）｜依据与逐条账见 ds/photo/滨田_1017/对账_轨迹.md",
+  "_note_self": "值：dev 基线（6cd00c8；10-18 重标）。film_format 70（6×7）｜ person_pe_band [77,84] + target_l 80.5（只提不压）｜ couplers.amount 0.65（Langmuir K=1 默认；10-18 扫档 0.55/0.65/0.75/0.85 中 0.65 与已验收最近）｜ m +3CC ｜ y +1CC ｜ 其余承鹿井预设（同卷/纸/化学/颗粒）。\n靶 = 滨田 22 张逐图 [P25,P75]；11 张同批同尺 20/22 带内、0 真越界（升级后复核）。\n未达标（不当验收）：A4 中/亮 1.31 ｜ NA 0_20 / 20_40 a* 偏负 ｜ 蓝/橙 1.65 ｜ 脸−臂 dC −1.39。报告 滨田_1017。\n颗粒 = dev 原生（同鹿井卷）：rms (4.5, 4.5, 4.5) · blur 0.8 · mult_usm 0.7/1.5 · dye 2µm · uniformity 0.97 · scanner USM 0",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -17,25 +17,19 @@
     "apply_hanatos2025_adaptation_window": true,
     "apply_hanatos2025_adaptation_surface": false,
     "spectral_gaussian_blur": 0.0,
-    "filter_uv": [
-      0.0,
-      410.0,
-      8.0
-    ],
-    "filter_ir": [
-      0.0,
-      675.0,
-      15.0
-    ]
+    "color_filter": "none"
   },
   "grain": {
     "active": true,
-    "sublayers_active": true,
-    "particle_area_um2": 0.2,
-    "particle_scale": [
-      1.6,
-      1.6,
-      3.2
+    "rms_granularity": [
+      4.5,
+      4.5,
+      4.5
+    ],
+    "particle_scale_sublayers": [
+      1.0,
+      0.5,
+      0.25
     ],
     "density_min": [
       0.03,
@@ -44,10 +38,14 @@
     ],
     "uniformity": [
       0.97,
-      0.99,
+      0.97,
       0.97
     ],
-    "blur": 0.65
+    "blur": 0.8,
+    "mult_usm_sigma": 0.7,
+    "mult_usm_amount": 1.5,
+    "blur_dye_clouds_um": 2.0,
+    "micro_sublayers": 1
   },
   "preflashing": {
     "exposure": 0.0,
@@ -94,7 +92,7 @@
   },
   "couplers": {
     "active": true,
-    "amount": 0.8,
+    "amount": 0.65,
     "inhibition_samelayer": 1.0,
     "inhibition_interlayer": 1.0,
     "gamma_samelayer_rgb": [
@@ -114,7 +112,17 @@
       0.171,
       0.225
     ],
-    "diffusion_size_um": 20.0
+    "diffusion_size_um": 20.0,
+    "langmuir_donor_k_rgb": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "langmuir_receiver_k_rgb": [
+      1.0,
+      1.0,
+      1.0
+    ]
   },
   "glare": {
     "active": true,
@@ -122,8 +130,10 @@
     "roughness": 0.7,
     "blur": 0.5
   },
+  "film_chemistry": {
+    "gamma_factor": 1.0
+  },
   "special": {
-    "film_gamma_factor": 1.0,
     "film_channel_swap": [
       0,
       1,
@@ -135,6 +145,11 @@
       2
     ]
   },
+  "print_chemistry": {
+    "gamma_factor_red": 1.15,
+    "gamma_factor_green": 1.1,
+    "gamma_factor_blue": 1.12
+  },
   "simulation": {
     "film_format_mm": 70.0,
     "camera_lens_blur_um": 0.0,
@@ -145,22 +160,19 @@
     "print_exposure": 0.694,
     "output_lightness_compression": "off",
     "print_exposure_compensation": true,
-    "print_y_filter_shift": 0.0,
+    "print_y_filter_shift": 1.0,
     "print_m_filter_shift": 3.0,
     "scan_lens_blur": 0.0,
     "scan_white_correction": true,
     "scan_black_correction": true,
     "scan_unsharp_mask": [
-      0.4,
-      0.4
+      0.0,
+      0.0
     ],
     "scan_black_level": 0.01,
     "scan_white_level": 0.98,
     "output_color_space": "sRGB",
     "scan_film": false,
-    "print_morph_gamma_red": 1.15,
-    "print_morph_gamma_blue": 1.12,
-    "print_morph_gamma_green": 1.1,
     "camera_diffusion_filter_active": true,
     "camera_diffusion_filter_family": "black_pro_mist",
     "camera_diffusion_filter_strength": 0.25,
@@ -189,10 +201,13 @@
       77.0,
       84.0
     ],
-    "person_pe_target_l": 80.5
+    "person_pe_white_band": [
+      77.8,
+      90.2
+    ]
   },
   "display": {
     "preview_max_size": 640
   },
-  "_note_dead_keys": "死键不写：`load_raw.*` 整段 ｜ `special.print_gamma_factor` ｜ `couplers.diffusion_tail_um` ｜ `display.{use_display_transform,gray_18_canvas,white_padding,output_interpolation}` ｜ `simulation.{auto_preview,saving_color_space,saving_cctf_encoding}` ｜ `grain.{particle_scale_layers,blur_dye_clouds_um,micro_structure}`（`sublayers_active=False` 时引擎不读）。"
+  "_note_dead_keys": "死键不写：`load_raw.*` 整段 ｜ `special.print_gamma_factor` ｜ `couplers.diffusion_tail_um` ｜ `display.{use_display_transform,gray_18_canvas,white_padding,output_interpolation}` ｜ `simulation.{auto_preview,saving_color_space,saving_cctf_encoding}`。\n★ dev 原生：颗粒用 `rms_granularity`（48µm 孔径）、相机滤镜用 `color_filter`、两端化学用 `film_chemistry` / `print_chemistry`、Langmuir 显式 K=1.0。"
 }

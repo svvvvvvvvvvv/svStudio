@@ -31,6 +31,10 @@ _LOCK = threading.Lock()
 _SEG = [None]
 _FD = [None]
 _WHY = [None]
+# ★ 最近一次 `person_face(..., with_cloth=True)` 的 CLOTH 掩膜（与 FACE/BG **同一次前向**）。
+#   曝光端（`presets.render_person_pe`）用它量「人物内部的服装子区域」；渲染是串行的，
+#   所以这里只留一张（与 `exposure._MASK` 同一种进程级单张约定）。
+_LAST_CLOTH = [None]
 
 # 一次前向输出这 6 类（见 `masks()`）。⚠ 第 3 类 = **脸上的皮肤**。
 NCLASS = 6
@@ -158,19 +162,27 @@ def skin_like(disp, ref=None, frac=None):
     return m & (y >= max(float(SKIN_Y_MIN), _fr * _ym))
 
 
-def person_face(disp):
+def person_face(disp, with_cloth=False):
     r"""**一次前向**同时给「人在哪」与「脸上的皮肤在哪」—— 边际成本 0。
 
     ★ 光位判据的第三条线索 = **脸上的受光**（见 `scene.light_evidence`）。
     ★★ `getattr(C, 'PERSON_FACE_SKIN', True)`：把 FACE 掩膜**再与肤色近似取交**
-       （去掉眼/眉/唇/牙/鼻孔；关掉即逐位回到旧行为）。"""
-    m = masks(disp, (BG, FACE))
+       （去掉眼/眉/唇/牙/鼻孔；关掉即逐位回到旧行为）。
+    ★★ `with_cloth=True`：**同一次前向**多取 CLOTH（人物内部的服装子区域），
+       挂到 `_LAST_CLOTH` 供曝光端读 —— 只多一个类别、不重跑模型。"""
+    m = masks(disp, (BG, FACE, CLOTH) if with_cloth else (BG, FACE))
     f = np.asarray(m[FACE], np.float64)
     if bool(getattr(C, 'PERSON_FACE_SKIN', True)):
         sk = skin_like(disp, ref=(f > 0.5))     # ★ 亮度下限按**这张脸自己**的中位（不是绝对数）
         if sk is not None and sk.shape == f.shape:
             f = f * sk.astype(f.dtype)
+    _LAST_CLOTH[0] = np.asarray(m[CLOTH], np.float32) if with_cloth else None
     return np.clip(1.0 - m[BG], 0.0, 1.0), f
+
+
+def last_cloth():
+    r"""最近一次 `person_face(with_cloth=True)` 的 CLOTH 掩膜（没有 ⇒ None）。"""
+    return _LAST_CLOTH[0]
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +258,15 @@ def face_mask_in(disp, box, margin=None):
     if _sk is not None and _sk.shape == _f.shape:
         _f = _f * _sk.astype(_f.dtype)
     b = _f > 0.5
+    # ★★ **切掉框下沿以下的脖子/锁骨/胸**：裁块比框大 35%，框下面不是脸。
+    #   1150 实测掩膜 36×70 vs 框 36×46；切掉后中位只 62.2→**62.7**（0.5 L*）
+    #   ⇒ 这是卫生修正，不是主修；大差是输入/输出皮肤口径（见报告 §5.2）。
+    #   `1.03` = 框下沿再放 3%（框本身含下巴）；见 `config.FACE_FALLBACK_CHIN_FRAC`。
+    _chin = float(getattr(C, 'FACE_FALLBACK_CHIN_FRAC', 1.03))
+    _lim = int(round((y + h * _chin) - y0))
+    _lim = max(8, min(_lim, b.shape[0]))
+    if _lim < b.shape[0]:
+        b[_lim:, :] = False
     cover = float(b.mean())
     out = np.zeros((H, W), np.float32)
     out[y0:y1, x0:x1] = b.astype(np.float32)
