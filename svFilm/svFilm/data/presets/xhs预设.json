@@ -1,5 +1,5 @@
 {
-  "_note_self": "值：film_format_mm 36 ｜ film_stock kodak_gold_200（CP200=ColorPlus 200 无 profile，取柯达同门同 ISO 消费线，target_print 同为 endura；fujifilm_c200 是富士，不采）｜ print_paper kodak_portra_endura ｜ person_pe_band [74.3,84] ｜ amount 1.15 ｜ m +2CC ｜ y 0 ｜ lc off。依据：靶 = 不詹锅 50 张逐图 [P25,P75]（肤色口径，水印压脸失 5 张）；11 张 15/22（起点 13/22）。代价：脸 C* 15.2（带 16.3+，偏淡）｜ 脸−臂 dC −9.1 ｜ NA 20_40 b* 2.07 ｜ NA 80_100 a* −0.55。回退：amount 0.90 + band (67,78)。报告 xhs_1018",
+  "_note_self": "值：dev 基线（6cd00c8；10-18 重标）。film_format 36 ｜ film_stock kodak_gold_200（CP200 无 profile，取柯达同门同 ISO；target_print 同为 endura）｜ print_paper kodak_portra_endura（10-18 纸 A 案实测无净收益，不换）｜ person_pe_band [74.3,84] ｜ couplers.amount 1.20（Langmuir K=1 后扫档；1.00 偏离大、1.30 A5 过冲 +1.8）｜ m +2CC ｜ y 0 ｜ lc off ｜ Y2 光学档：scan_unsharp_mask (15, −0.35) · blur_dye_clouds_um 8µm ｜ 颗粒 rms_granularity (9.699, 8.958, 14.526)（48µm 孔径；blur 0.65 px，mult_usm 0）｜ export 1080 / jpeg84。\n靶 = xhs 50 张逐图 [P25,P75]（水印压脸弃 5 张）；自有靶带 12/22（升级前后同）。\n代价：脸 C* 12.8（带 16.3+, 偏淡）｜ 脸−臂 dC 4.18。报告 xhs_1018 · 引擎升级_1018。",
   "input_image": {
     "upscale_factor": 1.0,
     "crop": false,
@@ -17,25 +17,19 @@
     "apply_hanatos2025_adaptation_window": true,
     "apply_hanatos2025_adaptation_surface": false,
     "spectral_gaussian_blur": 0.0,
-    "filter_uv": [
-      0.0,
-      410.0,
-      8.0
-    ],
-    "filter_ir": [
-      0.0,
-      675.0,
-      15.0
-    ]
+    "color_filter": "none"
   },
   "grain": {
     "active": true,
-    "sublayers_active": true,
-    "particle_area_um2": 0.2,
-    "particle_scale": [
-      1.6,
-      1.6,
-      3.2
+    "rms_granularity": [
+      9.699349,
+      8.957917,
+      14.526405
+    ],
+    "particle_scale_sublayers": [
+      1.0,
+      0.5,
+      0.25
     ],
     "density_min": [
       0.03,
@@ -48,7 +42,10 @@
       0.97
     ],
     "blur": 0.65,
-    "blur_dye_clouds_um": 8.0
+    "mult_usm_sigma": 0.7,
+    "mult_usm_amount": 0.0,
+    "blur_dye_clouds_um": 8.0,
+    "micro_sublayers": 1
   },
   "preflashing": {
     "exposure": 0.0,
@@ -95,7 +92,7 @@
   },
   "couplers": {
     "active": true,
-    "amount": 1.0,
+    "amount": 1.2,
     "inhibition_samelayer": 1.0,
     "inhibition_interlayer": 1.0,
     "gamma_samelayer_rgb": [
@@ -115,7 +112,17 @@
       0.171,
       0.225
     ],
-    "diffusion_size_um": 20.0
+    "diffusion_size_um": 20.0,
+    "langmuir_donor_k_rgb": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "langmuir_receiver_k_rgb": [
+      1.0,
+      1.0,
+      1.0
+    ]
   },
   "glare": {
     "active": true,
@@ -123,8 +130,10 @@
     "roughness": 0.7,
     "blur": 0.5
   },
+  "film_chemistry": {
+    "gamma_factor": 1.0
+  },
   "special": {
-    "film_gamma_factor": 1.0,
     "film_channel_swap": [
       0,
       1,
@@ -135,6 +144,11 @@
       1,
       2
     ]
+  },
+  "print_chemistry": {
+    "gamma_factor_red": 1.15,
+    "gamma_factor_green": 1.1,
+    "gamma_factor_blue": 1.12
   },
   "simulation": {
     "film_format_mm": 36.0,
@@ -159,9 +173,6 @@
     "scan_white_level": 0.98,
     "output_color_space": "sRGB",
     "scan_film": false,
-    "print_morph_gamma_red": 1.15,
-    "print_morph_gamma_blue": 1.12,
-    "print_morph_gamma_green": 1.1,
     "camera_diffusion_filter_active": true,
     "camera_diffusion_filter_family": "black_pro_mist",
     "camera_diffusion_filter_strength": 0.25,
@@ -194,10 +205,10 @@
   "display": {
     "preview_max_size": 640
   },
-  "_note_dead_keys": "死键不写：`load_raw.*` 整段 ｜ `special.print_gamma_factor` ｜ `couplers.diffusion_tail_um` ｜ `display.{use_display_transform,gray_18_canvas,white_padding,output_interpolation}` ｜ `simulation.{auto_preview,saving_color_space,saving_cctf_encoding}` ｜ `grain.{particle_scale_layers,blur_dye_clouds_um,micro_structure}`（`sublayers_active=False` 时引擎不读）。",
   "export": {
     "long_side": 1080,
     "jpeg_quality": 84,
     "px_ref_long_side": 1080
-  }
+  },
+  "_note_dead_keys": "死键不写：`load_raw.*` 整段 ｜ `special.print_gamma_factor` ｜ `couplers.diffusion_tail_um` ｜ `display.{use_display_transform,gray_18_canvas,white_padding,output_interpolation}` ｜ `simulation.{auto_preview,saving_color_space,saving_cctf_encoding}`。\n★ dev 原生：颗粒用 `rms_granularity`（48µm 孔径）、相机滤镜用 `color_filter`、两端化学用 `film_chemistry` / `print_chemistry`、Langmuir 显式 K=1.0。"
 }

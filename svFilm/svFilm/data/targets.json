@@ -64,7 +64,7 @@
     }
   },
   "_scene_engine": {
-    "_note_baseline_1015": "★★ 本层 = 基线（**补偿 + 保护**），不是风格。★ 10-15 用户拍板：**清零**，只留结构性必需的那一根。\n· `morph.active = true`：**结构性必需** —— 预设 JSON 里没有这个键、引擎 schema 默认 False，没它整根 `density_curves_morph` **静默死掉**（改 gamma 看不出变化）。\n· 同批回引擎默认的 6 根（都是**为旧 10 条标的**，随预设一起删）：`gamma_factor` 1.0 ｜ `gamma_factor_slow` 1.0 ｜ `lightness_compression` [0.7,1,2.2] ｜ `grain.blur` 0.65 ｜ `preflash_exposure` 0.0 ｜ `print_exposure {\"mul\":1.15}`（**孤儿补偿、依据：无**）｜ `camera.auto_exposure_method` center_weighted（引擎默认）。\n· ⇒ **要加回来，必须一根一根单独给依据**（谁的值、为什么是这个值、代价是什么），加之前先读它当年的 `_note_*`（git 历史里）。⚠ 两条禁令：① 不许写「读图像统计量 → 反馈到全局参数」的规则（**必然振荡**，没有不动点）；② `preflash_exposure` 极敏感（0.05 就压过头）⇒ 上限 0.03。\n· ★ 层序不变：`_scene_engine[\"*\"]` → `_stock_engine[预设名]`（当前空）→ 按轴覆盖（后者盖前者）。\n· ⚠ 白/黑校正（`scanner.white_correction` / `black_correction`）**不在这一层**，它在预设 JSON 里 —— 现值 = **True/True**（否则 `white_level` / `black_level` 是死键、白端天花板低 6 L*）。",
+    "_note_baseline_1015": "★★ 本层 = 基线（补偿 + 保护），**不是风格**。★ dev 6cd00c8 起只保留**结构性必需**的一根：`print_render.chemistry.active = true`（dev schema 默认 True；这里显式钉住，防上游改默认后整块 chemistry 静默死掉）。\n· 层序：`_scene_engine[\"*\"]` → `_stock_engine[预设]`（当前空）→ 轴层（后者盖前者）。\n· ⇒ **要加回任何一根，必须单独给依据**（谁的值 / 为什么 / 代价），加之前先读它的 `_note_*`。\n· ⚠ 两条禁令：① 不许写「读图像统计量 → 反馈到全局参数」的规则（必然振荡，没有不动点）；② `preflash_exposure` 极敏感（0.05 就压过头）⇒ 上限 0.03。\n· ⚠ 白/黑校正（`scanner.white_correction` / `black_correction`）**不在这一层**，在预设 JSON 里 —— 现值 True/True（否则 `white_level` / `black_level` 是死键、白端天花板低 6 L*）。",
     "*": {
       "print_render.chemistry.active": true
     }

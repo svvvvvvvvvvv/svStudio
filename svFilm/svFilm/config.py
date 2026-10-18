@@ -17,9 +17,9 @@ r"""svFilm 的全部可调参数 —— **一个文件，别处不许写死数**
 |-------|---------|
 | 相机转换 / 白平衡 | 入口（`PUBLIC_WB*`）|
 | **整张落点（曝光）** | **引擎**（`camera.auto_exposure` + `enlarger.print_exposure`）|
-| **整张跨度（反差）** | **引擎**（H&D 曲线；实际兜住它的是 `targets._scene_engine["*"]` 的 `density_curves_morph`）|
+| **整张跨度（反差）** | **引擎**（H&D 曲线；实际兜住它的是 `print_render.chemistry`）|
 | **高光放开（允许白）** | **引擎**（`lightness_compression`）|
-| 胶片物理 · 质感（颗粒/光晕/柔光/锐化）| 引擎（spektrafilm 0.3.4）|
+| 胶片物理 · 质感（颗粒/光晕/柔光/锐化）| 引擎（spektrafilm dev 6cd00c8）|
 | `print_y_filter_shift` | ★ 它是**整张**配平，不是"脸"的旋钮 |
 
 ★ 引擎里有**【两处】高光保护**（扫描末端的 `lightness_compression` ＋ 拍摄前的
@@ -30,15 +30,15 @@ r"""svFilm 的全部可调参数 —— **一个文件，别处不许写死数**
 | 死的东西 | 为什么死 |
 |---|---|
 | 预设 JSON 的 `load_raw` 整段 | `presets._apply()` 一个字节都不读 |
-| `camera.diffusion_filter.*` / `grain.particle_scale_layers` | `active=False` / `sublayers_active=False` |
+| `camera.diffusion_filter.*` / `grain.micro_structure` | `active=False` / 两道内门（σ>0.05 且 blur>0.4px）|
 | `film_render.glare.*` | 管线只取 `print_render.glare` |
-| `halation.*` 的 σ/strength、`dir_couplers` 的 5 个 `gamma_*` | 只在 `apply_stocks_specifics=True` 那条路被重写（`params_builder.py:161-175,233-252`）；`presets` 传 `False` ⇒ **预设值活** |
-| `print_render.density_curve_gamma` | **0.3.4 没这个字段** ⇒ 写了是**静默 no-op** |
+| `halation.*` 的 σ/strength、`dir_couplers` 的 4 个 `gamma_*` | 只在 `apply_stocks_specifics=True` 那条路被重写（`params_builder.py:186-265`）；`presets` 传 `False` ⇒ **预设值活** |
+| `print_render.density_curve_gamma` / `density_curves_morph` / `film_render.density_curve_gamma` | dev 均**无此字段**（→ 两端 `chemistry`）⇒ 写了是**静默 no-op** |
 | `enlarger.lens_blur` / `debug.print_timings` | 引擎里**零读取点** |
 | `enlarger.preflash_*_filter_shift` 的 `shift` 侧 | 预闪**只读 `neutral + preflash_shift`** |
 
 **⇒ 排查"改了没反应"的顺序**：① 查这张表 ② 查 `settings.preview_mode`（True 会把颗粒/模糊/锐化
-**全部清零**）③ 查字段名有没有随 vendor 版本改名（`agx_` 那个坑）④ 才轮到缓存 / digest / 并发。
+**全部清零**）③ 查字段名有没有随 vendor 版本改名（dev 已删一批，见引擎手册 §19.8）④ 才轮到缓存 / digest / 并发。
 """
 from __future__ import annotations
 
@@ -362,19 +362,13 @@ CACHE_MAX_SETS = 4              # 最多留几套（一套 = 一张图 × 一卷
 # ⚠⚠ `PRESET_APPLY_STOCK_SPECIFICS` **不要改成 True**：引擎会按卷的「抗晕层」标签重写
 #   `halation_strength` ⇒ 预设里调好的光晕被**静默**冲回出厂值（public GUI 里这开关**有状态**）。
 PRESET_APPLY_STOCK_SPECIFICS = False
-# ★★★ **配平基准换源**：`neutral` 是**标定基准**（"18% 灰在印相里完全中性"的起始设置），引擎按
-#   **(相纸, 放大机光源, 底片)** 三维取 ⇒ **开着它**（关掉 = 拿别人的中性值配自己的底片）。
-#   各预设的 `print_y/m_filter_shift` 已同步**重表**成「旧总量 − 新中性」⇒ **画面逐位不变**。
-#   ⚠ 别把重表后的 shift 当"风格值"调（真正的冷暖身份看**总量**）；⚠ 读 DB 的顺序是
-#   `c_filter, m_filter, y_filter`，**别按 y/m 猜**。
-PRESET_NEUTRAL_FROM_DB = True
-# 下面两个只在 `PRESET_NEUTRAL_FROM_DB=False` 时才有意义（留作回退/对照）。
-PRESET_NEUTRAL_Y = 51.423
-PRESET_NEUTRAL_M = 50.713
+# ★★★ **配平基准 = 引擎数据库**（`neutral` 是"18% 灰在印相里完全中性"的起始设置），
+#   引擎按 **(相纸, 放大机光源, 底片)** 三维取；`presets._apply` 里**恒开**、无硬编码回退。
+#   ⚠ 读 DB 的顺序是 `c_filter, m_filter, y_filter`，**别按 y/m 猜**；换光源即查不到。
+#   ⚠ 各预设的 `print_y/m_filter_shift` 是「风格偏移」，不是中性值本身。
 # ★★★ `PRESET_FILTER_M_TRIM`（**印相品红底座补偿**）：在标定基准之上统一多加一点品红的**剂量**
 #   旋钮，加在 `presets._apply`（`m_filter_shift += 本键`）⇒ **对预闪不生效**（预闪只读
 #   `neutral + preflash_shift`）。
-#   ★ 为什么单开键而不改 `PRESET_NEUTRAL_M`：后者是**标定基准**、不是剂量（"一个量一个主人"）。
 #   ★ 为什么必须是 **0**：它是**一把全局的刀**（同一个 +8 会同时推动多条预设 —— 修好一条、弄坏两条）。
 PRESET_FILTER_M_TRIM = 0.0
 # ──────────────────────────────────────────────────────────────────────────
