@@ -933,7 +933,11 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
                     #   脸下限对应的 pe：再大就把脸压到 `_lo` 以下 ⇒ 那是 P1 的地盘，不许越过
                     _pe_floor = _pe0 if _L >= _lo_face else _pe0 - (_lo_face - _L) / _sl
                     _pe_floor = min(_pe_floor, _pe0)
-                    _pe_cut = min(max(_pe_face, _pe_w), _pe_floor)
+                    _pe_cut = max(_pe_face, _pe_w)
+                    # 白裙帽要求比「脸下限」更暗 ⇒ 脸下限赢；但 max_dp 已经把脸限在
+                    # `_pe_face` 时，不能再往暗里推（那只会让脸更低于下限）⇒ 取较亮的那个。
+                    if _pe_cut > _pe_floor:
+                        _pe_cut = max(_pe_face, _pe_floor)
                     if _pe_cut > _pe_face + 1e-4:
                         _white_cut = True
                         _pe1 = _pe_cut
