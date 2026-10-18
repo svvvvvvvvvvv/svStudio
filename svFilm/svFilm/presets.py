@@ -824,7 +824,7 @@ def _solve_lc(white_ok, face_ok, target_ok, face_lo_ok=None, *,
     return None, diag
 
 
-def _lc_from_out(out, sel, white_hi, lo_face, cfg, P):
+def _lc_from_out(out, sel, white_hi, lo_face, cfg, P, face_max=None, deadband=None, face_drop=None):
     r"""在**脸已经在带内**的 pass1 成片上，量白服/脸并解一档 lc。
     只在 `person_pe_lc="auto"` 时调用；默认 off ⇒ 零开销。
     @returns {(tuple|None, dict)} `(t, limit, p)` 或 None；dict 带 why/white0/…/face0/…
@@ -849,10 +849,14 @@ def _lc_from_out(out, sel, white_hi, lo_face, cfg, P):
         _ok = np.asarray(_colour.XYZ_to_Oklab(_xyz)[..., 0], np.float64)
         w50 = float(np.median(Lc[wh]))
         diag.update(white_lab50=w50, white_ok=_ok[wh], face_ok=_ok[fsel])
-        if w50 <= float(white_hi) + float(getattr(cfg, 'PERSON_PE_LC_DEADBAND', 2.5)):
+        _db = (float(getattr(cfg, 'PERSON_PE_LC_DEADBAND', 2.5))
+               if deadband is None else float(deadband))
+        if w50 <= float(white_hi) + _db:
             diag['why'] = 'deadband'
             return None, diag
-        if float(np.median(_ok[fsel])) > float(getattr(cfg, 'PERSON_PE_LC_FACE_MAX', 0.75)):
+        _fmax = (float(getattr(cfg, 'PERSON_PE_LC_FACE_MAX', 0.75))
+                 if face_max is None else float(face_max))
+        if float(np.median(_ok[fsel])) > _fmax:
             diag['why'] = 'face_far'
             return None, diag
         target_ok = (float(white_hi) + 16.0) / 116.0
@@ -862,7 +866,8 @@ def _lc_from_out(out, sel, white_hi, lo_face, cfg, P):
             t=float(getattr(cfg, 'PERSON_PE_LC_T', 0.7)),
             p=float(getattr(cfg, 'PERSON_PE_LC_P', 2.2)),
             limits=tuple(getattr(cfg, 'PERSON_PE_LC_LIMITS', (1.0, 0.98, 0.96, 0.94))),
-            face_drop=float(getattr(cfg, 'PERSON_PE_LC_FACE_DROP', 0.013)),
+            face_drop=(float(getattr(cfg, 'PERSON_PE_LC_FACE_DROP', 0.013))
+                       if face_drop is None else float(face_drop)),
         )
         diag.update(sd)
         diag['why'] = sd.get('why', 'unrecoverable')
@@ -1225,17 +1230,26 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         if _lo_face is not None:
             _pe_floor = _pe0 if _L >= _lo_face else _pe0 - (_lo_face - _L) / _sl
             _pe_floor = min(_pe_floor, _pe0)
-        _pe_cut = max(_pe_face,
-                      _pe_w if _pe_w is not None else _pe_face,
-                      _pe0 if _cloth_over else _pe_face)
-        if _pe_floor is not None and _pe_cut > _pe_floor:
-            # 服装帽要求比「脸下限」更暗 ⇒ 脸下限赢；但 max_dp 已经把脸限在
-            # `_pe_face` 时，不能再往暗里推（那只会让脸更低于下限）⇒ 取较亮的那个。
-            _pe_cut = max(_pe_face, _pe_floor)
-        if _pe_cut > _pe_face + 1e-4:
-            _pe1 = _pe_cut
-        if _pe_w is not None:
-            _white_ok = bool(_pe1 >= _pe_w - 1e-4)
+        if _lc_mode == 'auto' and not _darken:
+            # ★ 10-19 第三遍（PE+lc）：白服交给 lc，白帽**只记录、不截脸目标**；
+            #   否则脸被帽截在 P25/下限，lc 没有余量（1526 的 54.8 就是这么来的）。
+            _pe1 = _pe_face
+            if _white_cut:
+                _white_ok = False
+            if _cloth_over:
+                _cloth_ok = False
+        else:
+            _pe_cut = max(_pe_face,
+                          _pe_w if _pe_w is not None else _pe_face,
+                          _pe0 if _cloth_over else _pe_face)
+            if _pe_floor is not None and _pe_cut > _pe_floor:
+                # 服装帽要求比「脸下限」更暗 ⇒ 脸下限赢；但 max_dp 已经把脸限在
+                # `_pe_face` 时，不能再往暗里推（那只会让脸更低于下限）⇒ 取较亮的那个。
+                _pe_cut = max(_pe_face, _pe_floor)
+            if _pe_cut > _pe_face + 1e-4:
+                _pe1 = _pe_cut
+            if _pe_w is not None:
+                _white_ok = bool(_pe1 >= _pe_w - 1e-4)
         if _cloth_n >= 300:
             if _cloth_over:
                 _cloth_ok = False                       # pass1 已在帽外 ⇒ 不提也仍在帽外
@@ -1295,8 +1309,59 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
                      '，服装仍在帽外（脸下限优先）' if _cloth_ok is False else ''),
                   file=_sys.stderr)
         _stage[0] = '第二遍印相'
-        return render(_lin, name, cfg, print_exposure=_pe1, print_profile=print_profile,
-                      overrides=overrides)
+        _face_regime = (_EX.regime() == 'face')          # 第二遍 render 可能改全局 regime ⇒ 先存
+        _out2 = render(_lin, name, cfg, print_exposure=_pe1, print_profile=print_profile,
+                       overrides=overrides)
+        # ---- ★ 第三遍（10-19）：PE 之后白服仍超 ⇒ 在**同一 pe** 上加 lc 压白 ----
+        if (_lc_mode == 'auto' and _face_regime
+                and _white_hi_early is not None):
+            try:
+                _f2 = None
+                _, _fo2 = _P.person_face(np.clip(np.asarray(_out2, np.float64), 0.0, 1.0))
+                if _fo2 is not None:
+                    _fo2 = np.asarray(_fo2, np.float64) > 0.5
+                    if int(_fo2.sum()) >= 30:
+                        _f2 = _fo2
+                if _f2 is not None:
+                    _lc3, _lcd3 = _lc_from_out(
+                        _out2, _f2, _white_hi_early, _lo_face, cfg, _P,
+                        face_max=0.82, deadband=0.5, face_drop=0.03)
+                    if _lc3 is not None:
+                        _last3 = dict(_LAST_PERSON_PE or {})
+                        _last3.update(dict(
+                            lc=tuple(round(float(v), 4) for v in _lc3),
+                            lc0=round(float(_lcd3['white0']), 4),
+                            lc1=round(float(_lcd3['white1']), 4),
+                            lc_face0=round(float(_lcd3['face0']), 4),
+                            lc_face1=round(float(_lcd3['face1']), 4),
+                            lc_span0=round(float(_lcd3['span0']), 4),
+                            lc_span1=round(float(_lcd3['span1']), 4),
+                            white_ok=bool(float(_lcd3['white1'])
+                                          <= (_white_hi_early + 16.0) / 116.0 + 1e-9),
+                            passes=3, why='applied_pe_lc'))
+                        _LAST_PERSON_PE = _last3
+                        _ov3 = dict(overrides or {})
+                        _ov3['io.output_gamut_compress.lightness_compression'] = tuple(_lc3)
+                        try:
+                            print('[svFilm] presets.render_person_pe: **第三遍（PE+lc）** %s：'
+                                  '白服 L* %.1f → %.1f（预测），脸 %.1f → %.1f（第二遍后成片）'
+                                  % (_lc3,
+                                     116.0 * _lcd3['white0'] - 16.0,
+                                     116.0 * _lcd3['white1'] - 16.0,
+                                     116.0 * _lcd3['face0'] - 16.0,
+                                     116.0 * _lcd3['face1'] - 16.0), file=sys.stderr)
+                        except Exception:                    # noqa: BLE001
+                            pass
+                        _stage[0] = '第三遍印相（PE+lc）'
+                        return render(_lin, name, cfg, print_exposure=_pe1,
+                                      print_profile=print_profile, overrides=_ov3)
+            except Exception as _e3:                                     # noqa: BLE001
+                try:
+                    print('[svFilm 警告] presets.render_person_pe: **第三遍 lc 失败** ⇒ 返回第二遍：'
+                          '%s: %s' % (type(_e3).__name__, str(_e3)[:160]), file=sys.stderr)
+                except Exception:                                        # noqa: BLE001
+                    pass
+        return _out2
     except Exception as _e:                                              # noqa: BLE001
         # ★★★ **异常不许吞**：原来这里 `return out`（静默回第一遍，只在 `_LAST` 里留一个
         #   `why='error:…'`、stderr 一行都没有）⇒ 现场只看到"第二遍没生效"，查不到任何线索。
