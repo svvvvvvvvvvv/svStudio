@@ -30,6 +30,7 @@ _POST_SCAN_ERROR: str | None = None
 # ★★★ **上一次「按脸反解印相曝光」的决策留痕**（`render_person_pe` 写、`pipeline` 读进报告）。
 #   它**不影响像素**，只是把"这张到底动没动、动了多少"暴露给调用方 / 自检（否则两遍印相一次都没动
 #   也看不出来）。形状：`dict(back, L0, target, pe0, pe1, acted, why)` 或 `None`（没走这条路）。
+PERSON_PE_VERSION = 2              # ★ L0 改用成片 FACE∩skin（10-19 脸口径）；进缓存键
 _LAST_PERSON_PE: dict | None = None
 # ★ 成片 CLOTH 分割失败的**进程内去重**警告（退回输入侧掩膜 = 服装帽口径会偏 2~3 L*）。
 _CLOTH_WARN = [False]
@@ -954,6 +955,17 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         if int(_sel.sum()) < 30:
             _LAST_PERSON_PE = dict(back=None, why='mask_too_small', acted=False)
             return out
+        # ★★ 10-19 脸口径：`L0`/目标/白帽一律用**成片**的 FACE∩skin（与 masters/expo_measure 同尺），
+        #   不再用输入掩膜 resized（输入掩膜会把颈/耳/背景皮肤算进来，1526 差 5 L*）。
+        #   成片拿不到脸 ⇒ 回退输入掩膜（不改变旧行为）。
+        try:
+            _, _fo = _P.person_face(np.clip(np.asarray(out, np.float64), 0.0, 1.0))
+            if _fo is not None:
+                _fo = np.asarray(_fo, np.float64) > 0.5
+                if _fo.shape[:2] == (H, W) and int(_fo.sum()) >= 30:
+                    _sel = _fo
+        except Exception:                                                # noqa: BLE001
+            pass
         _lab = _col.to_lab(np.clip(np.asarray(out, np.float64), 0.0, 1.0))
         _L = float(np.median(_lab[..., 0][_sel]))
         # ★ lc 动态（A 方案）：只在脸已在带内的分支用；这里先把开关/白服上沿取出来。
