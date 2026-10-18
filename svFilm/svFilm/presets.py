@@ -287,7 +287,8 @@ def _apply(p, d, cfg, name=None):
     p.enlarger.print_exposure = float(si['print_exposure'])
     p.enlarger.print_exposure_compensation = bool(si['print_exposure_compensation'])
     p.enlarger.y_filter_shift = float(si['print_y_filter_shift'])
-    # ★ **统一加一点品红**（印相底座补偿）；剂量与"对预闪不生效"见 `config.PRESET_FILTER_M_TRIM`。
+    # ★ **统一加一点品红滤片剂量**（底座补偿）；⚠ 方向：m↑ ⇒ 成片偏**绿**（不是偏品红），见手册 §9.6。
+    #   剂量与"对预闪不生效"见 `config.PRESET_FILTER_M_TRIM`。
     p.enlarger.m_filter_shift = float(si['print_m_filter_shift']) + float(
         getattr(cfg, 'PRESET_FILTER_M_TRIM', 0.0))
     p.enlarger.preflash_exposure = float(pf['exposure'])
