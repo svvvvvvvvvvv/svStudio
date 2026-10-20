@@ -12,6 +12,7 @@ import os
 import sys
 
 from . import config as C, io, presets
+from . import lr_meta
 
 
 def _fmt_probe(res):
@@ -186,6 +187,125 @@ def cmd_dir(args):
     return 0 if fail == 0 else 1
 
 
+def cmd_lrbase_fit(args):
+    r"""拟合「平基底片 → 当前冲印」的逐通道曲线（C2 基底曲线）。"""
+    from . import lrbase
+    try:
+        curve = lrbase.fit_base_curve(args.print_img, args.flat_img,
+                                      points=args.points, bins=args.bins)
+    except Exception as e:                                  # noqa: BLE001
+        print('拟合失败: %s: %s' % (type(e).__name__, e))
+        return 1
+    out = args.out or 'base_curve.json'
+    lrbase.save_curve_json(curve, out)
+    print('-> %s' % out)
+    print('fit: %s' % json.dumps(curve.get('fit'), ensure_ascii=False))
+    return 0
+
+
+def _lrbase_task(t):
+    r"""C2 单张 worker（进程池要 top-level）。"""
+    from . import lrbase
+    (p, out_dir, stock, max_side, src, lo, hi, gains, headroom,
+     base_curve, master, preset_name, write_preset) = t
+    try:
+        r = lrbase.run_one(
+            p, out_dir=out_dir, stock=stock, max_side=max_side, src=src,
+            lo_q=lo, hi_q=hi, gains=gains, headroom=headroom,
+            base_curve=base_curve, master=master,
+            preset_name=preset_name, write_preset=write_preset)
+        return (p, r, None)
+    except Exception as e:                                  # noqa: BLE001
+        return (p, None, '%s: %s' % (type(e).__name__, e))
+
+
+def cmd_lrbase(args):
+    r"""C2：出平基底片（16-bit TIFF）+ LR 元数据；不跑印相。"""
+    from . import lrbase
+    ps = _expand(args.inputs, True)
+    if args.raw_only:
+        keep = []
+        for p in ps:
+            try:
+                if io.kind_of(p) == 'raw':
+                    keep.append(p)
+            except ValueError:
+                pass
+        ps = keep
+    if args.limit:
+        ps = ps[:args.limit]
+    if not ps:
+        print('没找到输入文件（--raw-only 时只收 RAW）')
+        return 2
+
+    try:
+        base_curve = None
+        if args.base_curve:
+            with open(args.base_curve, 'r', encoding='utf-8') as f:
+                base_curve = json.load(f)
+        master = None
+        if args.master:
+            with open(args.master, 'r', encoding='utf-8') as f:
+                master = json.load(f)
+    except (OSError, ValueError) as e:
+        print('读 base-curve/master 失败: %s' % e)
+        return 2
+
+    try:
+        gains = tuple(float(v) for v in str(args.gains).replace('，', ',').split(','))
+        if len(gains) != 3:
+            raise ValueError
+    except ValueError:
+        print('--gains 要三个数，例如 1,1,1')
+        return 2
+
+    out_dir = args.out
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    preset_name = args.preset_name or ('svFilm %s flat' % (args.stock or C.STOCK))
+    tasks = []
+    for p in ps:
+        od = out_dir or os.path.dirname(os.path.abspath(p))
+        tasks.append((p, od, args.stock, args.max_side, args.src,
+                      args.lo, args.hi, gains, args.headroom,
+                      base_curve, master, preset_name, not args.no_preset))
+
+    jobs = max(1, int(args.jobs))
+    print('lrbase 共 %d 张，并发 %d；输出 %s' % (len(ps), jobs, out_dir or '（各自目录）'))
+    sys.stdout.flush()
+    done, fail, items = 0, 0, []
+    if jobs == 1:
+        for t in tasks:
+            p, r, err = _lrbase_task(t)
+            if err is None:
+                done += 1
+                items.append(r)
+                print('OK  %s  -> %s' % (os.path.basename(p), r['flat']))
+            else:
+                fail += 1
+                print('FAIL %s  %s' % (p, err))
+            sys.stdout.flush()
+    else:
+        import concurrent.futures as cf
+        with cf.ProcessPoolExecutor(max_workers=jobs) as ex:
+            for p, r, err in ex.map(_lrbase_task, tasks):
+                if err is None:
+                    done += 1
+                    items.append(r)
+                    print('OK  %s  -> %s' % (os.path.basename(p), r['flat']))
+                else:
+                    fail += 1
+                    print('FAIL %s  %s' % (p, err))
+                sys.stdout.flush()
+
+    if items and out_dir:
+        manifest = os.path.join(out_dir, '_svfilm_manifest.json')
+        lr_meta.write_manifest(items, manifest, mode='flat')
+        print('manifest -> %s' % manifest)
+    print('完成 %d / 失败 %d' % (done, fail))
+    return 0 if fail == 0 else 1
+
+
 def cmd_stocks(args):
     """列出所有胶片风格。"""
     print('%-16s %-16s %s' % ('胶片风格', '中文名', '一句话'))
@@ -237,6 +357,36 @@ def build_parser():
                        help='胶片风格：%s；不指定 = config.STOCK' % '/'.join(presets.names()))
 
     ap.add_argument('--version', action='version', version='svFilm ' + C.VERSION)
+
+    p = sub.add_parser('lrbase-fit', help='拟合 C2 基底曲线（平基底片 → 冲印成片）')
+    p.add_argument('--print', required=True, dest='print_img', help='当前冲印成片（JPEG/PNG）')
+    p.add_argument('--flat', required=True, dest='flat_img', help='平基底片（16-bit TIFF）')
+    p.add_argument('--out', default=None, help='输出 curve JSON')
+    p.add_argument('--points', type=int, default=16, help='曲线控制点数（默认 16）')
+    p.add_argument('--bins', type=int, default=32, help='分位分箱数（默认 32）')
+    p.set_defaults(func=cmd_lrbase_fit)
+
+    p = sub.add_parser('lrbase', help='C2：平基底片 16-bit TIFF + LR 元数据（不跑印相）')
+    p.add_argument('inputs', nargs='+')
+    p.add_argument('-o', '--out', default=None, help='输出目录（缺省 = 各自原目录）')
+    p.add_argument('--jobs', type=int, default=1, help='并发进程数（重活建议 <=4）')
+    p.add_argument('--limit', type=int, default=0)
+    p.add_argument('--raw-only', action='store_true', dest='raw_only', default=True,
+                   help='目录/通配符里只收 RAW（默认开）')
+    p.add_argument('--allow-jpg', action='store_false', dest='raw_only',
+                   help='允许 JPG 输入（默认只收 RAW）')
+    p.add_argument('--lo', type=float, default=1.0, help='黑点分位 %%（默认 1.0）')
+    p.add_argument('--hi', type=float, default=99.5, help='白点分位 %%（默认 99.5）')
+    p.add_argument('--headroom', type=float, default=0.01,
+                   help='平基底片留白（0 = 硬裁到 0/1；默认 0.01）')
+    p.add_argument('--gains', default='1,1,1', help='逐通道增益，例如 1.02,1.0,0.98')
+    p.add_argument('--base-curve', default=None, dest='base_curve',
+                   help='lrbase-fit 产出的 JSON（缺省 = identity）')
+    p.add_argument('--master', default=None, help='大师设置 JSON（可选）')
+    p.add_argument('--preset-name', default=None, dest='preset_name')
+    p.add_argument('--no-preset', action='store_true', dest='no_preset')
+    common(p)
+    p.set_defaults(func=cmd_lrbase)
 
     # ⚠ **不许写死预设条数**（写死的数会过期）⇒ 运行时数出来。
     p = sub.add_parser('stocks', help='列出所有胶片风格（%d 条预设）' % len(presets.names()))

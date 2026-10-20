@@ -649,6 +649,23 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=
                 pass
 
 
+def render_linear(lin, name, cfg=C, overrides=None):
+    r"""C2：只跑到**胶片负片扫描**，输出**线性、未裁剪、未 CCTF**。
+
+    - 基底层（`targets.scene_engine` 的 `"*"` + `_stock_engine`）整份传，避免
+      `print_render.chemistry` 这类 frozen dataclass 被静默打回默认；
+    - 不跑 `_person_metering` / `_post_scan`：没有印相，就不需要人本测光/扫描色度模糊；
+    - 反转/归一/编码由 `svFilm.lrbase` 做（保持 C1 路径不动）。
+    """
+    p = _params_for(name, cfg)
+    ov = dict(_base_overrides(cfg, stock=name))
+    if overrides:
+        ov.update(overrides)
+    with _lock_of(name):
+        return _render_locked(p, name, lin, cfg, None, None, ov,
+                              clip=False, flat=True)
+
+
 def _person_metering(lin, overrides, cfg):
     r"""算 person 掩膜并把测光方式改成 `subject`；**任何一步不成立 ⇒ 原样返回**（弃权）。
     @returns `(overrides_to_use, mask_or_None)`；返回了掩膜 ⇒ 调用方**必须** clear。"""
@@ -1524,7 +1541,11 @@ def _halation_kernel_shape(p, cfg, _ovs):
     h.halation_first_sigma_um = (r, want, b)
 
 
-def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
+def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides,
+                   *, clip=True, flat=False):
+    r"""持锁跑一遍。`clip=True` = 生产 C1；`flat=True, clip=False` = C2 平基底片
+    （`scan_film` + 线性出 + 不裁剪，交给 `lrbase` 反转/归一）。
+    """
     global _LAST_RENDER_PE
     _p0 = p.enlarger.print_exposure
     _pp0 = p.print
@@ -1573,6 +1594,17 @@ def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
                 _ovs.append((_holder, _attr, getattr(_holder, _attr)))
                 setattr(_holder, _attr, _val)
 
+        # ★★ C2 平基底片：scan_film + 线性出 + 关输出色域压缩（交给 lrbase 反转/归一）。
+        #    ⚠ 这三个写者必须在用户 overrides **之后**，且要记进 `_ovs` 还原。
+        if flat:
+            _ovs.append((p.io, 'scan_film', p.io.scan_film))
+            p.io.scan_film = True
+            _ovs.append((p.io, 'output_cctf_encoding', p.io.output_cctf_encoding))
+            p.io.output_cctf_encoding = False
+            _ovs.append((p.io, 'output_gamut_compress', p.io.output_gamut_compress))
+            p.io.output_gamut_compress = dataclasses.replace(
+                p.io.output_gamut_compress, algorithm='off')
+
         # ★★ 像素键缩放（见 `_PX_SCALED_KEYS`）必须在 overrides **之后**（场景覆盖可能改过它们）。
         _scale_px_keys(p, lin, cfg, _ovs)
 
@@ -1591,7 +1623,8 @@ def _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides):
             setattr(_obj, _attr, _old)
         p.enlarger.print_exposure = _p0
         p.print = _pp0
-    return np.clip(np.asarray(out, np.float64), 0.0, 1.0)
+    out = np.asarray(out, np.float64)
+    return np.clip(out, 0.0, 1.0) if clip else out
 
 
 def _is_frozen_dc(obj):

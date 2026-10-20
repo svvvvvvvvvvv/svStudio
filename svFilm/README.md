@@ -1,7 +1,8 @@
 # svFilm
 
-数码仿胶片引擎（重写版）。**一条链**：
-**RAW/JPG → 解码 + 白平衡 + 护栏 → 判场景 → spektrafilm（物理胶片链）→ 出图**。
+数码仿胶片引擎（重写版）。**两条链**：
+- **C1（生产，默认）**：RAW/JPG → 解码 + 白平衡 + 护栏 → 判场景 → spektrafilm（物理胶片链）→ **冲印成片**。
+- **C2（`lrbase`，LR 分工）**：RAW → 解码 → spektrafilm 负片 → scan_film → **平基底片（16-bit TIFF）+ LR 元数据**；印相/影调/分色交给 LR。
 
 > 本目录是 `<svStudio 仓库>/svFilm/`（git subtree 合进来的）⇒ 拉 svStudio 一个仓库就够。
 >
@@ -19,10 +20,11 @@
 
 | 口子 | 形态 | 谁用 |
 |---|---|---|
-| **CLI** | `python -m svFilm.cli one <图> --stock 鹿井预设` | 脚本 / 一次性任务 |
+| **CLI（C1）** | `python -m svFilm.cli one <图> --stock 鹿井预设` | 脚本 / 一次性任务 |
+| **CLI（C2）** | `python -m svFilm.cli lrbase <图/目录> -o <out> --base-curve ...` | LR 分工 / 交付平基底片 |
 | **本地 HTTP 服务** | `python -m svFilm.service`（**常驻**，只绑 `127.0.0.1:8765`） | 工作台 svStudio |
 
-★ **两条口子是同一个引擎**（CLI 是薄壳）—— 不许各写一套算法。
+★ **几个口子共用同一套算法**（CLI 是薄壳；C2 只是把链路停在 scan_film，不多写一套）。
 ★ ⚠ **绝不允许「每次调用起一个进程」**：`io.load_raw` 一个人占全链一半时间，
   常驻 + 解码缓存是硬要求（冷启动 5.0 s vs 常驻 1.45 s）。
 
@@ -31,6 +33,8 @@
 ```bash
 # 只装这些 —— 胶片引擎 spektrafilm 已经随仓库带在 _tools/spektrafilm/，不用自己装
 pip install numpy Pillow opencv-python rawpy colour-science mediapipe
+# C2 lrbase 的 16-bit TIFF 还需要：
+pip install tifffile
 ```
 
 ⚠ 引擎找 spektrafilm 的顺序（`spektra.py` 的 `_sf()`）：
@@ -58,6 +62,8 @@ pip install numpy Pillow opencv-python rawpy colour-science mediapipe
 | `cli.py` | 命令行入口（见下） |
 | `scorecard.py` | 评分卡：每次改动对**同一套指标**打分；读 `targets.json` 的 `span` 与 `_lc_band` |
 | `hist.py` | LR 风格直方图工具 |
+| `lrbase.py` | **C2**：scan_film → 线性 → 反转/归一 → 16-bit TIFF（平基底片） |
+| `lr_meta.py` | **C2** 元数据：JSON / XMP sidecar / lrpreset / manifest |
 | `config.py` | **全部可调参数**（别处不许写死数） |
 | `selftest.py` | 自检：`python -m svFilm.selftest`（纯合成图 + 不变量，不依赖样片）|
 | `paths.py` | 产出路径规范（效果图/调试产物一律走它） |
@@ -80,6 +86,8 @@ pip install numpy Pillow opencv-python rawpy colour-science mediapipe
 ★ **曝光三处分工**：`camera.auto_exposure`（引擎锚 0.184）· `exposure.py` 中灰锚 ·
   `enlarger.print_exposure`（**整卷常数**）。「逐图算曝光」只能在 `exposure.py` 那一层做。
 ★ **空间族（颗粒 / 柔光 / halation）都在引擎里**，svFilm 不许外挂一层。
+★ **C2 = `lrbase`**：只调 `presets.render_linear`（`scan_film` / 线性 / 不裁剪），
+  输出平基底片；**不许改 C1 的 `render` / `render_person_pe` 路径**。
 ```
 
 ## 常用命令
@@ -87,6 +95,10 @@ pip install numpy Pillow opencv-python rawpy colour-science mediapipe
 ```bash
 python -m svFilm.cli one   <图> --stock 鹿井预设    # 单张
 python -m svFilm.cli dir   <目录> --jobs 4          # 批处理（重活建议 <=4：内存）
+python -m svFilm.cli lrbase <图/目录> -o <输出目录> --jobs 2 \
+  --base-curve <fit_base_curve.json>                # C2：平基底片 + LR 元数据
+python -m svFilm.cli lrbase-fit --print <C1成片> --flat <平基底TIFF> \
+  --out <base_curve.json>                           # C2：拟合基底曲线
 python -m svFilm.cli probe <图>                     # 只分析、不写文件
 python -m svFilm.cli stocks                         # 列出可用预设
 python -m svFilm.cli calib <RAW+JPG 同名对目录>       # 量机型表要填的基线增益
@@ -95,7 +107,45 @@ python -m svFilm.service                            # 常驻服务（127.0.0.1:8
 python -m svFilm.scorecard <目录>                    # 评分卡
 python -m svFilm.hist <图>                          # 直方图
 python -m svFilm.selftest                           # 自检（动完任何一层都要跑）
+python -m svFilm.lrbase_selftest                    # C2 自检（合成图，不依赖样片）
 ```
+
+## C2：LR 平基底片（`lrbase`）
+
+> **一条分支、一个口子**：C1（`one` / `dir` / `service`）一个字节不改；C2 走 `lrbase`。
+
+```
+RAW → io.load（场景线性）→ presets.render_linear（scan_film，线性、不裁剪）
+    → 反转/归一（线性域倒数 + 逐通道分位 + 可选增益/留白）
+    → 16-bit TIFF（sRGB ICC）
+    → lr_meta：<stem>.svfilm.json + .xmp + .lrpreset.xmp + _svfilm_manifest.json
+```
+
+**产物**（`<stem> = 原文件名 + _svFilm`）：
+
+| 文件 | 内容 |
+|---|---|
+| `*_svFilm_flat.tif` | 16-bit 平基底片；给 LR 做印相/影调/分色 |
+| `*.svfilm.json` | 全量 recipe + **最终扁平 develop settings** + `baked` 溯源 |
+| `*.xmp` | `crs:` photo sidecar（RAW 可读；JPEG/TIFF 需插件/嵌入） |
+| `*.svfilm.lua` | 给 LR 插件 `dofile` 的 settings（曲线已转 SDK 扁平列表） |
+| `*.svfilm.lr.txt` | 给 LR 插件的**逐行 key=value**（无需 JSON/Lua 解析；推荐） |
+| `*.lrpreset.xmp` | 可导入 LR 的 develop preset |
+| `_svfilm_manifest.json` | 批量清单（路径/hash/preset/mode） |
+
+**为什么 C2 这样切**：负片段（卷/颗粒/halation/扫描光学）留在 svFilm；印相段（相纸曲线、印相配平、分色）交给 LR。
+所以 `lrbase` **不跑** `print_exposure` / `person_pe` / `_post_scan`；脸亮不亮、颜色浓淡都由 LR 的
+Exposure/曲线/HSL/Color Grading 决定。
+
+**⚠ 元数据是“扁平表”**：LR 只有一条 tone curve，基底曲线与大师曲线已在生成端 compose；
+`components` 只作溯源，**不要**按顺序二次套 preset。`baked.grain=true` ⇒ LR 里 `GrainAmount=0`。
+
+**⚠ 依赖**：`tifffile`（`pip install tifffile`）。没有它时 `lrbase` 会报错，C1 不受影响。
+
+**基底曲线**：`lrbase-fit --print <C1成片> --flat <平基底TIFF>` 拟合 `平基底 → 冲印` 的
+逐通道 16 点曲线；输出 JSON 给 `lrbase --base-curve`。正式标定要**同内容、同像素**的一对图，
+print 用 PNG/无损（JPEG 会带压缩噪声），并尽量用 16-bit 平基底。单对图只验证“形状能表达”，
+不是生产标定。
 
 ## 数据文件
 
