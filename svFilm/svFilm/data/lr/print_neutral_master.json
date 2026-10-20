@@ -1,6 +1,6 @@
 {
-  "_note": "print_neutral 的 LR master：肤色 + 暗部 chroma（Vibrance 45 + Blue 5）；曝光逐图给。",
-  "source": "print_neutral_master_v35",
+  "_note": "print-neutral master：印相曝光逐图（目标 C1 L），LR Exposure=0；cgm55 + Vibrance45 + Blue5。",
+  "source": "print_neutral_master_v4_pefit",
   "settings": {
     "ColorGradeMidtoneHue": 45,
     "ColorGradeMidtoneSat": 55,
