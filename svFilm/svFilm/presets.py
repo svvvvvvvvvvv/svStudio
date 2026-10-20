@@ -520,6 +520,22 @@ def _params_for(name, cfg):
         return p
 
 
+def set_person_pe(name, cfg=C, **kw):
+    r"""改某预设**当前进程**里的 `settings.person_pe` 运行期键（不走预设 JSON）。
+
+    ★ 为什么需要它：`_params_for` 的缓存键含 `cfg.key_signature(cfg)` —— 改任何 `C.*`
+      都会清缓存、重建 `p`，外部捏着旧 `p` 改 `person_pe` 会**静默失效**（实验 4/6/8 的坑）。
+      所以：**先改 cfg（如果需要），再调本函数**；它拿的是当前缓存里的那份 `p`。
+    """
+    p = _params_for(name, cfg)
+    d = getattr(getattr(p, 'settings', None), 'person_pe', None)
+    if d is None:
+        d = {}
+        p.settings.person_pe = d
+    d.update(kw)
+    return d
+
+
 def clear_cache():
     """手动作废参数缓存（**通常不需要** —— `_params_for` 会按指纹自动作废），留作显式口子。
 
@@ -967,11 +983,24 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
             _, _fo = _P.person_face(np.clip(np.asarray(out, np.float64), 0.0, 1.0))
             if _fo is not None:
                 _fo = np.asarray(_fo, np.float64) > 0.5
-                if _fo.shape[:2] == (H, W) and int(_fo.sum()) >= 30:
+                if _fo.shape[:2] == (H, W) and int(_fo.sum()) >= 300:
                     _sel = _fo
         except Exception:                                                # noqa: BLE001
             pass
         _lab = _col.to_lab(np.clip(np.asarray(out, np.float64), 0.0, 1.0))
+        # ★★★ 10-20 口径修正：`_sel` 从**纯 FACE** 改成 **FACE∩皮肤似**
+        #   实测 2446：纯 FACE L 68.8 / C 7.1 / h 28.7（混进高光/头发/背景）
+        #   vs FACE∩皮肤 59.0 / 10.7 / 49.3（与验收 cheek 58.7/10.8/49.2 差 ≤0.3）。
+        #   开关 = `config.PERSON_PE_FACE_SKIN`（默认 True；False = 旧行为）。
+        if bool(getattr(cfg, 'PERSON_PE_FACE_SKIN', True)):
+            _Cs = np.hypot(_lab[..., 1], _lab[..., 2])
+            _skin_m = ((_lab[..., 0] >= 30) & (_lab[..., 0] <= 92)
+                       & (_Cs >= 5) & (_Cs <= 22)
+                       & (_lab[..., 1] >= 2) & (_lab[..., 1] <= 26)
+                       & (_lab[..., 2] >= 4) & (_lab[..., 2] <= 28))
+            _sk = _sel & _skin_m
+            if int(_sk.sum()) >= 300:
+                _sel = _sk
         _L = float(np.median(_lab[..., 0][_sel]))
         # ★ lc 动态（A 方案）：只在脸已在带内的分支用；这里先把开关/白服上沿取出来。
         _lc_mode = str(_ppe.get('person_pe_lc',
@@ -997,6 +1026,7 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         _tgt_e = target_L if target_L is not None else _ppe.get('person_pe_target_l')
         _tgt = float(_tgt_e if _tgt_e is not None
                      else getattr(cfg, 'PERSON_PE_TARGET_L', 66.96))
+        _band_arg = band is not None                       # ★ 形参 band 是否显式给了
         if band is not None:                               # 形参最强（`False` = 关窗，见下）
             _band = band
         elif 'person_pe_band' in _ppe:                     # ★ 预设给的（缺省时**不在这个 dict 里**）
@@ -1007,19 +1037,25 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
             _band = None                                   # 「关掉窗」= 逐图直接拉到 `_tgt`
         _lo_face = None                                    # 服装约束要知道「脸的下限」；无窗 ⇒ 不截断
         _cap_lo = None                                     # 服装帽的「脸目标」：提亮时=P25（尾巴下限），压暗时=接受下限
+        _push = False                                      # ★ 窗内轻推标记（10-20）
         if _band is not None:
             _lo, _hi = float(_band[0]), float(_band[1])
-            # ★★ 10-18 重定：band = **接受范围 [P10,P90]**；尾巴目标 P25/P75，中位 P50。
-            #   旧语义（下沿=中位、target_l 抬下沿）已废；target_l 若还给，就当 mid 用。
-            _tail = _ppe.get('person_pe_tail')
+            # ★★ 10-20 修：显式 `target_L` / `band` 必须**真的覆盖**预设的 tail/mid。
+            #   旧实现：`_band` 换了，但 `_tail`/`_mid` 仍读预设 ⇒ `band=(80,90)` 时
+            #   目标还是 65.5，直接走“压暗被拒”（实验 4/6/8 的坑）。
+            if _tgt_e is not None:
+                _lo = max(_lo, float(_tgt_e))
+                _hi = max(_hi, _lo)
+            _tail = None if _band_arg else _ppe.get('person_pe_tail')
             if _tail is None:
-                _tail = getattr(cfg, 'PERSON_PE_TAIL', None)
+                _tail = None if _band_arg else getattr(cfg, 'PERSON_PE_TAIL', None)
             if _tail is None:
                 _tail = (_lo + 0.25 * (_hi - _lo), _lo + 0.75 * (_hi - _lo))
             _tail_lo, _tail_hi = float(_tail[0]), float(_tail[1])
-            _mid = _ppe.get('person_pe_mid')
+            _mid = None if _band_arg else _ppe.get('person_pe_mid')
             if _mid is None:
-                _mid = _tgt_e if _tgt_e is not None else getattr(cfg, 'PERSON_PE_MID', None)
+                _mid = (_tgt_e if _tgt_e is not None
+                        else (None if _band_arg else getattr(cfg, 'PERSON_PE_MID', None)))
             if _mid is None:
                 _mid = 0.5 * (_lo + _hi)
             _mid = float(_mid)
@@ -1072,11 +1108,16 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
                             _stage[0] = '第二遍印相（lc）'
                             return render(_lin, name, cfg, print_exposure=_pe0,
                                           print_profile=print_profile, overrides=_ov2)
-                _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), band=[_lo, _hi],
-                                       tail=[round(_tail_lo, 2), round(_tail_hi, 2)],
-                                       mid=round(_mid, 2), target=round(_lift_tgt, 2),
-                                       acted=False, why='bright_enough', lc_why=_lc_why)
-                return out
+                _push = (bool(getattr(cfg, 'PERSON_PE_IN_BAND_PUSH', True))
+                         and _L < _tail_lo - float(getattr(cfg, 'PERSON_PE_PUSH_DEADBAND', 1.0)))
+                if _push:
+                    _tgt = _tail_lo                     # ★ 只推到 P25，不推 mid
+                else:
+                    _LAST_PERSON_PE = dict(back=_bk, L0=round(_L, 2), band=[_lo, _hi],
+                                           tail=[round(_tail_lo, 2), round(_tail_hi, 2)],
+                                           mid=round(_mid, 2), target=round(_lift_tgt, 2),
+                                           acted=False, why='bright_enough', lc_why=_lc_why)
+                    return out
             else:
                 # ★ 高于接受上沿：允许压且有门 ⇒ 压到 P75；否则不动
                 _pre_dn = (bool(getattr(cfg, 'PERSON_PE_ALLOW_DARKEN', False))
@@ -1101,6 +1142,8 @@ def render_person_pe(lin, name, cfg=C, print_profile=None, overrides=None,
         _mx *= 1.0 + float(_ppe.get('person_pe_back_gain',
                                     getattr(cfg, 'PERSON_PE_BACK_GAIN', 1.0)) or 0.0) * _bk
         _dpe = max(-_mx, min(_mx, -_d / _sl))
+        if _push:                                          # ★ 窗内轻推：限幅（提亮方向）
+            _dpe = max(_dpe, -abs(float(getattr(cfg, 'PERSON_PE_PUSH_MAX_DP', 0.03))))
         # ★★★ **旧「只提不压」= 两个事故的安全侧，不是铁律**（10-18 调研）：
         #   ① `band=False + target_L=40` 的错误配置（DSCF2328 被压 −12.9 L*）；
         #   ② DSCF1744 掩膜把亮处当脸（被压 −8.8 L*；本张输出侧 `face_box=None`，根本没有脸）。
