@@ -117,7 +117,7 @@ def t_metadata():
               'fit': {'median_abs_dL': 0.95}}
         meta = lr_meta.build_metadata(report, img, mode='flat', base_curve=bc,
                                       preset_name='svFilm test')
-        assert meta['schema'] == 'svfilm.lr/1'
+        assert meta['schema'] == 'svfilm.lr/2'
         assert meta['baked']['tone_curve'] is False
         assert meta['lr']['settings']['GrainAmount'] == 0
         for k in ('ToneCurvePV2012', 'ToneCurvePV2012Red'):
@@ -125,7 +125,7 @@ def t_metadata():
             assert len(pts) == 16 and pts[0][0] == 0 and pts[-1][0] == 255
         jp = td / 'x.svfilm.json'
         lr_meta.write_json(meta, jp)
-        assert json.loads(jp.read_text(encoding='utf-8'))['schema'] == 'svfilm.lr/1'
+        assert json.loads(jp.read_text(encoding='utf-8'))['schema'] == 'svfilm.lr/2'
         xp = td / 'x.xmp'
         lr_meta.write_sidecar_xmp(meta, xp)
         ET.parse(str(xp))
@@ -141,7 +141,7 @@ def t_metadata():
         tp = td / 'x.svfilm.lr.txt'
         lr_meta.write_lr_txt(meta, tp)
         ttxt = tp.read_text(encoding='utf-8')
-        assert 'ToneCurvePV2012=0,0,' in ttxt and 'schema=svfilm.lr/1' in ttxt
+        assert 'ToneCurvePV2012=0,0,' in ttxt and 'schema=svfilm.lr/2' in ttxt
         # 复合：identity 与 x 复合应等于 x
         c = _curve()
         assert lr_meta.compose([[0, 0], [255, 255]], c) == c

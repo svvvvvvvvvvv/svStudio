@@ -282,6 +282,24 @@ def render_flat(lin: np.ndarray, stock: str, cfg=C, *,
     return FlatResult(disp=disp, lin=pos, neg=neg, report={})
 
 
+def render_print_neutral(lin: np.ndarray, stock: str, cfg=C, *,
+                         overrides: dict | None = None) -> FlatResult:
+    r"""film_print_neutral：跑完整印相，但**固定印相曝光、不做人脸测光**。
+
+    这是 `presets.render(..., print_exposure=None)` 的薄包装：
+    - 相纸/印相化学/扫描都烘进像素；
+    - 不跑 `_person_metering`、不跑动态 PE；
+    - LR 拿到的是“中性印相”，master 曝光/反差/分色全部归 LR。
+    """
+    ov = dict(presets._base_overrides(cfg, stock=stock))
+    if overrides:
+        ov.update(overrides)
+    disp = presets.render(lin, stock, cfg, print_exposure=None,
+                          overrides=ov or None, person_metering=False)
+    return FlatResult(disp=np.asarray(disp, np.float64), lin=np.asarray(disp, np.float64),
+                      neg=None, report={})
+
+
 def _safe_stem(path: str | Path) -> str:
     return Path(path).stem
 
@@ -296,8 +314,19 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
             master: dict | None = None,
             preset_name: str = "svFilm",
             write_preset: bool = True,
-            overwrite: bool = True) -> dict:
-    r"""单张：RAW/JPG → 平基底片 TIFF + JSON/XMP/lrpreset。"""
+            overwrite: bool = True,
+            mode: str = "flat",
+            grain_owner: str = "svfilm",
+            halation_owner: str = "svfilm") -> dict:
+    r"""单张：RAW/JPG → TIFF + JSON/XMP/lrpreset。
+
+    mode:
+      - `flat`：只烘负片介质（stock/scan/grain/halation），相纸/大师归 LR；
+      - `print_neutral`：烘中性相纸（固定印相曝光，不做 person_pe），大师归 LR；
+      - `full`：保留给 C1（`one`/`dir`），这里不重复实现。
+    """
+    if mode not in ("flat", "print_neutral"):
+        raise ValueError("lrbase mode 只支持 flat / print_neutral；full 请走 C1 `one`")
     t0 = time.perf_counter()
     path = Path(path)
     name = str(stock if stock is not None else C.STOCK)
@@ -306,17 +335,31 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
     wb = presets.wb_of(name) if presets.has(name) else None
     s = io.load(str(path), max_side if max_side is not None else C.MAX_SIDE,
                 src=src, wb=wb)
-    flat = render_flat(s.lin, name, C, lo_q=lo_q, hi_q=hi_q, gains=gains,
-                       headroom=headroom)
+
+    overrides: dict = {}
+    if grain_owner == "lr":
+        overrides["film_render.grain.active"] = False
+    if halation_owner == "lr":
+        overrides["film_render.halation.active"] = False
+
+    if mode == "flat":
+        flat = render_flat(s.lin, name, C, lo_q=lo_q, hi_q=hi_q, gains=gains,
+                           headroom=headroom, overrides=overrides or None)
+        suffix = "_flat.tif"
+        note = "scan_film 线性 → 倒数/分位归一 → sRGB 编码；未做印相"
+    else:
+        flat = render_print_neutral(s.lin, name, C, overrides=overrides or None)
+        suffix = "_print.tif"
+        note = "中性印相（固定 print_exposure；不跑 person_pe/动态 PE）"
     out_dir = Path(out_dir) if out_dir is not None else path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = _safe_stem(path) + "_svFilm"
-    tif_path = out_dir / (stem + "_flat.tif")
+    tif_path = out_dir / (stem + suffix)
     if tif_path.exists() and not overwrite:
         raise FileExistsError(tif_path)
 
     report = {
-        "mode": "flat",
+        "mode": mode,
         "stock": name,
         "stock_label": presets.label_of(name)[0],
         "stock_desc": presets.label_of(name)[1],
@@ -326,22 +369,31 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
         "scene": None,
         "person_pe": None,
         "light_back": 0.0,
+        "film": {
+            "stock": name,
+            "paper": (presets.label_of(name)[1] if mode == "print_neutral" else None),
+            "scan": "spektrafilm/scan_film",
+            "grain_owner": grain_owner,
+            "halation_owner": halation_owner,
+        },
         "flat": {
             "lo_q": float(lo_q),
             "hi_q": float(hi_q),
             "gains": [float(v) for v in gains],
             "headroom": float(headroom),
             "bit_depth": 16,
-            "color_space": "sRGB",
-            "note": "scan_film 线性 → 倒数/分位归一 → sRGB 编码；未做印相",
+            "color_space": "sRGB (untagged; LR assumes sRGB)",
+            "note": note,
         },
         "ms": (time.perf_counter() - t0) * 1000.0,
     }
     save_tiff16(flat.disp, tif_path)
 
-    meta = lr_meta.build_metadata(report, tif_path, mode="flat",
+    meta = lr_meta.build_metadata(report, tif_path, mode=mode,
                                   base_curve=base_curve, master=master,
-                                  preset_name=preset_name)
+                                  preset_name=preset_name,
+                                  grain_owner=grain_owner,
+                                  halation_owner=halation_owner)
     json_path = out_dir / (stem + ".svfilm.json")
     xmp_path = out_dir / (stem + ".xmp")
     lua_path = out_dir / (stem + ".svfilm.lua")

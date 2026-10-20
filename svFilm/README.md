@@ -96,7 +96,8 @@ pip install tifffile
 python -m svFilm.cli one   <图> --stock 鹿井预设    # 单张
 python -m svFilm.cli dir   <目录> --jobs 4          # 批处理（重活建议 <=4：内存）
 python -m svFilm.cli lrbase <图/目录> -o <输出目录> --jobs 2 \
-  --base-curve <fit_base_curve.json>                # C2：平基底片 + LR 元数据
+  --mode flat|print_neutral --grain-owner svfilm|lr --halation-owner svfilm|lr \
+  --master svFilm/data/lr/print_neutral_master.json   # C2：平基底/中性印相 + LR 元数据
 python -m svFilm.cli lrbase-fit --print <C1成片> --flat <平基底TIFF> \
   --out <base_curve.json>                           # C2：拟合基底曲线
 python -m svFilm.cli lrbase-preview --flat <平基底TIFF> \
@@ -112,35 +113,50 @@ python -m svFilm.selftest                           # 自检（动完任何一�
 python -m svFilm.lrbase_selftest                    # C2 自检（合成图，不依赖样片）
 ```
 
-## C2：LR 平基底片（`lrbase`）
+## C2：LR 分工（`lrbase`）
 
 > **一条分支、一个口子**：C1（`one` / `dir` / `service`）一个字节不改；C2 走 `lrbase`。
+> **v2 分工**：svFilm 管胶片介质，LR 管创作意图；`owners` 写在 metadata 里。
 
 ```
-RAW → io.load（场景线性）→ presets.render_linear（scan_film，线性、不裁剪）
+mode=flat：
+RAW → io.load → render_linear（scan_film，线性、不裁剪）
     → 反转/归一（线性域倒数 + 逐通道分位 + 可选增益/留白）
-    → 16-bit TIFF（**不带 ICC**；LR 15.1 对 16-bit+ICC 会渲染成青蓝，未标记 RGB 按 sRGB 解释）
-    → lr_meta：<stem>.svfilm.json + .xmp + .lrpreset.xmp + _svfilm_manifest.json
+    → 16-bit TIFF（**不带 ICC**）→ lr_meta（owners: medium_paper=lr）
+
+mode=print_neutral：
+RAW → io.load → render（固定 print_exposure，**不跑 person_pe / 不认人**）
+    → 中性印相（stock + paper + scan + grain + halation）
+    → 16-bit TIFF（**不带 ICC**）→ lr_meta（owners: medium_paper=svfilm, master_*=lr）
+
+mode=full：C1 `one`/`dir` 已有，lrbase 不重复实现。
 ```
 
 **产物**（`<stem> = 原文件名 + _svFilm`）：
 
 | 文件 | 内容 |
 |---|---|
-| `*_svFilm_flat.tif` | 16-bit 平基底片；给 LR 做印相/影调/分色 |
-| `*.svfilm.json` | 全量 recipe + **最终扁平 develop settings** + `baked` 溯源 |
-| `*.xmp` | `crs:` photo sidecar（RAW 可读；JPEG/TIFF 需插件/嵌入） |
-| `*.svfilm.lua` | 给 LR 插件 `dofile` 的 settings（曲线已转 SDK 扁平列表） |
-| `*.svfilm.lr.txt` | 给 LR 插件的**逐行 key=value**（无需 JSON/Lua 解析；推荐） |
-| `*.lrpreset.xmp` | 可导入 LR 的 develop preset |
+| `*_svFilm_flat.tif` | `flat` 模式的平基底片；给 LR 做印相/影调/分色 |
+| `*_svFilm_print.tif` | `print_neutral` 模式的中性印相；LR 只做大师层 |
+| `*.svfilm.json` | 全量 recipe + **owners/baked** + 最终扁平 develop settings |
+| `*.xmp` / `*.svfilm.lua` / `*.svfilm.lr.txt` / `*.lrpreset.xmp` | LR 应用形式（推荐 `.lr.txt`） |
 | `_svfilm_manifest.json` | 批量清单（路径/hash/preset/mode） |
 
-**为什么 C2 这样切**：负片段（卷/颗粒/halation/扫描光学）留在 svFilm；印相段（相纸曲线、印相配平、分色）交给 LR。
-所以 `lrbase` **不跑** `print_exposure` / `person_pe` / `_post_scan`；脸亮不亮、颜色浓淡都由 LR 的
-Exposure/曲线/HSL/Color Grading 决定。
+**模式与 owner**：
+
+- `flat`：负片段（卷/颗粒/halation/扫描）留在 svFilm；相纸/印相/大师归 LR；
+- `print_neutral`：相纸/印相也归 svFilm（中性、固定印相曝光），但 **master 曝光/反差/分色仍归 LR**；
+- `--grain-owner lr` / `--halation-owner lr`：显式把颗粒/halation 让给 LR（默认 svfilm）。
+
+**LR master 起点**：
+
+- `svFilm/data/lr/flat_master_K2.json`（flat：Basic + 黄色降饱和）
+- `svFilm/data/lr/print_neutral_master.json`（print-neutral：只做肤色，曝光逐图给）
 
 **⚠ 元数据是“扁平表”**：LR 只有一条 tone curve，基底曲线与大师曲线已在生成端 compose；
 `components` 只作溯源，**不要**按顺序二次套 preset。`baked.grain=true` ⇒ LR 里 `GrainAmount=0`。
+
+**⚠ 16-bit TIFF 不写 ICC**：LR 15.1 对 16-bit+ICC 会渲染成青蓝；未标记 RGB 按 sRGB 解释。
 
 **⚠ 现在仍用 `--stock` 的完整预设**（含该预设的 WB/PE/`amount`）⇒ 平基底片里已经带了“大师的印相配平”，
 `lrbase-fit` 拟合出来的曲线复现的是“该预设的冲印”，不是“中性印相”。真正的 film-only preset（卷/纸与大师分离）

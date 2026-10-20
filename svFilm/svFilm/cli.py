@@ -223,13 +223,16 @@ def _lrbase_task(t):
     r"""C2 单张 worker（进程池要 top-level）。"""
     from . import lrbase
     (p, out_dir, stock, max_side, src, lo, hi, gains, headroom,
-     base_curve, master, preset_name, write_preset) = t
+     base_curve, master, preset_name, write_preset,
+     mode, grain_owner, halation_owner) = t
     try:
         r = lrbase.run_one(
             p, out_dir=out_dir, stock=stock, max_side=max_side, src=src,
             lo_q=lo, hi_q=hi, gains=gains, headroom=headroom,
             base_curve=base_curve, master=master,
-            preset_name=preset_name, write_preset=write_preset)
+            preset_name=preset_name, write_preset=write_preset,
+            mode=mode, grain_owner=grain_owner,
+            halation_owner=halation_owner)
         return (p, r, None)
     except Exception as e:                                  # noqa: BLE001
         return (p, None, '%s: %s' % (type(e).__name__, e))
@@ -284,7 +287,8 @@ def cmd_lrbase(args):
         od = out_dir or os.path.dirname(os.path.abspath(p))
         tasks.append((p, od, args.stock, args.max_side, args.src,
                       args.lo, args.hi, gains, args.headroom,
-                      base_curve, master, preset_name, not args.no_preset))
+                      base_curve, master, preset_name, not args.no_preset,
+                      args.mode, args.grain_owner, args.halation_owner))
 
     jobs = max(1, int(args.jobs))
     print('lrbase 共 %d 张，并发 %d；输出 %s' % (len(ps), jobs, out_dir or '（各自目录）'))
@@ -403,6 +407,12 @@ def build_parser():
     p.add_argument('--headroom', type=float, default=0.01,
                    help='平基底片留白（0 = 硬裁到 0/1；默认 0.01）')
     p.add_argument('--gains', default='1,1,1', help='逐通道增益，例如 1.02,1.0,0.98')
+    p.add_argument('--mode', default='flat', choices=('flat', 'print_neutral'),
+                   help='flat=只烘负片介质；print_neutral=中性印相，大师归 LR')
+    p.add_argument('--grain-owner', default='svfilm', choices=('svfilm', 'lr'),
+                   dest='grain_owner', help='颗粒归谁（默认 svfilm）')
+    p.add_argument('--halation-owner', default='svfilm', choices=('svfilm', 'lr'),
+                   dest='halation_owner', help='halation 归谁（默认 svfilm）')
     p.add_argument('--base-curve', default=None, dest='base_curve',
                    help='lrbase-fit 产出的 JSON（缺省 = identity）')
     p.add_argument('--master', default=None, help='大师设置 JSON（可选）')

@@ -164,11 +164,18 @@ def build_metadata(report: dict, image: str | Path, *,
                    mode: str = "flat",
                    base_curve: dict | None = None,
                    master: dict | None = None,
-                   preset_name: str = "svFilm") -> dict:
-    """`mode=flat`：冲印段交给 LR；`mode=full`：冲印段已烘死，只做大师层。"""
-    if mode not in ("flat", "full"):
-        raise ValueError("mode 只能是 flat / full")
-    baked = mode == "full"
+                   preset_name: str = "svFilm",
+                   grain_owner: str = "svfilm",
+                   halation_owner: str = "svfilm") -> dict:
+    """`flat`：只烘负片介质；`print_neutral`：再烘中性相纸；`full`：连大师层一起烘。
+
+    v2 契约：`owners` 声明每一层归谁；`baked` 只描述**已经烘进像素**的东西。
+    `master` 参数仍是“LR 侧的 master settings”，不是 svFilm 的大师层。
+    """
+    if mode not in ("flat", "print_neutral", "full"):
+        raise ValueError("mode 只能是 flat / print_neutral / full")
+    medium_baked = mode in ("print_neutral", "full")
+    master_baked = mode == "full"
 
     curves: dict[str, list[list[int]]] = {
         "ToneCurvePV2012": [[0, 0], [255, 255]],
@@ -224,7 +231,7 @@ def build_metadata(report: dict, image: str | Path, *,
     flat_settings = {k: v for k, v in settings.items() if not isinstance(v, list)}
     image = Path(image)
     return {
-        "schema": "svfilm.lr/1",
+        "schema": "svfilm.lr/2",
         "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
         "mode": mode,
         "source": {
@@ -245,13 +252,40 @@ def build_metadata(report: dict, image: str | Path, *,
             "sha256": sha256_file(image),
         },
         "baked": {
-            "tone_curve": baked,
-            "color_mix": baked,
-            "grain": True,
-            "halation": True,
+            "tone_curve": medium_baked,
+            "color_mix": medium_baked,
+            "grain": grain_owner == "svfilm",
+            "halation": halation_owner == "svfilm",
             "softness": True,
-            "note": ("full：冲印段已烘死，LR 只做大师风格微调；"
-                     "flat：冲印段留给 LR，base_curve 复现胶片基底"),
+            "medium_tone": medium_baked,
+            "medium_color": medium_baked,
+            "master_tone": master_baked,
+            "master_color": master_baked,
+            "note": ("full：介质+大师都烘死；print_neutral：只烘中性介质，大师归 LR；"
+                     "flat：只烘负片介质，相纸/大师归 LR"),
+        },
+        "owners": {
+            "medium_stock": "svfilm",
+            "medium_paper": "svfilm" if medium_baked else "lr",
+            "medium_scan": "svfilm",
+            "grain": grain_owner,
+            "halation": halation_owner,
+            "master_tone": "svfilm" if master_baked else "lr",
+            "master_color": "svfilm" if master_baked else "lr",
+            "wb": "svfilm" if master_baked else "lr",
+            "crop": "lr",
+            "lens": "lr",
+            "retouch": "lr",
+            "output": "lr",
+        },
+        "film": report.get("film") or {
+            "stock": report.get("stock"),
+            "paper": (report.get("film") or {}).get("paper") if isinstance(report.get("film"), dict) else None,
+            "scan": "spektrafilm/scan_film",
+        },
+        "master": {
+            "baked": master_baked,
+            "source": (master or {}).get("source"),
         },
         "lr": {
             "preset_name": preset_name,
@@ -286,6 +320,8 @@ def write_sidecar_xmp(meta: dict, path: str | Path) -> str:
     desc.set(f"{{{SVF_NS}}}preset", meta["lr"]["preset_name"])
     desc.set(f"{{{SVF_NS}}}bakedTone", str(meta["baked"]["tone_curve"]).lower())
     desc.set(f"{{{SVF_NS}}}bakedColor", str(meta["baked"]["color_mix"]).lower())
+    desc.set(f"{{{SVF_NS}}}masterTone", str(meta["baked"].get("master_tone", False)).lower())
+    desc.set(f"{{{SVF_NS}}}owners", json.dumps(meta.get("owners") or {}, ensure_ascii=False))
     ET.indent(root, space=" ")
     path.write_text(ET.tostring(root, encoding="unicode") + "\n", encoding="utf-8")
     return str(path)

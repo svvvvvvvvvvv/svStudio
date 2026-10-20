@@ -622,11 +622,13 @@ def render_metered(lin, name, cfg=C, print_exposure=None, print_profile=None,
         _EX.clear()
 
 
-def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=None):
+def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=None,
+           person_metering=True):
     r"""喂**场景线性**，出**显示域**（与 `spektra.render()` 同契约，可互换）。
 
     `print_exposure` 不传 = 「预设的 pe × `SPEK_PE_SHIFT`」；`overrides` = {字段路径: 值}，
     **跑完一定还原**、取值不对**当场报错**（不静默）。
+    `person_metering=False` ⇒ 不跑 `_person_metering`（C2 print-neutral 用：固定曝光，不认人）。
     ★★ **`overrides` 是"整份替换"、不是"叠加"** ⇒ **别只传一根**：它的产出 = `"*"` 基线层 ＋
       场景轴覆盖；只传"要动的那一根" = **丢了整条基线** ⇒ `print_render.chemistry` 的覆盖
       只落在孤立值上（输出与不带 override 在噪声内相同）。
@@ -635,7 +637,10 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=
 
     # ★★★ **按预设名加锁**：「临时改写共享的 `p` → 跑 → 还原」在多线程服务下必须串行；
     #   ★ 测光看人用**副本** `dict(overrides)` 注入（不改调用方的字典）。
-    _ov, _pm = _person_metering(lin, overrides, cfg)
+    if person_metering:
+        _ov, _pm = _person_metering(lin, overrides, cfg)
+    else:
+        _ov, _pm = overrides, None
     try:
         with _lock_of(name):
             return _post_scan(

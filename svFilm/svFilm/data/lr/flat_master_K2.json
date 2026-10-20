@@ -1,0 +1,13 @@
+{
+  "_note": "film_flat 的 LR Basic/HSL 起点：svFilm 只出负片介质，LR 做全部影调/分色。",
+  "source": "film_flat_master_K2",
+  "settings": {
+    "Contrast2012": 75,
+    "Highlights2012": -30,
+    "Shadows2012": 5,
+    "Whites2012": 30,
+    "Blacks2012": -30,
+    "Saturation": -20,
+    "SaturationAdjustmentYellow": -60
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "_note": "print_neutral 的 LR master 起点：只做肤色；曝光由逐图 LR Exposure 决定。",
+  "source": "print_neutral_master_v2",
+  "settings": {
+    "ColorGradeMidtoneHue": 45,
+    "ColorGradeMidtoneSat": 55
+  }
+}
