@@ -142,6 +142,10 @@ Exposure/曲线/HSL/Color Grading 决定。
 **⚠ 元数据是“扁平表”**：LR 只有一条 tone curve，基底曲线与大师曲线已在生成端 compose；
 `components` 只作溯源，**不要**按顺序二次套 preset。`baked.grain=true` ⇒ LR 里 `GrainAmount=0`。
 
+**⚠ 现在仍用 `--stock` 的完整预设**（含该预设的 WB/PE/`amount`）⇒ 平基底片里已经带了“大师的印相配平”，
+`lrbase-fit` 拟合出来的曲线复现的是“该预设的冲印”，不是“中性印相”。真正的 film-only preset（卷/纸与大师分离）
+是 C2 的下一步；在那之前，`lrbase` 是一个**可用的过渡**，不是最终分工。
+
 **⚠ 依赖**：`tifffile`（`pip install tifffile`）。没有它时 `lrbase` 会报错，C1 不受影响。
 
 **基底曲线**：`lrbase-fit --print <C1成片> --flat <平基底TIFF>` 拟合 `平基底 → 冲印` 的
