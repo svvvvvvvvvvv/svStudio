@@ -203,6 +203,22 @@ def cmd_lrbase_fit(args):
     return 0
 
 
+def cmd_lrbase_preview(args):
+    r"""把基底曲线回放到平基底片上，出一张 JPEG 预览（不开 LR）。"""
+    from . import lrbase
+    try:
+        flat = lrbase.read_srgb(args.flat_img)
+        with open(args.curve, 'r', encoding='utf-8') as f:
+            curve = json.load(f)
+        out = lrbase.apply_curve(flat, curve)
+        lrbase.save_jpeg(out, args.out, quality=args.quality)
+    except Exception as e:                                  # noqa: BLE001
+        print('预览失败: %s: %s' % (type(e).__name__, e))
+        return 1
+    print('-> %s' % args.out)
+    return 0
+
+
 def _lrbase_task(t):
     r"""C2 单张 worker（进程池要 top-level）。"""
     from . import lrbase
@@ -365,6 +381,13 @@ def build_parser():
     p.add_argument('--points', type=int, default=16, help='曲线控制点数（默认 16）')
     p.add_argument('--bins', type=int, default=32, help='分位分箱数（默认 32）')
     p.set_defaults(func=cmd_lrbase_fit)
+
+    p = sub.add_parser('lrbase-preview', help='把基底曲线回放到平基底片，出 JPEG 预览（不开 LR）')
+    p.add_argument('--flat', required=True, dest='flat_img', help='平基底片（16-bit TIFF）')
+    p.add_argument('--curve', required=True, help='lrbase-fit 产出的 curve JSON')
+    p.add_argument('--out', required=True, help='输出 JPEG')
+    p.add_argument('--quality', type=int, default=95)
+    p.set_defaults(func=cmd_lrbase_preview)
 
     p = sub.add_parser('lrbase', help='C2：平基底片 16-bit TIFF + LR 元数据（不跑印相）')
     p.add_argument('inputs', nargs='+')

@@ -14,8 +14,8 @@ from pathlib import Path
 import numpy as np
 
 from . import lr_meta
-from .lrbase import (fit_base_curve, invert_negative, save_tiff16,
-                     srgb_decode, srgb_encode)
+from .lrbase import (apply_curve, fit_base_curve, invert_negative, save_jpeg,
+                     save_tiff16, srgb_decode, srgb_encode)
 
 FAIL = []
 
@@ -169,6 +169,22 @@ def t_fit_curve():
         assert fit['median_abs_dL'] is not None and fit['median_abs_dL'] < 3.0, fit
 
 
+def t_apply_curve():
+    x = np.linspace(0, 1, 256)
+    img = np.repeat(x[None, :, None], 32, axis=0)
+    img = np.repeat(img, 3, axis=2)
+    ident = {'curves': {'ToneCurvePV2012': [[0, 0], [255, 255]],
+                        'ToneCurvePV2012Red': [[0, 0], [255, 255]],
+                        'ToneCurvePV2012Green': [[0, 0], [255, 255]],
+                        'ToneCurvePV2012Blue': [[0, 0], [255, 255]]}}
+    out = apply_curve(img, ident)
+    assert float(np.max(np.abs(out - img))) < 2e-3
+    with tempfile.TemporaryDirectory() as td:
+        p = Path(td) / 'x.jpg'
+        save_jpeg(out, p)
+        assert p.exists() and p.stat().st_size > 100
+
+
 def main():
     check('invert roundtrip', t_invert_roundtrip)
     check('invert headroom', t_invert_headroom)
@@ -177,6 +193,7 @@ def main():
     check('tiff16 + ICC', t_tiff16)
     check('metadata/json/xmp/compose', t_metadata)
     check('fit base curve', t_fit_curve)
+    check('apply curve + jpeg', t_apply_curve)
     if FAIL:
         print('\n%d 项失败' % len(FAIL))
         return 1

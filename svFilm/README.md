@@ -99,6 +99,8 @@ python -m svFilm.cli lrbase <图/目录> -o <输出目录> --jobs 2 \
   --base-curve <fit_base_curve.json>                # C2：平基底片 + LR 元数据
 python -m svFilm.cli lrbase-fit --print <C1成片> --flat <平基底TIFF> \
   --out <base_curve.json>                           # C2：拟合基底曲线
+python -m svFilm.cli lrbase-preview --flat <平基底TIFF> \
+  --curve <base_curve.json> --out <预览.jpg>         # C2：不开 LR 看“平基底+曲线”
 python -m svFilm.cli probe <图>                     # 只分析、不写文件
 python -m svFilm.cli stocks                         # 列出可用预设
 python -m svFilm.cli calib <RAW+JPG 同名对目录>       # 量机型表要填的基线增益

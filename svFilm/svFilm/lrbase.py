@@ -233,6 +233,37 @@ def save_curve_json(curve: dict, path: str | Path) -> str:
     return str(path)
 
 
+def apply_curve(flat_srgb: np.ndarray, curve: dict) -> np.ndarray:
+    r"""把基底曲线回放到平基底片上（只做 tone，不做 HSL/Color Grading）。
+
+    用于 `lrbase-preview`：不开 LR 也能看“平基底 + 基底曲线”长什么样。
+    """
+    a = np.asarray(flat_srgb, np.float64)
+    curves = curve.get("curves", {})
+    out = np.empty_like(a)
+    keys = ("ToneCurvePV2012Red", "ToneCurvePV2012Green", "ToneCurvePV2012Blue")
+    for i, key in enumerate(keys):
+        pts = curves.get(key) or curves.get("ToneCurvePV2012")
+        if not pts:
+            out[..., i] = a[..., i]
+            continue
+        p = np.asarray(pts, np.float64) / 255.0
+        out[..., i] = np.interp(a[..., i], p[:, 0], p[:, 1])
+    return np.clip(out, 0.0, 1.0)
+
+
+def save_jpeg(disp: np.ndarray, path: str | Path, quality: int = 95) -> str:
+    from PIL import Image
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    arr = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
+    tmp = path.with_name(path.name + ".tmp.jpg")
+    Image.fromarray((arr * 255.0 + 0.5).astype(np.uint8)).save(
+        tmp, format="JPEG", quality=int(quality), subsampling=0)
+    os.replace(tmp, path)
+    return str(path)
+
+
 def render_flat(lin: np.ndarray, stock: str, cfg=C, *,
                 lo_q: float = 1.0, hi_q: float = 99.5,
                 gains: tuple[float, float, float] = (1.0, 1.0, 1.0),
