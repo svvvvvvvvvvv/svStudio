@@ -1,10 +1,12 @@
 {
-  "_note": "print-neutral master：印相曝光逐图（目标 C1 L），LR Exposure=0；cgm55 + Vibrance45 + Blue5。",
-  "source": "print_neutral_master_v4_pefit",
+  "_note": "print-neutral master：逐图印相曝光（目标 C1 L），LR Exposure=0；histogram-fit 到 C1 直方图。",
+  "source": "print_neutral_master_hist2",
   "settings": {
     "ColorGradeMidtoneHue": 45,
     "ColorGradeMidtoneSat": 55,
     "Vibrance": 45,
-    "SaturationAdjustmentBlue": 5
+    "SaturationAdjustmentBlue": -10,
+    "SaturationAdjustmentYellow": -10,
+    "Blacks2012": -15
   }
 }
