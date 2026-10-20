@@ -88,21 +88,27 @@ def invert_negative(neg: np.ndarray, *,
     return out
 
 
-def save_tiff16(disp: np.ndarray, path: str | Path) -> str:
-    r"""sRGB 编码 0..1 → 16-bit RGB TIFF（带 sRGB ICC）。"""
+def save_tiff16(disp: np.ndarray, path: str | Path, *, icc: bool = False) -> str:
+    r"""sRGB 编码 0..1 → 16-bit RGB TIFF。
+
+    ★ 默认**不写 ICC**：LR 15.1 对带 ICC extratag 的 16-bit RGB TIFF 会渲染成青蓝
+      （同像素、同设置，去掉 ICC 后与 C1 逐项对齐）。LR 对未标记 RGB 按 sRGB 解释，
+      这正是我们要的。`icc=True` 只给别的消费方（如 Photoshop/评测脚本）用。
+    """
     if tifffile is None:
         raise RuntimeError("缺 tifffile：pip install tifffile（或改用 cv2 的 16-bit TIFF）")
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     arr = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
     arr16 = np.round(arr * 65535.0).astype(np.uint16)
-    icc = b""
-    try:
-        from PIL import ImageCms
-        icc = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
-    except Exception:  # pragma: no cover - 没有 ICC 也要能写
-        icc = b""
-    extratags = [(34675, "B", len(icc), icc, False)] if icc else None
+    extratags = None
+    if icc:
+        try:
+            from PIL import ImageCms
+            prof = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+            extratags = [(34675, "B", len(prof), prof, False)]
+        except Exception:  # pragma: no cover - 没有 ICC 也要能写
+            extratags = None
     tmp = path.with_name(path.name + ".tmp.tif")
     tifffile.imwrite(tmp, arr16, photometric="rgb", compression="zlib",
                      extratags=extratags)

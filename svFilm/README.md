@@ -119,7 +119,7 @@ python -m svFilm.lrbase_selftest                    # C2 自检（合成图，�
 ```
 RAW → io.load（场景线性）→ presets.render_linear（scan_film，线性、不裁剪）
     → 反转/归一（线性域倒数 + 逐通道分位 + 可选增益/留白）
-    → 16-bit TIFF（sRGB ICC）
+    → 16-bit TIFF（**不带 ICC**；LR 15.1 对 16-bit+ICC 会渲染成青蓝，未标记 RGB 按 sRGB 解释）
     → lr_meta：<stem>.svfilm.json + .xmp + .lrpreset.xmp + _svfilm_manifest.json
 ```
 

@@ -67,6 +67,20 @@ KNOWN_SETTINGS = {
 }
 
 
+COLOR_RESET_KEYS: dict[str, Any] = {}
+for _color in ("Red", "Orange", "Yellow", "Green", "Aqua", "Blue", "Purple", "Magenta"):
+    for _prefix in ("HueAdjustment", "SaturationAdjustment", "LuminanceAdjustment"):
+        COLOR_RESET_KEYS[_prefix + _color] = 0
+for _key in ("ColorGradeShadowHue", "ColorGradeShadowSat",
+             "ColorGradeMidtoneHue", "ColorGradeMidtoneSat",
+             "ColorGradeHighlightHue", "ColorGradeHighlightSat",
+             "ColorGradeBlending", "ColorGradeBalance",
+             "SplitToningShadowHue", "SplitToningShadowSaturation",
+             "SplitToningHighlightHue", "SplitToningHighlightSaturation",
+             "SplitToningBalance", "Vibrance", "Saturation"):
+    COLOR_RESET_KEYS[_key] = 0
+
+
 def sha256_file(path: str | Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -156,7 +170,12 @@ def build_metadata(report: dict, image: str | Path, *,
         raise ValueError("mode 只能是 flat / full")
     baked = mode == "full"
 
-    curves: dict[str, list[list[int]]] = {}
+    curves: dict[str, list[list[int]]] = {
+        "ToneCurvePV2012": [[0, 0], [255, 255]],
+        "ToneCurvePV2012Red": [[0, 0], [255, 255]],
+        "ToneCurvePV2012Green": [[0, 0], [255, 255]],
+        "ToneCurvePV2012Blue": [[0, 0], [255, 255]],
+    }
     comps: dict[str, Any] = {}
     if mode == "flat" and base_curve:
         for key, pts in base_curve.get("curves", {}).items():
@@ -166,8 +185,6 @@ def build_metadata(report: dict, image: str | Path, *,
             "source": "fit_base_curve",
             "fit": base_curve.get("fit"),
         }
-    else:
-        curves = {"ToneCurvePV2012": [[0, 0], [255, 255]]}
 
     if master and master.get("curves"):
         for key, pts in master["curves"].items():
@@ -178,7 +195,8 @@ def build_metadata(report: dict, image: str | Path, *,
             curves[key] = compose(inner, outer)
         comps["master_tone"] = {"source": master.get("source", "master")}
 
-    settings: dict[str, Any] = {
+    settings: dict[str, Any] = dict(COLOR_RESET_KEYS)
+    settings.update({
         "ToneCurveName2012": "Custom",
         "Exposure2012": 0.0,
         "Contrast2012": 0,
@@ -190,7 +208,7 @@ def build_metadata(report: dict, image: str | Path, *,
         "GrainAmount": 0,
         "GrainSize": 0,
         "GrainFrequency": 0,
-    }
+    })
     for key, pts in curves.items():
         settings[key] = pts
 

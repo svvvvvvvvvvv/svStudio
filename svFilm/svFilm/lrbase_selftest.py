@@ -81,7 +81,13 @@ def t_tiff16():
             page = tf.pages[0]
             bps = page.bitspersample
             assert bps == 16 or bps == (16, 16, 16), bps
-            assert 34675 in [t.code for t in page.tags.values()], 'no ICC tag'
+            # ★ 默认不写 ICC：LR 15.1 对 16-bit+ICC 会渲染成青蓝
+            assert 34675 not in [t.code for t in page.tags.values()], 'unexpected ICC tag'
+        p2 = Path(td) / 'b.tif'
+        save_tiff16(x, p2, icc=True)
+        with tifffile.TiffFile(str(p2)) as tf:
+            page = tf.pages[0]
+            assert 34675 in [t.code for t in page.tags.values()], 'no ICC tag when requested'
 
 
 def _curve(n=16):
