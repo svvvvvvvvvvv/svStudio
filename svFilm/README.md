@@ -148,6 +148,10 @@ Exposure/曲线/HSL/Color Grading 决定。
 
 **⚠ 依赖**：`tifffile`（`pip install tifffile`）。没有它时 `lrbase` 会报错，C1 不受影响。
 
+**LR 侧**：`E:\lr_agent\lrplugin\SvFilmBridge.lrplugin`（草案）读 `*.svfilm.lr.txt`，
+`Library → Plug-in Extras → svFilm: Apply metadata`；也可用 Automaat MCP 读 `*.svfilm.json`。
+插件**未在 LR 里实际加载过**，先用虚拟副本试。
+
 **基底曲线**：`lrbase-fit --print <C1成片> --flat <平基底TIFF>` 拟合 `平基底 → 冲印` 的
 逐通道 16 点曲线；输出 JSON 给 `lrbase --base-curve`。正式标定要**同内容、同像素**的一对图，
 print 用 PNG/无损（JPEG 会带压缩噪声），并尽量用 16-bit 平基底。单对图只验证“形状能表达”，
