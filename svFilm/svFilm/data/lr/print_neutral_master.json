@@ -1,8 +1,9 @@
 {
-  "_note": "print_neutral 的 LR master 起点：只做肤色；曝光由逐图 LR Exposure 决定。",
-  "source": "print_neutral_master_v2",
+  "_note": "print_neutral 的 LR master：肤色 + 暗部 chroma（A5）；曝光逐图给。",
+  "source": "print_neutral_master_v3",
   "settings": {
     "ColorGradeMidtoneHue": 45,
-    "ColorGradeMidtoneSat": 55
+    "ColorGradeMidtoneSat": 55,
+    "Vibrance": 40
   }
 }
