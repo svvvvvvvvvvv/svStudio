@@ -10,4 +10,4 @@ _debug/
 
 # C2 lrbase 的测试产物（平基底片/元数据很大，不进仓库）
 _lrbase_*/
-_lrbase_selftest_c1.log
+_lrbase_*.log
