@@ -58,6 +58,7 @@ KNOWN_SETTINGS = {
     "ColorGradeHighlightHue", "ColorGradeHighlightSat",
     "ColorGradeBlending", "ColorGradeBalance",
     "GrainAmount", "GrainSize", "GrainFrequency",
+    "WhiteBalance", "Temperature", "Tint",
     "Sharpness", "SharpenRadius", "SharpenDetail", "SharpenEdgeMasking",
     "LuminanceSmoothing", "ColorNoiseReduction",
     "PostCropVignetteAmount",
@@ -205,6 +206,7 @@ def build_metadata(report: dict, image: str | Path, *,
     settings: dict[str, Any] = dict(COLOR_RESET_KEYS)
     settings.update({
         "ToneCurveName2012": "Custom",
+        "WhiteBalance": "As Shot",
         "Exposure2012": 0.0,
         "Contrast2012": 0,
         "Highlights2012": 0,
