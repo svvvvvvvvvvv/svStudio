@@ -57,6 +57,8 @@ KNOWN_SETTINGS = {
     "ColorGradeMidtoneHue", "ColorGradeMidtoneSat",
     "ColorGradeHighlightHue", "ColorGradeHighlightSat",
     "ColorGradeBlending", "ColorGradeBalance",
+    "BlueHue", "BlueSaturation", "GreenHue", "GreenSaturation",
+    "RedHue", "RedSaturation",
     "GrainAmount", "GrainSize", "GrainFrequency",
     "WhiteBalance", "Temperature", "Tint",
     "Sharpness", "SharpenRadius", "SharpenDetail", "SharpenEdgeMasking",
