@@ -1,9 +1,10 @@
 {
-  "_note": "print_neutral 的 LR master：肤色 + 暗部 chroma（A5）；曝光逐图给。",
-  "source": "print_neutral_master_v3",
+  "_note": "print_neutral 的 LR master：肤色 + 暗部 chroma（Vibrance 45 + Blue 5）；曝光逐图给。",
+  "source": "print_neutral_master_v35",
   "settings": {
     "ColorGradeMidtoneHue": 45,
     "ColorGradeMidtoneSat": 55,
-    "Vibrance": 40
+    "Vibrance": 45,
+    "SaturationAdjustmentBlue": 5
   }
 }
