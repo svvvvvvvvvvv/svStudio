@@ -1,0 +1,16 @@
+{
+  "_note": "hist2e：逐图印相曝光（目标 C1 L）；LR Exposure 默认 0，1231/1422 为 -0.2。",
+  "source": "print_neutral_master_hist2e",
+  "settings": {
+    "ColorGradeMidtoneHue": 45,
+    "ColorGradeMidtoneSat": 55,
+    "Vibrance": 45,
+    "SaturationAdjustmentBlue": -10,
+    "SaturationAdjustmentYellow": -10,
+    "Blacks2012": -15
+  },
+  "per_image_exposure": {
+    "DSCF1231": -0.2,
+    "DSCF1422": -0.2
+  }
+}
