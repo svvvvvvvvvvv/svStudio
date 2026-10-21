@@ -20,7 +20,7 @@ from pathlib import Path
 import numpy as np
 
 from . import config as C
-from . import io, lr_meta, presets
+from . import io, lr_meta, pipeline, presets
 
 try:
     import tifffile
@@ -303,6 +303,26 @@ def render_print_neutral(lin: np.ndarray, stock: str, cfg=C, *,
                       neg=None, report={})
 
 
+def render_print_full(sample, stock: str, cfg=C, *,
+                      path: str | Path | None = None) -> FlatResult:
+    r"""film_print_full：**原样复用 C1 那条链**（`pipeline.run_from`），只是不写 JPEG。
+
+    与 `render_print_neutral` 的差别只有一个，但就是关键那个：**印相曝光是逐图配平的**
+    （`presets.render_person_pe` 的两遍印相 —— 先印一遍、量成片里那张脸、偏暗就反解
+    `print_exposure` 再印一遍）。
+
+    ★ 为什么不在这里重写一遍印相：重写 = 两套实现必然漂移。这里**直接调 C1 的入口**，
+      所以「进 LR 的 TIFF」与「已验收的 C1 成片」是同一段代码、同一份场景覆盖、同一份
+      光位力度 ⇒ 明暗逐位一致（自测见 `lrbase_selftest`）。
+
+    ★ 大师层仍然**不烘**（引擎里本来就没有大师层）：`master_tone/color` 归 LR。
+    """
+    res = pipeline.run_from(sample, cfg=cfg, stock=stock,
+                            path=str(path) if path is not None else None)
+    disp = np.asarray(res.disp, np.float64)
+    return FlatResult(disp=disp, lin=disp, neg=None, report=dict(res.report or {}))
+
+
 def _safe_stem(path: str | Path) -> str:
     return Path(path).stem
 
@@ -326,11 +346,22 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
 
     mode:
       - `flat`：只烘负片介质（stock/scan/grain/halation），相纸/大师归 LR；
-      - `print_neutral`：烘中性相纸（固定印相曝光，不做 person_pe），大师归 LR；
-      - `full`：保留给 C1（`one`/`dir`），这里不重复实现。
+      - `print_neutral`：烘中性相纸（**固定**印相曝光，不做 person_pe），大师归 LR；
+      - `print_full`：烘印相且**印相曝光逐图配平**（= C1 原样，两遍印相），大师归 LR。
+        这是 LR 分工线的**生产档**：进 LR 的明暗已经等于已验收的 C1 成片。
+      - `full`（连大师层一起烘）仍归 C1，这里不重复实现。
     """
-    if mode not in ("flat", "print_neutral"):
-        raise ValueError("lrbase mode 只支持 flat / print_neutral；full 请走 C1 `one`")
+    if mode not in ("flat", "print_neutral", "print_full"):
+        raise ValueError("lrbase mode 只支持 flat / print_neutral / print_full；"
+                         "full（连大师层）请走 C1 `one`")
+    if mode == "print_full" and (grain_owner == "lr" or halation_owner == "lr"):
+        # ★ 不许静默忽略：print_full 是「C1 原样出图」，颗粒/光晕已经在像素里，
+        #   把它声明成 lr 只会让契约说谎。
+        raise ValueError("print_full 复用 C1 原样出图：颗粒/光晕归 svfilm，"
+                         "不能转给 LR（grain_owner/halation_owner 只能是 svfilm）")
+    if mode == "print_full" and grain_rms is not None:
+        raise ValueError("print_full 的颗粒由预设/场景定，不吃 grain_rms 覆盖"
+                         "（要改颗粒请走 print_neutral 或直接改预设）")
     t0 = time.perf_counter()
     path = Path(path)
     name = str(stock if stock is not None else C.STOCK)
@@ -351,11 +382,15 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
                            headroom=headroom, overrides=overrides or None)
         suffix = "_flat.tif"
         note = "scan_film 线性 → 倒数/分位归一 → sRGB 编码；未做印相"
-    else:
+    elif mode == "print_neutral":
         flat = render_print_neutral(s.lin, name, C, overrides=overrides or None,
                                     grain_rms=grain_rms)
         suffix = "_print.tif"
         note = "中性印相（固定 print_exposure；不跑 person_pe/动态 PE）"
+    else:                                                    # print_full
+        flat = render_print_full(s, name, C, path=path)
+        suffix = "_full.tif"
+        note = ("C1 原样出图（两遍印相：印相曝光**逐图配平**）；大师层不烘，归 LR")
     out_dir = Path(out_dir) if out_dir is not None else path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = _safe_stem(path) + "_svFilm"
@@ -371,12 +406,17 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
         "camera": s.cam,
         "entry_bias_ev": (s.cam or {}).get("idt_bias_ev"),
         "fuji_dr": (s.cam or {}).get("fuji_dr"),
-        "scene": None,
-        "person_pe": None,
-        "light_back": 0.0,
+        "scene": flat.report.get("scene"),
+        # ★ 逐图印相曝光的留痕（print_full 才有；flat/print_neutral 是 None）
+        "person_pe": flat.report.get("person_pe"),
+        "light_back": flat.report.get("light_back") or 0.0,
+        # ★ 这一遍真正写进 params 的印相曝光（引擎实际读的那个值）
+        "print_exposure": (float(presets._LAST_RENDER_PE)
+                           if getattr(presets, "_LAST_RENDER_PE", None) else None),
         "film": {
             "stock": name,
-            "paper": (presets.label_of(name)[1] if mode == "print_neutral" else None),
+            "paper": (presets.label_of(name)[1]
+                      if mode in ("print_neutral", "print_full") else None),
             "scan": "spektrafilm/scan_film",
             "grain_owner": grain_owner,
             "halation_owner": halation_owner,

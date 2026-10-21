@@ -109,6 +109,35 @@ def run(path, src=None, max_side=None, cfg=C, out=None, stock=None):
     return run_from(s, cfg=cfg, stock=stock, out=out, t0=t0, path=path)
 
 
+def _lin_fp(lin):
+    r"""给「解码结果」取一个内容指纹（判据缓存的键）。
+
+    ★ 为什么不用路径：同一张 RAW 挪个目录 / 改个名，判据完全一样 ⇒ 该命中。
+    ★ 为什么不是全量哈希：26 MP 全量 sha1 要 0.2 s，这里等距抽 8192 点，几毫秒，
+      且**内容一变必变**（抽样点覆盖整幅，不是角落）。
+    ★ 键必须含 `shape`：不同尺寸的线性图不该共用同一条判据。
+    """
+    import hashlib as _hl
+
+    a = np.asarray(lin, np.float32)
+    flat = a.ravel()
+    h = _hl.sha1()
+    h.update(repr(a.shape).encode())
+    if flat.size:
+        idx = np.linspace(0, flat.size - 1, min(8192, flat.size)).astype(np.int64)
+        h.update(np.ascontiguousarray(flat[idx]).tobytes())
+    return h.hexdigest()[:24]
+
+
+def _mask_pack(a):
+    r"""None → 空数组（npz 存不了 None）；有值统一 float32。"""
+    return np.zeros((0,), np.float32) if a is None else np.asarray(a, np.float32)
+
+
+def _mask_unpack(a):
+    return None if a is None or np.asarray(a).size == 0 else np.asarray(a)
+
+
 def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None):
     r"""★ 从**已经 load 好的** sample 起跑（常驻服务的入口）。"""
     t0 = time.perf_counter() if t0 is None else t0
@@ -121,14 +150,44 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
         raise KeyError('没有这个胶片风格: %s（可选：%s）' % (name, '、'.join(presets.names())))
 
     # ---- ★★ 「人在哪」（`person.py`）—— **只给光位那一轴用**。
+    #   ★ 结果只由**解码后的图**决定，与胶片参数无关 ⇒ 走磁盘缓存（调参迭代时省 2.4 s）。
     try:
         from . import person as _per
-        _pz, _pface = _per.person_face(s.disp, with_cloth=True)
-        _pcloth = _per.last_cloth()
+        _jk = None
+        _hit = None
+        try:
+            from . import diskcache as _dc
+            if bool(getattr(cfg, 'JUDGE_CACHE', True)) and _dc.enabled():
+                _jk = _dc.judge_key(_lin_fp(s.lin))
+                _hit = _dc.judge_get(_jk)
+        except Exception:                                    # noqa: BLE001
+            _jk, _hit = None, None
+        if _hit is not None:
+            _pz = _mask_unpack(_hit.get('person'))
+            _pface = _mask_unpack(_hit.get('face'))
+            _pcloth = _mask_unpack(_hit.get('cloth'))
+            # ★ 下游可能直接读 `person.last_cloth()`，缓存命中时也要把全局状态摆对
+            _per._LAST_CLOTH[0] = _pcloth
+        else:
+            _pz, _pface = _per.person_face(s.disp, with_cloth=True)
+            _pcloth = _per.last_cloth()
+            if _jk is not None:
+                try:
+                    _dc.judge_put(_jk, person=_mask_pack(_pz), face=_mask_pack(_pface),
+                                  cloth=_mask_pack(_pcloth))
+                except Exception:                            # noqa: BLE001
+                    pass
         if _pface is None:
             _fb = _per.face_fallback(s.disp)
             if _fb is not None:
                 _pface = _fb[0]
+                if _jk is not None:
+                    # 兜底拿到的脸也要进缓存，否则「无脸图」每次都要重跑 fallback
+                    try:
+                        _dc.judge_put(_jk, person=_mask_pack(_pz), face=_mask_pack(_pface),
+                                      cloth=_mask_pack(_pcloth))
+                    except Exception:                        # noqa: BLE001
+                        pass
     except Exception:                                        # noqa: BLE001
         _pz, _pface, _pcloth = None, None, None
 

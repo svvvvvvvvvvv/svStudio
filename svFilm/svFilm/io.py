@@ -100,43 +100,52 @@ def load_raw(path, max_side=C.MAX_SIDE, wb=None):
       缺省/None ⇒ 回退全局 `PUBLIC_WB*`。★ 这是“每条预设一个白点”的落点。
 
     ★★ **只留一条：RAW → 场景线性 → 引擎**（public GUI 的加载口径）：自己那条入口提亮路是死代码；
-      预设的印相曝光 `pe` 按**这个输入**标定，提亮好几档就过曝发白。"""
+      预设的印相曝光 `pe` 按**这个输入**标定，提亮好几档就过曝发白。
+
+    ★ `config.FAST_RAW=True`（默认）走 `fastraw.decode`：RAW 只开一次，WB 适应/tint/空间换算
+      合成一次 3×3 —— **数学等价**，26 MP 上省 10 s 量级。关掉即回到 vendor 原路。"""
     import rawpy
     from . import cameras
     from . import spektra
 
     spektra._sf()                       # ★ 先钉扎：保证下面 import 到的是仓库自带那份 vendor
-    from spektrafilm.utils import load_and_process_raw_file
 
     _wb = wb or {}
     _white_balance = str(_wb.get('white_balance', getattr(C, 'PUBLIC_WB', 'custom')))
     _temperature = float(_wb.get('temperature', getattr(C, 'PUBLIC_WB_TEMPERATURE', 5200.0)))
     _tint = float(_wb.get('tint', getattr(C, 'PUBLIC_WB_TINT', 1.0)))
 
-    exif = make = model = thumb = None
-    with rawpy.imread(path) as raw:     # 只为了抠内嵌 JPG 拿 EXIF / 机型（不解码传感器数据）
-        try:
-            th = raw.extract_thumb()
-            if th.format == rawpy.ThumbFormat.JPEG:
-                thumb = th.data
-                tmp = ImageOps.exif_transpose(Image.open(_stdlib_io.BytesIO(th.data)))
-                ex = tmp.getexif()
-                make = str(ex.get(271) or '') or None
-                model = str(ex.get(272) or '') or None
-                exif = _exif_orientation_fixed(tmp)
-        except Exception:
-            pass
+    if getattr(C, 'FAST_RAW', True):
+        from . import fastraw
+        lin, exif, make, model = fastraw.decode(
+            path, max_side, wb=_wb, exif_fix=_exif_orientation_fixed)
+    else:
+        from spektrafilm.utils import load_and_process_raw_file
 
-    lin = load_and_process_raw_file(
-        path,
-        white_balance=_white_balance,
-        temperature=_temperature,
-        tint=_tint,
-        output_colorspace=str(getattr(C, 'PUBLIC_COLORSPACE', 'ProPhoto RGB')),
-        output_cctf_encoding=False,
-    )
-    lin = np.clip(np.asarray(lin, np.float64), 0.0, None)
-    lin = _resize(lin, max_side)
+        exif = make = model = thumb = None
+        with rawpy.imread(path) as raw:     # 只为了抠内嵌 JPG 拿 EXIF / 机型（不解码传感器数据）
+            try:
+                th = raw.extract_thumb()
+                if th.format == rawpy.ThumbFormat.JPEG:
+                    thumb = th.data
+                    tmp = ImageOps.exif_transpose(Image.open(_stdlib_io.BytesIO(th.data)))
+                    ex = tmp.getexif()
+                    make = str(ex.get(271) or '') or None
+                    model = str(ex.get(272) or '') or None
+                    exif = _exif_orientation_fixed(tmp)
+            except Exception:
+                pass
+
+        lin = load_and_process_raw_file(
+            path,
+            white_balance=_white_balance,
+            temperature=_temperature,
+            tint=_tint,
+            output_colorspace=str(getattr(C, 'PUBLIC_COLORSPACE', 'ProPhoto RGB')),
+            output_cctf_encoding=False,
+        )
+        lin = np.clip(np.asarray(lin, np.float64), 0.0, None)
+        lin = _resize(lin, max_side)
 
     cam = dict(cameras.lookup(make, model), make=make, model=model)
     cam['entry_loader'] = 'public'

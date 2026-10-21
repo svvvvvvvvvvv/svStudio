@@ -15,6 +15,26 @@ from . import config as C, io, presets
 from . import lr_meta
 
 
+def auto_jobs(max_side):
+    r"""`--jobs 0`（缺省）时的并发数 —— **按图幅定，不是按核数**。
+
+    实测（4 张 @2048，32 核 / 31.8 GB）：jobs=1 → 113 s，2 → 61 s，4 → **33 s**，
+    **6 → 33 s（不再增长）** ⇒ 瓶颈是**内存带宽**，4 之后再加进程纯属互相挤。
+    图更大时单进程内存陡增（原图尺寸 ~6 GB/进程），必须往下压，否则会爆在 swap 上。
+    """
+    try:
+        n = int(max_side) if max_side else 0
+    except (TypeError, ValueError):
+        n = 0
+    if n <= 0 or n >= 5000:        # 原图尺寸：一张 26 MP 峰值 ~6 GB
+        return 2
+    if n <= 1400:
+        return 6
+    if n <= 2600:
+        return 4
+    return 3
+
+
 def _fmt_probe(res):
     # ★ 落点 L* **直接从成片量**。
     import numpy as _np
@@ -290,7 +310,10 @@ def cmd_lrbase(args):
                       base_curve, master, preset_name, not args.no_preset,
                       args.mode, args.grain_owner, args.halation_owner, args.grain_rms))
 
-    jobs = max(1, int(args.jobs))
+    jobs = max(1, int(args.jobs)) if int(args.jobs) > 0 else auto_jobs(args.max_side)
+    # ★ 并发不许超过张数：6 个 worker 抢 3 张图时，多出来的 3 个进程**光 import 就 2 s/个**
+    #   （实测 3 张 @1024：并发 6 是 15 s，压到 3 之后更快）。
+    jobs = min(jobs, max(1, len(tasks)))
     print('lrbase 共 %d 张，并发 %d；输出 %s' % (len(ps), jobs, out_dir or '（各自目录）'))
     sys.stdout.flush()
     done, fail, items = 0, 0, []
@@ -396,7 +419,8 @@ def build_parser():
     p = sub.add_parser('lrbase', help='C2：平基底片 16-bit TIFF + LR 元数据（不跑印相）')
     p.add_argument('inputs', nargs='+')
     p.add_argument('-o', '--out', default=None, help='输出目录（缺省 = 各自原目录）')
-    p.add_argument('--jobs', type=int, default=1, help='并发进程数（重活建议 <=4）')
+    p.add_argument('--jobs', type=int, default=0,
+                   help='并发进程数；0=自动（按图幅定，见 auto_jobs）')
     p.add_argument('--limit', type=int, default=0)
     p.add_argument('--raw-only', action='store_true', dest='raw_only', default=True,
                    help='目录/通配符里只收 RAW（默认开）')
@@ -407,8 +431,9 @@ def build_parser():
     p.add_argument('--headroom', type=float, default=0.01,
                    help='平基底片留白（0 = 硬裁到 0/1；默认 0.01）')
     p.add_argument('--gains', default='1,1,1', help='逐通道增益，例如 1.02,1.0,0.98')
-    p.add_argument('--mode', default='flat', choices=('flat', 'print_neutral'),
-                   help='flat=只烘负片介质；print_neutral=中性印相，大师归 LR')
+    p.add_argument('--mode', default='flat', choices=('flat', 'print_neutral', 'print_full'),
+                   help='flat=只烘负片介质；print_neutral=中性印相(固定 PE)，大师归 LR；'
+                        'print_full=印相曝光**逐图配平**(= C1 原样)，大师归 LR —— LR 线的生产档')
     p.add_argument('--grain-owner', default='svfilm', choices=('svfilm', 'lr'),
                    dest='grain_owner', help='颗粒归谁（默认 svfilm）')
     p.add_argument('--halation-owner', default='svfilm', choices=('svfilm', 'lr'),

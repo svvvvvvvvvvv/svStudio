@@ -175,9 +175,9 @@ def build_metadata(report: dict, image: str | Path, *,
     v2 契约：`owners` 声明每一层归谁；`baked` 只描述**已经烘进像素**的东西。
     `master` 参数仍是“LR 侧的 master settings”，不是 svFilm 的大师层。
     """
-    if mode not in ("flat", "print_neutral", "full"):
-        raise ValueError("mode 只能是 flat / print_neutral / full")
-    medium_baked = mode in ("print_neutral", "full")
+    if mode not in ("flat", "print_neutral", "print_full", "full"):
+        raise ValueError("mode 只能是 flat / print_neutral / print_full / full")
+    medium_baked = mode in ("print_neutral", "print_full", "full")
     master_baked = mode == "full"
 
     curves: dict[str, list[list[int]]] = {
@@ -265,7 +265,8 @@ def build_metadata(report: dict, image: str | Path, *,
             "medium_color": medium_baked,
             "master_tone": master_baked,
             "master_color": master_baked,
-            "note": ("full：介质+大师都烘死；print_neutral：只烘中性介质，大师归 LR；"
+            "note": ("full：介质+大师都烘死；print_full：介质（含**逐图印相曝光**）烘死、"
+                     "大师归 LR；print_neutral：中性印相（固定印相曝光）、大师归 LR；"
                      "flat：只烘负片介质，相纸/大师归 LR"),
         },
         "owners": {
@@ -276,7 +277,9 @@ def build_metadata(report: dict, image: str | Path, *,
             "halation": halation_owner,
             "master_tone": "svfilm" if master_baked else "lr",
             "master_color": "svfilm" if master_baked else "lr",
-            "wb": "svfilm" if master_baked else "lr",
+            # ★ 白点：`flat` 是「负片分位归一」出来的偏色底 ⇒ 白点归 LR；
+            #   只要印相烘进像素（print_neutral / print_full / full），白点就是 svFilm 定的。
+            "wb": "svfilm" if medium_baked else "lr",
             "crop": "lr",
             "lens": "lr",
             "retouch": "lr",

@@ -101,6 +101,19 @@ PUBLIC_WB_TEMPERATURE = 4600.0
 PUBLIC_WB_TINT = 0.97
 PUBLIC_COLORSPACE = 'ProPhoto RGB'
 
+# **入口解码快速通道**（`fastraw.py`）：RAW 只开一次 + 白点适应/tint/空间换算合成一次 3×3。
+# ★ 数学等价（矩阵由 vendor 函数用探针像素生成，顺序与原链一致），26 MP 上省 ~10 s。
+# ★ False ⇒ 回到 vendor 的 `load_and_process_raw_file`，行为与从前完全一致（出问题一键回退）。
+FAST_RAW = True
+
+# **磁盘缓存**（`diskcache.py`）：跨进程/重启，只存「与胶片参数无关」的东西 ——
+# 解码结果（3.6 s/张）+ 判据结果（找人 2.4 s + 场景 3.1 s）。调参迭代时这三样都不变。
+# ★ 关掉：`CACHE_ENABLE = False`（现成的总开关，StageCache 也一起关）。
+RAW_CACHE = True                # 解码缓存
+JUDGE_CACHE = True              # 判据缓存（找人掩膜 / 脸的皮肤 / 服装；与胶片参数无关）
+CACHE_DIR = None                # None ⇒ `<仓库>/.cache`；给空串 ⇒ 关掉磁盘缓存
+CACHE_MAX_MB = 8000             # 超过就按最后访问时间清（8 GB ≈ 240 张 @2048）
+
 # **扫描仪段补偿**（`scan_film=True` 时用；默认关）：上游 `color_reference.py` 在"扫负片"这条
 #   路**故意不做黑白校正**（负片没有绝对黑白参考，那由冲扫流程与扫描仪软件定）⇒ 引擎输出没被锚定
 #   （合成图实测：纯白 → L*32、中灰 b* +27）。本组键补「按片基定黑白点」+「**每通道**自动色阶」。

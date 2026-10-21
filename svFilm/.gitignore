@@ -11,3 +11,6 @@ _debug/
 # C2 lrbase 的测试产物（平基底片/元数据很大，不进仓库）
 _lrbase_*/
 _lrbase_*.log
+
+# 磁盘缓存（解码/判据，见 svFilm/diskcache.py）
+.cache/

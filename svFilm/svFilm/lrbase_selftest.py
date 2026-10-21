@@ -191,6 +191,79 @@ def t_apply_curve():
         assert p.exists() and p.stat().st_size > 100
 
 
+def t_metadata_print_full():
+    r"""print_full：介质（含逐图印相曝光）烘死、**大师归 LR**、白点归 svFilm。"""
+    with tempfile.TemporaryDirectory() as td:
+        td = Path(td)
+        img = td / 'y.tif'
+        try:
+            import tifffile
+            tifffile.imwrite(str(img), np.zeros((8, 8, 3), np.uint16))
+        except Exception:
+            img.write_bytes(b'not-a-tiff')
+        report = {'stock': '鹿井预设', 'camera': {'model': 'X-T30 III'}, 'ms': 1.0,
+                  'person_pe': {'acted': True, 'why': 'dark_face', 'L0': 48.0},
+                  'light_back': 0.4}
+        meta = lr_meta.build_metadata(report, img, mode='print_full',
+                                      preset_name='svFilm pf')
+        b, o = meta['baked'], meta['owners']
+        assert meta['mode'] == 'print_full'
+        # 介质烘死
+        assert b['medium_tone'] is True and b['medium_color'] is True
+        assert b['tone_curve'] is True and b['color_mix'] is True
+        # 大师两段都不许烘
+        assert b['master_tone'] is False and b['master_color'] is False
+        # 归属
+        assert o['medium_paper'] == 'svfilm' and o['medium_scan'] == 'svfilm'
+        assert o['master_tone'] == 'lr' and o['master_color'] == 'lr'
+        assert o['wb'] == 'svfilm', o['wb']          # 印相进像素 ⇒ 白点不是 LR 的
+        assert o['crop'] == 'lr' and o['retouch'] == 'lr'
+        # LR 侧不许再动影调（明暗已经在像素里）
+        assert meta['lr']['settings']['Exposure2012'] == 0.0
+        assert meta['lr']['settings']['ToneCurvePV2012'] == [[0, 0], [255, 255]]
+        # 逐图印相曝光的留痕要进 sidecar
+        assert meta['source']['person_pe']['acted'] is True
+
+
+def t_print_full_guards():
+    r"""print_full 的「不许静默忽略」：颗粒/光晕不能转给 LR、不吃 grain_rms。"""
+    from . import lrbase
+
+    def _raises(**kw):
+        try:
+            lrbase.run_one(__file__, mode='print_full', **kw)
+        except ValueError as e:
+            return str(e)
+        raise AssertionError('should raise: %r' % (kw,))
+
+    assert '颗粒' in _raises(grain_owner='lr')
+    assert '颗粒' in _raises(grain_rms=18)
+    try:
+        lrbase.run_one(__file__, mode='nope')
+    except ValueError:
+        pass
+    else:
+        raise AssertionError('bad mode should raise')
+
+
+def t_fastraw_equivalent():
+    r"""入口解码的合并矩阵必须与 vendor 原链**等价**（"提速不改画面"的唯一防线）。
+
+    ⚠ 挂了说明 vendor 的分步逻辑变了（换 CAT / 换白点算法 / 换色域实现）：探针法虽然会
+    跟随，但**顺序**或**非线性**可能已经不同 ⇒ 必须先查清再放行，不许把 `FAST_RAW` 一关
+    了事（那是让所有人退回慢 10 s 的老路）。
+    """
+    from . import fastraw
+
+    mx, mn = fastraw.probe_drift()
+    assert mx < 1e-5, '合并矩阵与 vendor 原链不等价：max %.3e（阈值 1e-5）' % mx
+    # 恒白平衡 + 恒色域时合成矩阵必须是单位阵（查"合并顺序/转置"有没有搞错）
+    M = fastraw.combined_matrix(None, None, 'ACES2065-1')
+    assert np.allclose(M, np.eye(3), atol=1e-9), \
+        '恒等时应为单位阵，实际\n%s' % M
+    return 'max %.2e / mean %.2e' % (mx, mn)
+
+
 def main():
     check('invert roundtrip', t_invert_roundtrip)
     check('invert headroom', t_invert_headroom)
@@ -198,6 +271,9 @@ def main():
     check('srgb roundtrip', t_srgb_roundtrip)
     check('tiff16 + ICC', t_tiff16)
     check('metadata/json/xmp/compose', t_metadata)
+    check('metadata print_full 归属', t_metadata_print_full)
+    check('print_full 拒绝静默忽略', t_print_full_guards)
+    check('fastraw 与 vendor 等价', t_fastraw_equivalent)
     check('fit base curve', t_fit_curve)
     check('apply curve + jpeg', t_apply_curve)
     if FAIL:
