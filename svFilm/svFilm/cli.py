@@ -1,7 +1,14 @@
 # -*- coding: utf-8 -*-
 r"""命令行入口。
 
-  python -m svFilm.cli probe <img...> | one <img> -o out.jpg | dir <in> -o <out> [--jobs 4]
+  python -m svFilm.cli one <img> -o out.jpg          # 单张成片（JPEG）
+  python -m svFilm.cli dir <in> -o <out> [--jobs 4]  # 批处理成片
+  python -m svFilm.cli lrbase <RAW...> -o <out>      # 给 LR 的 16-bit TIFF + 元数据（生产档）
+  python -m svFilm.cli stocks                         # 列出胶片风格
+
+★ 2026-10-21 清理：`flat` / `print_neutral` / `lrbase-fit` / `lrbase-preview` / `calib` /
+  `service` / `selftest` 全部删除 —— 它们都在"用形状旋钮追位置目标"那条老路上。
+  现在只有一条生产链：**介质在 sfFilm 烘死，落点/彩度/冷暖归 LR**。
 """
 from __future__ import annotations
 
@@ -12,7 +19,6 @@ import os
 import sys
 
 from . import config as C, io, presets
-from . import lr_meta
 
 
 def auto_jobs(max_side):
@@ -20,13 +26,12 @@ def auto_jobs(max_side):
 
     实测（4 张 @2048，32 核 / 31.8 GB）：jobs=1 → 113 s，2 → 61 s，4 → **33 s**，
     **6 → 33 s（不再增长）** ⇒ 瓶颈是**内存带宽**，4 之后再加进程纯属互相挤。
-    图更大时单进程内存陡增（原图尺寸 ~6 GB/进程），必须往下压，否则会爆在 swap 上。
     """
     try:
         n = int(max_side) if max_side else 0
     except (TypeError, ValueError):
         n = 0
-    if n <= 0 or n >= 5000:        # 原图尺寸：一张 26 MP 峰值 ~6 GB
+    if n <= 0 or n >= 5000:
         return 2
     if n <= 1400:
         return 6
@@ -36,71 +41,26 @@ def auto_jobs(max_side):
 
 
 def _fmt_probe(res):
-    # ★ 落点 L* **直接从成片量**。
     import numpy as _np
     from . import color
     _l50 = float(_np.median(color.to_lab(_np.clip(res.disp, 0.0, 1.0))[..., 0]))
-    _sc = res.report.get('scene') or {}
-    return ('%-16s %-4s %-14s  落点L* %5.1f  场景 %-18s  %5.0fms' % (
-                res.sample.name, res.sample.kind,
-                (res.report.get('stock') or 'config默认'),
-                _l50,
-                (_sc.get('key') or '-'),
-                res.report.get('ms', 0)))
+    return ('%-16s %-4s %-14s  落点L* %5.1f  %5.0fms' % (
+        res.sample.name, res.sample.kind,
+        (res.report.get('stock') or 'config默认'), _l50, res.report.get('ms', 0)))
 
 
 def cmd_probe(args):
     from . import pipeline
     for p in _expand(args.inputs, args.recursive):
-        res = pipeline.run(p, src=args.src, max_side=args.max_side, stock=args.stock)
-        print(_fmt_probe(res))
-    return 0
-
-
-def cmd_calib(args):
-    r"""量机型表用的基线增益：拿 RAW 与"同名 JPG"对齐中灰。"""
-    import glob as _g
-    import os as _os
-
-    import numpy as np
-    from . import color, io
-
-    pairs = []
-    for p in _expand(args.inputs, True):
-        if io.kind_of(p) != 'raw':
-            continue
-        jpg = None
-        for e in ('.JPG', '.jpg', '.JPEG', '.jpeg'):
-            if _os.path.exists(_os.path.splitext(p)[0] + e):
-                jpg = _os.path.splitext(p)[0] + e
-                break
-        if jpg:
-            pairs.append((p, jpg))
-    if not pairs:
-        print('没找到 RAW+JPG 同名对')
-        return 2
-
-    print('%-16s %-14s %8s %8s %8s' % ('file', 'model', 'rawY50', 'jpgY50', 'gain'))
-    gains = []
-    for rp, jp in pairs:
-        a = io.load(rp, max_side=1024, src='raw')
-        b = io.load(jp, max_side=1024, src='jpg')
-        ym = float(np.percentile(color.Y_of(a.lin), 50))
-        jm = float(np.percentile(color.s2l(b.disp), 50))
-        g = jm / max(ym, 1e-9)
-        gains.append(g)
-        md = a.cam.get('model') or '?'
-        print('%-16s %-14s %8.4f %8.4f %8.2f' % (_os.path.basename(rp), md, ym, jm, g))
-    med = float(np.median(gains))
-    print('-' * 60)
-    print('中位增益 %.3f  →  建议 baseline_ev = %+.2f' % (med, float(np.log2(med))))
-    print('（挑曝光标准的样张；同一批里有人为欠曝的图会把数字拉偏）')
+        print(_fmt_probe(pipeline.run(p, src=args.src, max_side=args.max_side,
+                                      stock=args.stock)))
     return 0
 
 
 def cmd_one(args):
     from . import pipeline
-    res = pipeline.run(args.input, src=args.src, max_side=args.max_side, stock=args.stock)
+    res = pipeline.run(args.input, src=args.src, max_side=args.max_side,
+                       stock=args.stock)
     out = args.out or (os.path.splitext(args.input)[0] + '_svFilm.jpg')
     res.save(out)
     print(res.summary())
@@ -115,7 +75,6 @@ def _worker(t):
     from . import pipeline
     src, max_side, outdir, p, stock = t
     name = os.path.splitext(os.path.basename(p))[0]
-    # 输出名带 _svFilm 后缀：**不能叫 <名字>.jpg**（会和"相机直出同名 JPG"撞名）。
     suffix = '_svFilm' + (('_' + stock) if stock else '')
     out = os.path.join(outdir, name + suffix + '.jpg')
     if os.path.abspath(out) == os.path.abspath(p):
@@ -159,33 +118,22 @@ def cmd_dir(args):
     if args.pair:
         ps = _pair_resolve(ps, args.pair)
     if args.raw_only:
-        keep = []
-        for p in ps:
-            try:
-                if _io.kind_of(p) == 'raw':
-                    keep.append(p)
-            except ValueError:
-                pass
-        ps = keep
+        ps = [p for p in ps if _raw_ok(_io, p)]
     seen, uniq = set(), []
     for p in ps:
         k = os.path.abspath(p).lower()
         if k not in seen:
             seen.add(k)
             uniq.append(p)
-    ps = uniq
-    if args.limit:
-        ps = ps[:args.limit]
+    ps = uniq[:args.limit] if args.limit else uniq
     if not ps:
         print('没找到输入文件')
         return 2
     os.makedirs(args.out, exist_ok=True)
     jobs = max(1, int(args.jobs))
-
     print('共 %d 个文件，并发 %d' % (len(ps), jobs))
     sys.stdout.flush()
 
-    from . import pipeline
     tasks = [(args.src, args.max_side, args.out, p, args.stock) for p in ps]
     done = fail = 0
     if jobs == 1:
@@ -207,112 +155,57 @@ def cmd_dir(args):
     return 0 if fail == 0 else 1
 
 
-def cmd_lrbase_fit(args):
-    r"""拟合「平基底片 → 当前冲印」的逐通道曲线（C2 基底曲线）。"""
-    from . import lrbase
+def _raw_ok(io_mod, p):
     try:
-        curve = lrbase.fit_base_curve(args.print_img, args.flat_img,
-                                      points=args.points, bins=args.bins)
-    except Exception as e:                                  # noqa: BLE001
-        print('拟合失败: %s: %s' % (type(e).__name__, e))
-        return 1
-    out = args.out or 'base_curve.json'
-    lrbase.save_curve_json(curve, out)
-    print('-> %s' % out)
-    print('fit: %s' % json.dumps(curve.get('fit'), ensure_ascii=False))
-    return 0
-
-
-def cmd_lrbase_preview(args):
-    r"""把基底曲线回放到平基底片上，出一张 JPEG 预览（不开 LR）。"""
-    from . import lrbase
-    try:
-        flat = lrbase.read_srgb(args.flat_img)
-        with open(args.curve, 'r', encoding='utf-8') as f:
-            curve = json.load(f)
-        out = lrbase.apply_curve(flat, curve)
-        lrbase.save_jpeg(out, args.out, quality=args.quality)
-    except Exception as e:                                  # noqa: BLE001
-        print('预览失败: %s: %s' % (type(e).__name__, e))
-        return 1
-    print('-> %s' % args.out)
-    return 0
+        return io_mod.kind_of(p) == 'raw'
+    except ValueError:
+        return False
 
 
 def _lrbase_task(t):
-    r"""C2 单张 worker（进程池要 top-level）。"""
+    r"""lrbase 单张 worker（进程池要 top-level）。"""
     from . import lrbase
-    (p, out_dir, stock, max_side, src, lo, hi, gains, headroom,
-     base_curve, master, preset_name, write_preset,
-     mode, grain_owner, halation_owner, grain_rms) = t
+    p, out_dir, stock, max_side, src, master, preset_name, write_preset = t
     try:
-        r = lrbase.run_one(
-            p, out_dir=out_dir, stock=stock, max_side=max_side, src=src,
-            lo_q=lo, hi_q=hi, gains=gains, headroom=headroom,
-            base_curve=base_curve, master=master,
-            preset_name=preset_name, write_preset=write_preset,
-            mode=mode, grain_owner=grain_owner,
-            halation_owner=halation_owner, grain_rms=grain_rms)
+        r = lrbase.run_one(p, out_dir=out_dir, stock=stock, max_side=max_side, src=src,
+                           master=master, preset_name=preset_name,
+                           write_preset=write_preset)
         return (p, r, None)
     except Exception as e:                                  # noqa: BLE001
         return (p, None, '%s: %s' % (type(e).__name__, e))
 
 
 def cmd_lrbase(args):
-    r"""C2：出平基底片（16-bit TIFF）+ LR 元数据；不跑印相。"""
-    from . import lrbase
+    r"""RAW → 16-bit TIFF + LR 元数据（**完整印相，固定印相曝光**）。"""
+    from . import lr_meta, lrbase
     ps = _expand(args.inputs, True)
     if args.raw_only:
-        keep = []
-        for p in ps:
-            try:
-                if io.kind_of(p) == 'raw':
-                    keep.append(p)
-            except ValueError:
-                pass
-        ps = keep
+        ps = [p for p in ps if _raw_ok(io, p)]
     if args.limit:
         ps = ps[:args.limit]
     if not ps:
         print('没找到输入文件（--raw-only 时只收 RAW）')
         return 2
 
-    try:
-        base_curve = None
-        if args.base_curve:
-            with open(args.base_curve, 'r', encoding='utf-8') as f:
-                base_curve = json.load(f)
-        master = None
-        if args.master:
+    master = None
+    if args.master:
+        try:
             with open(args.master, 'r', encoding='utf-8') as f:
                 master = json.load(f)
-    except (OSError, ValueError) as e:
-        print('读 base-curve/master 失败: %s' % e)
-        return 2
-
-    try:
-        gains = tuple(float(v) for v in str(args.gains).replace('，', ',').split(','))
-        if len(gains) != 3:
-            raise ValueError
-    except ValueError:
-        print('--gains 要三个数，例如 1,1,1')
-        return 2
+        except (OSError, ValueError) as e:
+            print('读 master 失败: %s' % e)
+            return 2
 
     out_dir = args.out
     if out_dir:
         os.makedirs(out_dir, exist_ok=True)
-    preset_name = args.preset_name or ('svFilm %s flat' % (args.stock or C.STOCK))
-    tasks = []
-    for p in ps:
-        od = out_dir or os.path.dirname(os.path.abspath(p))
-        tasks.append((p, od, args.stock, args.max_side, args.src,
-                      args.lo, args.hi, gains, args.headroom,
-                      base_curve, master, preset_name, not args.no_preset,
-                      args.mode, args.grain_owner, args.halation_owner, args.grain_rms))
+    preset_name = args.preset_name or ('svFilm %s' % (args.stock or C.STOCK))
+    tasks = [(p, out_dir or os.path.dirname(os.path.abspath(p)), args.stock,
+              args.max_side, args.src, master, preset_name, not args.no_preset)
+             for p in ps]
 
     jobs = max(1, int(args.jobs)) if int(args.jobs) > 0 else auto_jobs(args.max_side)
-    # ★ 并发不许超过张数：6 个 worker 抢 3 张图时，多出来的 3 个进程**光 import 就 2 s/个**
-    #   （实测 3 张 @1024：并发 6 是 15 s，压到 3 之后更快）。
+    # ★ 并发不许超过张数（多余 worker 光 import 就 2 s/个）
     jobs = min(jobs, max(1, len(tasks)))
     print('lrbase 共 %d 张，并发 %d；输出 %s' % (len(ps), jobs, out_dir or '（各自目录）'))
     sys.stdout.flush()
@@ -343,7 +236,7 @@ def cmd_lrbase(args):
 
     if items and out_dir:
         manifest = os.path.join(out_dir, '_svfilm_manifest.json')
-        lr_meta.write_manifest(items, manifest, mode='flat')
+        lr_meta.write_manifest(items, manifest, mode='print_full')
         print('manifest -> %s' % manifest)
     print('完成 %d / 失败 %d' % (done, fail))
     return 0 if fail == 0 else 1
@@ -390,7 +283,7 @@ def _expand(inputs, recursive, pattern='*.jpg'):
 
 
 def build_parser():
-    ap = argparse.ArgumentParser('svFilm', description='数码仿胶片管线（重写版）')
+    ap = argparse.ArgumentParser('svFilm', description='数码仿胶片管线')
     sub = ap.add_subparsers(dest='cmd', required=True)
 
     def common(p):
@@ -401,22 +294,7 @@ def build_parser():
 
     ap.add_argument('--version', action='version', version='svFilm ' + C.VERSION)
 
-    p = sub.add_parser('lrbase-fit', help='拟合 C2 基底曲线（平基底片 → 冲印成片）')
-    p.add_argument('--print', required=True, dest='print_img', help='当前冲印成片（JPEG/PNG）')
-    p.add_argument('--flat', required=True, dest='flat_img', help='平基底片（16-bit TIFF）')
-    p.add_argument('--out', default=None, help='输出 curve JSON')
-    p.add_argument('--points', type=int, default=16, help='曲线控制点数（默认 16）')
-    p.add_argument('--bins', type=int, default=32, help='分位分箱数（默认 32）')
-    p.set_defaults(func=cmd_lrbase_fit)
-
-    p = sub.add_parser('lrbase-preview', help='把基底曲线回放到平基底片，出 JPEG 预览（不开 LR）')
-    p.add_argument('--flat', required=True, dest='flat_img', help='平基底片（16-bit TIFF）')
-    p.add_argument('--curve', required=True, help='lrbase-fit 产出的 curve JSON')
-    p.add_argument('--out', required=True, help='输出 JPEG')
-    p.add_argument('--quality', type=int, default=95)
-    p.set_defaults(func=cmd_lrbase_preview)
-
-    p = sub.add_parser('lrbase', help='C2：平基底片 16-bit TIFF + LR 元数据（不跑印相）')
+    p = sub.add_parser('lrbase', help='RAW → 16-bit TIFF + LR 元数据（生产档）')
     p.add_argument('inputs', nargs='+')
     p.add_argument('-o', '--out', default=None, help='输出目录（缺省 = 各自原目录）')
     p.add_argument('--jobs', type=int, default=0,
@@ -426,30 +304,13 @@ def build_parser():
                    help='目录/通配符里只收 RAW（默认开）')
     p.add_argument('--allow-jpg', action='store_false', dest='raw_only',
                    help='允许 JPG 输入（默认只收 RAW）')
-    p.add_argument('--lo', type=float, default=1.0, help='黑点分位 %%（默认 1.0）')
-    p.add_argument('--hi', type=float, default=99.5, help='白点分位 %%（默认 99.5）')
-    p.add_argument('--headroom', type=float, default=0.01,
-                   help='平基底片留白（0 = 硬裁到 0/1；默认 0.01）')
-    p.add_argument('--gains', default='1,1,1', help='逐通道增益，例如 1.02,1.0,0.98')
-    p.add_argument('--mode', default='flat', choices=('flat', 'print_neutral', 'print_full'),
-                   help='flat=只烘负片介质；print_neutral=中性印相(固定 PE)，大师归 LR；'
-                        'print_full=印相曝光**逐图配平**(= C1 原样)，大师归 LR —— LR 线的生产档')
-    p.add_argument('--grain-owner', default='svfilm', choices=('svfilm', 'lr'),
-                   dest='grain_owner', help='颗粒归谁（默认 svfilm）')
-    p.add_argument('--halation-owner', default='svfilm', choices=('svfilm', 'lr'),
-                   dest='halation_owner', help='halation 归谁（默认 svfilm）')
-    p.add_argument('--grain-rms', type=float, default=None, dest='grain_rms',
-                   help='svFilm 颗粒 rms（默认用预设值；风格批可用 18）')
-    p.add_argument('--base-curve', default=None, dest='base_curve',
-                   help='lrbase-fit 产出的 JSON（缺省 = identity）')
-    p.add_argument('--master', default=None, help='大师设置 JSON（可选）')
+    p.add_argument('--master', default=None, help='大师设置 JSON（可选，只进元数据）')
     p.add_argument('--preset-name', default=None, dest='preset_name')
     p.add_argument('--no-preset', action='store_true', dest='no_preset')
     common(p)
     p.set_defaults(func=cmd_lrbase)
 
-    # ⚠ **不许写死预设条数**（写死的数会过期）⇒ 运行时数出来。
-    p = sub.add_parser('stocks', help='列出所有胶片风格（%d 条预设）' % len(presets.names()))
+    p = sub.add_parser('stocks', help='列出所有胶片风格')
     p.add_argument('--stock', default=None)
     p.set_defaults(func=cmd_stocks)
 
@@ -478,10 +339,6 @@ def build_parser():
                    help='给 JPG 去这个目录找同名 RAW 来跑（选片目录只有 JPG 时用）')
     common(p)
     p.set_defaults(func=cmd_dir)
-
-    p = sub.add_parser('calib', help='量机型表要填的基线增益（需 RAW+JPG 同名对）')
-    p.add_argument('inputs', nargs='+')
-    p.set_defaults(func=cmd_calib)
     return ap
 
 

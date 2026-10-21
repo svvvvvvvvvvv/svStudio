@@ -1,11 +1,17 @@
 # -*- coding: utf-8 -*-
 r"""编排 —— 一条链跑完。
 
-    解码 + 白平衡 + 护栏  →  判场景  →  胶片引擎(spektrafilm)  →  出图
+    解码 + 白平衡 + 护栏  →  胶片引擎(spektrafilm)  →  出图
 
-★ 曝光/反差归**引擎**（胶片之后改亮度 = 对印好的照片再翻拍调增益）；★ 引擎输出**就是成片**；影调 /
-颜色 / 认人认脸那几层已整段删代码（`selftest.t_dropped_layers`）。★ 一条实现两条入口：`run()` =
-`io.load()` + `run_from()`。
+★★ 顶层约定（2026-10-21 定稿）：
+  **sfFilm 只负责「介质」** —— 卷/纸/扫描的**形状**、颗粒、光晕、扩散、片基色罩。
+  **影调落点、彩度、冷暖、肩/趾的力度归 LR**（那边是正交、可测、可微调的单旋钮）。
+  ⇒ 本文件里**不再有**：场景判据、按脸反解印相曝光（person_pe）、靶（targets）、
+    亮度压缩求解（lc）、自动测光看人（exposure）。那些是"用形状旋钮追位置目标"的老机制，
+    全部删掉了（见 2026-10-21 清理分支 `clean/medium-only`）。
+
+曝光：用预设自己的 `print_exposure`（固定）。**安全线**（不削顶/不死黑）交给 `_post_scan`
+和预设里的 `output_lightness_compression`，不在这里做逐图求解。
 """
 from __future__ import annotations
 
@@ -17,7 +23,7 @@ from collections import OrderedDict
 
 import numpy as np
 
-from . import config as C, io, presets, scene
+from . import config as C, io, presets
 
 
 class Result:
@@ -35,13 +41,12 @@ class Result:
                        quality=C.JPEG_QUALITY)
 
     def summary(self):
-        r = self.report
-        # ★ **直接从成片量**（`scene.raw.L50` 是未曝光的值）。
         from . import color
         _l50 = float(np.median(color.to_lab(np.clip(self.disp, 0.0, 1.0))[..., 0]))
         return ('{}  [{}]  胶片 {}  |  落点 L*{:.1f}  |  {:.0f}ms'.format(
-                    self.sample.name, self.sample.kind,
-                    r.get('stock_label') or r.get('stock'), _l50, r['ms']))
+            self.sample.name, self.sample.kind,
+            self.report.get('stock_label') or self.report.get('stock'),
+            _l50, self.report['ms']))
 
 
 def _sample_uid(s):
@@ -90,52 +95,22 @@ class StageCache:
 
     def stats(self):
         with self._lock:
-            n = len(self._d)
             mb = 0.0
             for v in self._d.values():
                 for a in v.values():
                     if hasattr(a, 'nbytes'):
                         mb += a.nbytes / 1024.0 ** 2
-            return dict(sets=n, max_sets=self.max_sets, hits=self.hits,
+            return dict(sets=len(self._d), max_sets=self.max_sets, hits=self.hits,
                         misses=self.misses, mb=round(mb, 1))
 
 
 def run(path, src=None, max_side=None, cfg=C, out=None, stock=None):
-    r"""一次性：**解码 + 跑完整链**；常驻服务请用 `run_from`（跳过解码）。"""
+    r"""一次性：**解码 + 跑完整链**。"""
     t0 = time.perf_counter()
     name = str(stock if stock is not None else cfg.STOCK)
     wb = presets.wb_of(name) if presets.has(name) else None
     s = io.load(path, max_side or cfg.MAX_SIDE, src=src, wb=wb)
     return run_from(s, cfg=cfg, stock=stock, out=out, t0=t0, path=path)
-
-
-def _lin_fp(lin):
-    r"""给「解码结果」取一个内容指纹（判据缓存的键）。
-
-    ★ 为什么不用路径：同一张 RAW 挪个目录 / 改个名，判据完全一样 ⇒ 该命中。
-    ★ 为什么不是全量哈希：26 MP 全量 sha1 要 0.2 s，这里等距抽 8192 点，几毫秒，
-      且**内容一变必变**（抽样点覆盖整幅，不是角落）。
-    ★ 键必须含 `shape`：不同尺寸的线性图不该共用同一条判据。
-    """
-    import hashlib as _hl
-
-    a = np.asarray(lin, np.float32)
-    flat = a.ravel()
-    h = _hl.sha1()
-    h.update(repr(a.shape).encode())
-    if flat.size:
-        idx = np.linspace(0, flat.size - 1, min(8192, flat.size)).astype(np.int64)
-        h.update(np.ascontiguousarray(flat[idx]).tobytes())
-    return h.hexdigest()[:24]
-
-
-def _mask_pack(a):
-    r"""None → 空数组（npz 存不了 None）；有值统一 float32。"""
-    return np.zeros((0,), np.float32) if a is None else np.asarray(a, np.float32)
-
-
-def _mask_unpack(a):
-    return None if a is None or np.asarray(a).size == 0 else np.asarray(a)
 
 
 def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None):
@@ -146,115 +121,21 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
 
     name = str(stock if stock is not None else cfg.STOCK)
     if not presets.has(name):
-        # ★ 名字不认得就**当场报错**，不许静默走默认。
-        raise KeyError('没有这个胶片风格: %s（可选：%s）' % (name, '、'.join(presets.names())))
+        raise KeyError('没有这个胶片风格: %s（可选：%s）'
+                       % (name, '、'.join(presets.names())))
 
-    # ---- ★★ 「人在哪」（`person.py`）—— **只给光位那一轴用**。
-    #   ★ 结果只由**解码后的图**决定，与胶片参数无关 ⇒ 走磁盘缓存（调参迭代时省 2.4 s）。
-    try:
-        from . import person as _per
-        _jk = None
-        _hit = None
-        try:
-            from . import diskcache as _dc
-            if bool(getattr(cfg, 'JUDGE_CACHE', True)) and _dc.enabled():
-                _jk = _dc.judge_key(_lin_fp(s.lin))
-                _hit = _dc.judge_get(_jk)
-        except Exception:                                    # noqa: BLE001
-            _jk, _hit = None, None
-        if _hit is not None:
-            _pz = _mask_unpack(_hit.get('person'))
-            _pface = _mask_unpack(_hit.get('face'))
-            _pcloth = _mask_unpack(_hit.get('cloth'))
-            # ★ 下游可能直接读 `person.last_cloth()`，缓存命中时也要把全局状态摆对
-            _per._LAST_CLOTH[0] = _pcloth
-        else:
-            _pz, _pface = _per.person_face(s.disp, with_cloth=True)
-            _pcloth = _per.last_cloth()
-            if _jk is not None:
-                try:
-                    _dc.judge_put(_jk, person=_mask_pack(_pz), face=_mask_pack(_pface),
-                                  cloth=_mask_pack(_pcloth))
-                except Exception:                            # noqa: BLE001
-                    pass
-        if _pface is None:
-            _fb = _per.face_fallback(s.disp)
-            if _fb is not None:
-                _pface = _fb[0]
-                if _jk is not None:
-                    # 兜底拿到的脸也要进缓存，否则「无脸图」每次都要重跑 fallback
-                    try:
-                        _dc.judge_put(_jk, person=_mask_pack(_pz), face=_mask_pack(_pface),
-                                      cloth=_mask_pack(_pcloth))
-                    except Exception:                        # noqa: BLE001
-                        pass
-    except Exception:                                        # noqa: BLE001
-        _pz, _pface, _pcloth = None, None, None
-
-    # ---- ★★★ 场景判据（「按场景分参数」的入口）----
-    #   场景 → **引擎参数覆盖**（`_scene_engine`）；当前只有一条**全局 `"*"`**，无条件生效。
-    #   ⚠⚠ 场景**必须在算缓存键之前**算，否则异常被吞 ⇒ overrides / 靶**永远进不了缓存键**。
-    try:
-        _sc = scene.classify(s.disp, cfg, lin=s.lin, person=_pz, face=_pface, cloth=_pcloth)
-    except Exception:                                        # noqa: BLE001
-        _sc = None
-
-    _TS = None
-    _ov_err = None
-    try:
-        from . import targets as _TS
-        _ov = _TS.scene_engine(_sc, stock=name, cfg=cfg)
-    except Exception as _e:                            # noqa: BLE001
-        # ★ **不许静默**：这里失败 ⇒ 全局 `"*"`**整批失效**，记进报告。
-        _ov, _ov_err = {}, '%s: %s' % (type(_e).__name__, str(_e)[:160])
-
-    # ---- ★★★ **光位程度量**（`deg_back`）—— 10-16 起它**真的进生产**（= 印相曝光的"力度"）----
-    #   ⚠ 它是**光位**（几何），**不是**"脸比背景暗"：判据 = 人的**轮廓光 / 发丝光**
-    #     （`scene.light_evidence`，只看人自己）。拿不到 / 弃权 ⇒ **0.0**（顺光档 = 只保下限）。
-    _pe_back = 0.0
-    try:
-        _pe_back = float((((_sc or {}).get('raw') or {}).get('light') or {}
-                          ).get('deg_back') or 0.0)
-    except Exception:                                        # noqa: BLE001
-        _pe_back = 0.0
-
-    _ckey, _entry = None, None
+    _ckey = None
     if cache is not None:
-        # ★ 键里带**判据版本号**；★★ **开关 / overrides / 靶 / config 签名都必须进键**（漏一项 = 拧了没反应）。
-        try:
-            _ov_key = tuple(sorted((k, tuple(v) if isinstance(v, list) else str(v))
-                                   for k, v in (_ov or {}).items()))
-        except Exception as _e:                        # noqa: BLE001
-            _ov_key = ('ov-err', type(_e).__name__, repr(_ov)[:200])
-        try:
-            _tg_key = _TS.cache_key(name, _sc)
-        except Exception as _e:                        # noqa: BLE001
-            _tg_key = ('tg-err', name, type(_e).__name__, repr(_sc)[:200])
-        # ★★ 出图现在**还依赖光位**（`deg_back` 定印相曝光的力度）⇒ 必须进键，
-        #    否则改了 `light_evidence` 的判据、缓存里还是老图（"拧了没反应"）。
-        _pe_key = ('pe', int(getattr(scene, 'LIGHT_VERSION', 0) or 0), round(_pe_back, 3),
-                   int(getattr(presets, 'PERSON_PE_VERSION', 0) or 0))
-        # ★★ **预设文件本身的指纹**（`os.stat` 的 mtime_ns + size）：`person_pe_band` /
-        #    `person_pe_target_l` 这些可选键只影响 `presets._params_for` 与两遍印相，
-        #    **不经过** cfg 签名 / overrides / targets ⇒ 不带它 = 改了预设、缓存里还是老图。
-        _pf_key = ('pf', presets._file_sig(name))
         _ckey = ('film', _sample_uid(s), name, tuple(np.shape(s.lin)),
-                 int(getattr(scene, 'VERSION', 0)),
-                 C.key_signature(cfg), _ov_key, _tg_key, _pe_key, _pf_key)
+                 C.key_signature(cfg), presets._file_sig(name))
         _entry = cache.get(_ckey)
+    else:
+        _entry = None
 
     if _entry is not None:
         disp = _entry['disp']
     else:
-        # ========== 跑链 ==========  引擎出图 = 成片。
-        # ★★★ **「以人为本」的印相曝光落点（10-16 上线）**：印相曝光**不再写死** ——
-        #   先按预设印一遍 → 量成片里**那张脸**多亮（口径 = 测光同一块分割掩膜）→ 偏暗就按脸
-        #   重算 `print_exposure`**再印一遍**（= 暗房的"试条"）。**力度由光位给**：
-        #   逆光 ⇒ 提亮目标推到带的**亮端**、单张上限放大（背景反正要被顶曝，脸不能暗）；
-        #   顺光 ⇒ 只保"脸别再暗下去"的下限。**只提不压**（`print_exposure` 是整张一起动的）。
-        #   ⚠ `PERSON_PE_DYNAMIC=False` ⇒ **逐位退回** `render()`；没人脸 / 量不到 ⇒ **只印一遍**。
-        disp = presets.render_person_pe(np.clip(s.lin, 0.0, None), name, cfg,
-                                        overrides=(_ov or None), back=_pe_back)
+        disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg)
         if _ckey is not None:
             cache.put(_ckey, disp=disp)
 
@@ -265,29 +146,11 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
         stock=name,
         stock_label=presets.label_of(name)[0],
         stock_desc=presets.label_of(name)[1],
-        scene=(None if _sc is None else dict(_sc)),
-        # ★★★ 「按脸反解印相曝光」到底动没动、动了多少（`presets._LAST_PERSON_PE` 的留痕）
-        person_pe=dict(presets._LAST_PERSON_PE) if presets._LAST_PERSON_PE else None,
-        light_back=round(_pe_back, 3),
+        print_exposure=presets.pe_of(name),
         stage_cache=dict(hit=bool(_entry is not None)),
-        # ★ `scene_engine` 失败**必须能看见**（否则全局 `"*"` 整批失效）。
-        scene_engine_error=_ov_err,
         ms=(time.perf_counter() - t0) * 1000.0,
     )
     res = Result(disp, rep, s, path)
     if out:
         res.save(out)
     return res
-
-
-def run_pair(stem_or_path, prefer='raw', **kw):
-    p = io.find_pair(stem_or_path, prefer='raw')
-    a = run(p, src='raw', **kw)
-    stem = os.path.splitext(stem_or_path)[0]
-    jp = None
-    for e in ('.JPG', '.jpg', '.JPEG', '.jpeg'):
-        if os.path.exists(stem + e):
-            jp = stem + e
-            break
-    b = run(jp, src='jpg', **kw) if jp else None
-    return a, b

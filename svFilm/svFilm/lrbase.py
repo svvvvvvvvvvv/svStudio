@@ -46,46 +46,10 @@ class FlatResult:
     report: dict
 
 
-def srgb_encode(x: np.ndarray) -> np.ndarray:
-    x = np.clip(np.asarray(x, np.float64), 0.0, 1.0)
-    return np.where(x <= 0.0031308, x * 12.92,
-                    1.055 * np.power(x, 1.0 / 2.4) - 0.055)
 
 
-def srgb_decode(x: np.ndarray) -> np.ndarray:
-    x = np.clip(np.asarray(x, np.float64), 0.0, 1.0)
-    return np.where(x <= 0.04045, x / 12.92,
-                    np.power((x + 0.055) / 1.055, 2.4))
 
 
-def invert_negative(neg: np.ndarray, *,
-                    lo_q: float = 1.0, hi_q: float = 99.5,
-                    gains: tuple[float, float, float] = (1.0, 1.0, 1.0),
-                    headroom: float = 0.0) -> np.ndarray:
-    r"""负片线性 → 正像线性。
-
-    物理上负片透射光 `L = 10^-D`，正像密度 `D' = Dmax - D` ⇒ `L' ∝ 1/L`；
-    这里用倒数 + 逐通道分位归一（研究原型；正式版应加灰卡/色卡的中性平衡）。
-
-    `headroom` > 0 时把结果压进 `[h, 1-h]`，避免平基底片在 0/1 处硬裁切，
-    给 LR 留可拉的高光/暗部余量。
-    """
-    a = np.asarray(neg, np.float64)
-    if a.ndim != 3 or a.shape[-1] != 3:
-        raise ValueError("neg 必须是 HxWx3")
-    h = float(headroom)
-    if not (0.0 <= h < 0.5):
-        raise ValueError("headroom 必须在 [0, 0.5)")
-    pos = 1.0 / np.maximum(a, 1e-6)
-    out = np.empty_like(pos)
-    for c in range(3):
-        lo, hi = np.percentile(pos[..., c], [float(lo_q), float(hi_q)])
-        v = (pos[..., c] - lo) / max(float(hi - lo), 1e-6)
-        out[..., c] = h + np.clip(v, 0.0, 1.0) * (1.0 - 2.0 * h)
-    out = np.clip(out, 0.0, 1.0)
-    g = np.asarray(gains, np.float64).reshape(1, 1, 3)
-    out = np.clip(out * g, 0.0, 1.0)
-    return out
 
 
 def save_tiff16(disp: np.ndarray, path: str | Path, *, icc: bool = False) -> str:
@@ -116,211 +80,34 @@ def save_tiff16(disp: np.ndarray, path: str | Path, *, icc: bool = False) -> str
     return str(path)
 
 
-def read_srgb(path: str | Path) -> np.ndarray:
-    r"""读 8-bit JPEG/PNG 或 16-bit TIFF，返回 float sRGB 0..1。"""
-    path = Path(path)
-    suffix = path.suffix.lower()
-    if suffix in (".tif", ".tiff"):
-        if tifffile is None:
-            raise RuntimeError("读 16-bit TIFF 需要 tifffile")
-        a = tifffile.imread(str(path))
-        if a.dtype == np.uint16:
-            a = a.astype(np.float64) / 65535.0
-        elif a.dtype == np.uint8:
-            a = a.astype(np.float64) / 255.0
-        else:
-            a = np.asarray(a, np.float64)
-        if a.ndim == 3 and a.shape[-1] > 3:
-            a = a[..., :3]
-        if a.ndim != 3 or a.shape[-1] != 3:
-            raise ValueError("TIFF 不是 RGB: %r" % (a.shape,))
-        return np.clip(a, 0.0, 1.0)
-    from PIL import Image
-    return np.asarray(Image.open(str(path)).convert("RGB"), np.float64) / 255.0
 
 
-def _lab(rgb: np.ndarray) -> np.ndarray:
-    lin = srgb_decode(rgb)
-    m = np.array([[0.4124564, 0.3575761, 0.1804375],
-                  [0.2126729, 0.7151522, 0.0721750],
-                  [0.0193339, 0.1191920, 0.9503041]])
-    xyz = lin @ m.T
-    white = np.array([0.95047, 1.0, 1.08883])
-    t = xyz / white
-    f = np.where(t > (6 / 29) ** 3, np.cbrt(t),
-                 t / (3 * (6 / 29) ** 2) + 4 / 29)
-    return np.stack([116 * f[..., 1] - 16,
-                     500 * (f[..., 0] - f[..., 1]),
-                     200 * (f[..., 1] - f[..., 2])], axis=-1)
 
 
-def _fit_channel(x: np.ndarray, y: np.ndarray, bins: int):
-    qs = np.linspace(0.0, 1.0, bins + 1)
-    edges = np.quantile(x, qs)
-    xs, ys = [], []
-    for i in range(len(edges) - 1):
-        mask = (x >= edges[i]) & (x <= edges[i + 1])
-        if int(mask.sum()) < 64:
-            continue
-        xs.append(float(np.median(x[mask])))
-        ys.append(float(np.median(y[mask])))
-    xs = np.asarray(xs)
-    ys = np.maximum.accumulate(np.asarray(ys))
-    keep = np.concatenate(([True], np.diff(xs) > 1e-9))
-    return xs[keep], ys[keep]
 
 
-def _sample_curve(xs: np.ndarray, ys: np.ndarray, points: int):
-    if PchipInterpolator is None:
-        raise RuntimeError("拟合基底曲线需要 scipy")
-    grid = np.linspace(0.0, 255.0, points)
-    f = PchipInterpolator(xs, ys, extrapolate=True)
-    vals = np.clip(f(grid / 255.0) * 255.0, 0.0, 255.0)
-    vals[0], vals[-1] = 0.0, 255.0
-    vals = np.maximum.accumulate(vals)
-    return [[int(round(x)), int(round(y))] for x, y in zip(grid, vals)]
 
 
-def fit_base_curve(print_path: str | Path, flat_path: str | Path,
-                   *, points: int = 16, bins: int = 32) -> dict:
-    r"""拟合「平基底片（16-bit TIFF）→ 当前冲印成片」的逐通道曲线。
-
-    输出 JSON 可直接给 `lrbase --base-curve` / `lr_meta`。
-    ⚠ 正式标定要用**同内容、同像素**的一对图；C1 print 建议存 PNG/无损，不要 JPEG。
-    """
-    pr = read_srgb(print_path)
-    fl = read_srgb(flat_path)
-    if pr.shape != fl.shape:
-        raise ValueError("尺寸不一致: print=%r flat=%r" % (pr.shape, fl.shape))
-    curves = {}
-    names = ("ToneCurvePV2012", "ToneCurvePV2012Red",
-             "ToneCurvePV2012Green", "ToneCurvePV2012Blue")
-
-    # 复合曲线：在线性亮度上拟合，再转回 sRGB 编码坐标
-    y_pr = srgb_decode(pr) @ np.array([0.2126, 0.7152, 0.0722])
-    y_fl = srgb_decode(fl) @ np.array([0.2126, 0.7152, 0.0722])
-    xs, ys = _fit_channel(srgb_encode(y_fl), srgb_encode(y_pr), bins)
-    curves[names[0]] = _sample_curve(xs, ys, points)
-    for i, name in enumerate(names[1:]):
-        xs, ys = _fit_channel(fl[..., i], pr[..., i], bins)
-        curves[name] = _sample_curve(xs, ys, points)
-
-    rec = np.empty_like(fl)
-    for i, name in enumerate(names[1:]):
-        pts = np.asarray(curves[name], np.float64) / 255.0
-        rec[..., i] = np.interp(fl[..., i], pts[:, 0], pts[:, 1])
-    d_l = _lab(rec)[..., 0] - _lab(pr)[..., 0]
-    d_e = None
-    if colour is not None:
-        d_e = colour.delta_E(_lab(pr), _lab(rec), method="CIE 2000")
-    return {
-        "schema": "svfilm.lr.base_curve/1",
-        "source": {"print": str(print_path), "flat": str(flat_path)},
-        "space": "sRGB-encoded 0..255",
-        "points_per_curve": int(points),
-        "curves": curves,
-        "fit": {
-            "median_abs_dL": round(float(np.median(np.abs(d_l))), 3),
-            "p95_abs_dL": round(float(np.percentile(np.abs(d_l), 95)), 3),
-            "median_dE00": None if d_e is None else round(float(np.median(d_e)), 3),
-            "p95_dE00": None if d_e is None else round(float(np.percentile(d_e, 95)), 3),
-            "note": "同内容单对图拟合；正式标定用 16-bit 多图 + 色卡",
-        },
-    }
 
 
-def save_curve_json(curve: dict, path: str | Path) -> str:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    import json
-    tmp.write_text(json.dumps(curve, ensure_ascii=False, indent=1), encoding="utf-8")
-    os.replace(tmp, path)
-    return str(path)
 
 
-def apply_curve(flat_srgb: np.ndarray, curve: dict) -> np.ndarray:
-    r"""把基底曲线回放到平基底片上（只做 tone，不做 HSL/Color Grading）。
-
-    用于 `lrbase-preview`：不开 LR 也能看“平基底 + 基底曲线”长什么样。
-    """
-    a = np.asarray(flat_srgb, np.float64)
-    curves = curve.get("curves", {})
-    out = np.empty_like(a)
-    keys = ("ToneCurvePV2012Red", "ToneCurvePV2012Green", "ToneCurvePV2012Blue")
-    for i, key in enumerate(keys):
-        pts = curves.get(key) or curves.get("ToneCurvePV2012")
-        if not pts:
-            out[..., i] = a[..., i]
-            continue
-        p = np.asarray(pts, np.float64) / 255.0
-        out[..., i] = np.interp(a[..., i], p[:, 0], p[:, 1])
-    return np.clip(out, 0.0, 1.0)
 
 
-def save_jpeg(disp: np.ndarray, path: str | Path, quality: int = 95) -> str:
-    from PIL import Image
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    arr = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
-    tmp = path.with_name(path.name + ".tmp.jpg")
-    Image.fromarray((arr * 255.0 + 0.5).astype(np.uint8)).save(
-        tmp, format="JPEG", quality=int(quality), subsampling=0)
-    os.replace(tmp, path)
-    return str(path)
-
-
-def render_flat(lin: np.ndarray, stock: str, cfg=C, *,
-                lo_q: float = 1.0, hi_q: float = 99.5,
-                gains: tuple[float, float, float] = (1.0, 1.0, 1.0),
-                headroom: float = 0.0,
-                overrides: dict | None = None) -> FlatResult:
-    neg = presets.render_linear(lin, stock, cfg=cfg, overrides=overrides)
-    pos = invert_negative(neg, lo_q=lo_q, hi_q=hi_q, gains=gains,
-                          headroom=headroom)
-    disp = srgb_encode(pos)
-    return FlatResult(disp=disp, lin=pos, neg=neg, report={})
-
-
-def render_print_neutral(lin: np.ndarray, stock: str, cfg=C, *,
-                         overrides: dict | None = None,
-                         grain_rms: float | None = None) -> FlatResult:
-    r"""film_print_neutral：跑完整印相，但**固定印相曝光、不做人脸测光**。
-
-    这是 `presets.render(..., print_exposure=None)` 的薄包装：
-    - 相纸/印相化学/扫描都烘进像素；
-    - 不跑 `_person_metering`、不跑动态 PE；
-    - LR 拿到的是“中性印相”，master 曝光/反差/分色全部归 LR。
-    """
-    ov = dict(presets._base_overrides(cfg, stock=stock))
-    if grain_rms is not None:
-        ov['film_render.grain.rms_granularity'] = [float(grain_rms)] * 3
-    if overrides:
-        ov.update(overrides)
-    disp = presets.render(lin, stock, cfg, print_exposure=None,
-                          overrides=ov or None, person_metering=False)
-    return FlatResult(disp=np.asarray(disp, np.float64), lin=np.asarray(disp, np.float64),
-                      neg=None, report={})
 
 
 def render_print_full(sample, stock: str, cfg=C, *,
                       path: str | Path | None = None) -> FlatResult:
-    r"""film_print_full：**原样复用 C1 那条链**（`pipeline.run_from`），只是不写 JPEG。
+    r"""film_print_full：跑完整印相（**固定**印相曝光，来自预设），大师层归 LR。
 
-    与 `render_print_neutral` 的差别只有一个，但就是关键那个：**印相曝光是逐图配平的**
-    （`presets.render_person_pe` 的两遍印相 —— 先印一遍、量成片里那张脸、偏暗就反解
-    `print_exposure` 再印一遍）。
-
-    ★ 为什么不在这里重写一遍印相：重写 = 两套实现必然漂移。这里**直接调 C1 的入口**，
-      所以「进 LR 的 TIFF」与「已验收的 C1 成片」是同一段代码、同一份场景覆盖、同一份
-      光位力度 ⇒ 明暗逐位一致（自测见 `lrbase_selftest`）。
-
-    ★ 大师层仍然**不烘**（引擎里本来就没有大师层）：`master_tone/color` 归 LR。
+    ★ 2026-10-21 清理：**不再有** person_pe（按脸反解印相曝光）、场景判据、靶。
+      落点归 LR（那边是正交、可测、可微调的单旋钮）；这里只把"介质"烘出来。
     """
     res = pipeline.run_from(sample, cfg=cfg, stock=stock,
                             path=str(path) if path is not None else None)
     disp = np.asarray(res.disp, np.float64)
     return FlatResult(disp=disp, lin=disp, neg=None, report=dict(res.report or {}))
+
 
 
 def _safe_stem(path: str | Path) -> str:
@@ -330,38 +117,18 @@ def _safe_stem(path: str | Path) -> str:
 def run_one(path: str | Path, out_dir: str | Path | None = None, *,
             stock: str | None = None, max_side: int | None = None,
             src: str | None = None,
-            lo_q: float = 1.0, hi_q: float = 99.5,
-            gains: tuple[float, float, float] = (1.0, 1.0, 1.0),
-            headroom: float = 0.01,
-            base_curve: dict | None = None,
             master: dict | None = None,
             preset_name: str = "svFilm",
             write_preset: bool = True,
             overwrite: bool = True,
-            mode: str = "flat",
             grain_owner: str = "svfilm",
-            halation_owner: str = "svfilm",
-            grain_rms: float | None = None) -> dict:
-    r"""单张：RAW/JPG → TIFF + JSON/XMP/lrpreset。
+            halation_owner: str = "svfilm") -> dict:
+    r"""单张：RAW → 16-bit TIFF + JSON/XMP/lrpreset。
 
-    mode:
-      - `flat`：只烘负片介质（stock/scan/grain/halation），相纸/大师归 LR；
-      - `print_neutral`：烘中性相纸（**固定**印相曝光，不做 person_pe），大师归 LR；
-      - `print_full`：烘印相且**印相曝光逐图配平**（= C1 原样，两遍印相），大师归 LR。
-        这是 LR 分工线的**生产档**：进 LR 的明暗已经等于已验收的 C1 成片。
-      - `full`（连大师层一起烘）仍归 C1，这里不重复实现。
+    只有**一种**输出：`print_full`（完整印相，固定印相曝光；落点/彩度/冷暖归 LR）。
     """
-    if mode not in ("flat", "print_neutral", "print_full"):
-        raise ValueError("lrbase mode 只支持 flat / print_neutral / print_full；"
-                         "full（连大师层）请走 C1 `one`")
-    if mode == "print_full" and (grain_owner == "lr" or halation_owner == "lr"):
-        # ★ 不许静默忽略：print_full 是「C1 原样出图」，颗粒/光晕已经在像素里，
-        #   把它声明成 lr 只会让契约说谎。
-        raise ValueError("print_full 复用 C1 原样出图：颗粒/光晕归 svfilm，"
-                         "不能转给 LR（grain_owner/halation_owner 只能是 svfilm）")
-    if mode == "print_full" and grain_rms is not None:
-        raise ValueError("print_full 的颗粒由预设/场景定，不吃 grain_rms 覆盖"
-                         "（要改颗粒请走 print_neutral 或直接改预设）")
+    if grain_owner == "lr" or halation_owner == "lr":
+        raise ValueError("颗粒/光晕在 sfFilm 里烘进像素（介质的一部分），不能声明归 LR")
     t0 = time.perf_counter()
     path = Path(path)
     name = str(stock if stock is not None else C.STOCK)
@@ -371,26 +138,9 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
     s = io.load(str(path), max_side if max_side is not None else C.MAX_SIDE,
                 src=src, wb=wb)
 
-    overrides: dict = {}
-    if grain_owner == "lr":
-        overrides["film_render.grain.active"] = False
-    if halation_owner == "lr":
-        overrides["film_render.halation.active"] = False
-
-    if mode == "flat":
-        flat = render_flat(s.lin, name, C, lo_q=lo_q, hi_q=hi_q, gains=gains,
-                           headroom=headroom, overrides=overrides or None)
-        suffix = "_flat.tif"
-        note = "scan_film 线性 → 倒数/分位归一 → sRGB 编码；未做印相"
-    elif mode == "print_neutral":
-        flat = render_print_neutral(s.lin, name, C, overrides=overrides or None,
-                                    grain_rms=grain_rms)
-        suffix = "_print.tif"
-        note = "中性印相（固定 print_exposure；不跑 person_pe/动态 PE）"
-    else:                                                    # print_full
-        flat = render_print_full(s, name, C, path=path)
-        suffix = "_full.tif"
-        note = ("C1 原样出图（两遍印相：印相曝光**逐图配平**）；大师层不烘，归 LR")
+    flat = render_print_full(s, name, C, path=path)
+    suffix = "_full.tif"
+    note = "完整印相（固定 print_exposure）；颗粒/光晕/颜色已烘；落点与彩度归 LR"
     out_dir = Path(out_dir) if out_dir is not None else path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = _safe_stem(path) + "_svFilm"
@@ -399,44 +149,27 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
         raise FileExistsError(tif_path)
 
     report = {
-        "mode": mode,
+        "mode": "print_full",
         "stock": name,
         "stock_label": presets.label_of(name)[0],
         "stock_desc": presets.label_of(name)[1],
         "camera": s.cam,
         "entry_bias_ev": (s.cam or {}).get("idt_bias_ev"),
         "fuji_dr": (s.cam or {}).get("fuji_dr"),
-        "scene": flat.report.get("scene"),
-        # ★ 逐图印相曝光的留痕（print_full 才有；flat/print_neutral 是 None）
-        "person_pe": flat.report.get("person_pe"),
-        "light_back": flat.report.get("light_back") or 0.0,
-        # ★ 这一遍真正写进 params 的印相曝光（引擎实际读的那个值）
-        "print_exposure": (float(presets._LAST_RENDER_PE)
-                           if getattr(presets, "_LAST_RENDER_PE", None) else None),
+        "print_exposure": presets.pe_of(name),
         "film": {
             "stock": name,
-            "paper": (presets.label_of(name)[1]
-                      if mode in ("print_neutral", "print_full") else None),
+            "paper": presets.label_of(name)[1],
             "scan": "spektrafilm/scan_film",
             "grain_owner": grain_owner,
             "halation_owner": halation_owner,
-            "grain_rms": grain_rms,
-        },
-        "flat": {
-            "lo_q": float(lo_q),
-            "hi_q": float(hi_q),
-            "gains": [float(v) for v in gains],
-            "headroom": float(headroom),
-            "bit_depth": 16,
-            "color_space": "sRGB (untagged; LR assumes sRGB)",
-            "note": note,
         },
         "ms": (time.perf_counter() - t0) * 1000.0,
     }
     save_tiff16(flat.disp, tif_path)
 
-    meta = lr_meta.build_metadata(report, tif_path, mode=mode,
-                                  base_curve=base_curve, master=master,
+    meta = lr_meta.build_metadata(report, tif_path, mode="print_full",
+                                  master=master,
                                   preset_name=preset_name,
                                   grain_owner=grain_owner,
                                   halation_owner=halation_owner)
