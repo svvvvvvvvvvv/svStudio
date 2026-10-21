@@ -1,18 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""编排 —— 一条链跑完。
-
-    解码 + 白平衡 + 护栏  →  胶片引擎(spektrafilm)  →  出图
-
-★★ 顶层约定（2026-10-21 定稿）：
-  **sfFilm 只负责「介质」** —— 卷/纸/扫描的**形状**、颗粒、光晕、扩散、片基色罩。
-  **影调落点、彩度、冷暖、肩/趾的力度归 LR**（那边是正交、可测、可微调的单旋钮）。
-  ⇒ 本文件里**不再有**：场景判据、按脸反解印相曝光（person_pe）、靶（targets）、
-    亮度压缩求解（lc）、自动测光看人（exposure）。那些是"用形状旋钮追位置目标"的老机制，
-    全部删掉了（见 2026-10-21 清理分支 `clean/medium-only`）。
-
-曝光：用预设自己的 `print_exposure`（固定）。**安全线**（不削顶/不死黑）交给 `_post_scan`
-和预设里的 `output_lightness_compression`，不在这里做逐图求解。
-"""
+"""编排 —— 一条链跑完。"""
 from __future__ import annotations
 
 import hashlib

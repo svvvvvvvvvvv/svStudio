@@ -1,15 +1,6 @@
 
 # -*- coding: utf-8 -*-
-r"""IDT 机型表 —— **加机型不改代码**，只在这里加一行。
-
-为什么要这张表：相机厂商**故意让 RAW 欠曝**，把"把中点抬回来"留给转换器做（DNG 规范里叫
-**baseline exposure**；Adobe 系是"静默"做掉的，滑块显示 0）。LibRaw 作者：相机灰点常在满量程的
-7~12%，转换器要把它抬回 18%，且**要用自定义 tone curve 把高光压下去**。
-
-表里存两样，**别混**：① `baseline_ev` = 与该**机型**绑定的常数基线；② 富士 DR 档的**额外**欠曝
-（每张都可能不同，逐张从 RAF 的 MakerNote 里读）。补量 = `baseline_ev + FUJI_DR_BIAS[dr]`；若机身
-写了精确的 `0x9650 RawExposureBias`，**直接用那个值覆盖**（它是含基础偏移的总量）。⚠ 同一台机身
-DR 会变 ⇒ 必须逐张读。`python -m svFilm.cli calib <RAW+JPG 同名若干张>` 会打印建议值。"""
+"""IDT 机型表 —— **加机型不改代码**，只在这里加一行。"""
 from __future__ import annotations
 
 # key = (make, model) 小写（只写 model 也能命中）；0.72 = 富士的基础偏移（darktable）。

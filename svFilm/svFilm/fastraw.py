@@ -1,30 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""入口解码的**快速通道**：RAW 只开一次 + 一次 3×3 合并矩阵。
-
-## 为什么要有它
-
-`vendor` 的 `load_and_process_raw_file` 把三件事分成三轮**全尺寸逐点运算**：
-
-    ① 白点适应   ACES RGB → XYZ → Von Kries → XYZ → ACES RGB      26 MP 上 8.50 s
-    ② tint       × [1, tint, 1]（对角）                             可忽略
-    ③ 空间换算   ACES → ProPhoto RGB（3×3）                        26 MP 上 2.73 s
-
-这三步**全是线性映射**（①是 3×3 链，②是对角，③是 3×3）⇒ 严格可合成**一个** 3×3 矩阵，
-一次算完。数学上不是近似，是同一件事换个结合顺序。
-
-## 两条不可退让的规矩
-
-★★ **矩阵不抄公式、不写死系数**：每个进程启动时，拿 3 个探针像素（0.5·e_r / e_g / e_b）
-   过一遍 **vendor 自己的** `_apply_white_balance_adaptation` → `_apply_tint_adjustment` →
-   `colour.RGB_to_RGB`，读回那 3 列就是矩阵。vendor 换 CAT、换白点算法、换色域,
-   矩阵自动跟随；我们只多做「合并」这一件事。
-★★ **顺序与原链一致**（矩阵 → clip → 缩图）：clip 在 ProPhoto 空间、缩图之前，
-   和 `io.load_raw` 原来的次序完全相同 ⇒ 不出画面差异。
-
-## 关掉它
-
-`config.FAST_RAW = False` ⇒ `io.load_raw` 走回 vendor 原路，行为与从前一模一样。
-"""
+"""入口解码的**快速通道**：RAW 只开一次 + 一次 3×3 合并矩阵。"""
 from __future__ import annotations
 
 import io as _sio
@@ -45,11 +20,7 @@ def _vendor():
 
 
 def combined_matrix(adapt, tint, colorspace=None):
-    r"""把「白点适应 + tint + 空间换算」合成一个 3×3（float32）。
-
-    `adapt` = `(source_white_xyz, target_white_xyz)`；`tint` = 绿品轴倍率。
-    矩阵由 vendor 函数在 3 个探针像素上取值得到（见模块头）。
-    """
+    """把「白点适应 + tint + 空间换算」合成一个 3×3（float32）。"""
     import colour
 
     cs = colorspace or getattr(C, 'PUBLIC_COLORSPACE', 'ProPhoto RGB')
@@ -75,7 +46,6 @@ def combined_matrix(adapt, tint, colorspace=None):
             apply_cctf_encoding=False,
         )
     # x[0] 的 3 行 = 3 个单位探针的输出 ⇒ 列拼起来就是矩阵；用 float64 存，
-    # 乘法时再转型（在缩小后的图上做，代价可忽略，精度更稳）。
     M = (np.asarray(x, np.float64)[0] / float(_PROBE)).T
     _MCACHE[key] = M
     return M
@@ -101,13 +71,7 @@ def _thumb_exif(im_transpose, raw):
 
 
 def decode(path, max_side=None, wb=None, exif_fix=None, use_cache=None):
-    r"""RAW → 场景线性（目标色彩空间，float64）。**一次打开 RAW**。
-
-    返回 `(lin, exif_bytes, make, model)`。
-
-    `exif_fix` = 缩略图方向抹平函数（`io._exif_orientation_fixed`），避免循环 import。
-    `use_cache` = None 时按 `config.RAW_CACHE` 与 `max_side` 自动决定（原图尺寸不缓存）。
-    """
+    """RAW → 场景线性（目标色彩空间，float64）。**一次打开 RAW**。"""
     import rawpy
 
     R = _vendor()
@@ -136,7 +100,6 @@ def decode(path, max_side=None, wb=None, exif_fix=None, use_cache=None):
         rgb = raw.postprocess(**params).astype(np.float32) / np.float32(65535.0)
 
     # ③ 合并矩阵（一次乘完 WB 适应 + tint + 空间换算），顺序与原链一致：
-    #    矩阵 → clip → 缩图
     M = combined_matrix(adapt, tint_mult).astype(np.float32)
     n = rgb.shape[0] * rgb.shape[1]
     lin = (rgb.reshape(n, 3) @ M.T).reshape(rgb.shape)
@@ -151,10 +114,7 @@ def decode(path, max_side=None, wb=None, exif_fix=None, use_cache=None):
 
 
 def probe_drift(n=256, seed=0):
-    r"""自检用：把随机图同时过「合并矩阵」和「vendor 原链」，报最大/平均差。
-
-    这**不是**验证画面好不好看，只验证「合并前后是同一个线性映射」。
-    """
+    """自检用：把随机图同时过「合并矩阵」和「vendor 原链」，报最大/平均差。"""
     import colour
 
     R = _vendor()

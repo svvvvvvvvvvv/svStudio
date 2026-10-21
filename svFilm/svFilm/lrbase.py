@@ -1,15 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""C2「LR 平基底片」导出 —— svFilm 只出胶片负片，印相/影调/分色交给 LR。
-
-一条链：
-    RAW → io.load（场景线性）→ presets.render_linear（scan_film，线性、不裁剪）
-        → invert_negative（线性域倒数 + 逐通道分位归一 + 可选增益）
-        → encode_srgb → 16-bit TIFF（带 sRGB ICC）
-        → lr_meta（JSON / XMP / lrpreset）
-
-★ 与 C1 的分界：C1 走 `pipeline.run`（印相 + 扫描 + clip）；C2 只跑 `render_linear`，
-  不碰 `print_exposure` / `person_pe` / `_post_scan`。C1 路径一个字节不改。
-"""
+"""C2「LR 平基底片」导出 —— svFilm 只出胶片负片，印相/影调/分色交给 LR。"""
 from __future__ import annotations
 
 import os
@@ -53,12 +43,7 @@ class FlatResult:
 
 
 def save_tiff16(disp: np.ndarray, path: str | Path, *, icc: bool = False) -> str:
-    r"""sRGB 编码 0..1 → 16-bit RGB TIFF。
-
-    ★ 默认**不写 ICC**：LR 15.1 对带 ICC extratag 的 16-bit RGB TIFF 会渲染成青蓝
-      （同像素、同设置，去掉 ICC 后与 C1 逐项对齐）。LR 对未标记 RGB 按 sRGB 解释，
-      这正是我们要的。`icc=True` 只给别的消费方（如 Photoshop/评测脚本）用。
-    """
+    """sRGB 编码 0..1 → 16-bit RGB TIFF。"""
     if tifffile is None:
         raise RuntimeError("缺 tifffile：pip install tifffile（或改用 cv2 的 16-bit TIFF）")
     path = Path(path)
@@ -98,11 +83,7 @@ def save_tiff16(disp: np.ndarray, path: str | Path, *, icc: bool = False) -> str
 
 def render_print_full(sample, stock: str, cfg=C, *,
                       path: str | Path | None = None) -> FlatResult:
-    r"""film_print_full：跑完整印相（**固定**印相曝光，来自预设），大师层归 LR。
-
-    ★ 2026-10-21 清理：**不再有** person_pe（按脸反解印相曝光）、场景判据、靶。
-      落点归 LR（那边是正交、可测、可微调的单旋钮）；这里只把"介质"烘出来。
-    """
+    """film_print_full：跑完整印相（**固定**印相曝光，来自预设），大师层归 LR。"""
     res = pipeline.run_from(sample, cfg=cfg, stock=stock,
                             path=str(path) if path is not None else None)
     disp = np.asarray(res.disp, np.float64)
@@ -123,10 +104,7 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
             overwrite: bool = True,
             grain_owner: str = "svfilm",
             halation_owner: str = "svfilm") -> dict:
-    r"""单张：RAW → 16-bit TIFF + JSON/XMP/lrpreset。
-
-    只有**一种**输出：`print_full`（完整印相，固定印相曝光；落点/彩度/冷暖归 LR）。
-    """
+    """单张：RAW → 16-bit TIFF + JSON/XMP/lrpreset。"""
     if grain_owner == "lr" or halation_owner == "lr":
         raise ValueError("颗粒/光晕在 sfFilm 里烘进像素（介质的一部分），不能声明归 LR")
     t0 = time.perf_counter()

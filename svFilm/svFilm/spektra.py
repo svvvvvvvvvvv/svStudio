@@ -1,11 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""spektrafilm 装载器 + 大图条带包装 —— **这一层不做"选卷/配纸/调旋钮"**。
-
-只剩两件事：`_sf()` 懒加载并**钉死仓库自带那一份**；`_install_band()` 大图按行切条带（原图尺寸出图
-靠它才跑得动，且逐位不变）。胶片风格不在这层：`presets.py` 直接读 `data/presets/*.json`。
-spektrafilm 不用 LUT，**重建整条光化学管线** ⇒ 自带 H&D 曲线、颗粒、halation、柔光、锐化 ⇒ 我们自己
-**不许再叠一层**；⚠ profiles / LUT = CC BY-SA 4.0 + 自定义前言。
-"""
+"""spektrafilm 装载器 + 大图条带包装 —— **这一层不做'选卷/配纸/调旋钮'**。"""
 from __future__ import annotations
 
 import os
@@ -23,8 +17,7 @@ _SF = [None]          # 懒加载的 spektrafilm 模块
 
 
 def _sf():
-    r"""懒加载 spektrafilm（**必须能找到它的 src 目录**）：① `SPEKTRAFILM_ROOT`；② `<仓库根>/_tools/
-    spektrafilm/src`；③ `<上级>/_tools/spektrafilm/src`。"""
+    """懒加载 spektrafilm（**必须能找到它的 src 目录**）：① `SPEKTRAFILM_ROOT`；② `<仓库根>/_tools/"""
     if _SF[0] is None:
         here = os.path.abspath(__file__)
         repo = os.path.dirname(os.path.dirname(here))          # .../svFilm（仓库根）
@@ -60,12 +53,6 @@ def _sf():
 
 
 # ★★★ 大图按行切条带：干掉「整张画面 × 81 光谱波段」那个中间量
-# 为什么必须切：`develop.py` 把每个像素的 3 个 CMY 密度乘成 81 波段 ⇒ (像素数 × 81 × 8B)
-#   一次分配，原图尺寸就是几十 GB。
-# 为什么**逐位不变**：那条链（`printing._film_cmy_to_print_log_raw` /
-#   `scanning.cmy_to_log_xyz`）**全是逐像素的**（3 通道进 → 81 波段 → 3 通道出，81 纯属
-#   中间量）⇒ 按行切开算完拼回来数学上完全相同。
-# ⚠⚠ **绝不改 vendor 文件** ⇒ 这里做**类级 monkey-patch**（升级靠 `git archive` 覆盖）。
 BAND_ROWS = 192          # 一条带多少行（192 行 × 7752 宽 × 81 波段 × 8B ≈ 0.9 GB 中间量）
 BAND_MIN_PX = 1000000    # 小于这么多像素**不切** —— 700 预览那档保持原来那条路，行为一模一样
 _BAND_LOCK = threading.Lock()

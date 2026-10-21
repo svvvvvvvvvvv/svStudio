@@ -1,16 +1,10 @@
 # -*- coding: utf-8 -*-
-r"""**扫描仪段补偿**（`scan_film=True` 时用）—— 在 svFilm 这层做，**不动 vendored 的 spektrafilm**。
-
-上游 `color_reference.py` 对负片**故意不做黑白校正**（负片没有绝对的黑白参考，黑白由冲扫流程与
-**扫描仪软件**定）⇒ `io.scan_film = True` 时引擎输出**没有被锚定**。真实扫描仪做：① 反相（引擎已做）
-② 按片基定黑白点 ③ 每通道自动色阶 ⇒ 本模块实现 ② ③：**每通道按分位定黑白点、线性拉伸**（默认**关**）。
-"""
+"""**扫描仪段补偿**（`scan_film=True` 时用）—— 在 svFilm 这层做，**不动 vendored 的 spektrafilm**。"""
 from __future__ import annotations
 
 import numpy as np
 
 # ★ **诊断变量**：本模块的"静默降级"（缺 scipy / 缺 color）**不抛异常**、只原样返回 ⇒
-#   调用方的 try/except **抓不到** ⇒ 调用前清空、降级时写原因，由 `presets._post_scan` 报警。
 _CHROMA_LAST_ERROR: str | None = None
 
 
@@ -19,12 +13,7 @@ def _pct(a, q):
 
 
 def chroma_blur(rgb, cfg):
-    r"""★★★ **扫描色度模糊** —— 补上真实胶片扫描的"色度被模糊"这一层。
-
-    真实扫描链里色度分辨率天然低于亮度 ⇒ "胶片质感"含"色度更柔"这一层（尺子 =「色度/亮度锐度比」）。
-    做法：在 **CIELAB 的 a*/b* 上**做高斯模糊（L* 不动）；σ 用**画面宽度比例**。
-    ⚠⚠ 这是**减弱型效果**：失效时（缺 scipy / σ=0 / 开关关）画面只是"更锐"、**不会报警** ⇒ 必须把
-      原因记进 `_CHROMA_LAST_ERROR` 让调用方喊一声。"""
+    """★★★ **扫描色度模糊** —— 补上真实胶片扫描的'色度被模糊'这一层。"""
     global _CHROMA_LAST_ERROR
     _CHROMA_LAST_ERROR = None
     if not bool(getattr(cfg, 'CHROMA_BLUR_ENABLE', False)):
@@ -53,8 +42,7 @@ def chroma_blur(rgb, cfg):
 
 
 def auto_levels(rgb, cfg, mask=None):
-    r"""每通道自动色阶（模拟扫描仪的负片转正）。`cfg` 键：`SCANFIX_ENABLE`（默认关）·
-    `SCANFIX_MODE` `'per_channel'`/`'luma'` · `SCANFIX_LO`/`HI` 分位 · `SCANFIX_ONLY_DARK`（调试）。"""
+    """每通道自动色阶（模拟扫描仪的负片转正）。`cfg` 键：`SCANFIX_ENABLE`（默认关）·"""
     if not bool(getattr(cfg, 'SCANFIX_ENABLE', False)):
         return rgb
     a = np.asarray(rgb, np.float64)

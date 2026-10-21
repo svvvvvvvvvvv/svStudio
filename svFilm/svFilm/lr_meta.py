@@ -1,18 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""C2 元数据：把 svFilm 的 report + 平基底片，写成 Lightroom 能消费的文件。
-
-产物（默认与 TIFF 同目录）：
-  <stem>.svfilm.json      全量 recipe + 最终 LR develop settings + 溯源
-  <stem>.xmp              crs: photo sidecar（RAW 可读；JPEG/TIFF 需插件/嵌入）
-  <stem>.lrpreset.xmp     可导入 LR 的 develop preset
-  _svfilm_manifest.json   整批清单（CLI 批量时写）
-
-★ 设计要点（与 `E:\lr_agent\调研_svFilm_Lightroom分工.md` 一致）：
-  1. LR 只有一条 tone curve ⇒ 基底曲线与大师曲线在**生成端** compose，不靠 preset 叠加；
-  2. `lr.settings` 是**最终扁平表**；`components` 只作溯源，插件不要按顺序二次套；
-  3. `baked` 告诉 LR 哪些层已经烘进像素（颗粒/光晕必须 GrainAmount=0）；
-  4. 不写 catalog、不启动 LR、不修改原图。
-"""
+"""C2 元数据：把 svFilm 的 report + 平基底片，写成 Lightroom 能消费的文件。"""
 from __future__ import annotations
 
 import hashlib
@@ -170,11 +157,7 @@ def build_metadata(report: dict, image: str | Path, *,
                    preset_name: str = "svFilm",
                    grain_owner: str = "svfilm",
                    halation_owner: str = "svfilm") -> dict:
-    """`flat`：只烘负片介质；`print_neutral`：再烘中性相纸；`full`：连大师层一起烘。
-
-    v2 契约：`owners` 声明每一层归谁；`baked` 只描述**已经烘进像素**的东西。
-    `master` 参数仍是“LR 侧的 master settings”，不是 svFilm 的大师层。
-    """
+    """`flat`：只烘负片介质；`print_neutral`：再烘中性相纸；`full`：连大师层一起烘。"""
     if mode not in ("flat", "print_neutral", "print_full", "full"):
         raise ValueError("mode 只能是 flat / print_neutral / print_full / full")
     medium_baked = mode in ("print_neutral", "print_full", "full")
@@ -278,7 +261,6 @@ def build_metadata(report: dict, image: str | Path, *,
             "master_tone": "svfilm" if master_baked else "lr",
             "master_color": "svfilm" if master_baked else "lr",
             # ★ 白点：`flat` 是「负片分位归一」出来的偏色底 ⇒ 白点归 LR；
-            #   只要印相烘进像素（print_neutral / print_full / full），白点就是 svFilm 定的。
             "wb": "svfilm" if medium_baked else "lr",
             "crop": "lr",
             "lens": "lr",
@@ -384,8 +366,6 @@ def write_manifest(items: list[dict], path: str | Path,
 
 
 # ---------------------------------------------------------------------------
-# Lua 侧：给 LR 插件直接 dofile 的元数据（避免在 Lua 里塞 JSON 解析器）
-# ---------------------------------------------------------------------------
 def _lua_scalar(v: Any) -> str:
     if isinstance(v, bool):
         return "true" if v else "false"
@@ -417,10 +397,7 @@ def _lua_table(obj: Any, indent: int = 1) -> str:
 
 
 def write_lua(meta: dict, path: str | Path) -> str:
-    r"""写 `<stem>.svfilm.lua`：LR 插件 `dofile` 后拿 `settings` 直接 apply。
-
-    曲线在 Lua 侧转成 SDK 常用的**扁平列表** `[x,y,x,y,...]`；JSON 仍保留 `[[x,y],...]`。
-    """
+    """写 `<stem>.svfilm.lua`：LR 插件 `dofile` 后拿 `settings` 直接 apply。"""
     path = Path(path)
     settings = dict(meta["lr"]["flat_settings"])
     for key, pts in meta["lr"]["settings"].items():
@@ -443,10 +420,7 @@ def write_lua(meta: dict, path: str | Path) -> str:
 
 
 def write_lr_txt(meta: dict, path: str | Path) -> str:
-    r"""写 `<stem>.svfilm.lr.txt`：给 LR 插件**逐行 key=value** 读，不依赖 JSON/Lua 解析。
-
-    曲线 = 逗号分隔的扁平列表 `x,y,x,y,...`；插件自己转成 SDK 表。
-    """
+    """写 `<stem>.svfilm.lr.txt`：给 LR 插件**逐行 key=value** 读，不依赖 JSON/Lua 解析。"""
     path = Path(path)
     settings = dict(meta["lr"]["flat_settings"])
     for key, pts in meta["lr"]["settings"].items():

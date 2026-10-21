@@ -1,9 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""入口关口 + 出口。**整个工程里唯一允许出现"机型"三个字的地方。**
-
-入口做完三件事，之后下游不许再关心这张图是谁拍的：① 解码（RAW 走 rawpy；JPG 走 PIL）② IDT
-（白平衡 + 色彩矩阵 + 黑白电平：RAW 由 rawpy 一次做完，JPG 已在相机里做完 ⇒ "显式降级"）③ 归一。
-"""
+"""入口关口 + 出口。**整个工程里唯一允许出现'机型'三个字的地方。**"""
 from __future__ import annotations
 
 import io as _stdlib_io
@@ -94,16 +90,7 @@ def load_std(path, max_side=C.MAX_SIDE):
 
 
 def load_raw(path, max_side=C.MAX_SIDE, wb=None):
-    r"""RAW → **场景线性**（只有这一条路，没有开关）。
-
-    ★ `wb`（可选）= 该**预设**自己的白平衡：`{white_balance, temperature, tint}`；
-      缺省/None ⇒ 回退全局 `PUBLIC_WB*`。★ 这是“每条预设一个白点”的落点。
-
-    ★★ **只留一条：RAW → 场景线性 → 引擎**（public GUI 的加载口径）：自己那条入口提亮路是死代码；
-      预设的印相曝光 `pe` 按**这个输入**标定，提亮好几档就过曝发白。
-
-    ★ `config.FAST_RAW=True`（默认）走 `fastraw.decode`：RAW 只开一次，WB 适应/tint/空间换算
-      合成一次 3×3 —— **数学等价**，26 MP 上省 10 s 量级。关掉即回到 vendor 原路。"""
+    """RAW → **场景线性**（只有这一条路，没有开关）。"""
     import rawpy
     from . import cameras
     from . import spektra

@@ -1,15 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""命令行入口。
-
-  python -m svFilm.cli one <img> -o out.jpg          # 单张成片（JPEG）
-  python -m svFilm.cli dir <in> -o <out> [--jobs 4]  # 批处理成片
-  python -m svFilm.cli lrbase <RAW...> -o <out>      # 给 LR 的 16-bit TIFF + 元数据（生产档）
-  python -m svFilm.cli stocks                         # 列出胶片风格
-
-★ 2026-10-21 清理：`flat` / `print_neutral` / `lrbase-fit` / `lrbase-preview` / `calib` /
-  `service` / `selftest` 全部删除 —— 它们都在"用形状旋钮追位置目标"那条老路上。
-  现在只有一条生产链：**介质在 sfFilm 烘死，落点/彩度/冷暖归 LR**。
-"""
+"""命令行入口。"""
 from __future__ import annotations
 
 import argparse
@@ -22,11 +12,7 @@ from . import config as C, io, presets
 
 
 def auto_jobs(max_side):
-    r"""`--jobs 0`（缺省）时的并发数 —— **按图幅定，不是按核数**。
-
-    实测（4 张 @2048，32 核 / 31.8 GB）：jobs=1 → 113 s，2 → 61 s，4 → **33 s**，
-    **6 → 33 s（不再增长）** ⇒ 瓶颈是**内存带宽**，4 之后再加进程纯属互相挤。
-    """
+    """`--jobs 0`（缺省）时的并发数 —— **按图幅定，不是按核数**。"""
     try:
         n = int(max_side) if max_side else 0
     except (TypeError, ValueError):

@@ -1,9 +1,5 @@
 # -*- coding: utf-8 -*-
-r"""svFilm 色彩基元（全自实现，不引用既有管线代码）。
-
-三个域（全项目只允许这三个名字）：`lin` 场景线性（白点 1.0，中灰 ≈ 0.18）· `disp` 0~1 sRGB ·
-`L*` Lab 明度（只看不算）。图像统一 float64 ndarray (H, W, 3)。
-"""
+"""svFilm 色彩基元（全自实现，不引用既有管线代码）。"""
 import numpy as np
 
 M_RGB2XYZ = np.array([

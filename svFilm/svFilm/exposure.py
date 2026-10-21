@@ -1,11 +1,5 @@
 # -*- coding: utf-8 -
-r"""★★★ **本模块是「曝光主人」的落点**：中灰锚 + 它让位给人本。
-
-`install()` 把引擎的 `measure_autoexposure_ev` 包一层：`ev' = (1 - w) * ev + b` ⇒ `2**ev'` 不再是
-"把测光区拉到 0.184"，而是"**整卷偏置 `+b` 档打底 + 权重 `(1-w)` 让测光逐图微调**"；锚常数设 0.0 ⇒
-逐位等于修复前。⚠ `install()` **必须无条件执行**（原来挂在 `PERSON_METERING` 的 if 之后 ⇒ 关掉
-"测光看人"会连锚一起关掉）；调用点 = `presets._person_metering()`（按人物掩膜加权）。
-"""
+"""★★★ **本模块是「曝光主人」的落点**：中灰锚 + 它让位给人本。"""
 from __future__ import annotations
 
 import numpy as np
@@ -15,17 +9,13 @@ _INSTALLED = [False]
 _REGIME = ['person']    # 'face' / 'person' —— 决定用哪一对 (w, b)；渲染串行，逐张设置
 
 # ★★ 掩膜占比下限（`m.sum()/ref`）：低于它 ⇒ **弃权**走 `matrix`（与外层守卫同一落点）。
-#   `ref` 默认 = 整幅像素数；**第二级找脸兜底**会传"检测框面积"当 `ref` —— 理由：兜底的那张脸
-#   本来就可能只占画面千分之几（实测 1150 = 0.20%），拿整幅当分母必然把它误判成"掩膜坏了"；
-#   而这时**"脸在哪"已经有专门检测器背书**，合理性的分母应当是"我们真正查找过的范围"。
 _MIN_MASK_COVER = 0.003
 _COVER_REF = [None]     # None ⇒ 用 m.size（默认口径，逐位等于修复前）
 _ABSTAIN = [0, None]    # [次数, 上次原因] —— 观察者状态，只计数不改画面
 
 
 def _anchor_wb(regime='person'):
-    r"""读 `regime='face'` 时取 `EXPOSURE_ANCHOR_*_FACE`（缺键 ⇒ 退回人档）；**每次动态读** ⇒
-    同一进程可 A/B；读不到 ⇒ `(0.0, 0.0)` = 逐位等于修复前。"""
+    """读 `regime='face'` 时取 `EXPOSURE_ANCHOR_*_FACE`（缺键 ⇒ 退回人档）；**每次动态读** ⇒"""
     try:
         from . import config as _C
         if regime == 'face':
@@ -53,10 +43,7 @@ def regime():
 
 
 def set_mask(m, regime='person', cover_ref=None):
-    r"""渲染前把这张的测光掩膜放进来（`None` ⇒ `subject` 退回原实现）。
-
-    `cover_ref` = 覆盖率判据的分母（像素数）；`None` ⇒ 整幅（**默认口径，逐位等于修复前**）。
-    ★ 只有"第二级找脸兜底"会传一个更小的 `cover_ref`（= 检测框面积）—— 见 `_MIN_MASK_COVER` 注记。"""
+    """渲染前把这张的测光掩膜放进来（`None` ⇒ `subject` 退回原实现）。"""
     _MASK[0] = None if m is None else np.asarray(m, np.float32)
     _REGIME[0] = 'face' if str(regime) == 'face' else 'person'
     _COVER_REF[0] = None if cover_ref is None else float(cover_ref)
@@ -82,14 +69,7 @@ def _reset_abstain():
 
 
 def install():
-    r"""把引擎的测光换成「支持 `subject` + 中灰锚」的版本。幂等。
-
-    ★ dev（6cd00c8）把**拍摄端**测光从「显示域 RGB」搬到了「胶片 raw」：
-    `filming.py` 现在 from-import `measure_raw_autoexposure_ev`（raw 已按中灰=1 归一）。
-    所以这里**两个入口都包**：显示域那个（预览/GUI 还会用）+ raw 那个（生产真正走的路）。
-    raw 的 `subject` 在 dev 里没有实现（`_metered_value` 返回 None ⇒ EV=0）——这就是那个
-    "静默失效（EV=0）"的落点。
-    """
+    """把引擎的测光换成「支持 `subject` + 中灰锚」的版本。幂等。"""
     if _INSTALLED[0]:
         return True
     try:
@@ -121,7 +101,6 @@ def install():
             m = cv2.resize(mask, (W, H), interpolation=cv2.INTER_AREA)
         m = np.clip(m.astype(np.float64), 0.0, 1.0)
         # ★★ 掩膜太小时 ⇒ **弃权**退回 `matrix`（同一落点）+ 计数告警。
-        #   分母 = `_COVER_REF`（默认整幅；第二级兜底传"检测框面积"，见 `_MIN_MASK_COVER` 注记）。
         _ref = float(m.size if _COVER_REF[0] is None else _COVER_REF[0])
         cover = float(m.sum()) / max(_ref, 1.0)
         if cover < _MIN_MASK_COVER:
@@ -145,18 +124,10 @@ def install():
         return anchor_ev(ev)
 
     def measure_raw_autoexposure_ev(raw, method='center_weighted', target=1.0):
-        r"""dev 生产路径：`raw` 是胶片曝光（中灰=1），按掩膜测 `mean(raw)`。
-
-        ⚠ 1×1 中灰探针（`filming._midgray_autoexposure_scale()` 建的）**必须原样返回**：
-        dev 对未知 method 返回 0 EV，这里若加锚会把印相归一整体平移。
-        """
+        """dev 生产路径：`raw` 是胶片曝光（中灰=1），按掩膜测 `mean(raw)`。"""
         if _orig_raw is None:
             return 0.0
         # ★★ 中灰探针**必须最优先判**：`filming._midgray_autoexposure_scale()` 用 1×1 raw
-        #    问"印相归一倍数"。若先走下面的掩膜/锚分支（无脸时 `_MASK[0] is None`）⇒ 探针
-        #    拿到的是**锚**（subject 锚 +1.118 EV）⇒ 印相归一整体平移 2^1.118 = 2.17×
-        #    ⇒ 平场 18% 灰从 L*88.5 掉到 70.1、暗部 7.1→2.9（10-18 升级后实测）。
-        #    dev 的语义 = 探针原样返回（EV=0）；锚只用于**真正在测的图**。
         arr = np.asarray(raw)
         field = np.mean(arr, axis=2) if arr.ndim == 3 else arr
         if field.ndim != 2 or field.size < 16:        # 中灰探针，不是整幅
