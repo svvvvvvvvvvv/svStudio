@@ -1,0 +1,36 @@
+{
+  "_note": "hist6 的 Vibrance 30 折中版：总 EMD 略差 0.004，但 B 通道更好、视觉不偏艳。",
+  "source": "print_neutral_master_hist6_v30",
+  "settings": {
+    "ColorGradeMidtoneHue": 45,
+    "ColorGradeMidtoneSat": 55,
+    "Vibrance": 30,
+    "SaturationAdjustmentBlue": -10,
+    "SaturationAdjustmentYellow": -10
+  },
+  "per_image_blacks": {
+    "DSCF1150": -25,
+    "DSCF1231": -25,
+    "DSCF1289": -5,
+    "DSCF1307": -15,
+    "DSCF1422": -25,
+    "DSCF1526": -5,
+    "DSCF1608": -25,
+    "DSCF1627": -25,
+    "DSCF1665": -25,
+    "DSCF1726": -5,
+    "DSCF1772": -5
+  },
+  "per_image_exposure": {
+    "DSCF1231": -0.2,
+    "DSCF1422": -0.2
+  },
+  "per_image_shadows": {
+    "DSCF1150": 10,
+    "DSCF1307": 10,
+    "DSCF1422": 10,
+    "DSCF1627": -10,
+    "DSCF1726": 10,
+    "DSCF1772": 10
+  }
+}
