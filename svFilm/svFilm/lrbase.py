@@ -283,7 +283,8 @@ def render_flat(lin: np.ndarray, stock: str, cfg=C, *,
 
 
 def render_print_neutral(lin: np.ndarray, stock: str, cfg=C, *,
-                         overrides: dict | None = None) -> FlatResult:
+                         overrides: dict | None = None,
+                         grain_rms: float | None = None) -> FlatResult:
     r"""film_print_neutral：跑完整印相，但**固定印相曝光、不做人脸测光**。
 
     这是 `presets.render(..., print_exposure=None)` 的薄包装：
@@ -292,6 +293,8 @@ def render_print_neutral(lin: np.ndarray, stock: str, cfg=C, *,
     - LR 拿到的是“中性印相”，master 曝光/反差/分色全部归 LR。
     """
     ov = dict(presets._base_overrides(cfg, stock=stock))
+    if grain_rms is not None:
+        ov['film_render.grain.rms_granularity'] = [float(grain_rms)] * 3
     if overrides:
         ov.update(overrides)
     disp = presets.render(lin, stock, cfg, print_exposure=None,
@@ -317,7 +320,8 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
             overwrite: bool = True,
             mode: str = "flat",
             grain_owner: str = "svfilm",
-            halation_owner: str = "svfilm") -> dict:
+            halation_owner: str = "svfilm",
+            grain_rms: float | None = None) -> dict:
     r"""单张：RAW/JPG → TIFF + JSON/XMP/lrpreset。
 
     mode:
@@ -348,7 +352,8 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
         suffix = "_flat.tif"
         note = "scan_film 线性 → 倒数/分位归一 → sRGB 编码；未做印相"
     else:
-        flat = render_print_neutral(s.lin, name, C, overrides=overrides or None)
+        flat = render_print_neutral(s.lin, name, C, overrides=overrides or None,
+                                    grain_rms=grain_rms)
         suffix = "_print.tif"
         note = "中性印相（固定 print_exposure；不跑 person_pe/动态 PE）"
     out_dir = Path(out_dir) if out_dir is not None else path.parent
@@ -375,6 +380,7 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
             "scan": "spektrafilm/scan_film",
             "grain_owner": grain_owner,
             "halation_owner": halation_owner,
+            "grain_rms": grain_rms,
         },
         "flat": {
             "lo_q": float(lo_q),

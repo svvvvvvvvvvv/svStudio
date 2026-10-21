@@ -224,7 +224,7 @@ def _lrbase_task(t):
     from . import lrbase
     (p, out_dir, stock, max_side, src, lo, hi, gains, headroom,
      base_curve, master, preset_name, write_preset,
-     mode, grain_owner, halation_owner) = t
+     mode, grain_owner, halation_owner, grain_rms) = t
     try:
         r = lrbase.run_one(
             p, out_dir=out_dir, stock=stock, max_side=max_side, src=src,
@@ -232,7 +232,7 @@ def _lrbase_task(t):
             base_curve=base_curve, master=master,
             preset_name=preset_name, write_preset=write_preset,
             mode=mode, grain_owner=grain_owner,
-            halation_owner=halation_owner)
+            halation_owner=halation_owner, grain_rms=grain_rms)
         return (p, r, None)
     except Exception as e:                                  # noqa: BLE001
         return (p, None, '%s: %s' % (type(e).__name__, e))
@@ -288,7 +288,7 @@ def cmd_lrbase(args):
         tasks.append((p, od, args.stock, args.max_side, args.src,
                       args.lo, args.hi, gains, args.headroom,
                       base_curve, master, preset_name, not args.no_preset,
-                      args.mode, args.grain_owner, args.halation_owner))
+                      args.mode, args.grain_owner, args.halation_owner, args.grain_rms))
 
     jobs = max(1, int(args.jobs))
     print('lrbase 共 %d 张，并发 %d；输出 %s' % (len(ps), jobs, out_dir or '（各自目录）'))
@@ -413,6 +413,8 @@ def build_parser():
                    dest='grain_owner', help='颗粒归谁（默认 svfilm）')
     p.add_argument('--halation-owner', default='svfilm', choices=('svfilm', 'lr'),
                    dest='halation_owner', help='halation 归谁（默认 svfilm）')
+    p.add_argument('--grain-rms', type=float, default=None, dest='grain_rms',
+                   help='svFilm 颗粒 rms（默认用预设值；风格批可用 18）')
     p.add_argument('--base-curve', default=None, dest='base_curve',
                    help='lrbase-fit 产出的 JSON（缺省 = identity）')
     p.add_argument('--master', default=None, help='大师设置 JSON（可选）')
