@@ -121,8 +121,11 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
 
     if _entry is not None:
         disp = _entry['disp']
+        ink = None
     else:
-        disp = presets.render(np.clip(s.lin, 0.0, None), name, cfg)
+        # ★★ B 方案：归一化在**印相端**（解 pe 把落点拉到固定档位），不在相机端。
+        disp = presets.render_key(np.clip(s.lin, 0.0, None), name, cfg)
+        ink = presets.last_key()
         if _ckey is not None:
             cache.put(_ckey, disp=disp)
 
@@ -133,7 +136,14 @@ def run_from(sample, cfg=C, stock=None, out=None, t0=None, path=None, cache=None
         stock=name,
         stock_label=presets.label_of(name)[0],
         stock_desc=presets.label_of(name)[1],
-        print_exposure=presets.pe_of(name),
+        print_exposure=(ink or {}).get('pe', presets.pe_of(name)),
+        print_exposure_nominal=presets.pe_of(name),
+        print_exposure_ev=(ink or {}).get('ev'),
+        key_p50=(ink or {}).get('p50'),
+        key_white=(ink or {}).get('white'),
+        key_black=(ink or {}).get('black'),
+        key_hit_bound=(ink or {}).get('hit_bound'),
+        key_both_dead=(ink or {}).get('both_dead'),
         stage_cache=dict(hit=bool(_entry is not None)),
         ms=(time.perf_counter() - t0) * 1000.0,
     )

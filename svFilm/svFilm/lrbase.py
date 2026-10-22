@@ -118,7 +118,7 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
 
     flat = render_print_full(s, name, C, path=path)
     suffix = "_full.tif"
-    note = "完整印相（固定 print_exposure）；颗粒/光晕/颜色已烘；落点与彩度归 LR"
+    note = "完整印相（**逐图印相落点**，见 print 段）；颗粒/光晕/颜色已烘"
     out_dir = Path(out_dir) if out_dir is not None else path.parent
     out_dir.mkdir(parents=True, exist_ok=True)
     stem = _safe_stem(path) + "_svFilm"
@@ -126,6 +126,7 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
     if tif_path.exists() and not overwrite:
         raise FileExistsError(tif_path)
 
+    _r = flat.report or {}
     report = {
         "mode": "print_full",
         "stock": name,
@@ -134,7 +135,15 @@ def run_one(path: str | Path, out_dir: str | Path | None = None, *,
         "camera": s.cam,
         "entry_bias_ev": (s.cam or {}).get("idt_bias_ev"),
         "fuji_dr": (s.cam or {}).get("fuji_dr"),
-        "print_exposure": presets.pe_of(name),
+        # ★★ 记账：这里是**实际**印相曝光（B 方案由 render_key 逐图解出），不是标称值。
+        "print_exposure": _r.get("print_exposure", presets.pe_of(name)),
+        "print_exposure_nominal": _r.get("print_exposure_nominal", presets.pe_of(name)),
+        "print_exposure_ev": _r.get("print_exposure_ev"),
+        "key_p50": _r.get("key_p50"),
+        "key_white": _r.get("key_white"),
+        "key_black": _r.get("key_black"),
+        "key_hit_bound": _r.get("key_hit_bound"),
+        "key_both_dead": _r.get("key_both_dead"),
         "film": {
             "stock": name,
             "paper": presets.label_of(name)[1],

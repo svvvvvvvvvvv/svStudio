@@ -287,6 +287,21 @@ def build_metadata(report: dict, image: str | Path, *,
             "engine": "spektrafilm",
             "disclaimer": "settings 为最终扁平表；components 仅作溯源，不要按顺序二次套用",
         },
+        # ★★ 印相落点记账（10-22 B 方案）：**实际值**，不是标称值。
+        #    以前这里没有这一段，导致"SF 到底把这张印多亮"事后不可审计。
+        "print": {
+            "normalize_at": "print",
+            "exposure": report.get("print_exposure"),
+            "nominal": report.get("print_exposure_nominal"),
+            "ev": report.get("print_exposure_ev"),
+            "key_p50": report.get("key_p50"),
+            "white_pct": report.get("key_white"),
+            "black_pct": report.get("key_black"),
+            "hit_bound": report.get("key_hit_bound"),
+            "both_dead": report.get("key_both_dead"),
+            "note": ("B 方案：印相端把全图中位拉到固定档位（默认 55）；"
+                     "两端不驱动求解，只记账 —— 逆光允许爆、夜景允许堵"),
+        },
     }
 
 
@@ -311,6 +326,11 @@ def write_sidecar_xmp(meta: dict, path: str | Path) -> str:
     desc.set(f"{{{SVF_NS}}}bakedColor", str(meta["baked"]["color_mix"]).lower())
     desc.set(f"{{{SVF_NS}}}masterTone", str(meta["baked"].get("master_tone", False)).lower())
     desc.set(f"{{{SVF_NS}}}owners", json.dumps(meta.get("owners") or {}, ensure_ascii=False))
+    _pr = meta.get("print") or {}
+    desc.set(f"{{{SVF_NS}}}printExposure", str(_pr.get("exposure")))
+    desc.set(f"{{{SVF_NS}}}printNominal", str(_pr.get("nominal")))
+    desc.set(f"{{{SVF_NS}}}printEV", str(_pr.get("ev")))
+    desc.set(f"{{{SVF_NS}}}keyP50", str(_pr.get("key_p50")))
     ET.indent(root, space=" ")
     path.write_text(ET.tostring(root, encoding="unicode") + "\n", encoding="utf-8")
     return str(path)

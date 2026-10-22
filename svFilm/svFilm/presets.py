@@ -484,28 +484,120 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=
         return _post_scan(
             _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides), cfg)
 
+def render_safe(lin, name, cfg=C, *, black_max=3.0, p95_max=96.0, iters=6):
+    r"""安全曝光：两端都不许死，取"最暗可行解"（余量留给 LR）。
+
+    压黑 <= black_max 的前提下尽量暗（最大 pe）；若白端仍 > p95_max 再往暗收。
+    若压黑被白端保护顶破 5%，回退到最后一次压黑合格的解（宁可白端高一点也不压死暗部）。
+    """
+    import numpy as _np
+
+    def _m(pe):
+        d = render(lin, name, cfg, print_exposure=pe)
+        L = _np.asarray(_lab_of(d))
+        return d, L
+
+    base = pe_of(name) * float(getattr(cfg, 'SPEK_PE_SHIFT', 1.0) or 1.0)
+    lo, hi = base * 0.20, base * 3.00
+    best = None
+    for _ in range(iters):
+        mid = 0.5 * (lo + hi)
+        d, L = _m(mid)
+        if float(100 * (L < 5).mean()) <= black_max:
+            best = (mid, d, L)
+            lo = mid
+        else:
+            hi = mid
+    if best is None:
+        best = (base,) + _m(base)
+    pe, d, L = best
+    guard = best
+    # ★ 暗端下限：p5 太低就提亮（最多 3 次）
+    for _ in range(3):
+        if float(_np.percentile(L, 5)) >= float(getattr(cfg, 'SAFE_P5_MIN', 6.0)):
+            break
+        pe *= 0.9
+        d, L = _m(pe)
+    for _ in range(3):
+        if float(_np.percentile(L, 95)) <= p95_max:
+            break
+        pe *= 1.15
+        d, L = _m(pe)
+        if float(100 * (L < 5).mean()) > 5.0:
+            pe, d, L = guard          # ★ 回退：不为了白端把暗部压死
+            break
+    return d
 
 
+# ---------------------------------------------------------------------------
+# ★★ B 方案（10-22 SV 定）：**归一化放在印相端**，由 pe 把每张的落点拉到固定档位。
+#    真实照相馆就是这么干的（printer lights 每帧一根），不是相机端归一化。
+
+_LAST_KEY: dict = {}
 
 
+def last_key():
+    """最近一次 `render_key` 的记账：实际 pe / ΔEV / 落点 / 两端 / 是否撞边界。"""
+    return dict(_LAST_KEY)
 
 
-# ★★★ `print_exposure` 的**两个写法**（运行时字段路径 / 预设 JSON 里的段名）—— 都是"印相曝光"。
-_PE_OVERRIDE_KEYS = ('enlarger.print_exposure', 'simulation.print_exposure')
+def render_key(lin, name, cfg=C, *, target=None, span_ev=None, iters=None):
+    r"""印相落点：解 `print_exposure`，让**全图中位 L\***落到固定档位（默认 55）。
+
+    与旧 `render_safe` 的三点差别：
+      1. 目标从「压黑 ≤3% 下最暗」改成「**p50 = 固定档位**」（产品常数，不是每张审美值）；
+      2. 搜索夹在 `pe_of(name) × 2^±span_ev`（默认 ±1.5 EV），到头就标 `hit_bound`；
+      3. **记账**：实际 pe / ΔEV / p50 / 白 / 黑 写进 `_LAST_KEY`
+         （旧版报告里写的是**标称值**，等于没记）。
+
+    两端**不再驱动求解**，只做事实记录 —— "逆光就该爆"（10-22 定）。
+    """
+    import numpy as _np
+
+    base = pe_of(name) * float(getattr(cfg, 'SPEK_PE_SHIFT', 1.0) or 1.0)
+    tgt = float(getattr(cfg, 'KEY_TARGET_L', 55.0) if target is None else target)
+    span = float(getattr(cfg, 'KEY_SPAN_EV', 1.5) if span_ev is None else span_ev)
+    n = int(getattr(cfg, 'KEY_ITERS', 7) if iters is None else iters)
+
+    def _one(pe):
+        d = render(lin, name, cfg, print_exposure=pe)
+        L = _np.asarray(_lab_of(d))
+        return dict(pe=float(pe), d=d,
+                    p50=float(_np.percentile(L, 50)),
+                    white=float(100.0 * (L > 95).mean()),
+                    black=float(100.0 * (L < 5).mean()))
+
+    lo, hi = float(_np.log2(base) - span), float(_np.log2(base) + span)
+    best = None
+    for _ in range(max(1, n)):
+        m = 0.5 * (lo + hi)
+        cur = _one(2.0 ** m)
+        if best is None or abs(cur['p50'] - tgt) < abs(best['p50'] - tgt):
+            best = cur
+        if cur['p50'] > tgt:        # 太亮 ⇒ 要更暗 ⇒ pe 更大
+            lo = m
+        else:
+            hi = m
+
+    if best is None:                                            # 理论上到不了
+        best = _one(base)
+
+    _LAST_KEY.clear()
+    _LAST_KEY.update(
+        pe=best['pe'], nominal=base,
+        ev=float(_np.log2(best['pe'] / base)),
+        p50=best['p50'], white=best['white'], black=best['black'],
+        target=tgt, span_ev=span,
+        hit_bound=bool(abs(best['p50'] - tgt) > 0.5),
+        both_dead=bool(best['white'] > 20.0 and best['black'] > 20.0),
+    )
+    return best['d']
 
 
-
-
-
-
-
-
-
-
-
-
-
-
+def _lab_of(disp):
+    import numpy as _np
+    from . import color as _c
+    return _np.asarray(_c.to_lab(_np.ascontiguousarray(disp)))[..., 0]
 
 
 def _post_scan(out, cfg):
