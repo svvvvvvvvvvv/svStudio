@@ -1,4 +1,4 @@
-# 依赖与构建产物
+﻿# 依赖与构建产物
 node_modules/
 dist/
 build/
@@ -28,3 +28,9 @@ svstudio_启动日志.txt
 #     而它实际在 `svFilm/svFilm/data/presets/` ⇒ 那样写**匹配不到**（我第一次就写错了）。
 #     不带斜杠的 `_wgate_backup/` 才是"任意层级同名目录"。
 _wgate_backup/
+
+# tools/lrfinish 的研究文档：research/out 被上面的 out/ 规则误伤，这里放行 md
+!svFilm/lrfinish/research/out/
+!svFilm/lrfinish/research/out/*.md
+
+

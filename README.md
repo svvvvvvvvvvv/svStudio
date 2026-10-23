@@ -31,12 +31,22 @@ svStudio/
 ├─ _check/               自检：静态检查 + 真浏览器布局检查
 ├─ svFilm/               引擎（git subtree，来自独立的 svFilm 仓库）
 │    ├─ svFilm/          Python 包本体
+│    ├─ lrfinish/        LR 收尾（原 E:\lr_agent，2026-10-23 并入）
 │    └─ _tools/spektrafilm/   第三方胶片引擎，原样引用，**不改**
 ├─ LICENSE               MIT
 ├─ 启动svStudio.bat       双击开台子
 ├─ 启动引擎.bat           单看引擎日志 / 单独重启引擎时用
 └─ 体检.bat               起不来时双击它，会把每步结果打出来
 ```
+
+### `svFilm/lrfinish/`（LR 收尾）
+
+原 `E:\lr_agent`，2026-10-23 并入本仓库，现在位于 `svFilm/lrfinish/`；`E:\lr_agent` 是指向它的 junction（旧路径继续可用）。
+
+- **定位**：不是引擎包（`svFilm/svFilm/` 是引擎），是 LR 侧的收尾工序（曲线/通道/分级/HSL/肤色）。
+- **多预设**：`profiles/<id>/profile.json`（`kurai` 先跑，`hamada` 后加）；加预设只加数据，不改代码。
+- **文档在仓库外**：设计/调研/迭代记录统一放 `E:\Debug_svStudio\lr_agent_docs\`（本目录只放工程代码）。
+- ⚠ 运行依赖 `_pylibs/`、调试导出 `_masktest/`、媒体图不进 git（见 `svFilm/lrfinish/.gitignore`）。
 
 ### 从零跑起来
 

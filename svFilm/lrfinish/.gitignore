@@ -1,0 +1,32 @@
+# lrfinish（原 E:\lr_agent）—— 运行依赖与调试产物不进仓库
+
+# Python 依赖（本地安装的 opencv / wheels）
+_pylibs/
+_wheels/
+
+# 蒙版调试导出（几十 MB 的 tif）
+_masktest/
+
+# Python 缓存
+__pycache__/
+*.pyc
+
+# 日志
+*.log
+
+# 媒体：截图、导出图、npy
+*.tif
+*.tiff
+*.png
+*.jpg
+*.jpeg
+*.npy
+*.zip
+*.7z
+
+# 本地临时
+_tmp/
+_tmp_*/
+
+# 运行时桥队列
+lr_cmd/
