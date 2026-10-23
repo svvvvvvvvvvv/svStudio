@@ -210,6 +210,11 @@ def solve_one(src, stem, base0, basic_row=None):
         rec['basic'] = b
         rec['tried'] = []
         rec['_idn_tif'] = ft
+        # ★ Basic 已经把两端修好时，曲线的上限要用**Basic 之后**的状态，
+        #   不能用原底片（否则曲线会把 Basic 刚压下去的贴白又推回来）。
+        wht_lim = max(WHITE_P90, min(base0.get('white', 0.0), base.get('white', 0.0)))
+        blk_lim = max(BLACK_P90, min(base0.get('black', 0.0), base.get('black', 0.0)))
+        rec['black_lim'], rec['white_lim'] = blk_lim, wht_lim
     else:
         tried = []
         idn = None
