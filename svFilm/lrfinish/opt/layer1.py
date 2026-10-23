@@ -252,7 +252,9 @@ def solve_one(src, stem, base0):
     rec['P'] = P
 
     def ok(d):
-        return d['black'] <= blk_lim + 0.05
+        # 两端都是硬护栏：曲线/曝光不许把贴白或压黑推得比底片更糟
+        return (d['black'] <= blk_lim + 0.05
+                and d['white'] <= wht_lim + 0.05)
 
     # ④ 曲线强度：由暗部余量定，不由"光比到靶"定
     #    停在"他的 P25 = 58"（不算低的那条线），不追他的中位 63。
