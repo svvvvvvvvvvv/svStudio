@@ -110,6 +110,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--profile', default='kurai', help='预设 id 或 profile.json 路径')
     ap.add_argument('--out-root', default='', help='产物根（默认 paths.WORK）')
+    ap.add_argument('--factor', type=float, default=None, help='走目标的比例（默认 1/3；试验可 1/2 或 1）')
+    ap.add_argument('--sat-max', type=float, default=None, help='单轮饱和度上限（默认 5；试验可 10）')
     a = ap.parse_args()
     prof = profile_io.load(a.profile)
     g = profile_io.grading(prof)
@@ -123,6 +125,10 @@ def main():
     SHADOW_HUE, HIGH_HUE = int(g['shadow_hue']), int(g['high_hue'])
     FACTOR, CLAMP = float(g['factor']), float(g['clamp'])
     SAT_MAX, SKIN_MAX = float(g['sat_max']), float(g['skin_max'])
+    if a.factor is not None:
+        FACTOR = a.factor
+    if a.sat_max is not None:
+        SAT_MAX = a.sat_max
     GR = str(profile_io.calib(prof, 'grade_rel'))
     GAIN = str(profile_io.calib(prof, 'split_gain'))
     print('预设 %s  暗轮 %d° / 亮轮 %d°  产物 %s'

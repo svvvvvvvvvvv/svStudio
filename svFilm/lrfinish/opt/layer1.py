@@ -51,6 +51,8 @@ BATCH = str(paths.BATCH_ROOT / '_b2048_1022')
 OUT = str(paths.WORK / 'layer1')
 XS = list(range(0, 256, 16))
 TOE, SHOULDER = 0.0, 0.0          # 主曲线趾钩/肩滚（0 = 原来的纯 S；由 profile 覆盖）
+G_MIN = 0.80                      # g 的强度下限（0.80 = 旧行为；试验可放到 0.75）
+FORCE_G = None                    # 仅试验：跳过搜索，强制用这个 g
 
 # 以下默认值 = 鹿井；main() 会按 --profile 覆盖
 FACE_LO, FACE_HI = 55.0, 67.0      # 脸 p50 的护栏带（硬门是上沿 67）
@@ -290,8 +292,8 @@ def solve_one(src, stem, base0):
                 note = 'g=%.2f（贴近暗部上限 %.2f%%，停）' % (cand, blk_lim)
                 break
             cand = round(cand - 0.03, 2)
-            if cand < 0.80:
-                note = 'g=%.2f（已到强度下限，光比 %.1f）' % (g, d['span'])
+            if cand < G_MIN:
+                note = 'g=%.2f（已到强度下限 %.2f，光比 %.1f）' % (g, G_MIN, d['span'])
                 break
         return g, final, ysf, fpath, note
 
@@ -300,13 +302,23 @@ def solve_one(src, stem, base0):
         g, final, ysf = 1.0, base, None
         note = '光比 %.1f 已到他的 P25(%.0f)，零动作' % (base['span'], SPAN_TARGET)
     else:
-        g, final, ysf, fpath, note = run_curve(0.0, 0.0)
-        # ★ 纯 S 被暗部上限卡死时，才用趾钩/肩滚去"买"对比（教程：提暗后再压黑 / 高光稍压）
-        if g == 1.0 and (TOE or SHOULDER):
-            g2, f2, y2, p2, n2 = run_curve(TOE, SHOULDER)
-            if g2 != 1.0:
-                g, final, ysf, fpath = g2, f2, y2, p2
-                note = n2 + '（纯 S 买不起，用趾钩/肩滚买到 g=%.2f）' % g2
+        if FORCE_G is not None:
+            ys = curve(P, FORCE_G, TOE, SHOULDER)
+            od = os.path.join(OUT, stem, 'force_g%.2f' % FORCE_G)
+            ff, rr = apply_state(src, od, ev, ys, hl)
+            if ff:
+                g, final, ysf, fpath = FORCE_G, snap(ff, mask_path=f), ys, ff
+                note = '强制 g=%.2f（试验，不看护栏）' % FORCE_G
+            else:
+                g, final, ysf, fpath, note = 1.0, base, None, f, '强制导出失败 %s' % rr
+        else:
+            g, final, ysf, fpath, note = run_curve(0.0, 0.0)
+            # ★ 纯 S 被暗部上限卡死时，才用趾钩/肩滚去"买"对比（教程：提暗后再压黑 / 高光稍压）
+            if g == 1.0 and (TOE or SHOULDER):
+                g2, f2, y2, p2, n2 = run_curve(TOE, SHOULDER)
+                if g2 != 1.0:
+                    g, final, ysf, fpath = g2, f2, y2, p2
+                    note = n2 + '（纯 S 买不起，用趾钩/肩滚买到 g=%.2f）' % g2
 
     # ⑤ 定稿态确认（若最后一次写的就是它，就不重导）
     rec['g'] = g
@@ -370,7 +382,7 @@ def write_page(recs, od):
 
 
 def main():
-    global FACE_LO, FACE_HI, SPAN_LO, SPAN_HI, SPAN_TARGET, BLACK_P90, WHITE_P90, L_PER_EV, OUT, TOE, SHOULDER
+    global FACE_LO, FACE_HI, SPAN_LO, SPAN_HI, SPAN_TARGET, BLACK_P90, WHITE_P90, L_PER_EV, OUT, TOE, SHOULDER, G_MIN, FORCE_G
     ap = argparse.ArgumentParser()
     ap.add_argument('--batch', default=BATCH)
     ap.add_argument('--only', default='')
@@ -378,6 +390,9 @@ def main():
     ap.add_argument('--out-root', default='', help='产物根（默认 paths.WORK）')
     ap.add_argument('--toe', type=float, default=None, help='趾钩强度（提暗，0=关）')
     ap.add_argument('--shoulder', type=float, default=None, help='肩滚强度（压高光，0=关）')
+    ap.add_argument('--span-target', type=float, default=None, help='光比目标（默认 profile；试验用）')
+    ap.add_argument('--g-min', type=float, default=None, help='g 下限（默认 0.80；试验用）')
+    ap.add_argument('--force-g', type=float, default=None, help='跳过搜索，强制用这个 g（只做目检实验）')
     a = ap.parse_args()
 
     prof = profile_io.load(a.profile)
@@ -392,10 +407,16 @@ def main():
     L_PER_EV = float(t['l_per_ev'])
     TOE = float(t.get('toe', 0.0))
     SHOULDER = float(t.get('shoulder', 0.0))
+    G_MIN = float(t.get('g_min', 0.80))
     if a.toe is not None:
         TOE = a.toe
     if a.shoulder is not None:
         SHOULDER = a.shoulder
+    if a.span_target is not None:
+        SPAN_TARGET = a.span_target
+    if a.g_min is not None:
+        G_MIN = a.g_min
+    FORCE_G = a.force_g
     if a.out_root:
         OUT = os.path.join(a.out_root, 'layer1')
     os.makedirs(OUT, exist_ok=True)

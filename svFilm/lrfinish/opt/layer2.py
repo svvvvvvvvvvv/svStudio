@@ -71,6 +71,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--profile', default='kurai', help='预设 id 或 profile.json 路径')
     ap.add_argument('--out-root', default='', help='产物根（默认 paths.WORK）')
+    ap.add_argument('--damp', type=float, default=None, help='第 2 轮起残差阻尼（默认 0.6；试验可 1.0）')
+    ap.add_argument('--rounds', type=int, default=None, help='迭代轮数（默认 3）')
+    ap.add_argument('--max-shift', type=float, default=None, help='单段单通道最大码值位移（默认 8；试验可 12）')
     a = ap.parse_args()
     prof = profile_io.load(a.profile)
     if prof.get('status') != 'calibrated':
@@ -81,6 +84,8 @@ def main():
         OUT = os.path.join(a.out_root, 'layer2')
     BR.MASTER = str(profile_io.bands_file(prof))
     LC.OUT = OUT
+    if a.max_shift is not None:
+        LC.MAX_SHIFT = float(a.max_shift)
     import apply_layer2
     apply_layer2.L1, apply_layer2.L2 = L1, OUT
     print('预设 %s  靶带 %s  产物 %s'
@@ -141,7 +146,8 @@ def main():
     #     硬修模型没用（标定本身就用了那张图）。正解是**用画面反馈修正残差**：
     #     写一次 → 量 → 解残差 → 累加到累计位移 → 再写。迭代不依赖模型的绝对精度。
     #     第二轮起只走残差的 DAMP（0.6），防来回震荡。
-    ROUNDS, DAMP = 3, 0.6
+    ROUNDS = a.rounds if a.rounds is not None else 3
+    DAMP = 0.6 if a.damp is None else a.damp
     before = {}
     for j in jobs:
         j['tot'] = {nm: [0.0, 0.0, 0.0] for nm in BR.NAMES}
