@@ -45,9 +45,9 @@ def main():
             raise SystemExit('没有这一层：%s' % script)
         cmd = [a.python, '-u', str(script), '--profile', str(a.profile),
                '--out-root', str(a.out_root)]
-        if st == 'layer1':
+        if st in ('layer1', 'basic'):
             if not a.batch:
-                raise SystemExit('layer1 需要 --batch <底片目录>')
+                raise SystemExit('%s 需要 --batch <底片目录>' % st)
             cmd += ['--batch', str(a.batch)]
         print('▶ ' + ' '.join(cmd))
         if a.dry_run:
