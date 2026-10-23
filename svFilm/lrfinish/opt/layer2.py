@@ -163,7 +163,7 @@ def main():
         for j in jobs:
             cur = before[j['stem']]
             d, tg = channel_qp.solve(cur, mas, max_shift=LC.MAX_SHIFT)
-            j['tot'] = {nm: tuple(float(x) for x in d[i])
+            j['tot'] = {nm: [float(x) for x in d[i]]
                         for i, nm in enumerate(BR.NAMES)}
             curves = LC.build_from_dmap(j['tot'])
             w = run('CURVES %s %s' % (j['src'],
@@ -177,9 +177,9 @@ def main():
             b1 = {b['band']: b for b in BR.read(f, mask_from=j['base'])['bands']}
             d2, _ = channel_qp.solve(b1, mas, max_shift=LC.MAX_SHIFT)
             for i, nm in enumerate(BR.NAMES):
-                j['tot'][nm] = tuple(float(np.clip(j['tot'][nm][c] + d2[i, c],
-                                                   -LC.MAX_SHIFT, LC.MAX_SHIFT))
-                                     for c in range(3))
+                j['tot'][nm] = [float(np.clip(j['tot'][nm][c] + d2[i, c],
+                                              -LC.MAX_SHIFT, LC.MAX_SHIFT))
+                                for c in range(3)]
             curves = LC.build_from_dmap(j['tot'])
             w = run('CURVES %s %s' % (j['src'],
                                       spec(j['mainy'], curves['R'], curves['G'], curves['B'])),
@@ -192,7 +192,8 @@ def main():
             j['hist'] = ['qp1', 'qp2']
             print('  %s dR/G/B(80-100) %+.1f/%+.1f/%+.1f ｜ %s'
                   % (j['stem'], *j['tot']['80-100'], w))
-        ROUNDS = 0
+        # QP 的模型增益仍会高估；用正常残差轮再收 2 轮（不是从零重来）
+        ROUNDS = 2
 
     for rnd in range(ROUNDS):
         print('\n== 第 %d 轮' % (rnd + 1))

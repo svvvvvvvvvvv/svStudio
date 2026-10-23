@@ -35,6 +35,7 @@ import _boot  # noqa: E402
 import paths
 paths.ensure_import_path()
 import profile_io                                # noqa: E402
+import qp                                        # noqa: E402
 
 import lr_boot                                # noqa: E402
 import lr_measure as M                        # noqa: E402
@@ -219,7 +220,7 @@ def main():
                           gH[nm][gd] - gH['40-60'][gd]])
                 y.append(need)
         A, y = np.array(A, float), np.array(y, float)
-        sol, *_ = np.linalg.lstsq(A, y, rcond=None)
+        sol = qp.solve_box(A, y, 0.0, SAT_MAX, ridge=0.01)
         cur = [float(np.clip(v, 0, SAT_MAX)) for v in sol]
 
         # ★ 一轮解 + 一次**只往回收**的修正（10-23 20:1x 实测）：
