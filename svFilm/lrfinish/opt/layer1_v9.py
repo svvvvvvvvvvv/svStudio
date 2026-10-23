@@ -60,7 +60,14 @@ def write_ev(src, ev):
     run('GLOBAL %s Exposure2012=%.4f' % (src, ev), timeout=60)
 
 
-def solve_one(src, prof, edge, out_root):
+def write_basic(src, b):
+    keys = ('Exposure2012', 'Contrast2012', 'Highlights2012',
+            'Shadows2012', 'Whites2012', 'Blacks2012')
+    spec = ','.join('%s=%.3f' % (k, float(b.get(k, 0.0))) for k in keys)
+    run('GLOBAL %s %s' % (src, spec), timeout=60)
+
+
+def solve_one(src, prof, edge, out_root, basic_row=None):
     stem = os.path.basename(src).replace('_svFilm_full.tif', '')
     tag = os.path.join(out_root, 'layer1_v9', stem)
     os.makedirs(tag, exist_ok=True)
@@ -76,24 +83,36 @@ def solve_one(src, prof, edge, out_root):
     sc = profile_io.scene(prof)
     gd = profile_io.guards(prof)
     wht, blk = float(gd['white_p90']), float(gd['black_p90'])
-    ev0 = scene.face_ev(m0['p50'], sc['face_zone'], float(t['l_per_ev']))
 
-    picked = None
-    for s in (1.0, 0.75, 0.5, 0.25, 0.0):
-        ev = ev0 * s
-        write_ev(src, ev)
-        f, _ = expo(os.path.join(tag, 'ev%.2f' % s), edge)
-        if not f:
-            continue
-        m = snap(f)
-        if m.get('face') and scene.within(m, wht, blk):
-            picked = (ev, m, f)
-            break
-    if picked is None:
-        write_ev(src, 0.0)
-        f, _ = expo(os.path.join(tag, 'ev0'), edge)
-        picked = (0.0, snap(f), f)
-    ev, mev, fev = picked
+    if basic_row:
+        # Basic 作为 ScenePolicy：先处理贴白/压黑，再套固定 look
+        b = dict(basic_row.get('settings') or {})
+        write_basic(src, b)
+        fev, _ = expo(os.path.join(tag, 'basic'), edge)
+        mev = snap(fev) if fev else {}
+        if not mev.get('face'):
+            return dict(stem=stem, src=src, action='skip', why='basic 后量不到脸'), None
+        ev = float(b.get('Exposure2012', 0.0))
+        rec_basic = b
+    else:
+        ev0 = scene.face_ev(m0['p50'], sc['face_zone'], float(t['l_per_ev']))
+        picked = None
+        for s in (1.0, 0.75, 0.5, 0.25, 0.0):
+            ev = ev0 * s
+            write_ev(src, ev)
+            f, _ = expo(os.path.join(tag, 'ev%.2f' % s), edge)
+            if not f:
+                continue
+            m = snap(f)
+            if m.get('face') and scene.within(m, wht, blk):
+                picked = (ev, m, f)
+                break
+        if picked is None:
+            write_ev(src, 0.0)
+            f, _ = expo(os.path.join(tag, 'ev0'), edge)
+            picked = (0.0, snap(f), f)
+        ev, mev, fev = picked
+        rec_basic = None
 
     P = curve_lib.L_to_code(mev['p50'])
     ys = look.curve(P, profile_io.look(prof))
@@ -101,7 +120,7 @@ def solve_one(src, prof, edge, out_root):
     ffin, _ = expo(os.path.join(tag, 'final'), 2048)
     mfin = snap(ffin) if ffin else {}
     rec = dict(stem=stem, src=src, ev=ev, P=P, base=m0, after_ev=mev,
-               final=mfin, curve=ys, final_tif=ffin,
+               basic=rec_basic, final=mfin, curve=ys, final_tif=ffin,
                action='已执行' if abs(ev) > 0.01 or ys != list(XS) else '零动作')
     if mfin and not scene.within(mfin, wht, blk):
         rec['guard'] = 'curve 后两端超限，归上游/需人工'
@@ -115,10 +134,19 @@ def main():
     ap.add_argument('--only', default='')
     ap.add_argument('--out-root', default=str(paths.WORK))
     ap.add_argument('--edge', type=int, default=1024)
+    ap.add_argument('--no-basic', action='store_true', help='不读 basic/basic.json')
     a = ap.parse_args()
     prof = profile_io.load(a.profile)
     if prof.get('status') != 'calibrated':
         print('⚠ 预设 %s 状态=%s：结果只作演示' % (prof.get('id'), prof.get('status')))
+
+    basic_rows = {}
+    if not a.no_basic:
+        bp = os.path.join(a.out_root, 'basic', 'basic.json')
+        if os.path.isfile(bp):
+            basic_rows = {r['stem']: r for r in
+                          json.load(open(bp, encoding='utf-8'))['rows']}
+            print('Basic 基线：%s（%d 张）' % (bp, len(basic_rows)))
 
     srcs = sorted(p for p in os.listdir(a.batch)
                   if p.endswith('_svFilm_full.tif') and '_c0' not in p and '_c1' not in p)
@@ -140,7 +168,8 @@ def main():
 
     recs = []
     for src in srcs:
-        rec, _ = solve_one(src, prof, a.edge, a.out_root)
+        rec_stem = os.path.basename(src).replace('_svFilm_full.tif', '')
+        rec, _ = solve_one(src, prof, a.edge, a.out_root, basic_rows.get(rec_stem))
         recs.append(rec)
         f = rec.get('final') or {}
         print('%-10s EV%+.2f  脸 %.1f→%.1f  光比 %.1f→%.1f  贴白 %.2f  压黑 %.2f  %s'
