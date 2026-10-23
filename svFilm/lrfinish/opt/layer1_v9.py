@@ -119,7 +119,22 @@ def solve_one(src, prof, edge, out_root, basic_row=None):
     b0 = float(mev.get('black', 0.0))
     lim = max(1e-6, float(blk))
     toe_scale = 1.0 + max(0.0, min(1.0, b0 / lim))
-    ys = look.curve(P, profile_io.look(prof), toe_scale=toe_scale)
+    lk = profile_io.look(prof)
+    ys = look.curve(P, lk, toe_scale=toe_scale)
+
+    # GLOBAL 一次写全：Basic/曝光 + HSL + 分级；之后再写曲线（顺序不能反）
+    settings = dict(rec_basic or {})
+    settings.setdefault('Exposure2012', ev)
+    for k in ('Contrast2012', 'Highlights2012', 'Shadows2012',
+              'Whites2012', 'Blacks2012'):
+        settings.setdefault(k, 0.0)
+    spec = ','.join('%s=%.3f' % (k, float(settings[k])) for k in
+                    ('Exposure2012', 'Contrast2012', 'Highlights2012',
+                     'Shadows2012', 'Whites2012', 'Blacks2012'))
+    ls = look.global_spec(lk)
+    if ls:
+        spec += ',' + ls
+    run('GLOBAL %s %s' % (src, spec), timeout=60)
     run('CURVES %s %s' % (src, spec_of(ys)), timeout=120)
     ffin, _ = expo(os.path.join(tag, 'final'), 2048)
     mfin = snap(ffin) if ffin else {}
