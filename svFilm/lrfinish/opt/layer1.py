@@ -131,15 +131,21 @@ def snap(p, mask_path=None):
     return d
 
 
-def apply_state(src, od, ev, ys, hl=0):
-    """RESET → 曝光 → 高光 → 曲线 → 导两次。
+def apply_state(src, od, ev, ys, hl=0, basic=None):
+    """RESET → Basic（六旋钮或 EV/高光）→ 曲线 → 导两次。
     顺序不能反：GLOBAL 是整表写入，会抹掉之前写的曲线。"""
     run('SELECT ' + src, timeout=60)
     run('RESET ' + src, timeout=60)
-    if abs(ev) > 0.01:
-        run('GLOBAL %s Exposure2012=%.4f' % (src, ev), timeout=60)
-    if abs(hl) > 0.5:
-        run('GLOBAL %s Highlights2012=%d' % (src, hl), timeout=60)
+    if basic:
+        spec = ','.join('%s=%.3f' % (k, basic[k]) for k in
+                        ('Exposure2012', 'Contrast2012', 'Highlights2012',
+                         'Shadows2012', 'Whites2012', 'Blacks2012'))
+        run('GLOBAL %s %s' % (src, spec), timeout=60)
+    else:
+        if abs(ev) > 0.01:
+            run('GLOBAL %s Exposure2012=%.4f' % (src, ev), timeout=60)
+        if abs(hl) > 0.5:
+            run('GLOBAL %s Highlights2012=%d' % (src, hl), timeout=60)
     if ys is not None:
         run('CURVES %s %s' % (src, spec_of(ys)), timeout=120)
     f, r = expo(od)
