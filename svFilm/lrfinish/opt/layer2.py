@@ -74,6 +74,7 @@ def main():
     ap.add_argument('--damp', type=float, default=None, help='第 2 轮起残差阻尼（默认 0.6；试验可 1.0）')
     ap.add_argument('--rounds', type=int, default=None, help='迭代轮数（默认 3）')
     ap.add_argument('--max-shift', type=float, default=None, help='单段单通道最大码值位移（默认 8；试验可 12）')
+    ap.add_argument('--qp', action='store_true', help='用 15 维 QP 一次解，替代 3 轮迭代')
     a = ap.parse_args()
     prof = profile_io.load(a.profile)
     if prof.get('status') != 'calibrated':
@@ -154,6 +155,44 @@ def main():
         j['hist'] = []
         before[j['stem']] = {b['band']: b
                              for b in BR.read(j['base'], mask_from=j['base'])['bands']}
+
+    if a.qp:
+        import channel_qp
+        mas = BR.master()
+        print('\n== QP：一次解 15 变量')
+        for j in jobs:
+            cur = before[j['stem']]
+            d, tg = channel_qp.solve(cur, mas, max_shift=LC.MAX_SHIFT)
+            j['tot'] = {nm: tuple(float(x) for x in d[i])
+                        for i, nm in enumerate(BR.NAMES)}
+            curves = LC.build_from_dmap(j['tot'])
+            w = run('CURVES %s %s' % (j['src'],
+                                      spec(j['mainy'], curves['R'], curves['G'], curves['B'])),
+                    timeout=120)
+            f, rr = expo('%s/qp1' % j['stem'])
+            if not f:
+                print('  %s QP 导出失败 %s' % (j['stem'], rr)); continue
+            # ★ 一次 QP 会用模型增益高估实际效果（亮端尤甚）；用**实测残差再解一次**，
+            #   这是 SQP 的一步修正，不是 3 轮阻尼。
+            b1 = {b['band']: b for b in BR.read(f, mask_from=j['base'])['bands']}
+            d2, _ = channel_qp.solve(b1, mas, max_shift=LC.MAX_SHIFT)
+            for i, nm in enumerate(BR.NAMES):
+                j['tot'][nm] = tuple(float(np.clip(j['tot'][nm][c] + d2[i, c],
+                                                   -LC.MAX_SHIFT, LC.MAX_SHIFT))
+                                     for c in range(3))
+            curves = LC.build_from_dmap(j['tot'])
+            w = run('CURVES %s %s' % (j['src'],
+                                      spec(j['mainy'], curves['R'], curves['G'], curves['B'])),
+                    timeout=120)
+            f2, rr = expo('%s/qp2' % j['stem'])
+            if f2:
+                f = f2
+            j['after'] = f
+            j['curves'] = curves
+            j['hist'] = ['qp1', 'qp2']
+            print('  %s dR/G/B(80-100) %+.1f/%+.1f/%+.1f ｜ %s'
+                  % (j['stem'], *j['tot']['80-100'], w))
+        ROUNDS = 0
 
     for rnd in range(ROUNDS):
         print('\n== 第 %d 轮' % (rnd + 1))
