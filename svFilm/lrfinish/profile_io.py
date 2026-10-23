@@ -117,3 +117,36 @@ def grading(prof: dict) -> dict:
              sat_max=5.0, skin_max=0.6)
     d.update(prof.get('grading') or {})
     return d
+
+
+def look(prof: dict) -> dict:
+    """v9 LookProfile：固定曲线 + HSL + 分级（全是常量）。"""
+    d = dict(curve=dict(g=0.90, toe=4.0, shoulder=4.0),
+             hsl={}, grading=dict(shadow_hue=220, shadow_sat=4,
+                                  high_hue=30, high_sat=2, balance=-100))
+    d.update(prof.get('look') or {})
+    return d
+
+
+def scene(prof: dict) -> dict:
+    """v9 ScenePolicy：脸锚、曝光、白平衡、黑白场护栏。"""
+    t = tone(prof)
+    d = dict(anchor='face', face_zone=[t['face_lo'], t['face_hi']],
+             wb='auto', black_white='guard')
+    d.update(prof.get('scene') or {})
+    return d
+
+
+def skin(prof: dict) -> dict:
+    """v9 肤色目标/椭球（专题未开，只做护栏占位）。"""
+    d = dict(L=68.0, C=20.0, ellipsoid=dict(L=10.0, a=4.0, b=8.0))
+    d.update(prof.get('skin') or {})
+    return d
+
+
+def guards(prof: dict) -> dict:
+    t = tone(prof)
+    d = dict(white_p90=t['white_p90'], black_p90=t['black_p90'],
+             true_clip=0.5, monotone=True)
+    d.update(prof.get('guards') or {})
+    return d

@@ -1,31 +1,103 @@
 {
-  "id": "kurai",
-  "name": "鹿井",
-  "version": "1.0.0",
-  "status": "calibrated",
-  "corpus": { "path": "E:/ds/大师成片/鹿井", "n": 52 },
-  "tone": {
-    "face_lo": 55.0,
-    "face_hi": 67.0,
-    "span_lo": 51.0,
-    "span_hi": 82.0,
-    "span_target": 58.0,
-    "black_p90": 2.34,
-    "white_p90": 2.85,
-    "l_per_ev": 16.0,
-    "toe": 4.0,
-    "shoulder": 4.0
+ "id": "kurai",
+ "name": "鹿井",
+ "version": "1.0.0",
+ "status": "calibrated",
+ "corpus": {
+  "path": "E:/ds/大师成片/鹿井",
+  "n": 52
+ },
+ "tone": {
+  "face_lo": 55.0,
+  "face_hi": 67.0,
+  "span_lo": 51.0,
+  "span_hi": 82.0,
+  "span_target": 58.0,
+  "black_p90": 2.34,
+  "white_p90": 2.85,
+  "l_per_ev": 16.0,
+  "toe": 4.0,
+  "shoulder": 4.0
+ },
+ "channel": {
+  "bands_file": "bands.json"
+ },
+ "grading": {
+  "shadow_hue": 220,
+  "high_hue": 30,
+  "factor": 0.3333333333333333,
+  "clamp": 0.6,
+  "sat_max": 5.0,
+  "skin_max": 0.6,
+  "grade_rel": "calibration/grade_rel.json",
+  "split_gain": "calibration/split_gain.json"
+ },
+ "guards": {
+  "white_p90": 2.85,
+  "black_p90": 2.34,
+  "true_clip": 0.5,
+  "monotone": true
+ },
+ "medium": {
+  "ref": "kodak_portra_400 + kodak_portra_endura"
+ },
+ "look": {
+  "curve": {
+   "g": 0.9,
+   "toe": 4.0,
+   "shoulder": 4.0
   },
-  "channel": { "bands_file": "bands.json" },
+  "hsl": {
+   "blue": [
+    -12,
+    10,
+    -5
+   ],
+   "green": [
+    -14,
+    -15,
+    -8
+   ],
+   "yellow": [
+    0,
+    -12,
+    0
+   ],
+   "orange": [
+    4,
+    -10,
+    8
+   ],
+   "red": [
+    2,
+    -8,
+    0
+   ]
+  },
   "grading": {
-    "shadow_hue": 220,
-    "high_hue": 30,
-    "factor": 0.3333333333333333,
-    "clamp": 0.6,
-    "sat_max": 5.0,
-    "skin_max": 0.6,
-    "grade_rel": "calibration/grade_rel.json",
-    "split_gain": "calibration/split_gain.json"
-  },
-  "guards": { "true_clip": 0.5, "texture_min": 1.15, "face_p50_max": 67.0 }
+   "shadow_hue": 220,
+   "shadow_sat": 4,
+   "high_hue": 30,
+   "high_sat": 2,
+   "balance": -100
+  }
+ },
+ "skin": {
+  "L": 68,
+  "C": 20,
+  "ellipsoid": {
+   "L": 10,
+   "a": 4,
+   "b": 8
+  }
+ },
+ "scene": {
+  "anchor": "face",
+  "face_zone": [
+   55.0,
+   67.0
+  ],
+  "wb": "auto",
+  "black_white": "guard"
+ }
 }
