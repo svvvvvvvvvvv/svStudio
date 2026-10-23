@@ -303,7 +303,8 @@ def main():
 
     os.makedirs(OUT, exist_ok=True)
     p = os.path.join(OUT, 'layer5.json')
-    json.dump(dict(shadow_hue=SHADOW_HUE, high_hue=HIGH_HUE, factor=FACTOR,
+    json.dump(dict(profile=prof.get('id'), profile_version=prof.get('version'),
+                   shadow_hue=SHADOW_HUE, high_hue=HIGH_HUE, factor=FACTOR,
                    clamp=CLAMP, sat_max=SAT_MAX, files=summ),
               open(p, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print('\n-> %s' % p)

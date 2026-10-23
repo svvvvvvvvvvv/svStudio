@@ -281,7 +281,8 @@ def main():
         out_files.append(dict(stem=j['stem'], src=j['src'], base=j['base'],
                               after=j.get('after'), curves=j.get('curves'),
                               hist=j.get('hist') or [], bands=bands))
-    json.dump(dict(summary=summ, all_ok=bool(all_ok),
+    json.dump(dict(profile=prof.get('id'), profile_version=prof.get('version'),
+                   summary=summ, all_ok=bool(all_ok), spread_ok=bool(all_ok),
                    judge=dict(hit=hit, cells=tot_cell, miss=miss),
                    master={nm: dict(a_p25=mas[nm]['a_p25'], a_p50=mas[nm]['a_p50'],
                                     a_p75=mas[nm]['a_p75'], b_p25=mas[nm]['b_p25'],

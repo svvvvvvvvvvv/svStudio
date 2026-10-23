@@ -512,7 +512,8 @@ def main():
             r['_jpg_final'] = None   # 没加曲线就不重复贴同一张
     write_page(recs, so)
 
-    json.dump(dict(guard=dict(face=[FACE_LO, FACE_HI], span=[SPAN_LO, SPAN_HI],
+    json.dump(dict(profile=prof.get('id'), profile_version=prof.get('version'),
+                   guard=dict(face=[FACE_LO, FACE_HI], span=[SPAN_LO, SPAN_HI],
                               black_p90=BLACK_P90, white_p90=WHITE_P90,
                               l_per_ev=L_PER_EV),
                    rows=recs),
