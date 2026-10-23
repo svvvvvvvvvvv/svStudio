@@ -92,6 +92,9 @@ def measure(p):
         return dict(face=False, why='脸蛋像素不足(%d)' % int(skin.sum()))
 
     Ls = float(np.median(L[skin]))
+    a_s = float(np.median(lab[..., 1][skin]))
+    b_s = float(np.median(lab[..., 2][skin]))
+    C_s = float(np.hypot(a_s, b_s))
     # 脸内高光占比（直射光斑 / 油光）
     hi = float(100.0 * (L[skin] > Ls + 12).mean())
     # 脸框的离散度（脸本身光比）
@@ -105,7 +108,8 @@ def measure(p):
     bg[by0:by1, bx0:bx1] = False
     Lb = float(np.median(L[bg])) if bg.sum() > 500 else np.nan
 
-    return dict(face=True, L_skin=Ls, L_bg=Lb, d_bg=float(Lb - Ls) if np.isfinite(Lb) else np.nan,
+    return dict(face=True, L_skin=Ls, a_skin=a_s, b_skin=b_s, C_skin=C_s,
+                L_bg=Lb, d_bg=float(Lb - Ls) if np.isfinite(Lb) else np.nan,
                 hi_frac=hi, face_span=spa, face_px=int(skin.sum()),
                 zone=float((Ls - ZONE_V) / (ZONE_VI - ZONE_V)))
 
