@@ -17,14 +17,15 @@ import sys
 
 import numpy as np
 
-HERE = r'E:\lr_agent\opt'
-sys.path.insert(0, HERE)
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
 from _probe_masters_shape import NAMES, traj, shape, pct    # noqa: E402
 import lr_measure as M                                      # noqa: E402
 
-REF = r'E:\ds\photo\refpack'
-MASTER = r'E:\ds\大师成片\鹿井'
-OUT = r'E:\Debug_svStudio\lr_agent_out\2026-10-23\shape'
+REF = str(paths.MASTER.parent / 'photo' / 'refpack')
+MASTER = str(paths.MASTER / '鹿井')
+OUT = str(paths.WORK / 'shape')
 DOMAIN = 384            # npz 是 384 长边的 uint8 Lab，磁盘路径必须同域才能混用
 
 

@@ -22,17 +22,17 @@ import time
 
 import numpy as np
 
-HERE = r'E:\lr_agent\opt'
-sys.path.insert(0, HERE)
-sys.path.insert(0, r'E:\lr_agent\prototype')
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
 
 import band_read as BR                     # noqa: E402
 import lr_measure as M                     # noqa: E402
 from bridge_client import run               # noqa: E402
 import lr_boot                             # noqa: E402
 
-L1 = r'E:\Debug_svStudio\lr_agent_out\2026-10-23\layer1'
-L2 = r'E:\Debug_svStudio\lr_agent_out\2026-10-23\layer2'
+L1 = str(paths.WORK / 'layer1')
+L2 = str(paths.WORK / 'layer2')
 XS = list(range(0, 256, 16))
 IDENT = [(0, 0), (255, 255)]        # 恒等：写进 LR 后画面一格不动（_probe_curvefmt 已验）
 

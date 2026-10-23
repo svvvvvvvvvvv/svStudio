@@ -14,9 +14,13 @@
 import os
 import shutil
 import sys
+from pathlib import Path
 
-SRC = r"E:\lr_agent\lrplugin\SvFilmBridge.lrplugin"
-DST = r"C:\Users\psw99\AppData\Roaming\Adobe\Lightroom\Modules\SvFilmBridgeB.lrplugin"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import paths  # noqa: E402
+
+SRC = str(paths.ROOT / "lrplugin" / "SvFilmBridge.lrplugin")
+DST = str(paths.APPDATA / "Adobe" / "Lightroom" / "Modules" / "SvFilmBridgeB.lrplugin")
 FILES = [
     "Info.lua",
     "PluginInit.lua",

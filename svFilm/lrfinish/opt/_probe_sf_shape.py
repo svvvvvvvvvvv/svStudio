@@ -21,12 +21,13 @@ import sys
 
 import numpy as np
 
-HERE = r'E:\lr_agent\opt'
-sys.path.insert(0, HERE)
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
 from _probe_masters_shape import NAMES, traj, shape, pct    # noqa: E402
 from _probe_52_shape import load_lab384, OUT               # noqa: E402
 
-SF = r'E:\Debug_svStudio\svFilm_out'
+SF = str(paths.BATCH_ROOT)
 # 优先级：我们正在调的那一轮排最前；同一张号只取第一个命中的轮次
 RUNS = ('_b2048_1022', '_regress_1023', '_lrbase_919_2048_full',
         '_grain_1017_2048', '_v3run_2048', '_style4', '_lrbase_2048_full',

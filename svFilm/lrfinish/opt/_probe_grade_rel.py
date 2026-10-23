@@ -29,16 +29,18 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, r'E:\lr_agent\opt')
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
 import lr_measure as M                    # noqa: E402
 
 C_NEUTRAL = 8.0
 MIN_PX = 200
 BANDS = ((0, 20), (20, 40), (40, 60), (60, 80), (80, 100))
 NAMES = ('0-20', '20-40', '40-60', '60-80', '80-100')
-MROOT = r'E:/ds/大师成片/鹿井'
-L2 = r'E:/Debug_svStudio/lr_agent_out/2026-10-23/layer2/layer2.json'
-OUT = r'E:/Debug_svStudio/lr_agent_out/2026-10-23/grade_rel.json'
+MROOT = str(paths.MASTER / '鹿井')
+L2 = str(paths.WORK / 'layer2' / 'layer2.json')
+OUT = str(paths.WORK / 'grade_rel.json')
 
 # 关系量：(名字, 分子段, 分母段)
 RELS = [('阴影-中调', '0-20'), ('影子-中调', '20-40'),
@@ -108,7 +110,8 @@ def main():
 
     print('== 大师 %d 张里，能量出关系的 %d 张' % (len(paths), len(per_img)))
     print('\n-- 各段绝对 a*/b* 中位（校验：对不对得上 style_kurai.json 的口径）')
-    sky = json.load(open(r'E:/lr_agent/opt/style_kurai.json', encoding='utf-8'))['keys']
+    sky = json.load(open(str(paths.PRESETS / '鹿井预设' / 'bands.json'),
+                         encoding='utf-8'))['keys']
     print('%-8s %-22s %-22s' % ('段', '这次算的 a* P25/P50/P75', 'style_kurai 的'))
     marg_out = {}
     for nm in NAMES:

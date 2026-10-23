@@ -15,15 +15,16 @@ import os
 import sys
 import time
 
-sys.path.insert(0, r'E:\lr_agent\opt')
-sys.path.insert(0, r'E:\lr_agent\prototype')
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
 
 import lr_boot                       # noqa: E402
 from bridge_client import run        # noqa: E402
 
 
 def main():
-    d = sys.argv[1] if len(sys.argv) > 1 else r'E:\Debug_svStudio\svFilm_out\_b2048_919'
+    d = sys.argv[1] if len(sys.argv) > 1 else str(paths.BATCH_ROOT / '_b2048_919')
     srcs = sorted(glob.glob(os.path.join(d, '*_svFilm_full.tif')))
     if not srcs:
         print('目录里没有底片：%s' % d); return

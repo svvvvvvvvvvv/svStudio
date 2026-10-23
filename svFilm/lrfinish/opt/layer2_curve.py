@@ -33,13 +33,13 @@ import sys
 
 import numpy as np
 
-HERE = r'E:\lr_agent\opt'
-sys.path.insert(0, HERE)
-sys.path.insert(0, r'E:/svStudio/svFilm')
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
 
 import band_read as BR          # noqa: E402
 
-OUT = r'E:\Debug_svStudio\lr_agent_out\2026-10-23\layer2'
+OUT = str(paths.WORK / 'layer2')
 XS = list(range(0, 256, 16))
 MARGIN = 0.10                                  # 目标落点往带内缩 10% 带宽
 MAX_SHIFT = 8.0                                # 单张单段单通道最多挪几码（增益矩阵是 ±6 码标定的）

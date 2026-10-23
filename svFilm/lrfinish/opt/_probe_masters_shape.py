@@ -23,8 +23,12 @@ from collections import defaultdict
 
 import numpy as np
 
-REF = r'E:\ds\photo\refpack'
-OUT = r'E:\Debug_svStudio\lr_agent_out\2026-10-23\shape'
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
+
+REF = str(paths.MASTER.parent / 'photo' / 'refpack')
+OUT = str(paths.WORK / 'shape')
 BANDS = ((0, 20), (20, 40), (40, 60), (60, 80), (80, 100))
 NAMES = ('0-20', '20-40', '40-60', '60-80', '80-100')
 C_NEUTRAL = 8.0

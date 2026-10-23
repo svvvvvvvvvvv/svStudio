@@ -1,0 +1,30 @@
+{
+  "id": "hamada",
+  "name": "滨田",
+  "version": "0.1.0-draft",
+  "status": "draft",
+  "note": "五段靶带已按滨田 22 张实测；tone/grading 暂沿用鹿井，尚未标定。",
+  "corpus": { "path": "E:/ds/大师成片/滨田", "n": 22 },
+  "tone": {
+    "face_lo": 55.0,
+    "face_hi": 67.0,
+    "span_lo": 51.0,
+    "span_hi": 82.0,
+    "span_target": 58.0,
+    "black_p90": 2.34,
+    "white_p90": 2.85,
+    "l_per_ev": 16.0
+  },
+  "channel": { "bands_file": "bands.json" },
+  "grading": {
+    "shadow_hue": 220,
+    "high_hue": 30,
+    "factor": 0.3333333333333333,
+    "clamp": 0.6,
+    "sat_max": 5.0,
+    "skin_max": 0.6,
+    "grade_rel": "calibration/grade_rel.json",
+    "split_gain": "calibration/split_gain.json"
+  },
+  "guards": { "true_clip": 0.5, "texture_min": 1.15, "face_p50_max": 67.0 }
+}

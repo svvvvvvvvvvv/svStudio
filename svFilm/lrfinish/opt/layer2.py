@@ -28,6 +28,7 @@ r"""第 2 层求解器（闭环版，**逐张**）：**量基准 → 每张各�
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -35,9 +36,11 @@ import time
 
 import numpy as np
 
-HERE = r'E:\lr_agent\opt'
-sys.path.insert(0, HERE)
-sys.path.insert(0, r'E:\lr_agent\prototype')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
+import profile_io                                   # noqa: E402
 
 import band_read as BR                      # noqa: E402
 import layer2_curve as LC                   # noqa: E402
@@ -45,9 +48,9 @@ import lr_boot                              # noqa: E402
 from apply_layer2 import curve, spec, XS, IDENT   # noqa: E402
 from bridge_client import run               # noqa: E402
 
-ROOT = os.environ.get('LR_ROOT') or r'E:\Debug_svStudio\lr_agent_out\2026-10-23'
-L1 = os.path.join(ROOT, 'layer1')
-OUT = os.path.join(ROOT, 'layer2')
+WORK = str(paths.WORK)
+L1 = os.path.join(WORK, 'layer1')
+OUT = os.path.join(WORK, 'layer2')
 ORDER = ('DSCF2532', 'DSCF3024', 'DSCF2891', 'DSCF2497', 'DSCF2572')
 
 
@@ -64,6 +67,25 @@ def expo(tag, edge=2048):
 
 
 def main():
+    global L1, OUT
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--profile', default='kurai', help='预设 id 或 profile.json 路径')
+    ap.add_argument('--out-root', default='', help='产物根（默认 paths.WORK）')
+    a = ap.parse_args()
+    prof = profile_io.load(a.profile)
+    if prof.get('status') != 'calibrated':
+        print('⚠ 预设 %s 状态=%s：五段靶带已按该预设，其他层尚未标定'
+              % (prof.get('id'), prof.get('status')))
+    if a.out_root:
+        L1 = os.path.join(a.out_root, 'layer1')
+        OUT = os.path.join(a.out_root, 'layer2')
+    BR.MASTER = str(profile_io.bands_file(prof))
+    LC.OUT = OUT
+    import apply_layer2
+    apply_layer2.L1, apply_layer2.L2 = L1, OUT
+    print('预设 %s  靶带 %s  产物 %s'
+          % (prof.get('name', prof.get('id')), BR.MASTER, OUT))
+
     rows1 = {r['stem']: r for r in
              json.load(open(os.path.join(L1, 'layer1.json'), encoding='utf-8'))['rows']}
     jobs = []

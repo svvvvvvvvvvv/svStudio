@@ -8,6 +8,8 @@
 >
 > `lrfinish/` = **LR 收尾**（原 `E:\lr_agent`，2026-10-23 并入），不是引擎；见 `lrfinish/README.md`。
 >
+> **预设统一**：`svFilm/data/presets/<名字>/` 同时放 `preset.json`（胶片，引擎读）和 `finish.json`（LR 收尾，lrfinish 读）。
+>
 > ★ **知识分工**（别混）：
 > · **本文件** = 怎么用 + 模块边界 + 契约
 > · **`引擎手册.md`** = 引擎机制（参数作用形式 · 键语义 · 死键 · 已证否的路）

@@ -10,7 +10,9 @@ import sys
 
 import numpy as np
 
-sys.path.insert(0, r'E:/svStudio/svFilm')
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
 import svFilm.color as color            # noqa: E402
 
 LONG = 1024

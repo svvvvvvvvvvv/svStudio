@@ -27,14 +27,14 @@ import sys
 import cv2
 import numpy as np
 
-HERE = r'E:\lr_agent\opt'
-sys.path.insert(0, HERE)
-sys.path.insert(0, r'E:/svStudio/svFilm')
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
 import svFilm.color as color                     # noqa: E402
 from _probe_52_shape import MASTER, OUT          # noqa: E402
 from _probe_sf_shape import collect              # noqa: E402
 
-MODEL = r'E:\svStudio\svFilm\svFilm\_models\yunet.onnx'
+MODEL = str(paths.ENGINE / 'svFilm' / '_models' / 'yunet.onnx')
 det = cv2.FaceDetectorYN.create(MODEL, '', (320, 320), 0.5, 0.3, 5000)
 LONG = 1024
 ZONE_V, ZONE_VI = 49.5, 66.5

@@ -29,14 +29,14 @@ import sys
 import cv2
 import numpy as np
 
-HERE = r'E:\lr_agent\opt'
-sys.path.insert(0, HERE)
-sys.path.insert(0, r'E:/svStudio/svFilm')
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
 import svFilm.color as color                      # noqa: E402
 from _probe_skin_zone import load, det            # noqa: E402
 from _probe_52_shape import MASTER, OUT           # noqa: E402
 
-BATCH = r'E:\Debug_svStudio\svFilm_out\_b2048_1022'
+BATCH = str(paths.BATCH_ROOT / '_b2048_1022')
 
 
 def face_box(rgb):

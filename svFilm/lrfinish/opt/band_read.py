@@ -17,15 +17,16 @@ import sys
 
 import numpy as np
 
-HERE = r'E:\lr_agent\opt'
-sys.path.insert(0, HERE)
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
 import lr_measure as M        # noqa: E402
 
 BANDS = ((0, 20), (20, 40), (40, 60), (60, 80), (80, 100))
 NAMES = ('0-20', '20-40', '40-60', '60-80', '80-100')
 C_NEUTRAL = 8.0
 MIN_PX = 200
-MASTER = os.path.join(HERE, 'style_kurai.json')
+MASTER = str(paths.PRESETS / '鹿井预设' / 'bands.json')   # layer2 会按 --profile 覆盖
 
 
 def make_masks(rgb):

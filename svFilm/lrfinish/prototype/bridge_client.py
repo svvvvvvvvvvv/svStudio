@@ -17,11 +17,15 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 import time
 import uuid
 from pathlib import Path
 
-CMD_DIR = Path(r"E:\lr_agent\lr_cmd")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import paths  # noqa: E402
+
+CMD_DIR = Path(paths.CMD_DIR)
 CMD = CMD_DIR / "cmd.txt"
 TMP = CMD_DIR / "cmd.tmp"
 RES = CMD_DIR / "result.txt"

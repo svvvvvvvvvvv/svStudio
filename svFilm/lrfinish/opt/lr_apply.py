@@ -5,11 +5,12 @@ from __future__ import annotations
 import os
 import sys
 
-HERE = r'E:\lr_agent\prototype'
-sys.path.insert(0, HERE)
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
 from bridge_client import run as lr  # noqa: E402
 
-EXPORT_ROOT = r'E:\Debug_svStudio\lr_agent_out\2026-10-22\finish'
+EXPORT_ROOT = str(paths.WORK / 'finish')
 
 
 def export(tif, tag, long_edge=None):

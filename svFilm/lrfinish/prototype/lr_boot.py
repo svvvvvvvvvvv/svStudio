@@ -15,14 +15,18 @@ import os
 import subprocess
 import sys
 import time
+from pathlib import Path
 
-LR_EXE = r"D:\LR\Adobe Lightroom Classic\Lightroom.exe"
-CATALOG = r"C:\Users\psw99\Pictures\Lightroom\Lightroom Catalog.lrcat"
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+import paths  # noqa: E402
+
+LR_EXE = str(paths.LR_EXE)
+CATALOG = str(paths.LR_CATALOG)
 LOCK = CATALOG + ".lock"
-CMD_DIR = r"E:\lr_agent\lr_cmd"
+CMD_DIR = str(paths.CMD_DIR)
 RESULT = os.path.join(CMD_DIR, "result.txt")
 PLUGIN_LOG = os.path.join(CMD_DIR, "plugin.log")
-CONSOLE_LOG = r"C:\Users\psw99\AppData\Roaming\Adobe\Lightroom\lrc_console.log"
+CONSOLE_LOG = str(paths.LR_CONSOLE)
 
 
 def clear_console_log():

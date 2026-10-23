@@ -44,7 +44,7 @@ svStudio/
 原 `E:\lr_agent`，2026-10-23 并入本仓库，现在位于 `svFilm/lrfinish/`；`E:\lr_agent` 是指向它的 junction（旧路径继续可用）。
 
 - **定位**：不是引擎包（`svFilm/svFilm/` 是引擎），是 LR 侧的收尾工序（曲线/通道/分级/HSL/肤色）。
-- **多预设**：`profiles/<id>/profile.json`（`kurai` 先跑，`hamada` 后加）；加预设只加数据，不改代码。
+- **预设统一**：`svFilm/svFilm/data/presets/<名字>/` 里同时放 `preset.json`（胶片，引擎读）和 `finish.json`（LR 收尾，本工具读）；`kurai` 先跑，`hamada` 后加。
 - **文档在仓库外**：设计/调研/迭代记录统一放 `E:\Debug_svStudio\lr_agent_docs\`（本目录只放工程代码）。
 - ⚠ 运行依赖 `_pylibs/`、调试导出 `_masktest/`、媒体图不进 git（见 `svFilm/lrfinish/.gitignore`）。
 

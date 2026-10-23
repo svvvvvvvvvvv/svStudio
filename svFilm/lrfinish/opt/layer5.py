@@ -22,6 +22,7 @@ SV 10-23 19:3x 选的是 **B（给一点点胶味）**：
 """
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import sys
@@ -29,9 +30,11 @@ import time
 
 import numpy as np
 
-HERE = r'E:\lr_agent\opt'
-sys.path.insert(0, HERE)
-sys.path.insert(0, r'E:\lr_agent\prototype')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
+import profile_io                                # noqa: E402
 
 import lr_boot                                # noqa: E402
 import lr_measure as M                        # noqa: E402
@@ -40,13 +43,12 @@ from bridge_client import run                 # noqa: E402
 from _probe_grade_rel import bands_of, NAMES  # noqa: E402
 from _probe_clip import face_box              # noqa: E402
 
-ROOT = os.environ.get('LR_ROOT') or r'E:\Debug_svStudio\lr_agent_out\2026-10-23'
-L1 = os.path.join(ROOT, 'layer1')
-L2 = os.path.join(ROOT, 'layer2')
-# 这两个是**与他 52 张的基线**、和标定，跟批次无关 ⇒ 永远用 1023 那份
-GR = r'E:\Debug_svStudio\lr_agent_out\2026-10-23\grade_rel.json'
-GAIN = r'E:\Debug_svStudio\lr_agent_out\2026-10-23\layer5\split_gain.json'
-OUT = os.path.join(ROOT, 'layer5')
+WORK = str(paths.WORK)
+L1 = os.path.join(WORK, 'layer1')
+L2 = os.path.join(WORK, 'layer2')
+GR = str(paths.CALIB / 'grade_rel.json')
+GAIN = str(paths.CALIB / 'split_gain.json')
+OUT = os.path.join(WORK, 'layer5')
 ORDER = ('DSCF2532', 'DSCF3024', 'DSCF2891', 'DSCF2497', 'DSCF2572')
 
 SHADOW_HUE, HIGH_HUE = 220, 30      # 标定出来的：暗部蓝（cos 0.97）/ 高光橙
@@ -104,6 +106,28 @@ def face_ab(path):
 
 
 def main():
+    global L1, L2, OUT, GR, GAIN, SHADOW_HUE, HIGH_HUE, FACTOR, CLAMP, SAT_MAX, SKIN_MAX
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--profile', default='kurai', help='预设 id 或 profile.json 路径')
+    ap.add_argument('--out-root', default='', help='产物根（默认 paths.WORK）')
+    a = ap.parse_args()
+    prof = profile_io.load(a.profile)
+    g = profile_io.grading(prof)
+    if prof.get('status') != 'calibrated':
+        print('⚠ 预设 %s 状态=%s：分级色相/力度尚未标定，结果只作演示'
+              % (prof.get('id'), prof.get('status')))
+    if a.out_root:
+        L1 = os.path.join(a.out_root, 'layer1')
+        L2 = os.path.join(a.out_root, 'layer2')
+        OUT = os.path.join(a.out_root, 'layer5')
+    SHADOW_HUE, HIGH_HUE = int(g['shadow_hue']), int(g['high_hue'])
+    FACTOR, CLAMP = float(g['factor']), float(g['clamp'])
+    SAT_MAX, SKIN_MAX = float(g['sat_max']), float(g['skin_max'])
+    GR = str(profile_io.calib(prof, 'grade_rel'))
+    GAIN = str(profile_io.calib(prof, 'split_gain'))
+    print('预设 %s  暗轮 %d° / 亮轮 %d°  产物 %s'
+          % (prof.get('name', prof.get('id')), SHADOW_HUE, HIGH_HUE, OUT))
+
     r1s = {x['stem']: x for x in
            json.load(open(os.path.join(L1, 'layer1.json'), encoding='utf-8'))['rows']}
     f2s = {x['stem']: x for x in

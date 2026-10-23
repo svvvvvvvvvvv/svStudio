@@ -37,21 +37,21 @@ import time
 import cv2
 import numpy as np
 
-HERE = r'E:\lr_agent\opt'
-sys.path.insert(0, HERE)
-sys.path.insert(0, r'E:\lr_agent\prototype')
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _boot  # noqa: E402
+import paths
+paths.ensure_import_path()
+import profile_io                                   # noqa: E402
 
 from _probe_clip import measure, clip_stats         # noqa: E402
 from bridge_client import run                        # noqa: E402
 import lr_boot                                       # noqa: E402
 
-BATCH = r'E:\Debug_svStudio\svFilm_out\_b2048_1022'
-# ★ 产物根目录可用环境变量换（跑别的批次时不覆盖 1023 的结果）：LR_ROOT=...\lr_agent_out\919
-ROOT = os.environ.get('LR_ROOT') or r'E:\Debug_svStudio\lr_agent_out\2026-10-23'
-OUT = os.path.join(ROOT, 'layer1')
+BATCH = str(paths.BATCH_ROOT / '_b2048_1022')
+OUT = str(paths.WORK / 'layer1')
 XS = list(range(0, 256, 16))
 
-# 他的区间（52 张实测）
+# 以下默认值 = 鹿井；main() 会按 --profile 覆盖
 FACE_LO, FACE_HI = 55.0, 67.0      # 脸 p50 的护栏带（硬门是上沿 67）
 SPAN_LO, SPAN_HI = 51.0, 82.0      # 光比 P10/P90
 SPAN_TARGET = 58.0                 # 他的 P25 —— "不算低"的那条线，补到这里就停，不追中位 63
@@ -339,11 +339,28 @@ def write_page(recs, od):
 
 
 def main():
+    global FACE_LO, FACE_HI, SPAN_LO, SPAN_HI, SPAN_TARGET, BLACK_P90, WHITE_P90, L_PER_EV, OUT
     ap = argparse.ArgumentParser()
     ap.add_argument('--batch', default=BATCH)
     ap.add_argument('--only', default='')
+    ap.add_argument('--profile', default='kurai', help='预设 id 或 profile.json 路径')
+    ap.add_argument('--out-root', default='', help='产物根（默认 paths.WORK）')
     a = ap.parse_args()
+
+    prof = profile_io.load(a.profile)
+    if prof.get('status') != 'calibrated':
+        print('⚠ 预设 %s 状态=%s：tone 参数尚未标定，结果只作演示'
+              % (prof.get('id'), prof.get('status')))
+    t = profile_io.tone(prof)
+    FACE_LO, FACE_HI = float(t['face_lo']), float(t['face_hi'])
+    SPAN_LO, SPAN_HI = float(t['span_lo']), float(t['span_hi'])
+    SPAN_TARGET = float(t['span_target'])
+    BLACK_P90, WHITE_P90 = float(t['black_p90']), float(t['white_p90'])
+    L_PER_EV = float(t['l_per_ev'])
+    if a.out_root:
+        OUT = os.path.join(a.out_root, 'layer1')
     os.makedirs(OUT, exist_ok=True)
+    print('预设 %s (%s)  产物 %s' % (prof.get('name', prof.get('id')), prof.get('id'), OUT))
 
     srcs = sorted(p for p in glob.glob(os.path.join(a.batch, '*_svFilm_full.tif'))
                   if '_c0' not in p and '_c1' not in p)

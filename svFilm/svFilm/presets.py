@@ -112,22 +112,41 @@ def label_of(name):
     return _DESC.get(str(name), (str(name), ''))
 
 
-def _files():
+def _entries():
+    """预设 = 一个名字。两种形态都认：
+      · `<名字>.json`            （旧：单文件，只有胶片）
+      · `<名字>/preset.json`     （新：目录，胶片 + LR 收尾 finish.json）
+    """
     d = preset_dir()
-    return sorted(f for f in os.listdir(d) if f.endswith(_SUFFIX))
+    out = []
+    for f in os.listdir(d):
+        p = os.path.join(d, f)
+        if f.endswith(_SUFFIX) and os.path.isfile(p):
+            out.append(f[:-len(_SUFFIX)])
+        elif os.path.isdir(p) and os.path.isfile(os.path.join(p, 'preset.json')):
+            out.append(f)
+    return sorted(out)
+
+
+def _files():
+    return _entries()
 
 
 def names():
-    """所有可用预设（文件名去掉 .json，保持原样不转小写 —— 里面有中文和间隔号）。"""
-    return [f[:-len(_SUFFIX)] for f in _files()]
+    """所有可用预设（文件名/目录名去掉 .json，保持原样不转小写 —— 里面有中文和间隔号）。"""
+    return _entries()
 
 
 def has(name):
-    return str(name) + _SUFFIX in _files() if name else False
+    return str(name) in _entries() if name else False
 
 
 def path_of(name):
-    p = os.path.join(preset_dir(), str(name) + _SUFFIX)
+    base = os.path.join(preset_dir(), str(name))
+    p = os.path.join(base, 'preset.json')
+    if os.path.isfile(p):
+        return p
+    p = base + _SUFFIX
     if not os.path.isfile(p):
         raise KeyError('没有这个预设: %s（可选：%s）' % (name, ', '.join(names())))
     return p
