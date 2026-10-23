@@ -115,7 +115,11 @@ def solve_one(src, prof, edge, out_root, basic_row=None):
         rec_basic = None
 
     P = curve_lib.L_to_code(mev['p50'])
-    ys = look.curve(P, profile_io.look(prof))
+    # 压黑贴边时**加大 toe**（提暗），不是减小——toe 是暗部的补偿，不是黑点的来源。
+    b0 = float(mev.get('black', 0.0))
+    lim = max(1e-6, float(blk))
+    toe_scale = 1.0 + max(0.0, min(1.0, b0 / lim))
+    ys = look.curve(P, profile_io.look(prof), toe_scale=toe_scale)
     run('CURVES %s %s' % (src, spec_of(ys)), timeout=120)
     ffin, _ = expo(os.path.join(tag, 'final'), 2048)
     mfin = snap(ffin) if ffin else {}
