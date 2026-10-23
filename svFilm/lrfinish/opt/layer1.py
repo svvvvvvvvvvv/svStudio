@@ -174,7 +174,7 @@ def position_candidates(base0):
     return c
 
 
-def solve_one(src, stem, base0):
+def solve_one(src, stem, base0, basic_row=None):
     """返回 (记录 dict, 底片导出路径, 定稿导出路径)"""
     rec = dict(stem=stem, src=src, before=base0)
     if not base0.get('face'):
@@ -197,55 +197,66 @@ def solve_one(src, stem, base0):
         direction, tgt = '不动', p50
     rec['dir'], rec['target'] = direction, tgt
 
-    # ② 位置：把候选逐个写进画面量一遍（一次导出一个候选，最多两个）
-    tried = []
-    idn = None
-    for d, evc, hl in position_candidates(base0):
-        od = os.path.join(OUT, stem, 'pos%+.2f_h%d' % (evc, abs(hl)))
-        ft, r = apply_state(src, od, evc, None, hl)
-        if not ft:
-            continue
-        m = snap(ft)
-        if not m.get('face'):
-            continue
-        t = dict(dir=d, ev=evc, hl=hl, m=m, path=ft)
-        tried.append(t)
-        if abs(evc) < 0.01 and abs(hl) < 0.5:
-            idn = t
-    rec['tried'] = [{k: v for k, v in t.items() if k != 'path'} for t in tried]
-    rec['_idn_tif'] = idn['path'] if idn else None   # 原样底片（EV=0、高光 0）——目检的"修前"
-    if not tried:
-        rec['action'] = '失败'; rec['why'] = '所有候选都量不到脸'
-        return rec, None, None
-
-    def feas(t):
-        return t['m']['white'] <= wht_lim + 0.05 and t['m']['black'] <= blk_lim + 0.05
-
-    if direction == '不动':
-        pick = tried[0]
-    elif direction == '压':
-        # 硬门优先：脸必须先过 67。两端只记账，不否决。
-        pool = [t for t in tried if t['m']['p50'] <= FACE_HI] or tried
-        pick = min(pool, key=lambda t: (abs(t['m']['p50'] - tgt), t['m']['black']))
+    # ② 位置：有 Basic 结果就直接用它；否则走曝光/高光候选
+    if basic_row:
+        b = dict(basic_row.get('settings') or {})
+        od = os.path.join(OUT, stem, 'basic')
+        ft, r = apply_state(src, od, 0.0, None, 0, basic=b)
+        m = snap(ft) if ft else {}
+        if not ft or not m.get('face'):
+            rec['action'] = '失败'; rec['why'] = 'Basic 态量不到脸'
+            return rec, None, None
+        f, base, ev, hl = ft, m, float(b.get('Exposure2012', 0.0)), 0
+        rec['basic'] = b
+        rec['tried'] = []
+        rec['_idn_tif'] = ft
     else:
-        # 抬的方向：只有"脸进了带 + 亮端没翻"才算成功；否则退回不动。
-        # 抬一半是最糟的结果 —— 脸仍不够亮，亮端的平顶却已经整片翻过 95。
-        good = [t for t in tried if feas(t) and t['m']['p50'] >= FACE_LO - 1.0]
-        if good:
-            pick = min(good, key=lambda t: (t['m']['white'], abs(t['m']['p50'] - tgt)))
-        else:
-            lift = [t for t in tried if t['dir'] == '抬']
-            if lift:
-                bad = max(lift, key=lambda t: t['m']['white'])
-                rec['refused'] = ('抬 %+.2fEV%s 会把贴白从 %.2f%% 打到 %.2f%%（上限 %.2f%%），'
-                                  '而脸只到 %.1f ⇒ 退回不动；亮端是平顶，归上游'
-                                  % (bad['ev'],
-                                     '（含高光 %d）' % bad['hl'] if abs(bad['hl']) > 0.5 else '',
-                                     base0.get('white', 0.0), bad['m']['white'], wht_lim,
-                                     bad['m']['p50']))
-            pick = idn or tried[0]
+        tried = []
+        idn = None
+        for d, evc, hl in position_candidates(base0):
+            od = os.path.join(OUT, stem, 'pos%+.2f_h%d' % (evc, abs(hl)))
+            ft, r = apply_state(src, od, evc, None, hl)
+            if not ft:
+                continue
+            m = snap(ft)
+            if not m.get('face'):
+                continue
+            t = dict(dir=d, ev=evc, hl=hl, m=m, path=ft)
+            tried.append(t)
+            if abs(evc) < 0.01 and abs(hl) < 0.5:
+                idn = t
+        rec['tried'] = [{k: v for k, v in t.items() if k != 'path'} for t in tried]
+        rec['_idn_tif'] = idn['path'] if idn else None   # 原样底片（EV=0、高光 0）——目检的"修前"
+        if not tried:
+            rec['action'] = '失败'; rec['why'] = '所有候选都量不到脸'
+            return rec, None, None
 
-    f, base, ev, hl = pick['path'], pick['m'], pick['ev'], pick['hl']
+        def feas(t):
+            return t['m']['white'] <= wht_lim + 0.05 and t['m']['black'] <= blk_lim + 0.05
+
+        if direction == '不动':
+            pick = tried[0]
+        elif direction == '压':
+            # 硬门优先：脸必须先过 67。两端只记账，不否决。
+            pool = [t for t in tried if t['m']['p50'] <= FACE_HI] or tried
+            pick = min(pool, key=lambda t: (abs(t['m']['p50'] - tgt), t['m']['black']))
+        else:
+            # 抬的方向：只有"脸进了带 + 亮端没翻"才算成功；否则退回不动。
+            good = [t for t in tried if feas(t) and t['m']['p50'] >= FACE_LO - 1.0]
+            if good:
+                pick = min(good, key=lambda t: (t['m']['white'], abs(t['m']['p50'] - tgt)))
+            else:
+                lift = [t for t in tried if t['dir'] == '抬']
+                if lift:
+                    bad = max(lift, key=lambda t: t['m']['white'])
+                    rec['refused'] = ('抬 %+.2fEV%s 会把贴白从 %.2f%% 打到 %.2f%%（上限 %.2f%%），'
+                                      '而脸只到 %.1f ⇒ 退回不动；亮端是平顶，归上游'
+                                      % (bad['ev'],
+                                         '（含高光 %d）' % bad['hl'] if abs(bad['hl']) > 0.5 else '',
+                                         base0.get('white', 0.0), bad['m']['white'], wht_lim,
+                                         bad['m']['p50']))
+                pick = idn or tried[0]
+        f, base, ev, hl = pick['path'], pick['m'], pick['ev'], pick['hl']
     if abs(ev) < 0.01 and abs(hl) < 0.5:
         direction = '不动'
     rec['base'] = base
@@ -266,7 +277,7 @@ def solve_one(src, stem, base0):
 
     # ④ 曲线强度：由暗部余量定，不由"光比到靶"定
     #    停在"他的 P25 = 58"（不算低的那条线），不追他的中位 63。
-    def run_curve(toe, shoulder):
+    def run_curve(toe, shoulder, basic=None):
         """从 g=0.93 起逐档收紧；返回 (g, final, ysf, fpath, note)。"""
         g, final, ysf, fpath, note = 1.0, base, None, f, ''
         prev = None
@@ -274,7 +285,7 @@ def solve_one(src, stem, base0):
         for _ in range(5):
             ys = curve(P, cand, toe, shoulder)
             od = os.path.join(OUT, stem, 'g%.2f' % cand)
-            ff, rr = apply_state(src, od, ev, ys, hl)
+            ff, rr = apply_state(src, od, ev, ys, hl, basic=basic)
             if not ff:
                 note = '导出失败 %s' % rr
                 break
@@ -282,20 +293,17 @@ def solve_one(src, stem, base0):
             d['g'] = cand
             if not ok(d):
                 if prev is None:
-                    note = ('曲线买不起：g=%.2f 就把压黑推到 %.2f%%（上限 %.2f%%）⇒ 零动作'
-                            % (cand, d['black'], blk_lim))
+                    note = ('曲线买不起：g=%.2f 就把端点到 %.2f/%.2f%%（上限 %.2f/%.2f%%）⇒ 零动作'
+                            % (cand, d['black'], d['white'], blk_lim, wht_lim))
                 else:
                     g, final, ysf, fpath = prev
-                    note = 'g=%.2f（再紧一档 g=%.2f 就把压黑推到 %.2f%%，超上限 %.2f%%）' % (
-                        g, cand, d['black'], blk_lim)
+                    note = 'g=%.2f（再紧一档 g=%.2f 就把端点到 %.2f/%.2f%%，超上限）' % (
+                        g, cand, d['black'], d['white'])
                 break
             prev = (cand, d, ys, ff)
             g, final, ysf, fpath = cand, d, ys, ff
             if d['span'] >= SPAN_TARGET:
-                note = 'g=%.2f（光比 %.1f 到他的 P25，停）' % (g, d['span'])
-                break
-            if d['black'] > 0.82 * blk_lim:
-                note = 'g=%.2f（贴近暗部上限 %.2f%%，停）' % (cand, blk_lim)
+                note = 'g=%.2f（光比 %.1f 到目标 %.1f，停）' % (g, d['span'], SPAN_TARGET)
                 break
             cand = round(cand - 0.03, 2)
             if cand < G_MIN:
@@ -311,17 +319,19 @@ def solve_one(src, stem, base0):
         if FORCE_G is not None:
             ys = curve(P, FORCE_G, TOE, SHOULDER)
             od = os.path.join(OUT, stem, 'force_g%.2f' % FORCE_G)
-            ff, rr = apply_state(src, od, ev, ys, hl)
+            ff, rr = apply_state(src, od, ev, ys, hl,
+                                 basic=(basic_row.get('settings') if basic_row else None))
             if ff:
                 g, final, ysf, fpath = FORCE_G, snap(ff, mask_path=f), ys, ff
                 note = '强制 g=%.2f（试验，不看护栏）' % FORCE_G
             else:
                 g, final, ysf, fpath, note = 1.0, base, None, f, '强制导出失败 %s' % rr
         else:
-            g, final, ysf, fpath, note = run_curve(0.0, 0.0)
+            bset = dict(basic_row.get('settings')) if basic_row else None
+            g, final, ysf, fpath, note = run_curve(0.0, 0.0, basic=bset)
             # ★ 纯 S 被暗部上限卡死时，才用趾钩/肩滚去"买"对比（教程：提暗后再压黑 / 高光稍压）
             if g == 1.0 and (TOE or SHOULDER):
-                g2, f2, y2, p2, n2 = run_curve(TOE, SHOULDER)
+                g2, f2, y2, p2, n2 = run_curve(TOE, SHOULDER, basic=bset)
                 if g2 != 1.0:
                     g, final, ysf, fpath = g2, f2, y2, p2
                     note = n2 + '（纯 S 买不起，用趾钩/肩滚买到 g=%.2f）' % g2
@@ -399,6 +409,7 @@ def main():
     ap.add_argument('--span-target', type=float, default=None, help='光比目标（默认 profile；试验用）')
     ap.add_argument('--g-min', type=float, default=None, help='g 下限（默认 0.80；试验用）')
     ap.add_argument('--force-g', type=float, default=None, help='跳过搜索，强制用这个 g（只做目检实验）')
+    ap.add_argument('--no-basic', action='store_true', help='不读 basic/basic.json，退回旧候选逻辑')
     a = ap.parse_args()
 
     prof = profile_io.load(a.profile)
@@ -428,6 +439,19 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     print('预设 %s (%s)  产物 %s' % (prof.get('name', prof.get('id')), prof.get('id'), OUT))
 
+    basic_rows = {}
+    if not a.no_basic:
+        bp = os.path.join(os.path.dirname(OUT), 'basic', 'basic.json')
+        if os.path.isfile(bp):
+            try:
+                basic_rows = {r['stem']: r for r in
+                              json.load(open(bp, encoding='utf-8'))['rows']}
+                print('Basic 基线：%s（%d 张）' % (bp, len(basic_rows)))
+            except Exception as e:                    # noqa: BLE001
+                print('⚠ Basic 基线读失败：%s' % e)
+        else:
+            print('Basic 基线不存在，按旧候选逻辑跑：%s' % bp)
+
     srcs = sorted(p for p in glob.glob(os.path.join(a.batch, '*_svFilm_full.tif'))
                   if '_c0' not in p and '_c1' not in p)
     if a.only:
@@ -453,7 +477,7 @@ def main():
         run('SELECT ' + src, timeout=60)
         run('RESET ' + src, timeout=60)
         b0 = snap(src)
-        rec, fb, ff = solve_one(src, stem, b0)
+        rec, fb, ff = solve_one(src, stem, b0, basic_rows.get(stem))
         rec['_base_tif'], rec['_final_tif'] = rec.get('_idn_tif') or fb, ff
         recs.append(rec)
         if not fb:
