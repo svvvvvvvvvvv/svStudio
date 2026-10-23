@@ -12,7 +12,9 @@
     "span_target": 58.0,
     "black_p90": 2.34,
     "white_p90": 2.85,
-    "l_per_ev": 16.0
+    "l_per_ev": 16.0,
+    "toe": 4.0,
+    "shoulder": 4.0
   },
   "channel": { "bands_file": "bands.json" },
   "grading": {

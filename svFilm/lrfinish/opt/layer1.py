@@ -50,6 +50,7 @@ import lr_boot                                       # noqa: E402
 BATCH = str(paths.BATCH_ROOT / '_b2048_1022')
 OUT = str(paths.WORK / 'layer1')
 XS = list(range(0, 256, 16))
+TOE, SHOULDER = 0.0, 0.0          # 主曲线趾钩/肩滚（0 = 原来的纯 S；由 profile 覆盖）
 
 # 以下默认值 = 鹿井；main() 会按 --profile 覆盖
 FACE_LO, FACE_HI = 55.0, 67.0      # 脸 p50 的护栏带（硬门是上沿 67）
@@ -66,17 +67,34 @@ def L_to_code(L):
     return float(np.clip(v, 0.0, 1.0) * 255.0)
 
 
-def curve(P, g):
-    r"""端点钉死、支点不动的 S。暗侧指数是 1/g（用 t^g 会得到"黑端陡、支点平"，正好反了）。"""
+def curve(P, g, toe=None, shoulder=None):
+    r"""端点钉死、支点不动的 S；可加**趾钩**（提暗）与**肩滚**（压高光）。
+
+    趾钩/肩滚都是"支点为 0、两端为 0"的鼓包：
+      toe     在暗侧把中间提起来（黑点不动，暗部不再一压就死）
+      shoulder 在亮侧把中间压下去（白点不动，高光过渡更柔）
+    这两个是教程里"暗部上提后再在黑色处加锚点下压 / 高光稍压暗"的连续版。
+    """
+    toe = TOE if toe is None else float(toe)
+    shoulder = SHOULDER if shoulder is None else float(shoulder)
     out = []
     for x in XS:
         if x >= P:
-            t = (x - P) / (255.0 - P) if 255.0 - P > 1e-6 else 0.0
-            y = P + (255.0 - P) * (t ** g)
+            u = (x - P) / (255.0 - P) if 255.0 - P > 1e-6 else 0.0
+            y = P + (255.0 - P) * (u ** g)
+            y -= shoulder * 4.0 * u * (1.0 - u)
         else:
             t = x / P if P > 1e-6 else 0.0
             y = P * (t ** (1.0 / g))
+            y += toe * 4.0 * t * (1.0 - t)
         out.append(int(round(min(255.0, max(0.0, y)))))
+    # 单调护栏：鼓包太大会在局部造成负斜率（断层），减半重来
+    for _ in range(4):
+        if all(b >= a for a, b in zip(out, out[1:])):
+            break
+        toe *= 0.5
+        shoulder *= 0.5
+        out = curve(P, g, toe, shoulder)
     return out
 
 
@@ -238,16 +256,13 @@ def solve_one(src, stem, base0):
 
     # ④ 曲线强度：由暗部余量定，不由"光比到靶"定
     #    停在"他的 P25 = 58"（不算低的那条线），不追他的中位 63。
-    fpath = f
-    if base['span'] >= SPAN_TARGET:
-        g, final, ysf = 1.0, base, None
-        note = '光比 %.1f 已到他的 P25(%.0f)，零动作' % (base['span'], SPAN_TARGET)
-    else:
-        g, final, ysf, note = 1.0, base, None, ''
+    def run_curve(toe, shoulder):
+        """从 g=0.93 起逐档收紧；返回 (g, final, ysf, fpath, note)。"""
+        g, final, ysf, fpath, note = 1.0, base, None, f, ''
         prev = None
         cand = 0.93
         for _ in range(5):
-            ys = curve(P, cand)
+            ys = curve(P, cand, toe, shoulder)
             od = os.path.join(OUT, stem, 'g%.2f' % cand)
             ff, rr = apply_state(src, od, ev, ys, hl)
             if not ff:
@@ -276,6 +291,20 @@ def solve_one(src, stem, base0):
             if cand < 0.80:
                 note = 'g=%.2f（已到强度下限，光比 %.1f）' % (g, d['span'])
                 break
+        return g, final, ysf, fpath, note
+
+    fpath = f
+    if base['span'] >= SPAN_TARGET:
+        g, final, ysf = 1.0, base, None
+        note = '光比 %.1f 已到他的 P25(%.0f)，零动作' % (base['span'], SPAN_TARGET)
+    else:
+        g, final, ysf, fpath, note = run_curve(0.0, 0.0)
+        # ★ 纯 S 被暗部上限卡死时，才用趾钩/肩滚去"买"对比（教程：提暗后再压黑 / 高光稍压）
+        if g == 1.0 and (TOE or SHOULDER):
+            g2, f2, y2, p2, n2 = run_curve(TOE, SHOULDER)
+            if g2 != 1.0:
+                g, final, ysf, fpath = g2, f2, y2, p2
+                note = n2 + '（纯 S 买不起，用趾钩/肩滚买到 g=%.2f）' % g2
 
     # ⑤ 定稿态确认（若最后一次写的就是它，就不重导）
     rec['g'] = g
@@ -339,12 +368,14 @@ def write_page(recs, od):
 
 
 def main():
-    global FACE_LO, FACE_HI, SPAN_LO, SPAN_HI, SPAN_TARGET, BLACK_P90, WHITE_P90, L_PER_EV, OUT
+    global FACE_LO, FACE_HI, SPAN_LO, SPAN_HI, SPAN_TARGET, BLACK_P90, WHITE_P90, L_PER_EV, OUT, TOE, SHOULDER
     ap = argparse.ArgumentParser()
     ap.add_argument('--batch', default=BATCH)
     ap.add_argument('--only', default='')
     ap.add_argument('--profile', default='kurai', help='预设 id 或 profile.json 路径')
     ap.add_argument('--out-root', default='', help='产物根（默认 paths.WORK）')
+    ap.add_argument('--toe', type=float, default=None, help='趾钩强度（提暗，0=关）')
+    ap.add_argument('--shoulder', type=float, default=None, help='肩滚强度（压高光，0=关）')
     a = ap.parse_args()
 
     prof = profile_io.load(a.profile)
@@ -357,6 +388,12 @@ def main():
     SPAN_TARGET = float(t['span_target'])
     BLACK_P90, WHITE_P90 = float(t['black_p90']), float(t['white_p90'])
     L_PER_EV = float(t['l_per_ev'])
+    TOE = float(t.get('toe', 0.0))
+    SHOULDER = float(t.get('shoulder', 0.0))
+    if a.toe is not None:
+        TOE = a.toe
+    if a.shoulder is not None:
+        SHOULDER = a.shoulder
     if a.out_root:
         OUT = os.path.join(a.out_root, 'layer1')
     os.makedirs(OUT, exist_ok=True)
