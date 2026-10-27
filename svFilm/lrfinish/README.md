@@ -65,3 +65,6 @@ $py='C:\Users\psw99\.workbuddy\binaries\python\envs\spektrafilm\Scripts\python.e
 - 写完必须**导出复量**，不看读回值。
 - 不动作要记账（`zero_action` / `scene_given` / `upstream`）。
 - 路径只走 `paths.py`；换机器只改环境变量（`LRFINISH_DEBUG`、`LRFINISH_LR_EXE` 等）。
+
+
+> 2026-10-28 新架构 v2：`basic/look_stage/cal_basic/basic_gain/bands/finish` 已删除；只留 `card_target_v2.py` + `run_v2.py`（六旋钮 + curve/HSL/grading，全从卡 target 来）。
