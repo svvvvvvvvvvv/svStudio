@@ -100,7 +100,6 @@ def launch():
     # ★★★ 必须**脱离 job object**（10-22 16:21 真踩）：
     #   光 `Popen(close_fds=True)` 起不来“独立”的 LR —— 它仍是调用方进程树的子节点，
     #   调用方（一个后台任务 shell）一结束，Windows 就把整棵树带走，
-    #   LR 在桥 READY 之后**无声消失**（没有 WER、没有崩溃事件，进程直接没了）。
     #   症状：plugin.log 只有 `init/loop enter`，连 `handle` 一行都没有。
     #   ⇒ CREATE_BREAKAWAY_FROM_JOB 让它脱离任务 job + DETACHED_PROCESS 不继承控制台。
     FLAGS = 0x01000000 | 0x00000008        # BREAKAWAY_FROM_JOB | DETACHED_PROCESS

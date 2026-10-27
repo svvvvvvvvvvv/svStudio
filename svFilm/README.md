@@ -91,7 +91,7 @@ pip install tifffile
   `enlarger.print_exposure`（**整卷常数**）。「逐图算曝光」只能在 `exposure.py` 那一层做。
 ★ **空间族（颗粒 / 柔光 / halation）都在引擎里**，svFilm 不许外挂一层。
 ★ **C2 = `lrbase`**：只调 `presets.render_linear`（`scan_film` / 线性 / 不裁剪），
-  输出平基底片；**不许改 C1 的 `render` / `render_person_pe` 路径**。
+  输出平基底片；**不许改 C1 的 `render` 路径**。
 ```
 
 ## 常用命令
@@ -129,7 +129,7 @@ RAW → io.load → render_linear（scan_film，线性、不裁剪）
     → 16-bit TIFF（**不带 ICC**）→ lr_meta（owners: medium_paper=lr）
 
 mode=print_neutral：
-RAW → io.load → render（固定 print_exposure，**不跑 person_pe / 不认人**）
+RAW → io.load → render（固定 print_exposure，**medium-only / 不认人**）
     → 中性印相（stock + paper + scan + grain + halation）
     → 16-bit TIFF（**不带 ICC**）→ lr_meta（owners: medium_paper=svfilm, master_*=lr）
 

@@ -2,7 +2,7 @@
 r"""统一入口：按预设跑 LR 收尾的层。
 
     python svFilm/lrfinish/run.py --profile kurai --batch <底片目录> --out-root <产物根>
-    python svFilm/lrfinish/run.py --profile hamada --batch ... --out-root ... --stages layer1
+    python svFilm/lrfinish/run.py --profile hamada --batch ... --out-root ... --stages basic,layer1_v9
 
 预设 = `svFilm/svFilm/data/presets/<名字>/`：
   preset.json（胶片，引擎读）+ finish.json（本工具读）+ bands.json + calibration/。
@@ -22,10 +22,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--profile', '--preset', dest='profile', default='kurai',
                     help='预设 id（kurai/hamada）或 finish.json 路径')
-    ap.add_argument('--batch', default='', help='底片目录（layer1 需要）')
+    ap.add_argument('--batch', default='', help='底片目录（basic/layer1_v9 需要）')
     ap.add_argument('--out-root', default=str(paths.WORK), help='产物根')
     ap.add_argument('--stages', default='basic,layer1_v9',
-                    help='默认 v9：basic,layer1_v9；旧链用 layer1,layer2,layer5')
+                    help='默认 v9：basic,layer1_v9')
     ap.add_argument('--python', default=sys.executable)
     ap.add_argument('--dry-run', action='store_true')
     a = ap.parse_args()
@@ -46,7 +46,7 @@ def main():
             raise SystemExit('没有这一层：%s' % script)
         cmd = [a.python, '-u', str(script), '--profile', str(a.profile),
                '--out-root', str(a.out_root)]
-        if st in ('layer1', 'basic', 'layer1_v9'):
+        if st in ('basic', 'layer1_v9'):
             if not a.batch:
                 raise SystemExit('%s 需要 --batch <底片目录>' % st)
             cmd += ['--batch', str(a.batch)]

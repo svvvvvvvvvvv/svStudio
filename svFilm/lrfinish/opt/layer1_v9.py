@@ -85,7 +85,6 @@ def solve_one(src, prof, edge, out_root, basic_row=None):
     wht, blk = float(gd['white_p90']), float(gd['black_p90'])
 
     if basic_row:
-        # Basic 作为 ScenePolicy：先处理贴白/压黑，再套固定 look
         b = dict(basic_row.get('settings') or {})
         write_basic(src, b)
         fev, _ = expo(os.path.join(tag, 'basic'), edge)
@@ -126,7 +125,6 @@ def solve_one(src, prof, edge, out_root, basic_row=None):
         lk = {**lk, **per}
     ys = look.curve(P, lk, toe_scale=toe_scale)
 
-    # GLOBAL 一次写全：Basic/曝光 + HSL + 分级；之后再写曲线（顺序不能反）
     settings = dict(rec_basic or {})
     settings.setdefault('Exposure2012', ev)
     for k in ('Contrast2012', 'Highlights2012', 'Shadows2012',

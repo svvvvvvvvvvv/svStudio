@@ -1,5 +1,5 @@
 {
- "_note_self": "★★★ dev 基线（引擎 dev 6cd00c8；10-18 重标）。schema 生成器 = _lib/mkpreset.py（值 = 引擎默认 + 下列显式项）。\n「选」kodak_portra_400 + kodak_portra_endura（10-17 用户拍板，勿翻案）。\n「定」print_exposure 0.694 ｜ couplers.amount 1.00（10-24 第一刀；旧 1.10；Langmuir K=1 默认）｜ 印相化学 γ 1.0/1.0/1.0（10-20 锁） ｜ 相机黑柔 black_pro_mist 0.25 · 印放柔光 black_pro_mist 0.125（10-20 降数码味） ｜ 画幅 35 ｜ 颗粒 = dev 原生：卷表 rms (24, 24, 24) · blur 2.0（10-24 第一刀；旧 20） · mult_usm 0.7/0（10-19 关：1080 黑发白点） · dye 3µm（10-24） · uniformity 0.97 · scanner USM 0｜ halation (2.5, 0.8, 0) · sigma 75（JSON×100；10-24 第一刀；旧 1.5/0.5/65）｜ 靶 = 鹿井 52 张逐图 [P25,P75]。\n「大方向」（不在本文件）入口 WB 4600/0.97 ｜ 动态 PE：目标脸 66.96（缺省） · band 接受 [55.0,74.4] · tail [62.0,69.4] · mid 67.2（10-19 重定；旧 67/78 是中位）· 服装带（亮中性子集）+ 全色 p99/clip（A1.1） [77.1,88.3]（10-18 A1：只截 back 偏好）。\n接线 scan_white/black_correction = True · scan_white_level 1.00（10-24 第一刀；旧 0.97）。报告：引擎升级_1018/报告.md · 五笔_1018。",
+ "_note_self": "值：dev 基线（6cd00c8；10-18 重标）。format 35 ｜ portra_400 + portra_endura ｜ WB 4545/0.998 ｜ PE 0.694 ｜ amount 1.00 ｜ grain 24/2.0/dye 3.0 ｜ halation 2.5/0.8/σ75 ｜ lc off ｜ export 1080。",
  "wb": {
   "white_balance": "custom",
   "temperature": 4545.0,
@@ -201,22 +201,7 @@
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
   "film_stock": "kodak_portra_400",
-  "print_paper": "kodak_portra_endura",
-  "person_pe_band": [
-   55.0,
-   74.4
-  ],
-  "person_pe_white_band": [
-   77.1,
-   88.3
-  ],
-  "person_pe_cloth_p99_max": 98.6,
-  "person_pe_cloth_clip_max": 1.0,
-  "person_pe_tail": [
-   62.0,
-   69.4
-  ],
-  "person_pe_mid": 67.2
+  "print_paper": "kodak_portra_endura"
  },
  "display": {
   "preview_max_size": 640
@@ -330,12 +315,6 @@
   "simulation.diffusion_filter_bloom_size": "泛光半径倍率；1.0 = 族默认。",
   "simulation.film_stock": "模拟胶卷；构建 params 时选定，overrides 改不了。",
   "simulation.print_paper": "模拟相纸；构建 params 时选定，overrides 改不了。",
-  "simulation.person_pe_band": "脸 L* 接受窗 [P10,P90]：窗内不动；低于下沿提到 P25（逆光往 P50 推），高于上沿可压到 P75。",
-  "simulation.person_pe_white_band": "亮中性服装 L50 带；只截「往亮提」的偏好，不截脸的下限。",
-  "simulation.person_pe_cloth_p99_max": "全色服装 p99 L* 天花板；超了不再往亮提（脸下限优先）。",
-  "simulation.person_pe_cloth_clip_max": "全色服装 clip%（≥254）上限；超了不再往亮提。",
-  "simulation.person_pe_tail": "尾巴目标 [P25,P75]；只在脸出接受窗时用（暗了提向 P25，亮了压向 P75）。",
-  "simulation.person_pe_mid": "脸中位 P50；逆光提亮目标的上界（顺光用 P25）。",
   "display.preview_max_size": "预览长边像素（640）；只影响预览，不影响成片。"
  }
 }

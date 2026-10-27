@@ -127,7 +127,6 @@ def solve_one(src, prof, edge, out_root):
     face_lo, face_hi = float(t['face_lo']), float(t['face_hi'])
     l_per_ev = float(t['l_per_ev'])
     # ★ 10-24 用户拍板：背景的爆/暗是风格，不再当缺陷；只保护脸。
-    #   white_p90/black_p90 保留在 profile 里当"风格描述子"，不再驱动动作。
     # ★ 脸的口径 = 左右脸蛋两圈 ∩ 肤色门（`L_skin`），不是整张脸框（p50）。
 
     vals = dict(ZERO)
