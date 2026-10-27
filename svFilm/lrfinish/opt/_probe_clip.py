@@ -120,6 +120,25 @@ def measure(p, mask_path=None):
     med = cv2.medianBlur(core, 3)
     tex = float(np.std(core - med))
 
+    # 脸颊两圈 ∩ 肤色门（与 _probe_skin_zone 同口径）：只量皮肤，不含白花/头纱/泡泡
+    che = np.zeros(L.shape, np.uint8)
+    R = max(4, int(ww * 0.13))
+    for cx in (x0 + int(ww * 0.30), x0 + int(ww * 0.70)):
+        cv2.circle(che, (cx, y0 + int(hh * 0.66)), R, 1, -1)
+    yy = 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
+    cb = -0.168736 * rgb[..., 0] - 0.331264 * rgb[..., 1] + 0.5 * rgb[..., 2] + 0.5
+    cr = 0.5 * rgb[..., 0] - 0.418688 * rgb[..., 1] - 0.081312 * rgb[..., 2] + 0.5
+    skin = ((che > 0) & (cb >= 0.28) & (cb <= 0.58) & (cr >= 0.45) & (cr <= 0.78)
+            & (yy >= 0.35 * np.median(yy)) & (L >= 20))
+    n_skin = int(skin.sum())
+    if n_skin < 40:
+        return dict(face=False, why='脸颊像素不足(%d)' % n_skin)
+    Ls = L[skin]
+    L_skin = float(np.median(Ls))
+    skin_span = float(np.percentile(Ls, 90) - np.percentile(Ls, 10))
+    clip95_skin = float(100.0 * (Ls > 95).mean())
+    top255_skin = float(100.0 * ((rgb.max(axis=2) >= 254.0 / 255.0)[skin]).mean())
+
     return dict(face=True,
                 p10=float(np.percentile(core, 10)),
                 p50=float(np.percentile(core, 50)),
@@ -128,6 +147,15 @@ def measure(p, mask_path=None):
                 span=float(np.percentile(core, 90) - np.percentile(core, 10)),
                 clip95=float(100.0 * (core > 95).mean()),
                 top255=float(100.0 * (u8.max(axis=2) >= 254).mean()),
+                # 脸的口径 = 左右脸蛋两圈 ∩ 肤色门（不是整张脸框）
+                L_skin=L_skin,
+                skin_span=skin_span,
+                skin_p10=float(np.percentile(Ls, 10)),
+                skin_p90=float(np.percentile(Ls, 90)),
+                skin_p99=float(np.percentile(Ls, 99)),
+                clip95_skin=clip95_skin,
+                top255_skin=top255_skin,
+                n_skin=n_skin,
                 tex=tex,
                 L_neu=L_neu,
                 n_neu=int(neu.sum()),

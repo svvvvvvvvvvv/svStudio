@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import paths
 paths.ensure_import_path()
 import profile_io                                   # noqa: E402
+import scene                                        # noqa: E402
 
 from _probe_clip import measure                      # noqa: E402
 from bridge_client import run                        # noqa: E402
@@ -124,22 +125,26 @@ def solve_one(src, prof, edge, out_root):
 
     t = profile_io.tone(prof)
     face_lo, face_hi = float(t['face_lo']), float(t['face_hi'])
-    span_target = float(t['span_target'])
-    wht_lim = float(t['white_p90'])
-    blk_lim = float(t['black_p90'])
+    l_per_ev = float(t['l_per_ev'])
+    # ★ 10-24 用户拍板：背景的爆/暗是风格，不再当缺陷；只保护脸。
+    #   white_p90/black_p90 保留在 profile 里当"风格描述子"，不再驱动动作。
+    # ★ 脸的口径 = 左右脸蛋两圈 ∩ 肤色门（`L_skin`），不是整张脸框（p50）。
 
     vals = dict(ZERO)
     _, m0, f0 = _state(src, vals, os.path.join(tag, 'base'), edge)
     if not m0 or not m0.get('face'):
         return dict(stem=stem, src=src, action='skip', why='量不到脸'), None
+    if scene.face_blown(m0):
+        return dict(stem=stem, src=src, action='skip', why='face_blown',
+                    base=m0), None
     rec = dict(stem=stem, src=src, base=m0, settings={}, actions=[])
     log = rec['actions']
 
-    # ① Exposure：脸落带；一旦把贴白打超限，就退到不超限的那一档
-    if m0['p50'] > face_hi:
-        ev0 = (face_hi - 0.5 - m0['p50']) / 16.0
-    elif m0['p50'] < face_lo:
-        ev0 = (face_lo + 2.0 - m0['p50']) / 16.0
+    # ① Exposure：脸颊落带；一旦把脸打爆，就退到不爆的那一档
+    if m0['L_skin'] > face_hi:
+        ev0 = (face_hi - 0.5 - m0['L_skin']) / l_per_ev
+    elif m0['L_skin'] < face_lo:
+        ev0 = (face_lo + 2.0 - m0['L_skin']) / l_per_ev
     else:
         ev0 = 0.0
     picked = None
@@ -147,69 +152,30 @@ def solve_one(src, prof, edge, out_root):
         v = dict(vals)
         v['Exposure2012'] = clip_key('Exposure2012', ev0 * s)
         _, mm, ff = _state(src, v, os.path.join(tag, 'ev%.2f' % s), edge)
-        if mm and mm.get('white', 0) <= wht_lim + 0.05:
+        if mm and not scene.face_blown(mm):
             picked = (v, mm, ff)
             break
     if picked is None:
         vals['Exposure2012'] = 0.0
         _, m, f = _state(src, vals, os.path.join(tag, 'ev0'), edge)
-        rec['upstream'] = '抬曝光会打爆白端；EV 退回 0'
+        rec['upstream'] = '抬曝光会打爆脸；EV 退回 0'
     else:
         vals, m, f = picked
     if not m:
         return dict(stem=stem, src=src, action='fail', why='EV 导出失败'), None
     rec['after_ev'] = m
     log.append(dict(key='Exposure2012', value=vals['Exposure2012'],
-                    before=m0['p50'], after=m['p50'],
-                    white=m.get('white'), white_lim=wht_lim))
+                    before=m0['L_skin'], after=m['L_skin'],
+                    white=m.get('white'), face_clip95=m.get('clip95')))
 
-    # ② Highlights：贴白超限就压；压不动就记账，不硬拧
-    if m.get('white', 0) > wht_lim + 0.05:
-        vals, m, msg = _secant(src, vals, m, 'Highlights2012', 'white',
-                               wht_lim, os.path.join(tag, 'hl'), edge, -30.0,
-                               -100.0, 100.0, log)
-        rec.setdefault('notes', []).append(msg)
-        if m.get('white', 0) > wht_lim + 0.05:
-            rec['upstream'] = 'Highlights 到 -100 仍压不住贴白（%.1f%%）' % m['white']
-    # ③ Shadows：压黑超限就提；没超就不动
-    if m.get('black', 0) > blk_lim + 0.05:
-        vals, m, msg = _secant(src, vals, m, 'Shadows2012', 'black',
-                               blk_lim, os.path.join(tag, 'sh'), edge, +30.0,
-                               -100.0, 100.0, log)
-        rec.setdefault('notes', []).append(msg)
-    # ④ Whites / Blacks：只在"白端没爆、黑端没死"时整理分位；
-    #    白端已经爆了还推 Whites 只会更糟。
-    if m.get('white', 0) <= wht_lim + 0.05 and float(m.get('p99', 100)) < 95.0:
-        prev, pm = dict(vals), dict(m)
-        vals, m, msg = _secant(src, vals, m, 'Whites2012', 'p99',
-                               97.0, os.path.join(tag, 'wh'), edge, +25.0,
-                               -100.0, 100.0, log)
-        rec.setdefault('notes', []).append(msg)
-        if m.get('white', 0) > wht_lim + 0.05:
-            vals, m = prev, pm
-            rec.setdefault('notes', []).append('Whites 回退：会把贴白推超限')
-    if m.get('black', 0) <= blk_lim + 0.05 and float(m.get('p10', 0)) > 8.0:
-        prev, pm = dict(vals), dict(m)
-        vals, m, msg = _secant(src, vals, m, 'Blacks2012', 'p10',
-                               5.0, os.path.join(tag, 'bl'), edge, -25.0,
-                               -100.0, 100.0, log)
-        rec.setdefault('notes', []).append(msg)
-        if m.get('black', 0) > blk_lim + 0.05:
-            vals, m = prev, pm
-            rec.setdefault('notes', []).append('Blacks 回退：会把压黑推超限')
-    # ⑤ Contrast：只在两端护栏内补剩余光比
-    if (m.get('span', 0) < span_target
-            and m.get('white', 0) <= wht_lim + 0.05
-            and m.get('black', 0) <= blk_lim + 0.05):
-        prev, pm = dict(vals), dict(m)
-        vals, m, msg = _secant(src, vals, m, 'Contrast2012', 'span',
-                               span_target, os.path.join(tag, 'ct'), edge, +25.0,
-                               -100.0, 100.0, log)
-        rec.setdefault('notes', []).append(msg)
-        if (m.get('white', 0) > wht_lim + 0.05
-                or m.get('black', 0) > blk_lim + 0.05):
-            vals, m = prev, pm
-            rec.setdefault('notes', []).append('Contrast 回退：会破坏两端护栏')
+    # ② 背景的贴白/压黑是风格（10-24 用户拍板）：不再用全图 white/black
+    #    驱动 Highlights/Shadows。脸自己的过曝在入口已经 skip。
+    #
+    # ③ 不做 Whites/Blacks 的 p99/p10 追端：
+    #    10-24 实测（1665/1726）——没有全图护栏后，它们会 +100/−100，
+    #    把背景吹到 22.9%、脸压到 51.0。脸的明暗只由 EV + 光比（Contrast）管。
+    # ④ 不做 Contrast：脸颊光比（skin_span）是形状指标，全局 Contrast 改不了它；
+    #    10-24 实测 +82.6/+100 会把黑影压到 11-18%、颊抬到 75+。脸只由 EV 管。
 
     # 定稿：2048 一次
     write_basic(src, vals)

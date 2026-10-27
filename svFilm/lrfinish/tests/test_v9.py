@@ -24,6 +24,16 @@ class TestV9(unittest.TestCase):
         self.assertEqual(scene.missing_anchor({'face': True}), '')
         self.assertEqual(scene.missing_anchor({}), 'missing_face')
 
+    def test_face_blown(self):
+        # 1150：脸 clip95 10.25% / top255 2.45% ⇒ 跳过；其余 4 张都是 0 ⇒ 不动
+        self.assertEqual(scene.missing_anchor(
+            {'face': True, 'clip95': 10.25, 'top255': 2.45}), 'face_blown')
+        self.assertEqual(scene.missing_anchor(
+            {'face': True, 'clip95': 0.0, 'top255': 0.0}), '')
+        # 背景爆不算：clip95/top255 只看脸框
+        self.assertEqual(scene.missing_anchor(
+            {'face': True, 'clip95': 0.0, 'top255': 0.0, 'white': 17.0}), '')
+
 
 if __name__ == '__main__':
     unittest.main()

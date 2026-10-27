@@ -106,8 +106,8 @@ def calib(prof: dict, name: str) -> Path:
 
 
 def tone(prof: dict) -> dict:
-    d = dict(face_lo=55.0, face_hi=67.0, span_lo=51.0, span_hi=82.0,
-             span_target=58.0, black_p90=2.34, white_p90=2.85, l_per_ev=16.0)
+    d = dict(face_lo=63.7, face_hi=74.7, span_lo=15.7, span_hi=27.7,
+             span_target=24.0, black_p90=2.34, white_p90=2.85, l_per_ev=16.0)
     d.update(prof.get('tone') or {})
     return d
 

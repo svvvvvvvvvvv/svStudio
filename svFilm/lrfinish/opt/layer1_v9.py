@@ -2,7 +2,7 @@
 r"""v9 第 1 层：脸锚曝光 + 固定 LookProfile 曲线（不搜 g、不解通道）。
 
 流程：
-  ① 量底片（EV=0）→ 脸 p50
+  ① 量底片（EV=0）→ 脸颊 L_skin（左右脸蛋 ∩ 肤色）
   ② ScenePolicy：从脸反推 EV；若 EV 把贴白/压黑打超限，逐档退回
   ③ 用固定 LookProfile 曲线（P 随脸，形状常量）写一次
   ④ 量终态，记账
@@ -46,9 +46,9 @@ def expo(outdir, edge=2048):
 
 def spec_of(ys):
     body = ','.join('%d,%d' % (x, y) for x, y in zip(XS, ys))
-    return ('ToneCurvePV2012:%s;ToneCurvePV2012Red:%s;'
-            'ToneCurvePV2012Green:%s;ToneCurvePV2012Blue:%s'
-            % (body, body, body, body))
+    # 只写复合曲线。10-24 研究：同时写 Red/Green/Blue 会让 LR 把同一条曲线
+    # 再叠一次（有效 g≈g²，J 的 0.85 实际 0.72，p2 3.55、1289 黑 21.66）。
+    return 'ToneCurvePV2012:%s' % body
 
 
 def snap(p):
@@ -95,7 +95,7 @@ def solve_one(src, prof, edge, out_root, basic_row=None):
         ev = float(b.get('Exposure2012', 0.0))
         rec_basic = b
     else:
-        ev0 = scene.face_ev(m0['p50'], sc['face_zone'], float(t['l_per_ev']))
+        ev0 = scene.face_ev(m0['L_skin'], sc['face_zone'], float(t['l_per_ev']))
         picked = None
         for s in (1.0, 0.75, 0.5, 0.25, 0.0):
             ev = ev0 * s
@@ -114,12 +114,16 @@ def solve_one(src, prof, edge, out_root, basic_row=None):
         ev, mev, fev = picked
         rec_basic = None
 
-    P = curve_lib.L_to_code(mev['p50'])
+    P = curve_lib.L_to_code(mev['L_skin'])
     # 压黑贴边时**加大 toe**（提暗），不是减小——toe 是暗部的补偿，不是黑点的来源。
     b0 = float(mev.get('black', 0.0))
     lim = max(1e-6, float(blk))
     toe_scale = 1.0 + max(0.0, min(1.0, b0 / lim))
     lk = profile_io.look(prof)
+    # 逐图 look 覆盖（直方图驱动：同一族，参数按图给）
+    per = ((prof.get('look') or {}).get('per_image') or {}).get(stem)
+    if per:
+        lk = {**lk, **per}
     ys = look.curve(P, lk, toe_scale=toe_scale)
 
     # GLOBAL 一次写全：Basic/曝光 + HSL + 分级；之后再写曲线（顺序不能反）
@@ -142,7 +146,7 @@ def solve_one(src, prof, edge, out_root, basic_row=None):
                basic=rec_basic, final=mfin, curve=ys, final_tif=ffin,
                action='已执行' if abs(ev) > 0.01 or ys != list(XS) else '零动作')
     if mfin and not scene.within(mfin, wht, blk):
-        rec['guard'] = 'curve 后两端超限，归上游/需人工'
+        rec['guard'] = 'curve 后脸过曝，归上游/需人工'
     return rec, ffin
 
 
@@ -191,9 +195,10 @@ def main():
         rec, _ = solve_one(src, prof, a.edge, a.out_root, basic_rows.get(rec_stem))
         recs.append(rec)
         f = rec.get('final') or {}
-        print('%-10s EV%+.2f  脸 %.1f→%.1f  光比 %.1f→%.1f  贴白 %.2f  压黑 %.2f  %s'
-              % (rec['stem'], rec.get('ev', 0), (rec.get('base') or {}).get('p50', 0),
-                 f.get('p50', 0), (rec.get('base') or {}).get('span', 0), f.get('span', 0),
+        print('%-10s EV%+.2f  颊 %.1f→%.1f  颊光比 %.1f→%.1f  贴白 %.2f  压黑 %.2f  %s'
+              % (rec['stem'], rec.get('ev', 0), (rec.get('base') or {}).get('L_skin', 0),
+                 f.get('L_skin', 0), (rec.get('base') or {}).get('skin_span', 0),
+                 f.get('skin_span', 0),
                  f.get('white', 0), f.get('black', 0), rec.get('guard', '')))
     dst = os.path.join(a.out_root, 'layer1_v9', 'layer1_v9.json')
     os.makedirs(os.path.dirname(dst), exist_ok=True)

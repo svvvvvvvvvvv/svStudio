@@ -8,11 +8,11 @@
   "n": 52
  },
  "tone": {
-  "face_lo": 55.0,
-  "face_hi": 67.0,
-  "span_lo": 51.0,
-  "span_hi": 82.0,
-  "span_target": 58.0,
+  "face_lo": 63.7,
+  "face_hi": 74.7,
+  "span_lo": 15.7,
+  "span_hi": 27.7,
+  "span_target": 24.0,
   "black_p90": 2.34,
   "white_p90": 2.85,
   "l_per_ev": 16.0,
@@ -94,10 +94,11 @@
  "scene": {
   "anchor": "face",
   "face_zone": [
-   55.0,
-   67.0
+   63.7,
+   74.7
   ],
   "wb": "auto",
   "black_white": "guard"
- }
+ },
+ "note": "10-24 脸口径改为左右脸蛋∩肤色（L_skin）；zone [63.7,74.7]、span_target 24（大师 52 的 P25/P75 与 P50）；旧盒口径 [55,67]/58。"
 }
