@@ -1,28 +1,29 @@
 {
- "id": "hamada",
- "name": "滨田",
- "version": "0.1.0-draft",
+ "id": "card38",
+ "name": "卡38",
+ "version": "0.1.0",
  "status": "draft",
- "note": "五段靶带已按滨田 22 张实测；tone/grading 暂沿用鹿井，尚未标定。",
  "corpus": {
-  "path": "E:/ds/大师成片/滨田",
-  "n": 22
+  "path": "E:/ds/大师成片/鹿井/104_鹿井小渔_n6a753ef5",
+  "n": 16
  },
  "tone": {
-  "face_lo": 55.0,
-  "face_hi": 67.0,
-  "span_lo": 51.0,
-  "span_hi": 82.0,
-  "span_target": 58.0,
-  "black_p90": 2.34,
-  "white_p90": 2.85,
-  "l_per_ev": 16.0
+  "face_lo": 70.2,
+  "face_hi": 79.0,
+  "span_lo": 6.0,
+  "span_hi": 14.0,
+  "span_target": 8.8,
+  "black_p90": 1.36,
+  "white_p90": 0.66,
+  "l_per_ev": 16.0,
+  "toe": 4.0,
+  "shoulder": 4.0
  },
  "channel": {
   "bands_file": "bands.json"
  },
  "grading": {
-  "shadow_hue": 220,
+  "shadow_hue": 185,
   "high_hue": 30,
   "factor": 0.3333333333333333,
   "clamp": 0.6,
@@ -32,8 +33,8 @@
   "split_gain": "calibration/split_gain.json"
  },
  "guards": {
-  "white_p90": 2.85,
-  "black_p90": 2.34,
+  "white_p90": 0.66,
+  "black_p90": 1.36,
   "true_clip": 0.5,
   "monotone": true
  },
@@ -42,39 +43,39 @@
  },
  "look": {
   "curve": {
-   "g": 0.9,
+   "g": 0.96,
    "toe": 4.0,
    "shoulder": 4.0
   },
   "hsl": {
-   "blue": [
-    -12,
-    10,
-    -5
-   ],
-   "green": [
-    -14,
-    -15,
-    -8
+   "orange": [
+    0,
+    -4,
+    4
    ],
    "yellow": [
     0,
-    -12,
+    -8,
     0
    ],
-   "orange": [
-    4,
+   "green": [
+    -8,
     -10,
-    8
+    -4
+   ],
+   "blue": [
+    -6,
+    6,
+    -2
    ],
    "red": [
     2,
-    -8,
+    -4,
     0
    ]
   },
   "grading": {
-   "shadow_hue": 220,
+   "shadow_hue": 185,
    "shadow_sat": 4,
    "high_hue": 30,
    "high_sat": 2,
@@ -82,8 +83,8 @@
   }
  },
  "skin": {
-  "L": 70,
-  "C": 16,
+  "L": 77.1,
+  "C": 17.2,
   "ellipsoid": {
    "L": 10,
    "a": 4,
@@ -93,10 +94,11 @@
  "scene": {
   "anchor": "face",
   "face_zone": [
-   55.0,
-   67.0
+   70.2,
+   79.0
   ],
   "wb": "auto",
   "black_white": "guard"
- }
+ },
+ "note": "card38 design: PE medium-only; LR owns placement; curve/HSL/CG from card 38"
 }

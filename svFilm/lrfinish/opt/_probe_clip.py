@@ -33,8 +33,7 @@ import _boot  # noqa: E402
 import paths
 paths.ensure_import_path()
 import svFilm.color as color                      # noqa: E402
-from _probe_skin_zone import load, det            # noqa: E402
-from _probe_52_shape import MASTER, OUT           # noqa: E402
+from skin_zone import load, det            # noqa: E402
 
 BATCH = str(paths.BATCH_ROOT / '_b2048_1022')
 
@@ -219,5 +218,3 @@ def main():
     print('\n-> %s' % os.path.join(OUT, 'clip.json'))
 
 
-if __name__ == '__main__':
-    main()

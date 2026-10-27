@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import paths
 paths.ensure_import_path()
 import profile_io                                   # noqa: E402
-import scene                                        # noqa: E402
+import placement as scene                                        # noqa: E402
 
 from _probe_clip import measure                      # noqa: E402
 from bridge_client import run                        # noqa: E402
@@ -58,6 +58,7 @@ def clip_key(k, v):
 
 
 def write_basic(src, vals):
+    run('SELECT %s' % src, timeout=120)   # 逐张选中
     spec = ','.join('%s=%.3f' % (k, vals[k]) for k in KEYS)
     return run('GLOBAL %s %s' % (src, spec), timeout=60)
 

@@ -21,7 +21,6 @@ _LOCKS: dict = {}
 # `_post_scan` 的**诊断变量**：减弱型效果失效时画面 / 直方图都不报警，只能靠它留证。
 _POST_SCAN_ERROR: str | None = None
 
-# ★★★ **上一次「按脸反解印相曝光」的决策留痕**（`render_person_pe` 写、`pipeline` 读进报告）。
 
 # ★ 成片 CLOTH 分割失败的**进程内去重**警告（退回输入侧掩膜 = 服装帽口径会偏 2~3 L*）。
 
@@ -369,35 +368,6 @@ def _apply(p, d, cfg, name=None):
     p.debug.deactivate_spatial_effects = False
     p.debug.deactivate_stochastic_effects = False
 
-    # ---- 「以人为本」的动态印相曝光（**可选键**：缺省 ⇒ 一个字段都不碰）----
-    _ppe = {}
-    for _k, _cast in (('person_pe_dynamic', bool), ('person_pe_target_l', float),
-                      ('person_pe_slope', float), ('person_pe_max_dp', float),
-                      ('person_pe_back_gain', float), ('person_pe_white_slope', float),
-                      ('person_pe_cloth_p99_max', float), ('person_pe_cloth_clip_max', float),
-                      ('person_pe_cloth_p1_min', float)):
-        if _k in si:
-            _ppe[_k] = _cast(si[_k])
-    if 'person_pe_band' in si:
-        # `false` = **关掉合理窗**（与 `render_person_pe(band=False)` 同一语义），其余按二元组收
-        _b = si['person_pe_band']
-        _ppe['person_pe_band'] = False if _b is False else tuple(float(v) for v in _b)
-    if 'person_pe_white_band' in si:
-        # `false` = 关掉服装约束；其余按二元组收（服装（亮中性）L50 的 [下沿, 上沿]，只用上沿截断偏好）
-        _w = si['person_pe_white_band']
-        _ppe['person_pe_white_band'] = False if _w is False else tuple(float(v) for v in _w)
-    if 'person_pe_tail' in si:
-        # 尾巴目标 [P25,P75]：只在接受范围外才用；不是下沿
-        _t = si['person_pe_tail']
-        _ppe['person_pe_tail'] = tuple(float(v) for v in _t)
-    if 'person_pe_mid' in si:
-        # 中位 P50：逆光提亮目标的上界（顺光 P25，逆光 P50）
-        _ppe['person_pe_mid'] = float(si['person_pe_mid'])
-    if 'person_pe_lc' in si:
-        # "off" | "auto"：只在脸已在带内时，用 lc 压白服（默认 off）
-        _ppe['person_pe_lc'] = str(si['person_pe_lc']).lower()
-    if _ppe:
-        p.settings.person_pe = _ppe
 
 
 _PARAMS_SIG = [None]          # 上次建缓存用的 config 指纹（变了就整体作废）

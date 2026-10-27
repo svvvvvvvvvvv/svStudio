@@ -8,7 +8,7 @@ r"""v9 第 1 层：脸锚曝光 + 固定 LookProfile 曲线（不搜 g、不解�
   ④ 量终态，记账
 
 用法：
-  python opt/layer1_v9.py --profile kurai --batch <底片目录> --only DSCF2497
+  python opt/look_stage.py --profile kurai --batch <底片目录> --only DSCF2497
 """
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import paths
 paths.ensure_import_path()
 import profile_io                                   # noqa: E402
-import scene                                        # noqa: E402
+import placement as scene                                        # noqa: E402
 import look                                         # noqa: E402
 import curve_lib                                    # noqa: E402
 from _probe_clip import measure                     # noqa: E402
@@ -69,7 +69,7 @@ def write_basic(src, b):
 
 def solve_one(src, prof, edge, out_root, basic_row=None):
     stem = os.path.basename(src).replace('_svFilm_full.tif', '')
-    tag = os.path.join(out_root, 'layer1_v9', stem)
+    tag = os.path.join(out_root, 'look_stage', stem)
     os.makedirs(tag, exist_ok=True)
 
     run('SELECT ' + src, timeout=60)
@@ -126,13 +126,16 @@ def solve_one(src, prof, edge, out_root, basic_row=None):
     ys = look.curve(P, lk, toe_scale=toe_scale)
 
     settings = dict(rec_basic or {})
-    settings.setdefault('Exposure2012', ev)
+    # 设计：basic 弃权/为 0 时，placement 由本层从脸算的 EV 接管
+    if not rec_basic or abs(float(rec_basic.get('Exposure2012', 0) or 0)) < 0.01:
+        settings['Exposure2012'] = ev
     for k in ('Contrast2012', 'Highlights2012', 'Shadows2012',
               'Whites2012', 'Blacks2012'):
         settings.setdefault(k, 0.0)
     spec = ','.join('%s=%.3f' % (k, float(settings[k])) for k in
                     ('Exposure2012', 'Contrast2012', 'Highlights2012',
                      'Shadows2012', 'Whites2012', 'Blacks2012'))
+    run('SELECT %s' % src, timeout=120)   # 逐张选中：EXPORTTIF 只导出当前 target
     ls = look.global_spec(lk)
     if ls:
         spec += ',' + ls
@@ -198,7 +201,7 @@ def main():
                  f.get('L_skin', 0), (rec.get('base') or {}).get('skin_span', 0),
                  f.get('skin_span', 0),
                  f.get('white', 0), f.get('black', 0), rec.get('guard', '')))
-    dst = os.path.join(a.out_root, 'layer1_v9', 'layer1_v9.json')
+    dst = os.path.join(a.out_root, 'look_stage', 'look_stage.json')
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     json.dump(dict(profile=prof.get('id'), profile_version=prof.get('version'),
                    rows=recs), open(dst, 'w', encoding='utf-8'),

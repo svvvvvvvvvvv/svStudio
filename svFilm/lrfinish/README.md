@@ -38,7 +38,7 @@ svFilm/svFilm/data/presets/
 | `run.py` | 统一入口：`--profile` / `--batch` / `--out-root` / `--stages` |
 | `paths.py` | 所有路径的唯一入口（环境变量覆盖，代码里不写绝对路径） |
 | `profile_io.py` | 读预设：按 `finish.id` 找目录，取 bands/calibration |
-| `opt/` | `basic.py`（Basic 落点）、`layer1_v9.py`（固定 look + HSL + 分级 + 曲线）、测量/写库 |
+| `opt/` | `basic.py`（LR Basic 落点）、`look_stage.py`（curve + HSL + 分级）、测量/写库 |
 | `prototype/` | LR 桥（`bridge_client.py`）、启动（`lr_boot.py`）、插件部署 |
 | `lrplugin/SvFilmBridge.lrplugin/` | LR 插件（Lua） |
 | `lr_cmd/`、`out/`、`_masktest/`、`_pylibs/`、`_wheels/` | 运行时/媒体，不进 git |
@@ -55,7 +55,7 @@ $py='C:\Users\psw99\.workbuddy\binaries\python\envs\spektrafilm\Scripts\python.e
 & $py -u svFilm\lrfinish\run.py --profile hamada --batch <底片目录> --out-root <产物根>
 
 # 只跑某一层 / 先看命令
-& $py -u svFilm\lrfinish\run.py --profile kurai --batch <dir> --stages basic,layer1_v9 --dry-run
+& $py -u svFilm\lrfinish\run.py --profile kurai --batch <dir> --stages basic,look_stage --dry-run
 ```
 
 ## 约定

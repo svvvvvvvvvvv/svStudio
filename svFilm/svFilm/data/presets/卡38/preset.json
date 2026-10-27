@@ -1,5 +1,5 @@
 {
- "_note_self": "值：dev 基线（6cd00c8；10-18 重标）。format 35 ｜ portra_400 + portra_endura ｜ WB 4545/0.998 ｜ PE 0.694 ｜ amount 1.00 ｜ grain 24/2.0/dye 3.0 ｜ halation 2.5/0.8/σ75 ｜ lc off ｜ export 1080。",
+ "_note_self": "card38 medium-only: PE fixed 0.694; placement owned by LR Basic",
  "wb": {
   "white_balance": "custom",
   "temperature": 4545.0,
@@ -156,7 +156,7 @@
   "gamma_factor_blue": 1.0
  },
  "simulation": {
-  "film_format_mm": 35.0,
+  "film_format_mm": 35,
   "camera_lens_blur_um": 0.0,
   "exposure_compensation_ev": 0.0,
   "auto_exposure": true,

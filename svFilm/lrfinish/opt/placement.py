@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""v9 ScenePolicy：脸锚曝光 + 两端护栏（不逐张解通道）。"""
+"""placement policy：脸锚曝光 + 两端护栏（不逐张解通道）。"""
 from __future__ import annotations
 
 
