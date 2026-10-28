@@ -20,6 +20,8 @@ from .lrsink import summary as xmp_summary, write_jobs
 from .match import need_from_batch, report as match_report
 from .stocks import registry
 from .states import limit_note, regression_curve
+from .batch import Batch, pilot, run_engine, run_lr, estimate
+from .cards import cards as all_cards
 from .texture import Style, plan_texture, warn as tex_warn
 from .cards import cards as all_cards
 from .flow import choose, describe
@@ -110,6 +112,65 @@ def cmd_match(a):
     it = _intent(a.intent)
     print('口径 sha = %s ｜ %d 张' % (M.measure_sha(), len(recs)))
     print(match_report(registry(), need_from_batch(recs, it), topn=a.top))
+
+
+def cmd_run(a):
+    """端到端：试点 -> 选卡 -> 整批渲 -> 量 -> LR 计划 -> XMP（**不驱动 LR**）。"""
+    b = Batch.of(a.raf, a.out, limit=a.limit)
+    print('批次 %s：%d 张 RAW ｜ %s' % (b.name, len(b.stems), estimate(len(b.stems))))
+    it = _intent(a.intent)
+    if it.describe() != '意图：无（只守不变量）':
+        print(it.describe())
+
+    print('\n[1/5] 试点（渲 %d 张，用来算需求）' % a.pilot)
+    recs0 = pilot(b, n=a.pilot, log=print)
+    if not recs0:
+        print('试点无一有效 ⇒ 停（查 RAF / 卡）'); return
+
+    print('\n[2/5] 选卡')
+    offer = choose(recs0, it, topn=3)
+    print(describe(offer))
+    best = offer.best()
+    if best is None:
+        print('没有可用卡 ⇒ 停'); return
+    print('\n选中：%s' % best.card.label())
+
+    print('\n[3/5] 整批渲 + 量')
+    recs = run_engine(b, best, limit=a.render_limit, log=print,
+                      skip=list(recs0.keys()))
+    # 试点那两张如果用的就是选中的卡，直接把旧测量并回来（避免漏）
+    if best.card.name == sorted(all_cards())[0]:
+        for k, v in recs0.items():
+            recs.setdefault(k, v)
+    if not recs:
+        print('整批无一有效 ⇒ 停'); return
+
+    print('\n[4/5] LR 计划 + XMP 作业单')
+    out = run_lr(b, recs, it, log=print)
+    print(xmp_summary(out['manifest']))
+
+    print('\n[5/5] ①→② 回归')
+    nok = 0
+    for st, plan in out['plans'].items():
+        import os as _os
+        import numpy as _np
+        from PIL import Image as _I
+        pth = _os.path.join(b.sub('engine'), st + '_engine.tif')
+        if not _os.path.isfile(pth):
+            continue
+        disp = _np.asarray(_I.open(pth).convert('RGB'), _np.float64) / 255.0
+        deltas = None
+        if plan.curve:
+            from .curve import displacement
+            img = (recs.get(st) or {}).get('img') or {}
+            Ls = [img.get('p%d' % k) for k in (5, 25, 50, 75, 95)]
+            ds = displacement(plan.curve, [v for v in Ls if isinstance(v, (int, float))])
+            deltas = {'%d' % k: v for k, v in zip((5, 25, 50, 75, 95), ds)}
+        r = regression_curve(disp, plan.curve, curve_deltas=deltas)
+        nok += 1 if r.ok else 0
+    print('①→② 回归：%d/%d 通过' % (nok, len(out['plans'])))
+    print(limit_note())
+    print('\n产物：%s（engine/ 与 xmp/）' % b.out_dir)
 
 
 def cmd_states(a):
@@ -215,6 +276,14 @@ def main(argv=None):
     p = sub.add_parser('match'); p.set_defaults(fn=cmd_match)
     p.add_argument('recs'); p.add_argument('--stem', default='')
     p.add_argument('--top', type=int, default=6)
+    p.add_argument('--intent', action='append')
+
+    p = sub.add_parser('run'); p.set_defaults(fn=cmd_run)
+    p.add_argument('--raf', required=True, help='RAW 目录')
+    p.add_argument('--out', required=True, help='输出目录')
+    p.add_argument('--limit', type=int, default=0, help='本批最多几张 RAW')
+    p.add_argument('--render-limit', type=int, default=0, help='只渲前几张（试跑用）')
+    p.add_argument('--pilot', type=int, default=2, help='试点渲染张数')
     p.add_argument('--intent', action='append')
 
     p = sub.add_parser('states'); p.set_defaults(fn=cmd_states)
