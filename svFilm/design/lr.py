@@ -43,7 +43,7 @@ from .intent import Intent
 LAB_SLOPE_K = 0.2310
 #
 # ★ 高光端斜率：理论值不适用（印相肩部压缩），只能实测。实测 8~16 L*/EV。
-#   见 flow.render_with_headroom 的注释与 DSCF1289 那组数据。
+#   见 design 文档「高光端斜率」与 DSCF1289 那组实测（8~16 L*/EV）。
 SLOPE_HIGH_MIN, SLOPE_HIGH_MAX = 8.0, 16.0
 #
 # ★ 点颜色：**每一次推满（±1）能补多少比例**——这是**政策**，不是物理常数。

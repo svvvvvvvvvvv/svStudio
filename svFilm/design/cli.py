@@ -16,7 +16,7 @@ from . import measure as M
 from .intent import Intent
 from .invariants import check_T, report
 from .lr import solve_curve, solve_one
-from .lrsink import summary as xmp_summary, write_jobs
+from .lrsink import apply_and_export, summary as xmp_summary, write_jobs
 from .match import need_from_batch, report as match_report
 from .stocks import registry
 from .states import limit_note, regression_curve
@@ -133,6 +133,11 @@ def cmd_run(a):
     best = offer.best()
     if best is None:
         print('没有可用卡 ⇒ 停'); return
+    # ★ 选卡这一步要**停下来给人看**：权重、理由、可渲性都在上面
+    if not getattr(a, 'yes', False):
+        print('\n以上是匹配结果（权重与理由）。确认要用「%s」继续？' % best.card.label())
+        print('  加 --yes 才继续渲整批；或改 --card 指定另一张卡。')
+        return
     print('\n选中：%s' % best.card.label())
 
     print('\n[3/5] 整批渲 + 量')
@@ -148,6 +153,21 @@ def cmd_run(a):
     print('\n[4/5] LR 计划 + XMP 作业单')
     out = run_lr(b, recs, it, log=print)
     print(xmp_summary(out['manifest']))
+
+    if a.export:
+        print('\n[4b/5] 产品阶段：在 LR 里跑一遍并导出 ③')
+        pairs = []
+        import os as _os
+        for st, plan in out['plans'].items():
+            src = _os.path.join(b.sub('engine'), st + '_engine.tif')
+            if _os.path.isfile(src):
+                pairs.append((st, src, plan))
+        try:
+            got = apply_and_export(pairs, b.sub('final'), log=print)
+            print(' ③ 导出 %d 张' % len(got))
+        except Exception as e:
+            print(' ! LR 导出失败：%s' % str(e)[:120])
+            print('   （LR 没启动？桥不通会导致这一步失败；算值不受影响）')
 
     print('\n[5/5] ①→② 回归')
     nok = 0
@@ -285,6 +305,8 @@ def main(argv=None):
     p.add_argument('--render-limit', type=int, default=0, help='只渲前几张（试跑用）')
     p.add_argument('--pilot', type=int, default=2, help='试点渲染张数')
     p.add_argument('--intent', action='append')
+    p.add_argument('--yes', action='store_true', help='选卡后不再等确认')
+    p.add_argument('--export', action='store_true', help='用 LR 导出 ③（要 LR 在跑）')
 
     p = sub.add_parser('states'); p.set_defaults(fn=cmd_states)
     p.add_argument('recs'); p.add_argument('--tifs', required=True)

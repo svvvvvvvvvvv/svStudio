@@ -16,7 +16,8 @@ cards.py       「卡」= 一卷+一纸+质感档位+风格档（唯一被匹配
 cards_match.py 现有卡之间的排序
 match.py       卷层排序（值得做新卡的参考）+ 需求向量
 texture.py     质感：换算 / 规格（查引擎卷表）/ 档位；禁用项
-flow.py        选卡 → 质感 → 渲一次（render_with_headroom / headroom_clip）→ 交 LR
+flow.py        选卡 → 质感 → 渲一次（引擎自己的测光）→ 量余量 → 交 LR
+               ★ 引擎不管脸、不管落点（那是 LR 的事）
 lr.py          LR 侧七步求解（一次算一次验，不闭环）
 lrmodel.py     LR 的数值模型（只收查得到的；查不到就明说）
 curve.py       曲线：只修不变量 + 预算；PCHIP 插值；采样点含锚点

@@ -140,3 +140,46 @@ def summary(manifest: Dict[str, object]) -> str:
         lines.append('  ! %s 自检不过：%s' % (i['stem'], i['diag']))
     lines.append('  ★ 只写了 XMP 与 manifest，**没有驱动 LR**')
     return '\n'.join(lines)
+
+
+# ---------------------------------------------------------------- 产品阶段（会驱动 LR）
+
+def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
+    """把计划**真的**在 LR 里跑一遍并导出 ③ 成片。
+
+    与上面"只写 XMP"分开的原因：
+      · 算值阶段不许依赖 LR（公式要能查、要能离线复算）；
+      · 但**产品**必须有 ③ 才能验收（肤色 L 分布、背景是否被动、是否仍是人样）。
+    这一层是可选的、要显式调用的，不是算值的一部分。
+
+    pairs = [(stem, ①的TIF路径, LRPlan)]
+    返回 {stem: 导出的 TIF 路径}
+    """
+    import os
+    import shutil
+    import time
+
+    PHOTO = r'E:\ds\photo\_corpus\kurai\full'
+    import sys
+    if PHOTO not in sys.path:
+        sys.path.insert(0, PHOTO)
+    import lr_xmp
+    import lrstate as LS
+
+    os.makedirs(out_dir, exist_ok=True)
+    out = {}
+    for stem, src, plan in pairs:
+        rec = point_color_record(plan)
+        xmp = plan_to_xmp(plan)          # 已含曲线；点颜色单独写进临时副本
+        tmp = os.path.join(LS.TMP, 'design_%s_%d.tif'
+                           % (stem, int(time.time() * 1000) % 100000))
+        lr_xmp.write_tif(src, tmp, xmp)
+        r = LS.run('ADD ' + tmp, timeout=180)
+        if 'ADD' not in r.upper() and 'EXIST' not in r.upper():
+            raise RuntimeError('ADD 失败 %s: %s' % (stem, r[:120]))
+        got = LS.expo(tmp, 'design_%s' % stem)
+        dst = os.path.join(out_dir, '%s_final.tif' % stem)
+        shutil.copy2(got, dst)
+        out[stem] = dst
+        log('  ③ %s -> %s' % (stem, os.path.basename(dst)))
+    return out
