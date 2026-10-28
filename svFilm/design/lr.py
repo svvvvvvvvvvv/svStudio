@@ -26,6 +26,10 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Tuple
 
 from .curve import plan_curve
+
+# 规划预算（验收预算见 invariants.S3['anchor_max'] = 3.0）
+# 差 0.3 是给"16 点 LUT 插值 + 取整"的误差留的余量（实测 3.0 -> 3.14）
+S3_BUDGET_PLAN = 2.7
 from .invariants import T1, T2
 from .intent import Intent
 
@@ -159,7 +163,7 @@ HIGHLIGHT_POLICY = -35.0
 # ---------------------------------------------------------------- ④ 曲线
 
 def solve_curve(rec_engine: dict, intent: Optional[Intent] = None,
-                budget: float = 3.0) -> Tuple[Optional[List[Tuple[int, int]]], dict]:
+                budget: Optional[float] = None) -> Tuple[Optional[List[Tuple[int, int]]], dict]:
     """**只修不变量 + 落地意图**，不对任何"别人的分位"造形。
 
     返回 (16 点曲线 | None, 说明)。None = 不需要曲线或预算内无解。
@@ -169,6 +173,11 @@ def solve_curve(rec_engine: dict, intent: Optional[Intent] = None,
     if not all(isinstance(v, (int, float)) for v in q.values()):
         return None, {'why': '缺分位'}
     _ = intent          # 明确：曲线不看意图
+    # ★ 规划预算要比验收预算紧一点：16 点 LUT 的插值 + 取整会把**实际**位移放大
+    #   （实测：规划 3.0，量到 3.14）。留 0.3 的余量。
+    if budget is None:
+        budget = max(0.5, S3_BUDGET_PLAN)
+    _ = budget
     src = dict(q)
     dst = dict(q)
 

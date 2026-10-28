@@ -19,6 +19,7 @@ from .lr import solve_curve, solve_one
 from .lrsink import summary as xmp_summary, write_jobs
 from .match import need_from_batch, report as match_report
 from .stocks import registry
+from .states import limit_note, regression_curve
 from .texture import Style, plan_texture, warn as tex_warn
 from .cards import cards as all_cards
 from .flow import choose, describe
@@ -111,6 +112,45 @@ def cmd_match(a):
     print(match_report(registry(), need_from_batch(recs, it), topn=a.top))
 
 
+def cmd_states(a):
+    """对一批 ① TIF：解出曲线 -> 整幅过曲线 -> 跑 ①→② 回归检查（**不用 LR**）。"""
+    import os
+    import numpy as np
+    from PIL import Image
+    recs = M.load(a.recs)
+    if a.stem:
+        recs = M.only(recs, a.stem)
+    it = _intent(a.intent)
+    print('口径 sha = %s ｜ %d 张 ｜ %s' % (M.measure_sha(), len(recs), it.describe()))
+    tif_dir = a.tifs
+    nok = 0
+    for name, rec in recs.items():
+        stem = name.replace('\\', '/').split('/')[-1].split('.')[0]
+        path = os.path.join(tif_dir, name)
+        if not os.path.isfile(path):
+            path = os.path.join(tif_dir, stem + '.tif')
+        if not os.path.isfile(path):
+            continue
+        plan = solve_one(rec, intent=it, log=lambda *_: None)
+        disp = np.asarray(Image.open(path).convert('RGB'), np.float64) / 255.0
+        deltas = None
+        if plan.curve:
+            # 位移要**从曲线本身**算（用 src 对 src 去 plan_curve 只会得到 0）
+            from .curve import displacement
+            img = rec.get('img') or {}
+            Ls = [img.get('p%d' % k) for k in (5, 25, 50, 75, 95)]
+            ds = displacement(plan.curve, [v for v in Ls if isinstance(v, (int, float))])
+            deltas = {'%d' % k: v for k, v in zip((5, 25, 50, 75, 95), ds)}
+        r = regression_curve(disp, plan.curve, curve_deltas=deltas, budget=a.budget)
+        nok += 1 if r.ok else 0
+        if a.show > 0:
+            print('\n%s（曲线 %s 点）' % (stem, len(plan.curve or [])))
+            print(r.report())
+            a.show -= 1
+    print('\n①→② 回归：%d/%d 通过' % (nok, len(recs)))
+    print(limit_note())
+
+
 def cmd_xmp(a):
     """把一批图的 LRPlan 落成 XMP 作业单（**不驱动 LR**）。"""
     recs = M.load(a.recs)
@@ -175,6 +215,13 @@ def main(argv=None):
     p = sub.add_parser('match'); p.set_defaults(fn=cmd_match)
     p.add_argument('recs'); p.add_argument('--stem', default='')
     p.add_argument('--top', type=int, default=6)
+    p.add_argument('--intent', action='append')
+
+    p = sub.add_parser('states'); p.set_defaults(fn=cmd_states)
+    p.add_argument('recs'); p.add_argument('--tifs', required=True)
+    p.add_argument('--stem', default='')
+    p.add_argument('--budget', type=float, default=3.0)
+    p.add_argument('--show', type=int, default=2)
     p.add_argument('--intent', action='append')
 
     p = sub.add_parser('xmp'); p.set_defaults(fn=cmd_xmp)

@@ -12,14 +12,19 @@
 --------
 invariants.py  T0~T5 / S1~S5 判定（纯函数，可单测）
 stocks.py      从引擎 profile 读卷的性格五轴 + 卷↔纸配对（卷决定纸）
-engine.py      引擎侧：选卷纸 + T0/T3 校验（**不逐图**）
-lr.py          LR 侧：七步求解（一次算一次验，不闭环）
-curve.py       曲线：只搬形状、不动 p50、每锚点 ≤3 L* 预算
-intent.py      意图：亮/暖/浓/软（−1..+1），不许破不变量
+cards.py       「卡」= 一卷+一纸+质感档位+风格档（唯一被匹配/选用/渲染的单位）
+cards_match.py 现有卡之间的排序
+match.py       卷层排序（值得做新卡的参考）+ 需求向量
+texture.py     质感：换算 / 规格（查引擎卷表）/ 档位；禁用项
+flow.py        选卡 → 质感 → 渲一次（render_with_headroom / headroom_clip）→ 交 LR
+lr.py          LR 侧七步求解（一次算一次验，不闭环）
+lrmodel.py     LR 的数值模型（只收查得到的；查不到就明说）
+curve.py       曲线：只修不变量 + 预算；PCHIP 插值；采样点含锚点
+states.py      三态：①→② 用 LUT 自算；②→③ 算不了（点颜色无公开函数）
+intent.py      意图（接口定义，非物理断言）
 measure.py     测量桥：读 measure_all 记录 + 口径 sha
-lrsink.py      LR 执行端：LRPlan → XMP → 借桥出图
-pipeline.py    三态编排 + 回归检查
-cli.py         命令行：stocks / check / plan / curve
+lrsink.py      LRPlan → XMP 作业单 + manifest（**不驱动 LR**）
+cli.py         命令行：stocks/cards/check/plan/curve/match/flow/texture/xmp/states
 
 命令行
 ------
@@ -42,5 +47,6 @@ cli.py         命令行：stocks / check / plan / curve
 `E:\\ds\\photo\\_corpus\\kurai\\full\\_archive_1029\\`  旧链 64 个脚本
 """
 
-__all__ = ['invariants', 'stocks', 'engine', 'lr', 'curve', 'intent',
-           'measure', 'lrsink', 'pipeline', 'cli']
+__all__ = ['invariants', 'stocks', 'cards', 'cards_match', 'match', 'texture',
+           'flow', 'lr', 'lrmodel', 'curve', 'states', 'intent', 'measure',
+           'lrsink', 'cli']
