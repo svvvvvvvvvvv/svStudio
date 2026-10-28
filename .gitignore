@@ -34,3 +34,15 @@ _wgate_backup/
 !svFilm/lrfinish/research/out/*.md
 
 
+
+# ---- 本仓只维护代码与文本：截图/成片/调试图不进版本库 ----
+# （上游 vendored 的 svFilm/_tools/spektrafilm/img/ 是别人仓里的东西，保留原样）
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.bmp
+*.tif
+*.tiff
+!svFilm/_tools/spektrafilm/img/**
+*.bak_*
