@@ -29,11 +29,38 @@ from .curve import plan_curve
 from .invariants import T1, T2
 from .intent import Intent
 
-# 经验斜率（都要能被实测替换；写在这里是为了让数值只有一个出处）
-EV_PER_L = 1.0 / 30.0          # 中间调：1 EV ≈ 30 L*
-PC_SCALE_PER_C = 0.58          # 点颜色饱和 0.6 ⇒ 肤色 C ×1.35
-PC_SHIFT_PER_DEG = 1.0 / 30.0  # 色相 ±1 = ±30°
-INTENT_EV_PER_UNIT = 0.5        # 意图 ±1 ⇒ ±0.5 档（≈ ±15 L*）；只由曝光落地
+# ---------------------------------------------------------------- 常数与出处
+#
+# ★ 中间调斜率：**能推**，不用猜
+#   CIELAB: L* = 116·(Y/Yn)^(1/3) − 16 ；曝光是线性光倍数 Y ∝ 2^EV
+#   ⇒ dL*/dEV = (116/3)·ln2·(Y/Yn)^(1/3) = 0.2310·(L*+16)
+#   验证：L*=50 -> 15.2 ｜ 70 -> 19.9 ｜ 90 -> 24.5
+#   （原来用的 30 偏高 1.5 倍，而且与 L* 无关 —— 已替换）
+LAB_SLOPE_K = 0.2310
+#
+# ★ 高光端斜率：理论值不适用（印相肩部压缩），只能实测。实测 8~16 L*/EV。
+#   见 flow.render_with_headroom 的注释与 DSCF1289 那组数据。
+SLOPE_HIGH_MIN, SLOPE_HIGH_MAX = 8.0, 16.0
+#
+# ★ 点颜色：**每一次推满（±1）能补多少比例**——这是**政策**，不是物理常数。
+#   原因：Point Color 的 SatScale 没有公开传递函数（见 lrmodel.py）。
+#   政策含义：缺口 ≤ 这个比例时，一次推满；缺口更大时分多次/报欠账。
+PC_FULL_CLOSES = 0.35
+#
+# ★ 意图：±1 意图 = ±0.5 档。这是**接口定义**（"+1 是什么意思"），不是物理断言。
+INTENT_EV_PER_UNIT = 0.5
+
+
+def eval_slope(L: float) -> float:
+    """中间调 dL*/dEV（CIELAB 立方根律，L 依赖）。"""
+    return LAB_SLOPE_K * (max(0.0, float(L)) + 16.0)
+
+
+def ev_for_dL(dL: float, L: float) -> float:
+    """把"要改多少 L*"换成档数（在给定 L* 处取局部斜率）。"""
+    s = eval_slope(L)
+    return float(dL) / s if s > 1e-9 else 0.0
+
 
 
 @dataclass
@@ -87,15 +114,15 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
     if cur is None:
         return 0.0
     tgt = min(max(target_L, L_lo), L_hi)
-    ev = (tgt - cur) * EV_PER_L
+    ev = ev_for_dL(tgt - cur, cur)          # 斜率随 L* 变（CIELAB）
     if intent is not None:
         # 意图只改**曝光**，且不许把脸推出合理区（S4）
         ev += getattr(intent, 'brighter', 0.0) * INTENT_EV_PER_UNIT
-        newL = cur + ev * (1.0 / EV_PER_L)
+        newL = cur + ev * eval_slope(cur)
         if newL > L_hi:
-            ev -= (newL - L_hi) * EV_PER_L
+            ev -= ev_for_dL(newL - L_hi, cur)
         elif newL < L_lo:
-            ev += (L_lo - newL) * EV_PER_L
+            ev += ev_for_dL(L_lo - newL, cur)
     return ev
 
 
@@ -203,10 +230,11 @@ def solve_point_color(rec: dict, intent: Optional[Intent] = None,
         return None
     scale = 0.0
     if C < C_min:
-        # 把 C 推到 C_min 所需的比例；夹 ±1
-        scale = (C_min / max(C, 1e-6) - 1.0) / PC_SCALE_PER_C
+        # 缺口比例 ÷ "推满能补多少"（**政策**，非物理）；夹 ±1
+        gap = C_min / max(C, 1e-6) - 1.0
+        scale = gap / PC_FULL_CLOSES
     d = getattr(intent, 'denser', 0.0) if intent else 0.0
-    scale += d * 0.5                       # 意图只加一半幅度，另一半交给整体饱和
+    scale += d * 0.5                       # 意图只加一半幅度，另一半交给整体饱和（政策）
     return dict(scale=max(-1.0, min(1.0, scale)), shift=0.0)
 
 
