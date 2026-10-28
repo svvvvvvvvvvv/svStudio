@@ -73,14 +73,31 @@ class TexturePlan:
         return '\n'.join(lines)
 
 
+def _as3(v):
+    """把单值或 [R,G,B] 统一成三元。"""
+    if isinstance(v, (int, float)):
+        return (float(v),) * 3
+    xs = [float(x) for x in v][:3]
+    return tuple(xs + [xs[-1]] * (3 - len(xs)))
+
+
 def load_grain_specs() -> Dict[str, dict]:
     """卷的公开颗粒规格表（我们维护，必须带出处）。文件不存在 = 空表。"""
     if not os.path.isfile(GRAIN_SPEC_FILE):
         return {}
     try:
-        return json.load(open(GRAIN_SPEC_FILE, encoding='utf-8'))
+        d = json.load(open(GRAIN_SPEC_FILE, encoding='utf-8'))
     except Exception:
         return {}
+    return d.get('stocks') or {}
+
+
+def load_reference() -> dict:
+    try:
+        d = json.load(open(GRAIN_SPEC_FILE, encoding='utf-8'))
+    except Exception:
+        return {}
+    return d.get('reference') or {}
 
 
 # ---------------------------------------------------------------- A 换算
@@ -104,15 +121,25 @@ def plan_texture(stock: str, paper: str, long_side: int = 1080,
 
     # 1) 颗粒粗细：按卷的公开规格（数据表），不是试
     specs = load_grain_specs()
-    spec = specs.get(stock)
-    if spec and spec.get('rms_granularity') is not None:
-        rms = [float(v) * st.grain_gain for v in spec['rms_granularity']]
-        plan.params['grain.rms_granularity'] = tuple(rms)
-        plan.provenance['grain.rms_granularity'] = '规格：%s' % spec.get('source', '数据表')
+    ref = load_reference()
+    spec = specs.get(stock) or {}
+    ref_stock = ref.get('stock')
+    ref_spec = specs.get(ref_stock) or {}
+    ref_rms = ref.get('preset_rms') or [24.0, 24.0, 24.0]
+    pub = spec.get('rms_published')
+    pub_ref = ref_spec.get('rms_published')
+    if pub and pub_ref:
+        # 相对粗细查数据表，绝对档位用参照卷的 preset 值 —— 两者不混
+        ratio = _as3(pub) / _as3(pub_ref)
+        rms = [float(r) * float(x) * st.grain_gain for r, x in zip(ref_rms, ratio)]
+        plan.params['grain.rms_granularity'] = tuple(round(v, 3) for v in rms)
+        plan.provenance['grain.rms_granularity'] = (
+            '数据表相对粗细 %s × 参照卷 %s 的 preset rms' % (spec.get('source') or '已录',
+                                                       ref_stock))
     else:
         plan.warnings.append(
-            'grain.rms_granularity 无规格：%s 不在 %s 里 —— 必须查数据表补，不许猜'
-            % (stock, os.path.basename(GRAIN_SPEC_FILE)))
+            'grain.rms_granularity 无规格：%s 的 rms_published 还没录 —— 查数据表补，不许猜'
+            % stock)
 
     # 2) 染料云：风格档（µm），与尺寸无关（物理长度）
     plan.params['grain.blur_dye_clouds_um'] = st.dye_clouds_um

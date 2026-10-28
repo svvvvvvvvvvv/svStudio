@@ -1,0 +1,43 @@
+{
+  "_doc": [
+    "卷的公开颗粒规格表（只放**能引用**的数据，查不到就留空，绝不猜）。",
+    "",
+    "字段：",
+    "  rms_published : [R, G, B] 或单值——厂商数据表的 diffuse RMS granularity（通常测在 D=1.0）",
+    "  aperture_um   : 数据表测量孔径（Kodak 传统口径 = 48 µm，与引擎 rms_granularity 的口径一致）",
+    "  density       : 测量密度（多数 1.0）",
+    "  source        : 出处（URL 或数据表编号），必须可复查",
+    "",
+    "★ 关键认识（2026-10-29）：",
+    "  数据表给的是**相对粗细**（这一卷比那一卷粗多少），**不是我们的绝对档位**。",
+    "  证据：我们预设里的 rms 是 24/24/24（鹿井）和 10（xhs），而数据表上负片的 RMS 多在 4~8。",
+    "  若要按物理落位，必须再乘一个链上增益 chain_gain（见 texture.py 的 Style.grain_gain），",
+    "  而 chain_gain 是**风格值**，不是能查来的。",
+    "",
+    "  用法：引擎 rms = rms_published × (chain_gain / chain_gain_of_reference)",
+    "  参考卷 chain_gain 定下来之后，同一次标定里其它卷按数据表比例走 —— 这样'相对粗细'是查的，",
+    "'绝对档位'是选的，两者不混。"
+  ],
+  "schema_version": 1,
+  "reference": {
+    "stock": "kodak_portra_400",
+    "note": "链上标定的参照卷：它的 preset rms 决定 chain_gain 的基准",
+    "preset_rms": [24.0, 24.0, 24.0]
+  },
+  "stocks": {
+    "kodak_portra_400": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "kodak_portra_160": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "kodak_portra_800": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "kodak_gold_200": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "kodak_ektar_100": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "kodak_ultramax_400": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "fujifilm_c200": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "fujifilm_pro_400h": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "fujifilm_xtra_400": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "kodak_vision3_50d": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "kodak_vision3_250d": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "kodak_vision3_200t": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "kodak_vision3_500t": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""},
+    "kodak_verita_200d": {"rms_published": null, "aperture_um": 48, "density": 1.0, "source": ""}
+  }
+}
