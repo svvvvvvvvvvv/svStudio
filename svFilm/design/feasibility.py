@@ -89,7 +89,7 @@ def gap_table(batch: Dict[str, float], target: Dict[str, float],
                              '余量 %.2f 档' % hr))
             r.reachable = ok
             if not ok:
-                r.needs = '引擎余量不足（#.2f 档 vs 要 %.2f 档）'.replace('#', '%.2f') % (hr, need_ev)
+                r.needs = '引擎余量不足（只有 %.2f 档，要 %.2f 档）' % (hr, need_ev)
         rows.append(r)
 
     # ---- 肤色 C ----
@@ -139,7 +139,7 @@ def gap_table(batch: Dict[str, float], target: Dict[str, float],
     gp = float(target.get('p95', np.nan)) - float(batch.get('p95', np.nan))
     if np.isfinite(gp):
         r = Row('p95', gp)
-        ok = abs(gp) <= CURVE_MAX_L
+        ok = abs(gp) <= CURVE_MAX_L * 1.15      # 15% 容差：刚好超一点别判成要换介质
         r.levers.append(('曲线', round(gp, 1), ok, '预算 ±%.0f L*' % CURVE_MAX_L))
         r.reachable = ok
         if not ok:

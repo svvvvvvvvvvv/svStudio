@@ -19,6 +19,7 @@ from .lr import solve_curve, solve_one
 from .lrsink import apply_and_export, summary as xmp_summary, write_jobs
 from .match import need_from_batch, report as match_report
 from .stocks import registry
+from .feasibility import gap_table, verdict
 from .refcards import profile_batch, rank_refs, refcards
 from .states import limit_note, regression_curve
 from .batch import Batch, pilot, run_engine, run_lr, estimate
@@ -147,9 +148,25 @@ def cmd_run(a):
     if not recs0:
         print('试点无一有效 ⇒ 停（查 RAF / 卡）'); return
 
-    print('\n[2/5] 选卡')
+    print('\n[2/5] 这批像哪一套（参照卡 = 大师的每一套）')
+    tb = profile_batch(recs0)
+    refs = refcards()
+    hits = rank_refs(tb, refs)
+    print('  本批画像：脸L=%.1f 脸C=%.1f 脸h=%.1f p50=%.1f p95=%.1f（%d 张试点）'
+          % (tb['L'], tb['C'], tb['h'], tb['p50'], tb['p95'], len(recs0)))
+    print('  %d 张参照卡里最像的：' % len(refs))
+    for h in hits[:5]:
+        print('    ' + str(h))
+
+    print('\n[3/5] 现有生产卡（能渲的）')
     offer = choose(recs0, it, topn=3)
     print(describe(offer))
+
+    print('\n[3b] 可行性：最近那套参照卡的缺口，关得掉吗？')
+    rows = gap_table(tb, hits[0].ref.profile, headroom_ev=0.15)
+    for r in rows:
+        print(str(r))
+    print('  ' + verdict(rows).replace('\n', '\n  '))
     best = offer.best()
     if best is None:
         print('没有可用卡 ⇒ 停'); return
@@ -160,7 +177,7 @@ def cmd_run(a):
         return
     print('\n选中：%s' % best.card.label())
 
-    print('\n[3/5] 整批渲 + 量')
+    print('\n[4/5] 整批渲 + 量')
     recs = run_engine(b, best, limit=a.render_limit, log=print,
                       skip=list(recs0.keys()))
     # 试点那两张如果用的就是选中的卡，直接把旧测量并回来（避免漏）
@@ -170,7 +187,7 @@ def cmd_run(a):
     if not recs:
         print('整批无一有效 ⇒ 停'); return
 
-    print('\n[4/5] LR 计划 + XMP 作业单')
+    print('\n[5/5] LR 计划 + XMP 作业单')
     out = run_lr(b, recs, it, log=print)
     print(xmp_summary(out['manifest']))
 
@@ -189,7 +206,7 @@ def cmd_run(a):
             print(' ! LR 导出失败：%s' % str(e)[:120])
             print('   （LR 没启动？桥不通会导致这一步失败；算值不受影响）')
 
-    print('\n[5/5] ①→② 回归')
+    print('\n[6/6] ①→② 回归')
     nok = 0
     for st, plan in out['plans'].items():
         import os as _os
