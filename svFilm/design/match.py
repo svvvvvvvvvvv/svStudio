@@ -121,6 +121,17 @@ class Hit:
         return sorted(self.contrib.items(), key=lambda kv: -abs(kv[1]))[:k]
 
 
+def paper_class(axes: Dict[str, float]) -> str:
+    """第二级介质分两类，**不能混着比**。
+
+    2026-10-29 实测（读 profile 的 density_curves）：
+      相纸        γ 2.75~3.60 ｜ Dmax **2.25~2.48**
+      电影正片     γ 3.77~4.51 ｜ Dmax **3.80~4.63**（2383/2393）
+    ⇒ γ 同量级可以比；**Dmax 差 1.7 倍，跨界做 z 标准化会让电影卷白拿"宽肩"分**。
+    """
+    return 'cine' if float(axes.get('dmax') or 0) >= 3.0 else 'paper'
+
+
 def _zstat(xs: List[float]) -> Tuple[float, float]:
     if len(xs) < 2:
         return 0.0, 1.0
@@ -155,6 +166,13 @@ def rank(reg: Registry, need: Need, only_negative: bool = True,
         m, sd = pg
         return (g - m) / sd
 
+    def zp_dmax(axes):
+        cls = paper_class(axes)
+        if cls not in dmax_by_class:
+            return 0.0
+        m, sd = dmax_by_class[cls]
+        return (axes['dmax'] - m) / sd
+
     hits = []
     for s in pool:
         px = paper_axes(reg.papers.get(s.target_print))
@@ -162,7 +180,8 @@ def rank(reg: Registry, need: Need, only_negative: bool = True,
         c['warm'] = need.warm * z('sepR', s.sepR)
         c['dense'] = need.dense * (0.6 * z('sepR', s.sepR) + 0.4 * z('gamma', s.gamma))
         # 宽肩：卷曲线软 + 卷 Dmax 高 + 纸曲线软（纸也压高光）
-        c['shoulder'] = need.shoulder * (-z('gamma', s.gamma) + 0.5 * z('dmax', s.dmax)
+        c['shoulder'] = need.shoulder * (-z('gamma', s.gamma)
+                                         + 0.5 * zp_dmax(px)
                                          - 0.5 * zp(px['gamma']))
         c['latitude'] = need.latitude * (-z('gamma', s.gamma) - 0.3 * zp(px['gamma']))
         if abs(need.fine) > 1e-9 and s.rms:
