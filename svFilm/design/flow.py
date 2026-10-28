@@ -19,6 +19,8 @@
 """
 from __future__ import annotations
 
+import json
+
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
@@ -109,9 +111,65 @@ def describe(offer: Offer) -> str:
 
 # ---------------------------------------------------------------- 渲染（真路径）
 
+def render_place_face(lin, name: str, target_face_L: float = 70.0,
+                      face_tol: float = 2.0, iters: int = 3,
+                      pe0: Optional[float] = None, log=print):
+    """引擎的正确目标：**把脸放到该在的地方**；余量是结果，不是目标。
+
+    为什么改（2026-10-29 首次真跑）：
+      原来 `render_with_headroom` 追"p99 ≤ 92"，结果是"为留余量把脸压到 L40"
+      ⇒ LR 要 +2.4 档 ⇒ 又需要更大余量 —— 一个循环论证。
+      实测这张卡做不到两全：脸 67.7 时 p99=97.4；压到 p99=92.7 时脸只剩 51.7。
+
+    正确顺序：
+      1. 引擎按测光把**脸放到 target_face_L**（一次算 + 最多 2 次修正，用割线）
+      2. 量"还剩多少余量"（可抬几档到 clip 0.5%）—— **这是产出**
+      3. LR 的曝光计划不得超过这个余量（超了就报欠账）
+
+    返回 (disp, info)
+    """
+    from svFilm import presets
+    info = dict(target_face=target_face_L, attempts=[])
+    pe = float(pe0 if pe0 is not None else presets.pe_of(name))
+    hist = []
+    disp = None
+    for i in range(max(2, iters)):
+        disp = presets.render(lin, name, print_exposure=pe)
+        L = _lab_of_disp(disp)
+        import numpy as _np
+        fL = _face_L(disp)
+        info['attempts'].append(dict(pe=round(pe, 4),
+                                     faceL=None if fL is None else round(fL, 2),
+                                     p99=round(float(_np.percentile(L, 99)), 2),
+                                     clip=round(float((L > 99).mean() * 100), 2)))
+        log('    pe=%.4f -> 脸L=%s p99=%.1f clip=%.2f%%'
+            % (pe, ('%.1f' % fL) if fL is not None else '无脸',
+               _np.percentile(L, 99), (L > 99).mean() * 100))
+        if fL is None:
+            info.update(pe=round(pe, 4), ok=False, why='没有脸，无法按脸落点')
+            return disp, info
+        if abs(fL - target_face_L) <= face_tol:
+            info.update(pe=round(pe, 4), ok=True)
+            return disp, info
+        # 割线：脸 L 对 log2(pe) 的斜率（方向：pe 越大越暗）
+        hist.append((float(_np.log2(pe)), fL))
+        if len(hist) >= 2:
+            (x0, y0), (x1, y1) = hist[-2], hist[-1]
+            slope = (y1 - y0) / (x1 - x0) if abs(x1 - x0) > 1e-6 else -14.0
+            if abs(slope) < 1e-3:
+                slope = -14.0
+        else:
+            slope = -14.0
+        dx = (target_face_L - fL) / slope
+        dx = max(-0.6, min(0.6, dx))
+        pe *= 2.0 ** dx
+    info.update(pe=round(pe, 4), ok=False, why='没收敛到脸落点')
+    return disp, info
+
+
 def render_with_headroom(lin, name: str, target_p99: float = 92.0,
-                         iters: int = 4, pe0: Optional[float] = None,
-                         log=print):
+                         face_floor: float = 58.0, iters: int = 5,
+                         pe0: Optional[float] = None, log=print):
     """按「量 p99 → 反解 print_exposure」给底片留余量（**不依赖 render_safe**）。
 
     为什么不用 `render_safe`（2026-10-29 实测，DSCF1289 / 卡38）：
@@ -135,17 +193,27 @@ def render_with_headroom(lin, name: str, target_p99: float = 92.0,
             float((L > 99).mean() * 100.0)
 
     pe = float(pe0 if pe0 is not None else presets.pe_of(name))
-    info = dict(target=target_p99, attempts=[])
+    info = dict(target=target_p99, face_floor=face_floor, attempts=[], bound=None)
     hist = []                       # [(log2(pe), p99)]
     disp = None
     for i in range(max(2, iters)):
         disp, p99, p95, clip = measure(pe)
-        log('    pe=%.4f -> p95=%.1f p99=%.1f clip=%.2f%%' % (pe, p95, p99, clip))
+        fL = _face_L(disp)
+        log('    pe=%.4f -> p95=%.1f p99=%.1f clip=%.2f%% 脸L=%s'
+            % (pe, p95, p99, clip, ('%.1f' % fL) if fL is not None else '无脸'))
         info['attempts'].append(dict(pe=round(pe, 4), p99=round(p99, 2),
-                                     p95=round(p95, 2), clip=round(clip, 2)))
+                                     p95=round(p95, 2), clip=round(clip, 2),
+                                     faceL=None if fL is None else round(fL, 2)))
+        # ★ 脸到下限就别再压了：留余量不该以毁掉主体为代价
+        if fL is not None and fL <= face_floor:
+            info.update(pe=round(pe, 4), ok=False, bound='face',
+                        why='脸已到下限 %.0f，白端仍 p99=%.1f（目标 %.0f）'
+                            % (face_floor, p99, target_p99))
+            log('  ! 两约束打架：脸到下限，白端仍超 ⇒ 这张卡肩部太窄，换卡或不留这么多余量')
+            return disp, info
         hist.append((float(_np.log2(pe)), p99))
         if abs(p99 - target_p99) <= 1.0:
-            info.update(pe=round(pe, 4), ok=True, slope=None)
+            info.update(pe=round(pe, 4), ok=True, slope=None, bound='p99')
             return disp, info
         # 下一步：割线法；只有一点时用 12 L*/EV 的初值
         if len(hist) >= 2:
@@ -164,6 +232,38 @@ def render_with_headroom(lin, name: str, target_p99: float = 92.0,
     return disp, info
 
 
+def _face_L(disp, floor: float = 55.0):
+    """脸亮度的**便宜代理**：人脸框中央 60% 的 L* 中位（不做皮肤挑选）。
+
+    用途只是"别把脸压死"，所以不需要皮肤判别；要精确的肤色仍走测量层。
+    返回 (L, 是否检到脸)。
+    """
+    try:
+        import sys
+        P = r'E:\ds\photo\_corpus\kurai\skin_v2'
+        if P not in sys.path:
+            sys.path.insert(0, P)
+        import skin_v2
+        fi = skin_v2.detect(disp)
+        if not fi:
+            return None
+        x, y, w, h = fi['bbox']
+        L = _lab_of_disp(disp)
+        H, W = L.shape
+        x0 = int(max(0, x + 0.2 * w)); x1 = int(min(W, x + 0.8 * w))
+        y0 = int(max(0, y + 0.2 * h)); y1 = int(min(H, y + 0.8 * h))
+        if x1 <= x0 or y1 <= y0:
+            return None
+        return float(_np_median(L[y0:y1, x0:x1]))
+    except Exception:
+        return None
+
+
+def _np_median(a):
+    import numpy as _np
+    return _np.median(a)
+
+
 def headroom_clip(disp, ev: float = 1.0) -> float:
     """**余量测试**：把已渲好的片子按线性域乘 2^ev，量"还会剪多少"。
 
@@ -180,6 +280,25 @@ def headroom_clip(disp, ev: float = 1.0) -> float:
                     1.055 * _np.power(lin2, 1.0 / 2.4) - 0.055)
     L2 = _lab_of_disp(out)
     return float((L2 > 99.0).mean() * 100.0)
+
+
+def headroom_ev(disp, clip_max: float = 0.5, hi: float = 3.0) -> float:
+    """**这张底片还能抬几档**（抬到 clip = clip_max 为止）。
+
+    这是引擎该报给 LR 的数：LR 的曝光计划不许超过它，否则计划本身就会毁图
+    （2026-10-29 首次真跑发现：引擎为留余量压暗 -> 脸 L≈45 -> LR 要 +2.4 档，
+      而 +1 档已经剪 8.69% ⇒ 计划不可行，系统却没拦）。
+    """
+    lo = 0.0
+    if headroom_clip(disp, hi) <= clip_max:
+        return float(hi)
+    for _ in range(12):
+        mid = 0.5 * (lo + hi)
+        if headroom_clip(disp, mid) <= clip_max:
+            lo = mid
+        else:
+            hi = mid
+    return round(float(lo), 2)
 
 
 def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
@@ -204,13 +323,19 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
                                                      choice.card.name, p95_max))
         # io.load_raw 返回 Sample（.lin = 场景线性）；引擎要的是数组
         lin = io.load_raw(raf).lin
-        disp, hr = render_with_headroom(lin, choice.card.name, target_p99=90.0,
-                                        iters=2, log=log)
+        # 1) 先把脸放到该在的地方（余量是结果）
+        disp, hr = render_place_face(lin, choice.card.name, target_face_L=70.0, log=log)
         if not hr.get('ok'):
-            log('  ! 余量没收敛：%s（两步法要求 ≈ 落 ±2 L* 内）' % hr.get('attempts'))
+            log('  ! 脸落点没收敛：%s' % (hr.get('attempts') or hr.get('why')))
         dst = os.path.join(out_dir, '%s_engine.tif' % stem)
         lrbase.save_tiff16(disp, dst)
         out[stem] = dst
+        hr_ev = headroom_ev(disp)
+        with open(os.path.join(out_dir, '%s_headroom.json' % stem), 'w',
+                  encoding='utf-8') as fh:
+            json.dump(dict(stem=stem, headroom_ev=hr_ev, limit_clip=0.5,
+                           attempts=hr.get('attempts')), fh, ensure_ascii=False, indent=1)
+        log('  可抬 %.2f 档（到 clip 0.5%% 为止）' % hr_ev)
         # ★ 余量不能外包给 render_safe：它的白端循环只有 3 次 ×1.15，对高光亮的图不够。
         #   ⇒ 渲完必须自己量一次 T0；不达标就明说，不许静默放过。
         # ★ 余量判据：**加 X 档之后还剪不剪**（比 p99 更贴用途）

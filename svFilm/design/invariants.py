@@ -18,7 +18,16 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 # ---- 阈值：只从「量化下限 / 物理不可逆 / 生理常识」来，不从任何一批成片来 ----
-T0 = dict(p99_max=92.0, clip_max=1.0, p1_min=3.0)   # 出片余量（引擎交底片时）
+# ★ T0 修正（2026-10-29 首次真跑 + 大师实测）：
+#   原来写 p99 ≤ 92 —— 比任何一套大师都严 3~6 L*（大师 p99 中位：鹿井 94.7 /
+#   xhs 97.9 / 滨田 94.6），结果逼着引擎"为留余量把脸压到 L40"。
+#   改为与大师同口径的**区间**（区间不是靶）：
+#       p95 ≤ 93（大师 p95 中位 90.6~92.9，p75 上沿 92.9~96.5）
+#       clip < 0.5%（大师中位 0.08~0.39%）
+#   "还能抬几档"（headroom）只作为**信息**报出，不再当通过/不通过。
+#   p1 也按大师实测放宽：大师 p1 中位 鹿井 6.6 / xhs 1.6 / 滨田 16.4（跨语料差 10 倍）
+#   取 1.0 = "1% 处不许已经是纯黑"，只是防死黑，不管风格。
+T0 = dict(p95_max=93.0, clip_max=0.5, p1_min=1.0)
 T1 = dict(clip_max=2.5)                             # 终片不爆白（可见剪裁量级）
 T2 = dict(p1_min=2.0)                               # 黑端不堵
 T3 = dict(ab_max=2.0)                               # 白点不偏（8-bit 量化下限 ~1）
@@ -85,8 +94,8 @@ def check_T(rec: dict, stage: str = 'final') -> Result:
     wp = rec.get('white_point') or None
 
     if stage == 'engine':
-        r.add('T0-p99', (img.get('p99') or 0) <= T0['p99_max'],
-              img.get('p99'), T0['p99_max'], '出片留余量')
+        r.add('T0-p95', (img.get('p95') or 0) <= T0['p95_max'],
+              img.get('p95'), T0['p95_max'], '高光上沿与大师同区间')
         r.add('T0-clip', (img.get('clip_pct') or 0) < T0['clip_max'],
               img.get('clip_pct'), T0['clip_max'], '出片不许贴白')
         r.add('T0-p1', (img.get('p1') or 0) >= T0['p1_min'],

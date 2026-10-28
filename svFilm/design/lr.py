@@ -119,6 +119,12 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
         return 0.0
     tgt = min(max(target_L, L_lo), L_hi)
     ev = ev_for_dL(tgt - cur, cur)          # 斜率随 L* 变（CIELAB）
+    # ★ 曝光计划**不许超过引擎报的余量**：否则计划本身就会毁图
+    #   （2026-10-29 首次真跑：引擎压暗留余量 -> 脸 L≈45 -> 计划 +2.4 档，
+    #     而 +1 档已剪 8.69%。没有这一条，系统会安静地输出毁图的计划。）
+    hr = rec_engine.get('headroom_ev')
+    if hr is not None and ev > float(hr):
+        ev = float(hr)
     if intent is not None:
         # 意图只改**曝光**，且不许把脸推出合理区（S4）
         ev += getattr(intent, 'brighter', 0.0) * INTENT_EV_PER_UNIT
@@ -255,7 +261,14 @@ def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
     """单图的 LR 计划。缺的中间态留空，等测量接上再填。"""
     plan = LRPlan()
     plan.notes['lookat'] = pick_lookat(rec_engine)
-    plan.exposure_ev = round(solve_exposure(rec_engine, intent=intent), 3)
+    want_ev = solve_exposure(rec_engine, intent=intent)
+    got_ev = want_ev
+    hr = rec_engine.get('headroom_ev')
+    if hr is not None and want_ev > float(hr):
+        plan.notes['exposure_debt'] = (
+            '要 %+.2f 档才把脸放到落点，但引擎只留了 %.2f 档余量 ⇒ 按余量截断；'
+            '要更多请让引擎更暗（或换肩部更宽的卡）' % (want_ev, float(hr)))
+    plan.exposure_ev = round(got_ev, 3)
 
     base = rec_after_ev or rec_engine
     hv, hnote = solve_highlights(base)

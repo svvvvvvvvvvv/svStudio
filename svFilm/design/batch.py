@@ -81,7 +81,16 @@ def measure_tif(path: str, with_bg: bool = False) -> dict:
     if P not in sys.path:
         sys.path.insert(0, P)
     import measure_all as MA
-    return MA.measure_one(path, with_bg=with_bg)
+    rec = MA.measure_one(path, with_bg=with_bg)
+    # 引擎渲完会写一张 sidecar：这张底片还能抬几档
+    import json
+    side = path.replace('_engine.tif', '_headroom.json')
+    if os.path.isfile(side):
+        try:
+            rec['headroom_ev'] = float(json.load(open(side, encoding='utf-8'))['headroom_ev'])
+        except Exception:
+            pass
+    return rec
 
 
 # ---------------------------------------------------------------- 试点（解鸡生蛋）
