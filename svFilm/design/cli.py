@@ -19,6 +19,7 @@ from .lr import solve_curve, solve_one
 from .lrsink import apply_and_export, summary as xmp_summary, write_jobs
 from .match import need_from_batch, report as match_report
 from .stocks import registry
+from .refcards import profile_batch, rank_refs, refcards
 from .states import limit_note, regression_curve
 from .batch import Batch, pilot, run_engine, run_lr, estimate
 from .cards import cards as all_cards
@@ -38,6 +39,25 @@ def _intent(pairs):
             k, v = kv.split('=')
             setattr(it, k, float(v))
     return it.clamp()
+
+
+def cmd_refs(a):
+    """在**大师的每一套**里找"这批最像哪一套"（64 张参照卡，不是 3 张生产卡）。"""
+    recs = M.load(a.recs)
+    if a.stem:
+        recs = M.only(recs, a.stem)
+    tb = profile_batch(recs)
+    print('口径 sha = %s ｜ 本批 %d 张' % (M.measure_sha(), len(recs)))
+    print('本批画像: 脸L=%.1f 脸C=%.1f 脸h=%.1f p50=%.1f p95=%.1f'
+          % (tb['L'], tb['C'], tb['h'], tb['p50'], tb['p95']))
+    print()
+    refs = refcards()
+    print('参照卡 %d 张（大师的每一套一张）' % len(refs))
+    print('  分数   套                                  张数  差在哪')
+    for h in rank_refs(tb, refs)[:a.top]:
+        print('  ' + str(h))
+    print()
+    print('  ⚠ 这只是"最像哪一套"，不是靶；参照卡只有画像、没有配方。')
 
 
 def cmd_cards(a):
@@ -276,6 +296,10 @@ def main(argv=None):
 
     sub.add_parser('stocks').set_defaults(fn=cmd_stocks)
     sub.add_parser('cards').set_defaults(fn=cmd_cards)
+
+    p = sub.add_parser('refs'); p.set_defaults(fn=cmd_refs)
+    p.add_argument('recs'); p.add_argument('--stem', default='')
+    p.add_argument('--top', type=int, default=8)
 
     p = sub.add_parser('check'); p.set_defaults(fn=cmd_check)
     p.add_argument('recs'); p.add_argument('--stage', default='engine',
