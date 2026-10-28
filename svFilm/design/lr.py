@@ -33,7 +33,7 @@ from .intent import Intent
 EV_PER_L = 1.0 / 30.0          # 中间调：1 EV ≈ 30 L*
 PC_SCALE_PER_C = 0.58          # 点颜色饱和 0.6 ⇒ 肤色 C ×1.35
 PC_SHIFT_PER_DEG = 1.0 / 30.0  # 色相 ±1 = ±30°
-INTENT_L_PER_UNIT = 2.0        # 意图 ±1 ⇒ 整体位移 ±2 L*
+INTENT_EV_PER_UNIT = 0.5        # 意图 ±1 ⇒ ±0.5 档（≈ ±15 L*）；只由曝光落地
 
 
 @dataclass
@@ -86,10 +86,16 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
     if cur is None:
         return 0.0
     tgt = min(max(target_L, L_lo), L_hi)
+    ev = (tgt - cur) * EV_PER_L
     if intent is not None:
-        tgt += getattr(intent, 'brighter', 0.0) * INTENT_L_PER_UNIT
-        tgt = min(max(tgt, L_lo), L_hi)          # 意图不许把脸推出合理区（S4）
-    return (tgt - cur) * EV_PER_L
+        # 意图只改**曝光**，且不许把脸推出合理区（S4）
+        ev += getattr(intent, 'brighter', 0.0) * INTENT_EV_PER_UNIT
+        newL = cur + ev * (1.0 / EV_PER_L)
+        if newL > L_hi:
+            ev -= (newL - L_hi) * EV_PER_L
+        elif newL < L_lo:
+            ev += (L_lo - newL) * EV_PER_L
+    return ev
 
 
 # ---------------------------------------------------------------- ③ 收白
@@ -116,14 +122,12 @@ def solve_curve(rec_engine: dict, intent: Optional[Intent] = None,
     q = {str(k): img.get('p%d' % k) for k in (5, 25, 50, 75, 95)}
     if not all(isinstance(v, (int, float)) for v in q.values()):
         return None, {'why': '缺分位'}
+    _ = intent          # 明确：曲线不看意图
     src = dict(q)
     dst = dict(q)
 
-    # (b) 意图：整体小幅位移
-    b = getattr(intent, 'brighter', 0.0) if intent else 0.0
-    if abs(b) > 1e-6:
-        for k in dst:
-            dst[k] = src[k] + b * INTENT_L_PER_UNIT
+    # ★ 意图**不由曲线落地**（2026-10-29 修正：曝光与曲线都加一次 = 意图被算两次）。
+    #   亮暗意图归曝光滑杆；曲线只修不变量。
 
     # (a) 不变量：爆白压低端、堵黑抬趾部
     clip = img.get('clip_pct') or 0.0

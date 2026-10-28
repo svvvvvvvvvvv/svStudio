@@ -16,6 +16,7 @@ from . import measure as M
 from .intent import Intent
 from .invariants import check_T, report
 from .lr import solve_curve, solve_one
+from .lrsink import summary as xmp_summary, write_jobs
 from .match import need_from_batch, report as match_report
 from .stocks import registry
 from .texture import Style, plan_texture, warn as tex_warn
@@ -110,6 +111,23 @@ def cmd_match(a):
     print(match_report(registry(), need_from_batch(recs, it), topn=a.top))
 
 
+def cmd_xmp(a):
+    """把一批图的 LRPlan 落成 XMP 作业单（**不驱动 LR**）。"""
+    recs = M.load(a.recs)
+    if a.stem:
+        recs = M.only(recs, a.stem)
+    it = _intent(a.intent)
+    plans = {}
+    for name, rec in recs.items():
+        stem = name.replace('\\', '/').split('/')[-1].split('.')[0]
+        plans[stem] = solve_one(rec, intent=it, log=lambda *_: None)
+    mf = write_jobs(plans, a.out, manifest_extra=dict(intent=it.as_dict(),
+                                                      source=a.recs))
+    print('口径 sha = %s ｜ %d 张 ｜ %s' % (M.measure_sha(), len(recs), it.describe()))
+    print(xmp_summary(mf))
+    print('输出：%s' % a.out)
+
+
 def cmd_flow(a):
     recs = M.load(a.recs)
     if a.stem:
@@ -157,6 +175,11 @@ def main(argv=None):
     p = sub.add_parser('match'); p.set_defaults(fn=cmd_match)
     p.add_argument('recs'); p.add_argument('--stem', default='')
     p.add_argument('--top', type=int, default=6)
+    p.add_argument('--intent', action='append')
+
+    p = sub.add_parser('xmp'); p.set_defaults(fn=cmd_xmp)
+    p.add_argument('recs'); p.add_argument('--out', required=True)
+    p.add_argument('--stem', default='')
     p.add_argument('--intent', action='append')
 
     p = sub.add_parser('flow'); p.set_defaults(fn=cmd_flow)

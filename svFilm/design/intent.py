@@ -25,6 +25,9 @@ class Intent:
     denser: float = 0.0       # + 更浓（彩度）/ − 更淡
     softer: float = 0.0       # + 更柔 / − 更硬（只能走卷纸或柔光档）
 
+    def as_dict(self):
+        return asdict(self)
+
     def clamp(self):
         for k, v in asdict(self).items():
             setattr(self, k, max(-1.0, min(1.0, float(v))))
