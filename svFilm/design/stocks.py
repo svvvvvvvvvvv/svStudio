@@ -19,10 +19,21 @@ from __future__ import annotations
 import glob
 import json
 import os
+import sys
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 import numpy as np
+
+_VENDOR = r'E:\svStudio\svFilm\_tools\spektrafilm\src'
+if _VENDOR not in sys.path:
+    sys.path.insert(0, _VENDOR)
+try:
+    from spektrafilm.data import presets_loader as _PL
+    GRAIN_TABLE = {k: v.get('rms_granularity') for k, v in _PL.read_grain_presets().items()}
+    COUPLER_TABLE = _PL.read_coupler_presets()
+except Exception:                                    # 引擎不在时也不崩
+    GRAIN_TABLE, COUPLER_TABLE = {}, {}
 
 PROFILE_DIRS = [
     r'E:\svStudio\svFilm\_tools\spektrafilm\src\spektrafilm\data\profiles',
@@ -42,15 +53,22 @@ class Stock:
     sepB: float                  # B−G 灵敏度差（蓝过量）
     gamma: float                 # 密度曲线最大斜率均值（正片无意义）
     dmax: float
+    rms: tuple = ()              # 引擎卷表 grain.toml 的 rms_granularity（48µm 孔径）
+    couplers: dict = field(default_factory=dict)   # 引擎卷表 couplers.toml 的 γ
+    coupler_class: str = ''                        # 正片=per-stock；负片=color.negative 类默认
     path: str = ''
 
     def axes(self) -> Dict[str, float]:
-        return dict(speed=self.speed, sepR=self.sepR, sepB=self.sepB,
-                    gamma=self.gamma, dmax=self.dmax)
+        a = dict(speed=self.speed, sepR=self.sepR, sepB=self.sepB,
+                 gamma=self.gamma, dmax=self.dmax)
+        if self.rms:
+            a['rms'] = float(sum(self.rms) / len(self.rms))
+        return a
 
     def __str__(self):
-        return ('%-24s %-9s anti=%-6s sepR=%+.2f sepB=%+.2f γ=%.2f 纸=%s'
-                % (self.name, self.kind, self.anti, self.sepR, self.sepB,
+        rms = ('%.1f' % (sum(self.rms) / len(self.rms))) if self.rms else '—'
+        return ('%-24s %-9s anti=%-6s rms=%-5s sepR=%+.2f sepB=%+.2f γ=%.2f 纸=%s'
+                % (self.name, self.kind, self.anti, rms, self.sepR, self.sepB,
                    self.gamma, self.target_print))
 
 
@@ -69,6 +87,31 @@ def _walk_profiles():
         for f in sorted(glob.glob(os.path.join(d, '*.json'))):
             seen.setdefault(os.path.basename(f), f)
     return seen
+
+
+
+def _resolve_couplers(st, d):
+    """couplers 表只对**正片**逐卷；负片全用同一个类默认。
+
+    读 `data/presets/couplers.toml` 的事实（2026-10-29）：
+      条目只有 5 个：defaults + 4 种反转片（provia/velvia/ektachrome100/kodachrome64）
+      ⇒ **负片之间 couplers 完全一样** ⇒ 它不能用来区分负片。
+    """
+    per = dict(COUPLER_TABLE.get(st.name) or {})
+    if per:
+        return per, 'per-stock'
+    info = d.get('info') or {}
+    kind = info.get('type') or 'negative'
+    use = info.get('use') or 'still'
+    classname = 'color.%s' % kind
+    if kind == 'negative' and use == 'cine':
+        illum = (info.get('reference_illuminant') or '').upper()
+        sub = 'tungsten' if 'T' == illum[:1] and illum.startswith('T') else 'daylight'
+        cand = 'color.negative.cine.%s' % sub
+        if cand in (COUPLER_TABLE.get('defaults') or {}):
+            return dict(COUPLER_TABLE['defaults'][cand] or {}), cand
+    cls = (COUPLER_TABLE.get('defaults') or {}).get(classname) or {}
+    return dict(cls), classname
 
 
 def _fingerprint(d: dict) -> Optional[Stock]:
@@ -142,6 +185,8 @@ def registry() -> Registry:
         st = _fingerprint(d)
         if st:
             st.path = path
+            st.rms = tuple(GRAIN_TABLE.get(st.name) or ())
+            st.couplers, st.coupler_class = _resolve_couplers(st, d)
             reg.stocks[st.name] = st
         elif info.get('stage') == 'printing' and info.get('stock'):
             reg.papers[info['stock']] = Paper(info['stock'], info.get('type', '?'), path)

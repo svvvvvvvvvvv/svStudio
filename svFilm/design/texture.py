@@ -73,6 +73,24 @@ class TexturePlan:
         return '\n'.join(lines)
 
 
+_VENDOR = r'E:\svStudio\svFilm\_tools\spektrafilm\src'
+
+
+def engine_grain_table() -> Dict[str, dict]:
+    """**首选**：直接读引擎自带的逐卷表（作者按数据表录入 + 优化），单一真源。"""
+    try:
+        import sys
+        if _VENDOR not in sys.path:
+            sys.path.insert(0, _VENDOR)
+        from spektrafilm.data import presets_loader as PL
+        return {k: {'rms_published': v.get('rms_granularity'),
+                    'aperture_um': 48, 'density': 1.0,
+                    'source': 'spektrafilm data/presets/grain.toml'}
+                for k, v in PL.read_grain_presets().items() if v.get('rms_granularity')}
+    except Exception:
+        return {}
+
+
 def _as3(v):
     """把单值或 [R,G,B] 统一成三元。"""
     if isinstance(v, (int, float)):
