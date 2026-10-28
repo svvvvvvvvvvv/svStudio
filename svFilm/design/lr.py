@@ -101,15 +101,33 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
 
 # ---------------------------------------------------------------- ③ 收白
 
-def solve_highlights(rec_after_ev: dict, clip_max: Optional[float] = None) -> float:
-    """把爆白压回阈值内。一次算：按超出比例给负值。"""
-    cm = T1['clip_max'] if clip_max is None else clip_max
-    clip = (rec_after_ev.get('img') or {}).get('clip_pct') or 0.0
-    if clip <= cm:
-        return 0.0
-    over = clip / max(cm, 1e-6)
-    return -min(100.0, (over - 1.0) * 40.0)
+def solve_highlights(rec_after_ev: dict, clip_max: Optional[float] = None):
+    """高光收白：**没有公式可算**，所以只给"政策性"一档，并把欠账记下来。
 
+    为什么删掉原来的公式（2026-10-29 自审）：
+      原来是 `-(over-1)*40`，纯拍脑袋；而 `Highlights` 在 Adobe 文档里
+      **没有公开传递函数**（见 lrmodel.py 的"没有公开闭式"一节）。
+      给一个编出来的斜率比不给更糟 —— 它会让人以为这是算出来的。
+
+    现在只做两件事：
+      1. 超标就报**欠账**（这活本该由引擎余量 T0 解决，不是 LR 补）
+      2. 需要先兜一下就用 HIGHLIGHT_POLICY 这一档固定值，标成 policy
+
+    返回 (value, note)；value=0.0 表示不动。
+    """
+    cm = T1['clip_max'] if clip_max is None else clip_max
+    img = rec_after_ev.get('img') or {}
+    clip = img.get('clip_pct') or 0.0
+    if clip <= cm:
+        return 0.0, None
+    note = ('clip=%.2f%% > %.2f%% => 引擎欠账（T0 没留够余量）；'
+            'LR 这里给的是政策值 %+.0f，不是算出来的'
+            % (clip, cm, HIGHLIGHT_POLICY))
+    return float(HIGHLIGHT_POLICY), note
+
+
+# 政策档：不是公式。等实测标定后替换（当前只保证方向：压）
+HIGHLIGHT_POLICY = -35.0
 
 # ---------------------------------------------------------------- ④ 曲线
 
@@ -203,7 +221,10 @@ def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
     plan.exposure_ev = round(solve_exposure(rec_engine, intent=intent), 3)
 
     base = rec_after_ev or rec_engine
-    plan.highlights = round(solve_highlights(base), 1)
+    hv, hnote = solve_highlights(base)
+    plan.highlights = round(hv, 1)
+    if hnote:
+        plan.notes['highlight_debt'] = hnote
     pts, info = solve_curve(rec_engine, intent=intent)
     plan.curve = pts
     plan.notes['curve'] = ('无需' if pts is None else

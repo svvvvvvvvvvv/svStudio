@@ -24,11 +24,17 @@ from typing import Dict, List
 SRC = [
     r'E:\ds\photo\_corpus\kurai\full\measure_all.py',
     r'E:\ds\photo\_corpus\kurai\full\skin_point.py',
+    # 必须带上：measure_all 的检测/对齐/缩放全在这里（换它 = 换尺子）
+    r'E:\ds\photo\_corpus\kurai\skin_v2\skin_v2.py',
 ]
 
 
 def measure_sha() -> str:
-    """口径指纹：两个测量文件内容一起 hash。三态共用同一个值。"""
+    """口径指纹：**所有**测量依赖文件一起 hash。三态共用同一个值。
+
+    2026-10-29 修：原先只 hash 两个文件，漏了 skin_v2（检测/对齐都在里面）
+    => 换测量器不会改 sha => "三态同一把尺子"变成空话。
+    """
     h = hashlib.sha256()
     for p in SRC:
         try:

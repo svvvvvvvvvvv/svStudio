@@ -30,30 +30,79 @@ def code_to_lstar(c: int) -> float:
     return max(0.0, min(100.0, c * 100.0 / 255.0))
 
 
-def _fit_points(pairs: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
-    """把 (code_in, code_out) 锚点插值成 16 点（0 与 255 端点锁死、单调）。"""
-    xs = [p[0] for p in pairs]
-    ys = [p[1] for p in pairs]
-    if xs[0] > 0:
-        xs = [0] + xs
-        ys = [0] + ys
-    if xs[-1] < 255:
-        xs = xs + [255]
-        ys = ys + [255]
-    pts = []
-    for i in range(16):
-        c = int(round(i * 255.0 / 15.0))
-        # 线性插值
-        for j in range(1, len(xs)):
-            if c <= xs[j]:
-                x0, x1, y0, y1 = xs[j - 1], xs[j], ys[j - 1], ys[j]
-                t = 0.0 if x1 == x0 else (c - x0) / float(x1 - x0)
-                pts.append((c, int(round(y0 + t * (y1 - y0)))))
-                break
+def _pchip(xs, ys, xq):
+    """单调三次插值（Fritsch-Carlson），无过冲。不依赖 scipy。
+
+    为什么不用线性：16 点之间线性连会出**阶梯**（相邻斜率突变），
+    LR 的 PV2012 曲线是平滑的；而普通三次样条会**过冲**（单调数据上产生反向斜率），
+    所以用保单调的 PCHIP。
+    """
+    n = len(xs)
+    if n < 2:
+        return [float(ys[0])] * len(xq)
+    h = [xs[i + 1] - xs[i] for i in range(n - 1)]
+    d = [(ys[i + 1] - ys[i]) / h[i] if h[i] else 0.0 for i in range(n - 1)]
+    m = [0.0] * n
+    m[0], m[-1] = d[0], d[-1]
+    for i in range(1, n - 1):
+        if d[i - 1] * d[i] <= 0:
+            m[i] = 0.0                       # 极值点 => 斜率归零（保单调）
         else:
-            pts.append((c, 255))
-    # 单调化（不许出现反转）
-    for i in range(1, len(pts)):
+            w1, w2 = 2 * h[i] + h[i - 1], h[i] + 2 * h[i - 1]
+            m[i] = (w1 + w2) / (w1 / d[i - 1] + w2 / d[i])
+    out = []
+    for x in xq:
+        if x <= xs[0]:
+            out.append(float(ys[0]))
+            continue
+        if x >= xs[-1]:
+            out.append(float(ys[-1]))
+            continue
+        i = 0
+        while i < n - 2 and x > xs[i + 1]:
+            i += 1
+        t_ = (x - xs[i]) / h[i] if h[i] else 0.0
+        t2, t3 = t_ * t_, t_ * t_ * t_
+        out.append((2 * t3 - 3 * t2 + 1) * ys[i] + (t3 - 2 * t2 + t_) * h[i] * m[i]
+                   + (-2 * t3 + 3 * t2) * ys[i + 1] + (t3 - t2) * h[i] * m[i + 1])
+    return out
+
+
+def _fit_points(pairs: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    """把 (code_in, code_out) 锚点用**单调三次**插成 16 点（端点锁死、单调）。"""
+    xs = [float(p[0]) for p in pairs]
+    ys = [float(p[1]) for p in pairs]
+    if xs[0] > 0:
+        xs = [0.0] + xs
+        ys = [0.0] + ys
+    if xs[-1] < 255:
+        xs = xs + [255.0]
+        ys = ys + [255.0]
+    ux, uy = [xs[0]], [ys[0]]
+    for x, y in zip(xs[1:], ys[1:]):
+        if x <= ux[-1]:
+            x = ux[-1] + 1e-6
+        ux.append(x)
+        uy.append(y)
+    # ★ 采样点**必须包含锚点位置**：均匀 16 点（0,17,34…255）会漏掉
+    #   code 250/254 这种高光锚点，修正在 LUT 里被抹掉（2026-10-29 实测发现）。
+    #   做法：锚点优先占位，剩余名额用均匀网格里离已有点最远的补。
+    need = [x for x in ux if 0 < x < 255]
+    grid = [0.0, 255.0] + need
+    cand = [i * 255.0 / 15.0 for i in range(1, 15)]
+    while len(grid) < 16 and cand:
+        best = max(cand, key=lambda c: min(abs(c - g) for g in grid))
+        grid.append(best)
+        cand.remove(best)
+    grid = sorted(set(round(x, 6) for x in grid))[:16]
+    if grid[0] != 0.0:
+        grid = [0.0] + grid
+    if grid[-1] != 255.0:
+        grid = grid + [255.0]
+    q = _pchip(ux, uy, grid)
+    pts = [(int(round(g)), int(round(max(0.0, min(255.0, v)))))
+           for g, v in zip(grid, q)]
+    for i in range(1, len(pts)):              # 取整兜底
         if pts[i][1] < pts[i - 1][1]:
             pts[i] = (pts[i][0], pts[i - 1][1])
     return pts

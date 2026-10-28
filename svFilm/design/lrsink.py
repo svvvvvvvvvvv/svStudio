@@ -98,6 +98,7 @@ def write_jobs(plans: Dict[str, LRPlan], out_dir: str,
                           curve_points=(len(plan.curve) if plan.curve else 0),
                           lookat=plan.notes.get('lookat'),
                           curve_note=plan.notes.get('curve'),
+                          highlight_debt=plan.notes.get('highlight_debt'),
                           point_color=plan.point_color,
                           point_color_rgb=plan.point_color_rgb,
                           diag=diag))
@@ -124,6 +125,11 @@ def summary(manifest: Dict[str, object]) -> str:
     lines.append('  带曲线：%d 张 ｜ 带点颜色：%d 张'
                  % (len(with_curve), sum(1 for i in items
                                          if (i.get('diag') or {}).get('has_point_colors'))))
+    debt = [i for i in items if i.get('highlight_debt')]
+    if debt:
+        lines.append('  ⚠ 引擎欠账 %d 张（高光余量不足，LR 只在政策值上兜一下）：' % len(debt))
+        for i in debt[:3]:
+            lines.append('    %s: %s' % (i['stem'], i['highlight_debt']))
     for i in bad[:3]:
         lines.append('  ! %s 自检不过：%s' % (i['stem'], i['diag']))
     lines.append('  ★ 只写了 XMP 与 manifest，**没有驱动 LR**')
