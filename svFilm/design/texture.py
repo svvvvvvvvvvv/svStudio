@@ -148,7 +148,7 @@ def plan_texture(stock: str, paper: str, long_side: int = 1080,
     pub_ref = ref_spec.get('rms_published')
     if pub and pub_ref:
         # 相对粗细查数据表，绝对档位用参照卷的 preset 值 —— 两者不混
-        ratio = _as3(pub) / _as3(pub_ref)
+        ratio = tuple(a / b for a, b in zip(_as3(pub), _as3(pub_ref)))
         rms = [float(r) * float(x) * st.grain_gain for r, x in zip(ref_rms, ratio)]
         plan.params['grain.rms_granularity'] = tuple(round(v, 3) for v in rms)
         plan.provenance['grain.rms_granularity'] = (
