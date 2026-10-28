@@ -19,15 +19,28 @@ from .lr import solve_curve, solve_one
 from .match import need_from_batch, report as match_report
 from .stocks import registry
 from .texture import Style, plan_texture, warn as tex_warn
-from .flow import choose, describe, presets_table
+from .cards import cards as all_cards
+from .flow import choose, describe
 
 
 def _intent(pairs):
+    """--intent 可以写多次，也可以一次写多个（逗号分隔）：--intent denser=0.6,softer=0.5"""
     it = Intent()
-    for kv in pairs or []:
-        k, v = kv.split('=')
-        setattr(it, k, float(v))
+    for chunk in pairs or []:
+        for kv in chunk.split(','):
+            kv = kv.strip()
+            if not kv:
+                continue
+            k, v = kv.split('=')
+            setattr(it, k, float(v))
     return it.clamp()
+
+
+def cmd_cards(a):
+    tb = all_cards()
+    print('卡 %d 张' % len(tb))
+    for c in tb.values():
+        print('  ' + str(c))
 
 
 def cmd_stocks(a):
@@ -103,10 +116,10 @@ def cmd_flow(a):
         recs = M.only(recs, a.stem)
     it = _intent(a.intent)
     print('口径 sha = %s ｜ %d 张 ｜ %s' % (M.measure_sha(), len(recs), it.describe()))
-    tb = presets_table()
-    print('现有预设 %d 份：%s' % (len(tb), ', '.join('%s(%s)' % (p.name, p.stock) for p in tb.values())))
+    tb = all_cards()
+    print('现有卡 %d 张：%s' % (len(tb), ', '.join(c.label() for c in tb.values())))
     print()
-    print(describe(choose(recs, it, topn=a.top), topn=a.top))
+    print(describe(choose(recs, it, topn=a.top)))
 
 
 def cmd_texture(a):
@@ -123,6 +136,7 @@ def main(argv=None):
     sub = ap.add_subparsers(dest='cmd', required=True)
 
     sub.add_parser('stocks').set_defaults(fn=cmd_stocks)
+    sub.add_parser('cards').set_defaults(fn=cmd_cards)
 
     p = sub.add_parser('check'); p.set_defaults(fn=cmd_check)
     p.add_argument('recs'); p.add_argument('--stage', default='engine',
