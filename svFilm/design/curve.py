@@ -112,3 +112,29 @@ def displacement(pts: List[Tuple[int, int]], Ls: List[float]) -> List[float]:
                 break
         out.append(round(code_to_lstar(y) - code_to_lstar(c), 2))
     return out
+
+
+def apply_curve_rgb(rgb, pts: List[Tuple[int, int]]) -> Tuple[float, float, float]:
+    """把曲线当作**逐通道 LUT** 作用在一个 sRGB 取样色（0..1）上。
+
+    为什么这样就够（用于算点颜色的取样色，不是用于出片）：
+      · LR 的色调曲线就是一条单调 LUT，作用在编码值上；
+      · 我们要的是"过完曲线之后，这个像素在 LR 眼里是什么颜色"，
+        逐通道查表在数学上就是这件事（出片还需考虑工作空间，这里不需要）。
+    """
+    if not pts:
+        return tuple(float(v) for v in rgb)
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    out = []
+    for v in rgb[:3]:
+        c = max(0, min(255, int(round(float(v) * 255.0))))
+        y = 0
+        for j in range(1, len(xs)):
+            if c <= xs[j]:
+                x0, x1, y0, y1 = xs[j - 1], xs[j], ys[j - 1], ys[j]
+                k = 0.0 if x1 == x0 else (c - x0) / float(x1 - x0)
+                y = y0 + k * (y1 - y0)
+                break
+        out.append(max(0.0, min(1.0, y / 255.0)))
+    return tuple(out)

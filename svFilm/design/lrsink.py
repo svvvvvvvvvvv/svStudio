@@ -36,10 +36,28 @@ CRS_VERSION = '18.1'
 PROCESS_VERSION = '15.4'
 
 
+def point_color_record(plan: LRPlan) -> Optional[str]:
+    """从剂量 + ②处取样色造 19 数字记录（复用已验证的构造函数）。
+
+    为什么用 `point_color(rgb, ...)` 而不是 Lab→RGB：
+      10-28 栽过——用 Lab 中心色反推出来的 HSL 色相是错的（0~360 与 0~6 弧度还会混）。
+      这里直接喂**真实取样像素**（已过曲线 LUT），SrcHue 由它的 HSL 算。
+    """
+    if not plan.point_color or not plan.point_color_rgb:
+        return None
+    from lr_xmp import point_color
+    return point_color(plan.point_color_rgb,
+                       sat_scale=float(plan.point_color.get('scale', 0.0)),
+                       hue_shift=float(plan.point_color.get('shift', 0.0)))
+
+
 def plan_to_xmp(plan: LRPlan, point_colors: Optional[List[str]] = None) -> str:
     """LRPlan → XMP 文本。值为 0 的滑杆不写（不写 = 不动）。"""
     from lr_xmp import build_xmp
     scalars = {k: v for k, v in plan.as_xmp_scalars().items() if abs(v or 0) > 1e-9}
+    if point_colors is None:
+        rec = point_color_record(plan)
+        point_colors = [rec] if rec else None
     return build_xmp(scalars=scalars, curve=plan.curve, point_colors=point_colors)
 
 
@@ -80,6 +98,8 @@ def write_jobs(plans: Dict[str, LRPlan], out_dir: str,
                           curve_points=(len(plan.curve) if plan.curve else 0),
                           lookat=plan.notes.get('lookat'),
                           curve_note=plan.notes.get('curve'),
+                          point_color=plan.point_color,
+                          point_color_rgb=plan.point_color_rgb,
                           diag=diag))
     manifest = dict(generated_utc=None, n=len(items), items=items,
                     caliber=dict(crs_version=CRS_VERSION,

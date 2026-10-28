@@ -48,6 +48,7 @@ class LRPlan:
     vibrance: float = 0.0
     curve: Optional[List[Tuple[int, int]]] = None
     point_color: Optional[Dict[str, float]] = None
+    point_color_rgb: Optional[list] = None      # ②处取样色（过完曲线后），造 19 数字要用它
     notes: Dict[str, str] = field(default_factory=dict)
 
     def as_xmp_scalars(self) -> Dict[str, float]:
@@ -170,20 +171,25 @@ def solve_saturation(rec_engine: dict, intent: Optional[Intent] = None) -> float
 
 # ---------------------------------------------------------------- ⑥ 点颜色
 
-def solve_point_color(rec_before: dict, target_C: Optional[float] = None,
-                      target_h: Optional[float] = None) -> Optional[Dict[str, float]]:
-    """肤色剂量（批次一套）：先 C 后 h，夹 ±1。取样点逐图由调用方给。"""
-    skin = rec_before.get('skin') or {}
-    C, h = skin.get('C'), skin.get('h')
-    if C is None or h is None:
+def solve_point_color(rec: dict, intent: Optional[Intent] = None,
+                      C_min: float = 10.0) -> Optional[Dict[str, float]]:
+    """肤色剂量（批次一套）。**新体系里没有"肤色靶"**，所以只做两件事：
+
+      (a) 不变量：肤色 C 低于 C_min（发灰）⇒ 推一点
+      (b) 意图：更浓/更淡
+    色相（shift）默认不动 —— 没有靶就没有"该转多少度"。
+    """
+    skin = rec.get('skin') or {}
+    C = skin.get('C')
+    if C is None:
         return None
-    out = dict(scale=0.0, shift=0.0)
-    if target_C:
-        out['scale'] = max(-1.0, min(1.0, (target_C / C - 1.0) / PC_SCALE_PER_C))
-    if target_h:
-        dh = ((target_h - h + 180) % 360) - 180
-        out['shift'] = max(-1.0, min(1.0, dh * PC_SHIFT_PER_DEG))
-    return out
+    scale = 0.0
+    if C < C_min:
+        # 把 C 推到 C_min 所需的比例；夹 ±1
+        scale = (C_min / max(C, 1e-6) - 1.0) / PC_SCALE_PER_C
+    d = getattr(intent, 'denser', 0.0) if intent else 0.0
+    scale += d * 0.5                       # 意图只加一半幅度，另一半交给整体饱和
+    return dict(scale=max(-1.0, min(1.0, scale)), shift=0.0)
 
 
 # ---------------------------------------------------------------- 主流程
@@ -205,8 +211,13 @@ def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
                                                        info.get('max_abs_delta') or 0))
     plan.saturation = round(solve_saturation(rec_engine, intent), 1)
 
-    if rec_final is not None:
-        pc = solve_point_color(rec_final)
-        if pc and (abs(pc['scale']) > 1e-6 or abs(pc['shift']) > 1e-6):
-            plan.point_color = pc
+    pc = solve_point_color(rec_final or rec_engine, intent=intent)
+    if pc and (abs(pc['scale']) > 1e-6 or abs(pc['shift']) > 1e-6):
+        plan.point_color = pc
+        # 取样色要取**过完曲线之后**的（点颜色作用在 ② 上）
+        rgb = ((rec_final or rec_engine).get('skin') or {}).get('rgb')
+        if rgb:
+            from .curve import apply_curve_rgb
+            plan.point_color_rgb = list(apply_curve_rgb(rgb, plan.curve or []))
+            plan.notes['point_color_rgb_src'] = '②处（①的取样色过曲线 LUT）'
     return plan
