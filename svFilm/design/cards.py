@@ -46,6 +46,9 @@ class Card:
     export: Dict[str, object] = field(default_factory=dict)    # 交付规格
     impl: str = ''                  # 落成哪个文件（实现细节）
     note: str = ''
+    # 余量设定（T0）。引擎默认 p95_max=96（宽）；我们更严，但**这是卡的选择**
+    safety: Dict[str, float] = field(default_factory=lambda: dict(p95_max=96.0,
+                                                                 black_max=3.0))
 
     def label(self) -> str:
         return '%s（%s + %s）' % (self.name, self.stock, self.paper)
