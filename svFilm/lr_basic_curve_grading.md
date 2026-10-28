@@ -3,6 +3,13 @@
 > 前提：**大师不再是预设**。卡片 = 目标（分布 + 关系 + 情境）；介质 profile = 底；  
 > **engine 管介质，LR 管 placement + look**（`ff194eb` 的分工）。  
 > 这里只写“怎么算”，不写“参数长什么样”；参数由卡片目标解出来。
+>
+> ⚠ **2026-10-28 欠账清理（superseded 标注）**：本规范有四节已被实测修订，以 `decisions_solver.md` 为准：
+> §3.1 LR WB（ADR-004：引擎 TIF 上 Temperature/Tint 是死键，WB 只归介质）
+> §3.3–3.5 Contrast/Highlights/Shadows/Whites/Blacks（ADR-005：实测权限 ≤0.12/单位，满量程 ≤12 L* 且不 selective，全部退出求解）
+> §3.8 顺序里的 WB 一步（同 ADR-004，LR 段从 Exposure 起）
+> §1 owner 表的“全局色偏 = Camera Calibration 蓝原色”（实测 `BluePrimarySaturation` 权限为 0，owner 不存在）
+> 曲线锚点用法另见 ADR-007（p50 恒等，只搬形状）与 ADR-002（锚点用全图分位）。
 
 ---
 
@@ -21,16 +28,17 @@
 
 | 目标 | 唯一 owner | 不许拿它管 |
 |---|---|---|
-| 白平衡/中性 | **LR WB**（raw 场景）+ engine 介质 WB | 不许用 Color Grading 改整体白平衡 |
+| 白平衡/中性 | ~~**LR WB**（raw 场景）~~ + engine 介质 WB（ADR-004：LR WB 在本链是死键，只剩介质） | 不许用 Color Grading 改整体白平衡 |
 | 整体亮/脸落点 | **LR Exposure** | 不许用 Contrast / 曲线补 |
-| 全局明暗分布 | **LR Basic Contrast**（粗）+ **Tone Curve**（形状） | 两者只做一次，Basic 先、曲线后 |
-| 黑/白端 | **LR Whites/Blacks**（粗）+ Tone Curve 端点 | 不许用 Exposure 压 |
-| 高光滚降/阴影 | **LR Highlights/Shadows**（粗） | 不许用 Color Grading 的 Lum 当曝光 |
+| 全局明暗分布 | ~~**LR Basic Contrast**（粗）~~ + **Tone Curve**（形状）（ADR-005：Contrast 无权限退出，只留曲线） | 曲线一次做完 |
+| 黑/白端 | ~~**LR Whites/Blacks**（粗）~~ + Tone Curve 端点（ADR-005：两根退出，端点归曲线） | 不许用 Exposure 压 |
+| 高光滚降/阴影 | ~~**LR Highlights/Shadows**（粗）~~（ADR-005：无权限退出；滚降归介质+曲线） | 不许用 Color Grading 的 Lum 当曝光 |
 | 肤色 | **HSL 橙/黄**（局部） | 不许用 WB 改肤色；不许用 Saturation 全局拉 |
 | 环境色/背景 | **HSL 绿/蓝**（局部）+ Color Grading | 不许用全局 Saturation 一刀切 |
 | 阴影/高光染色 | **Color Grading** 三段 | 不许用 Split Toning 另开一套 |
 | 颗粒/扫描/光晕 | **engine / 介质 profile** | 不许用 LR Grain/Clarity 补 |
 | 镜头/透视 | LR Lens / Transform | 不许用 Dehaze 当对比 |
+| 整体色偏 | ~~Camera Calibration 蓝原色~~（ADR-005 实测 `BluePrimarySaturation` 权限 0，owner 不存在；归介质 WB/化学） | — |
 
 > **一条硬规则：同一个特征只能有一个 owner。** 如果两个旋钮都能动它，就用敏感度矩阵选“单位代价最小”的那个，另一个锁死。
 
@@ -62,6 +70,8 @@ tags:  light.source, clothing.palette, scene.place, background.type
 
 ### 3.1 WB（Temp / Tint）
 
+> ⚠ **superseded by ADR-004**（2026-10-28 标注）：引擎 TIF 上 LR 的 Temperature/Tint 是死键（五臂导出逐位相同、读回 nil），本节在本链不可实现。中性/肤色 h 归**介质 WB**（每介质一个值）。
+
 - 目标：卡片的**同图中性** `(a_n, b_n)` + 肤色 `h_s`；不是卡片的整体黄蓝。
 - 当前：批次的 `(a_n0, b_n0)`（同图中性，用 FACE/低 C 像素；不是灰卡）。
 - 增量：`Δa = a_n - a_n0`，`Δb = b_n - b_n0`。
@@ -78,6 +88,8 @@ tags:  light.source, clothing.palette, scene.place, background.type
 - **批次级**：同批一个 EV；outliers 单独标，不逐图。
 
 ### 3.3 Contrast（Basic）
+
+> ⚠ **§3.3–3.5 整体 superseded by ADR-005**（2026-10-28 标注）：实测增益 Contrast 0.068 / Highlights 0.109 / Shadows 0.007 / Whites 0.070 / Blacks 0.032 L*/单位，满量程合计 ≤12 L* 且不 selective ⇒ 四根（+Contrast）全部退出求解，Basic 只留 Exposure。
 
 - 目标：卡片的 `p25/p75` 与 `contrast`；当前：批次同量。
 - 粗解：`ΔContrast = k_c · ( (p75_T - p25_T) - (p75_0 - p25_0) )`，`k_c` 由 LR 滑杆探针标定。
@@ -106,6 +118,8 @@ tags:  light.source, clothing.palette, scene.place, background.type
 - 规则：engine 的 `amount` 是介质/彩度分配；LR 的 `Vibrance` 只做局部/场景修正；两者不同时拉满。
 
 ### 3.8 Basic 的顺序
+
+> ⚠ **superseded by ADR-004/005**（2026-10-28 标注）：WB 归介质、Basic 只剩 Exposure，LR 段实际顺序 = **Exposure → 曲线（形状，ADR-007）→ HSL 残差**；每步之后量一次，后者不拉前者目标。
 
 ```
 WB → Exposure → Contrast（粗）→ Highlights/Shadows（粗）→ Whites/Blacks（粗）

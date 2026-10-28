@@ -2,6 +2,12 @@
 
 > 目标：把“卡 target / 引擎介质 / LR placement+look”三条线彻底切开；  
 > 只保留一个测量口径；旧 probe / 旧 person / 旧 skin / 旧 finish 全部退出主链。
+>
+> ⚠ **2026-10-28 欠账清理**：§5 求解顺序与 §6 职责表里的 Basic 六旋钮部分
+> **已被 `decisions_solver.md` ADR-004 / ADR-005 推翻**（LR 的 Temperature/Tint 在引擎 TIF 上是死键；
+> Contrast/Highlights/Shadows/Whites/Blacks 实测权限 ≤0.12/单位，不参与求解）。
+> 真正能解的只有：脸 L（Exposure）/ 脸 C（HSL 橙，介质 amount 为第一 owner）/ 脸 h（介质 WB tint 为第一 owner）/
+> 曲线形状（ToneCurve）。以 `decisions_solver.md` 为准，下文保留作历史。
 
 ---
 

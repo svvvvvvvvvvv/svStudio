@@ -1,5 +1,15 @@
 # sfFilm 与 LR 的分工：结合踩过的坑
 
+> ⚠ **2026-10-28 ADR-009 更新**（曝光主人换了，边界原则不变）：
+> ① §1 表里「person_pe / LR 蒙版」与 §2 的「印相曝光——固定在该介质上，不追卡的脸」**已被部分推翻**：
+> 印相曝光改为**逐图按脸解算**（两遍印相，脸锚），"固定"语义只保留在**无脸回退**分支。
+> ② §1 的教训本身没作废——重叠的坑是"**两处同时动同一个特征**"，不是"引擎不许动"。
+> 脸锚的正解恰是"一个特征一个主人"：**脸的落点 = 引擎脸锚独占**（ADR-009），
+> LR 只补残差（ADR-005 死键边界不变）。老链 person_pe 当年被当成坑，
+> 根因是它和 LR Exposure 两边都在追脸——现在 LR Exposure 退位、脸归引擎，重叠解除。
+> ③ 验收语义同步改（人像工具原则）：**人像门=硬门，白端=记账**（天空可曝，SV 10-28）。
+> 详见 `decisions_solver.md` ADR-009。
+
 > 一句话：**sfFilm 负责“这是什么胶片”，LR 负责“这张脸/这套光落在哪”。**  
 > 前者是介质，后者是 placement + look。两边都碰同一个特征，就会互相顶——这是之前最大的坑。
 
@@ -42,6 +52,11 @@
 - 曲线形状（LR Tone Curve）
 
 ### LR = placement + look（卡的风格）
+
+> ⚠ **2026-10-28 欠账清理**：下面 Basic 六旋钮的分工已被 `decisions_solver.md` ADR-004/005 修订——
+> WB 在引擎 TIF 上是死键（归介质）；Contrast/Highlights/Shadows/Whites/Blacks 实测无权限，不参与求解。
+> LR 真正的 owner 只剩：Exposure（脸 L）、Tone Curve（形状）、HSL 橙/黄（肤色残差）。
+> §1"engine wb / LR WB 两处都在管白平衡"这条坑的实际解法 = WB 只归介质。下文保留作历史。
 
 管：
 - **Basic 六旋钮**：Exposure（脸 L）、Whites/Blacks（前景端点）、Highlights/Shadows（前景 p95/p5）、Contrast（前景 p25–p75）
