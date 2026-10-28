@@ -19,6 +19,7 @@ from .lr import solve_curve, solve_one
 from .match import need_from_batch, report as match_report
 from .stocks import registry
 from .texture import Style, plan_texture, warn as tex_warn
+from .flow import choose, describe, presets_table
 
 
 def _intent(pairs):
@@ -96,6 +97,18 @@ def cmd_match(a):
     print(match_report(registry(), need_from_batch(recs, it), topn=a.top))
 
 
+def cmd_flow(a):
+    recs = M.load(a.recs)
+    if a.stem:
+        recs = M.only(recs, a.stem)
+    it = _intent(a.intent)
+    print('口径 sha = %s ｜ %d 张 ｜ %s' % (M.measure_sha(), len(recs), it.describe()))
+    tb = presets_table()
+    print('现有预设 %d 份：%s' % (len(tb), ', '.join('%s(%s)' % (p.name, p.stock) for p in tb.values())))
+    print()
+    print(describe(choose(recs, it, topn=a.top), topn=a.top))
+
+
 def cmd_texture(a):
     st = Style(format_mm=a.format, diffusion=a.diffusion)
     p = plan_texture(a.stock, a.paper or '', long_side=a.long, style=st)
@@ -130,6 +143,11 @@ def main(argv=None):
     p = sub.add_parser('match'); p.set_defaults(fn=cmd_match)
     p.add_argument('recs'); p.add_argument('--stem', default='')
     p.add_argument('--top', type=int, default=6)
+    p.add_argument('--intent', action='append')
+
+    p = sub.add_parser('flow'); p.set_defaults(fn=cmd_flow)
+    p.add_argument('recs'); p.add_argument('--stem', default='')
+    p.add_argument('--top', type=int, default=5)
     p.add_argument('--intent', action='append')
 
     p = sub.add_parser('texture'); p.set_defaults(fn=cmd_texture)
