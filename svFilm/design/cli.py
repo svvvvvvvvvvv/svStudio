@@ -1,28 +1,35 @@
 # -*- coding: utf-8 -*-
 """命令行入口（设计层的"手"）。
 
-用法：
-    python -m design.cli stocks                     # 卷/纸清单 + 三组阵营
-    python -m design.cli check <recs.json> --stage engine|final
-    python -m design.cli plan  <recs.json> [--stem 正则] [--intent brighter=0.3]
-    python -m design.cli curve <src.json> <dst.json>   # 试造曲线（看预算够不够）
+    python -m design.cli stocks                       # 卷/纸清单 + 三组阵营 + 逐卷规格
+    python -m design.cli check  <recs.json> --stage engine|final [--stem 正则]
+    python -m design.cli plan   <recs.json> [--stem 正则] [--intent k=v ...]
+    python -m design.cli curve  <recs.json> [--stem 正则] [--intent k=v ...]
+    python -m design.cli match  <recs.json> [--intent k=v ...] [--top 6]
+    python -m design.cli texture <stock> [--long 1080] [--format 36] [--diffusion off]
 """
 from __future__ import annotations
 
 import argparse
-import json
-import sys
 
 from . import measure as M
-from .curve import ANCHOR_Q, plan_curve
-from .engine import EnginePlan, judge_plan
 from .intent import Intent
 from .invariants import check_T, report
-from .lr import pick_lookat, solve_exposure, solve_highlights, solve_point_color
+from .lr import solve_curve, solve_one
+from .match import need_from_batch, report as match_report
 from .stocks import registry
+from .texture import Style, plan_texture, warn as tex_warn
 
 
-def cmd_stocks(_):
+def _intent(pairs):
+    it = Intent()
+    for kv in pairs or []:
+        k, v = kv.split('=')
+        setattr(it, k, float(v))
+    return it.clamp()
+
+
+def cmd_stocks(a):
     reg = registry()
     print('卷 %d / 纸 %d' % (len(reg.stocks), len(reg.papers)))
     for paper, xs in reg.groups().items():
@@ -53,55 +60,49 @@ def cmd_plan(a):
     recs = M.load(a.recs)
     if a.stem:
         recs = M.only(recs, a.stem)
-    it = Intent()
-    for kv in a.intent or []:
-        k, v = kv.split('=')
-        setattr(it, k, float(v))
-    it.clamp()
+    it = _intent(a.intent)
     print('口径 sha = %s ｜ %d 张 ｜ %s' % (M.measure_sha(), len(recs), it.describe()))
     for name, rec in list(recs.items())[:a.show]:
-        look = pick_lookat(rec)
-        ev = solve_exposure(rec) + it.exposure_sign() * 0.15
+        p = solve_one(rec, intent=it)
         print('\n%s' % name)
-        print('  看哪里=%s  曝光=%+.2f EV  收白=%+.0f' % (look, ev, solve_highlights(rec)))
-        pc = solve_point_color(rec, target_C=a.target_c)
-        if pc:
-            print('  点颜色（相对当前）: scale=%+.2f shift=%+.2f' % (pc['scale'], pc['shift']))
-
-
-def _stem(name):
-    # 三态的文件名不同（_engine.tif / _base.tif / _xmp.tif）⇒ 按 stem 配对
-    base = name.replace('\\', '/').split('/')[-1]
-    return base.split('_')[0]
-
-
-def _q(rec):
-    """measure_all 的 img 用 p5/p25/... ，曲线那边用 '5'/'25'/... —— 这里做一次映射。"""
-    img = rec.get('img') or {}
-    return {'5': img.get('p5', 0.0), '25': img.get('p25', 0.0), '50': img.get('p50', 0.0),
-            '75': img.get('p75', 0.0), '95': img.get('p95', 0.0)}
+        print('  看哪里=%s  曝光=%+.2f EV  收白=%+.0f  饱和=%+.0f'
+              % (p.notes.get('lookat'), p.exposure_ev, p.highlights, p.saturation))
+        print('  曲线：%s' % p.notes.get('curve'))
 
 
 def cmd_curve(a):
-    src = M.load(a.src)
-    dst = M.load(a.dst)
-    dmap = {_stem(k): v for k, v in dst.items()}
-    shown = 0
-    for name, rec in src.items():
-        st = _stem(name)
-        if st not in dmap or shown >= a.show:
-            continue
-        shown += 1
-        sq = _q(rec)
-        dq = _q(dmap[st])
-        pts, info = plan_curve(sq, dq, budget=a.budget)
+    recs = M.load(a.recs)
+    if a.stem:
+        recs = M.only(recs, a.stem)
+    it = _intent(a.intent)
+    for name, rec in list(recs.items())[:a.show]:
+        pts, info = solve_curve(rec, intent=it, budget=a.budget)
         print('\n%s' % name)
-        print('  源 %s' % info.get('src'))
-        print('  靶 %s' % info.get('dst'))
-        print('  位移 %s ｜ 最大 %.2f ｜ 超预算未给 %s'
-              % (info.get('delta'), info.get('max_abs_delta') or 0,
-                 info.get('need_unmet') or '无'))
-        print('  曲线 %s' % ('未生成（预算内无解）' if pts is None else '%d 点' % len(pts)))
+        print('  分位 %s' % {k: round(v, 1) for k, v in (info.get('src') or {}).items()})
+        print('  修正 %s ｜ 最大位移 %.2f'
+              % (info.get('fixed') or info.get('why'), info.get('max_abs_delta') or 0))
+        if info.get('unmet'):
+            print('  ⚠ 预算内修不掉：%s ⇒ 这不是曲线的活，回引擎要余量（T0）'
+                  % info['unmet'])
+        print('  曲线 %s' % ('不需要' if pts is None else '%d 点' % len(pts)))
+
+
+def cmd_match(a):
+    recs = M.load(a.recs)
+    if a.stem:
+        recs = M.only(recs, a.stem)
+    it = _intent(a.intent)
+    print('口径 sha = %s ｜ %d 张' % (M.measure_sha(), len(recs)))
+    print(match_report(registry(), need_from_batch(recs, it), topn=a.top))
+
+
+def cmd_texture(a):
+    st = Style(format_mm=a.format, diffusion=a.diffusion)
+    p = plan_texture(a.stock, a.paper or '', long_side=a.long, style=st)
+    print('== %s ｜ 长边 %d ==' % (a.stock, a.long))
+    print(p)
+    print()
+    print(tex_warn(p, long_side=a.long))
 
 
 def main(argv=None):
@@ -111,23 +112,31 @@ def main(argv=None):
     sub.add_parser('stocks').set_defaults(fn=cmd_stocks)
 
     p = sub.add_parser('check'); p.set_defaults(fn=cmd_check)
-    p.add_argument('recs')
-    p.add_argument('--stage', default='engine', choices=['engine', 'final'])
-    p.add_argument('--stem', default='')
-    p.add_argument('--show', type=int, default=3)
+    p.add_argument('recs'); p.add_argument('--stage', default='engine',
+                                           choices=['engine', 'final'])
+    p.add_argument('--stem', default=''); p.add_argument('--show', type=int, default=3)
 
     p = sub.add_parser('plan'); p.set_defaults(fn=cmd_plan)
-    p.add_argument('recs')
-    p.add_argument('--stem', default='')
+    p.add_argument('recs'); p.add_argument('--stem', default='')
     p.add_argument('--show', type=int, default=3)
-    p.add_argument('--target-c', type=float, default=None)
-    p.add_argument('--intent', action='append',
-                   help='例: brighter=0.3 / denser=-0.2')
+    p.add_argument('--intent', action='append', help='例: brighter=0.3')
 
     p = sub.add_parser('curve'); p.set_defaults(fn=cmd_curve)
-    p.add_argument('src'); p.add_argument('dst')
+    p.add_argument('recs'); p.add_argument('--stem', default='')
     p.add_argument('--budget', type=float, default=3.0)
     p.add_argument('--show', type=int, default=3)
+    p.add_argument('--intent', action='append')
+
+    p = sub.add_parser('match'); p.set_defaults(fn=cmd_match)
+    p.add_argument('recs'); p.add_argument('--stem', default='')
+    p.add_argument('--top', type=int, default=6)
+    p.add_argument('--intent', action='append')
+
+    p = sub.add_parser('texture'); p.set_defaults(fn=cmd_texture)
+    p.add_argument('stock'); p.add_argument('--paper', default='')
+    p.add_argument('--long', type=int, default=1080)
+    p.add_argument('--format', type=float, default=36.0)
+    p.add_argument('--diffusion', default='off')
 
     a = ap.parse_args(argv)
     a.fn(a)
