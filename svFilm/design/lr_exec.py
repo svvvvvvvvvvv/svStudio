@@ -17,7 +17,6 @@ from typing import Dict, List, Optional
 from .lr import LRPlan
 from .lrsink import apply_and_export, write_jobs
 
-WHITES_STEP = -8.0          # 一档最小步（LR 面板刻度）
 
 
 def to_lrplans(plans: Dict[str, dict]) -> Dict[str, LRPlan]:

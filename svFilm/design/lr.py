@@ -20,6 +20,12 @@
 
 本文件只算值、只判定，**不直接驱动 LR**（驱动在 lrsink.py）。
 """
+# ⚠⚠ 本模块的 solve_one / solve_exposure / _cap_white / solve_point_color
+#   属于**旧求解栈**（§29.5 那一代：为脸动全局曝光 + 固定剂量）。
+#   **生产路径已换成 lr_solve.plan_batch + lr_exec.run**（§6B 七步全开）。
+#   这里还留着只因为 cli 的 plan/curve/states/xmp 四个诊断命令在用；
+#   不要在这些函数里加东西、也不要拿它们的常数当依据（FILL_*/SAT_*/PC_LUM_* 都已作废）。
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field

@@ -22,7 +22,9 @@ from .stocks import registry
 from .matchcard import batch_profile, batch_tags, cards as match_cards
 from .matchpage import make_match_page
 from .states import limit_note, regression_curve
-from .batch import Batch, pilot, run_engine, run_lr, run_final, build_review, estimate
+from .batch import Batch, pilot, run_engine, build_review, estimate
+from .lr_solve import plan_batch, summary as lr_summary
+from .lr_exec import run as lr_run
 from .texture import Style, plan_texture, warn as tex_warn
 from .flow import Choice, Offer, choose, describe
 
@@ -270,18 +272,17 @@ def cmd_run(a):
     if not recs:
         print('整批无一有效 ⇒ 停'); return
 
-    print('\n[5/7] LR 计划 + XMP 作业单')
-    out = run_lr(b, recs, it, light=getattr(a, 'light', None), log=print)
-    print(xmp_summary(out['manifest']))
+    print('\n[5/7] LR 计划（§6B 七步全开，照卡求解）')
+    plans = plan_batch(recs, card)
+    print(lr_summary(plans, card['name']))
 
     reviewed = None
     if a.export:
         print('\n[6/7] 出片：LR 出成片 ③ → 量 → 验收 → 目检（唯一驱动 LR 的一步）')
         try:
-            o3 = run_final(b, recs, out['plans'], rounds=a.rounds,
-                           light=getattr(a, 'light', None), log=print)
-            print(' ③ 成片 %d 张（%d 轮）' % (len(o3['recs3']), o3['rounds']))
-            reviewed = build_review(b, recs, out['plans'], o3['recs3'],
+            got = lr_run(plans, b.sub('engine'), b.out_dir, log=print)
+            print(' ③ 成片 %d 张（一次算，一轮）' % len(got))
+            reviewed = build_review(b, recs, plans, got,
                                     light=getattr(a, 'light', None), log=print)
             print(' 验收：硬门（脸）过 %d/%d 张' % (reviewed['ok'], reviewed['n']))
             print(' 目检：%s' % reviewed['html'])
