@@ -2,12 +2,12 @@
 """卡：这套系统里**唯一被匹配、被选用、被渲染**的单位。
 
 一个「卡」= 一卷 + 一张纸 + 一组质感参数 + 风格档。
-它对外是卡；对内落成引擎里的一个预设文件（实现细节，不外露）。
+它对外是卡；对内落成引擎侧的一个配置文件（实现细节，不外露）。
 
 为什么要有这一层（2026-10-29 修正）：
   · 卷有 22 个，但**能渲的不等于能选的**——每个卡都是有人定过、校验过的一个组合；
   · 匹配的候选池应该是**卡**，不是"所有卷的笛卡尔积"；
-  · 早先我把它叫"预设"，那是引擎侧的叫法，不是这套系统的单位。
+  · 早先我把它叫"预设"，那是引擎侧目录的叫法，**不是这套系统的单位**；本系统只有"卡"。
 
 卡绑定的东西（都从已有卡的实现里读出）：
     stock / paper          ← 卷+纸（决定光谱、白点、反差）
@@ -32,7 +32,7 @@ from typing import Dict, List, Optional
 
 from .stocks import Registry, Stock, registry as _registry
 
-# 卡的实现放在引擎的预设目录里（这是"卡怎么落地"的地方，不是"卡是什么"）
+# 卡的实现放在引擎侧 `data/presets/` 目录里（这是"卡怎么落地"，不是"卡是什么"）
 CARD_DIRS = [r'E:\svStudio\svFilm\svFilm\data\presets']
 
 
@@ -95,7 +95,7 @@ def cards() -> Dict[str, Card]:
 
 
 def _diffusion_of(sim: dict) -> str:
-    """柔光档：预设是**扁平键**（`simulation.camera_diffusion_filter_*` / `..._diffusion_filter_*`）。
+    """柔光档：引擎侧用的是**扁平键**（`simulation.camera_diffusion_filter_*` / `..._diffusion_filter_*`）。
 
     相机端 = 拍摄时的柔光镜；印放端 = 放大时的柔光。两边各记一档。
     """

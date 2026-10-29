@@ -319,5 +319,5 @@
  },
  "_note_medium_20261028": "介质定值 2026-10-28（报告§13/§4.3）：wb 4545/0.998→4630/0.95（n=10 生产路径格点：肤h中位47.53=靶47.7带内；中性a 0.0 量化噪声内）；amount 1.00→1.30（n=10：肤C中位17.42，带[15.12,23.36]内；高彩脸1526/1422/1772 C29-40 不再上推）。备份 .bak_medium_20261028，前sha 587767abb2bd",
  "_note_medium": "由 medium_profiles.json 生成；覆盖键 = wb, film_stock, print_paper, amount, format_mm, grain.rms_granularity, grain.blur_dye_clouds_um, halation.strength(from amount), halation.sigma；其余引擎键继承 卡38。",
- "_note_texture_1029": "2026-10-29 SV 定：质感族先沿用 卡38（鹿井旧预设）。其中 halation_strength 修掉单位笔误（原 [0.015,0.0048,0] 是 ×100 记法下写成了物理值，实际只有 1/100，几乎等于关掉）。后期再开专题研究。卡自己的东西没动：grain.rms=10、amount=1.2、wb、卷纸。"
+ "_note_texture_1029": "2026-10-29 SV 定：**没研究过的**质感参数，先沿用鹿井那张卡（卡38）的值。改了三项：blur_dye_clouds_um 0.8→3.0；halation_strength [0.015,0.0048,0]→[2.5,0.8,0]（修单位笔误：原值是把已除过 100 的物理值写进了 ×100 的字段，实际只有 1/100，几乎等于关掉）；halation_first_sigma_um 65→75。**卡自己的没动**：grain.rms=10（目检定）、amount=1.2、wb、卷/纸、画幅。后期再开专题研究质感。"
 }
