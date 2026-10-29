@@ -91,7 +91,22 @@ LAND_CAP_L = 70.0
 #   出处：手掩膜守卫 [0.005, 0.70] 与旧链实测（脸太小则颊读数不可靠）。
 FACE_MIN_W = 40.0
 #
-# ★ 光位判据（H4）：设计 §3.1「逆光（脸/背景亮度比 < 1.0）· 顺光（比 > 1.3）」
+# ★ 光位判据（H4）—— 2026-10-29 重写：旧版用「脸 ÷ 背景**中位**」是错的。
+#   逆光时背景中位落在暗部（树皮/石墙/树荫），太阳照到的那片才是亮的：
+#   DSCF1608 脸 46.8 / 背景中位 28.8 ⇒ 旧判据说"脸比背景亮 = 顺光"，
+#   而它其实是逆光（背景 p90 = 71.5，脸比亮部低 24.6）。
+#
+#   现在用**背景亮部**（测量层 `bg.L_p90`）：
+#     gap  = 背景 p90 − 脸 L      脸比最亮那片背景低多少
+#     span = 背景 p90 − 背景 p10  背景自己有没有明暗跨度（既有树荫又有太阳）
+#   逆光 = gap 大且 span 大；顺光 = gap 很小；其余 = unknown（**宁可弃权，不猜**）。
+#
+#   ⚠ 这是近似判据，不是物理测量。真逆光的直接证据是**轮廓光**（脸外圈比脸亮），
+#     测量层还没量那个，所以保留 unknown 这条退路。
+LIGHT_GAP_BACKLIT = 15.0
+LIGHT_GAP_FRONT = 8.0
+LIGHT_SPAN_MIN = 55.0
+# 老数据（没有 bg.L_p90）退回旧比值，只作兼容，**标记为不可靠**
 LIGHT_BACKLIT, LIGHT_FRONTLIT = 1.0, 1.3
 
 
@@ -133,24 +148,43 @@ class LookAt:
                               '' if self.light == 'unknown' else ' · ' + self.light)
 
 
-def light_state(rec: dict) -> str:
-    """光位（H4）：脸/背景亮度比 < 1.0 逆光，> 1.3 顺光。
+def light_state(rec: dict, given: Optional[str] = None) -> str:
+    """光位（H4）：**由人给，不由测量猜**。
 
-    出处：设计 §3.1 的分类依据；比值来自测量层的 `light_ratio`。
-    为什么要它：逆光与顺光要**相反**处理（§28 L3）——
-    逆光该提的是脸（并且要预备收白）；顺光脸还低，那就不是光位的事。
+    为什么改成这样（2026-10-29 两轮实测）：
+      · 旧判据「脸 ÷ 背景中位」：逆光时背景中位落在暗部 ⇒ 把 DSCF1608（真逆光）判成顺光；
+      · 新判据「脸 vs 背景亮部 p90」：画面里有天空时 p90≈天空 ⇒ 把 DSCF1307
+        （脸被太阳直照，明显顺光）判成逆光。
+      两个方向都出反例 ⇒ 单张图**没有**可靠的自动判据。真正可靠的证据是轮廓光，
+      测量层还没量它。**宁可弃权，也不猜。**
+
+    `given`：人给的 `backlit` / `frontlit`（按批，`cli run --light`）。
+    没给就 unknown —— 于是所有"逆光才做"的动作（落点 +4、肤色 +0.15）都不会误触发，
+    但测量证据（`light_gap` / `light_span`）照记，供人判断时参考。
     """
-    lr = rec.get('light_ratio')
-    if lr is None:
-        return 'unknown'
-    if lr < LIGHT_BACKLIT:
-        return 'backlit'
-    if lr > LIGHT_FRONTLIT:
-        return 'frontlit'
+    bg = rec.get('bg') or {}
+    face = (rec.get('skin') or {}).get('L')
+    hi, lo = bg.get('L_p90'), bg.get('L_p10')
+    if hi is not None and face is not None:
+        rec['light_gap'] = round(float(hi) - float(face), 1)
+        rec['light_span'] = round(float(hi) - float(lo if lo is not None else 0.0), 1)
+    if given in ('backlit', 'frontlit'):
+        rec['light_why'] = '人给（--light %s）' % given
+        return given
+    if given == 'auto':
+        # 明确要求"自己猜"时才用判据，并标明是近似
+        gap = rec.get('light_gap')
+        span = rec.get('light_span')
+        if gap is not None and span is not None:
+            rec['light_why'] = '自动判据（近似，已两次出反例，不建议用）'
+            if gap >= LIGHT_GAP_BACKLIT and span >= LIGHT_SPAN_MIN:
+                return 'backlit'
+            if gap <= LIGHT_GAP_FRONT:
+                return 'frontlit'
     return 'unknown'
 
 
-def pick_lookat(rec_engine: dict) -> LookAt:
+def pick_lookat(rec_engine: dict, light: Optional[str] = None) -> LookAt:
     """H2 降级链：脸 → 人 → 整幅。**每一档都要解释为什么，降级了要写出来。**
 
     2026-10-29 修（原代码的两个毛病）：
@@ -166,15 +200,15 @@ def pick_lookat(rec_engine: dict) -> LookAt:
     """
     skin = rec_engine.get('skin') or {}
     fw = rec_engine.get('face_w_native') or 0
-    light = light_state(rec_engine)
+    light_s = light_state(rec_engine, given=light)
     if skin.get('L') is not None and fw >= FACE_MIN_W:
         return LookAt('face', 'skin.L',
-                      '有脸且够大（face_w %.0f ≥ %.0f）' % (fw, FACE_MIN_W), light)
+                      '有脸且够大（face_w %.0f ≥ %.0f）' % (fw, FACE_MIN_W), light_s)
     if skin.get('L') is not None or (rec_engine.get('face_mask_share') or 0) > 0:
         return LookAt('matrix', 'img.p50',
                       '有脸但太小（face_w %.0f < %.0f）：人的读数测量层还没接 ⇒ 降级整幅，'
-                      '不假装有 person 档' % (fw, FACE_MIN_W), light)
-    return LookAt('matrix', 'img.p50', '未检到脸 ⇒ 整幅；整幅落点没有不变量 ⇒ 曝光弃权', light)
+                      '不假装有 person 档' % (fw, FACE_MIN_W), light_s)
+    return LookAt('matrix', 'img.p50', '未检到脸 ⇒ 整幅；整幅落点没有不变量 ⇒ 曝光弃权', light_s)
 
 
 # ---------------------------------------------------------------- ② 曝光
@@ -206,7 +240,8 @@ def _cap_white(rec_engine: dict) -> Optional[float]:
 
 def solve_exposure(rec_engine: dict, target_L: float = 72.0,
                    L_lo: float = None, L_hi: float = None,
-                   intent: Optional[Intent] = None) -> Exposure:
+                   intent: Optional[Intent] = None,
+                   light: Optional[str] = None) -> Exposure:
     # `target_L` 只为兼容旧调用保留，**已经不参与计算**：
     # 脸是约束不是目标（§28 L1），落点只由 T4 的区边界决定。
     """② 曝光落点。**脸是约束，不是目标**（设计 §28 L1）。
@@ -223,7 +258,7 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
     """
     lo = T4['L_lo'] if L_lo is None else L_lo
     hi = T4['L_hi'] if L_hi is None else L_hi
-    la = pick_lookat(rec_engine)
+    la = pick_lookat(rec_engine, light=light)
 
     ex = Exposure(cap_headroom=rec_engine.get('headroom_ev'),   # 只记录，不设限
                   cap_white=_cap_white(rec_engine))
@@ -558,6 +593,7 @@ def next_point_lum(prev: float, face_after: Optional[float], face_target: float,
 # ---------------------------------------------------------------- 主流程
 
 def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
+              light: Optional[str] = None,
               rec_final: Optional[dict] = None, intent: Optional[Intent] = None,
               log=print) -> LRPlan:
     """单图的 LR 计划。
@@ -570,16 +606,22 @@ def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
       · 每一步的理由都落进 `notes`，弃权/欠账/降级一律显式写，不许静默。
     """
     plan = LRPlan()
-    la = pick_lookat(rec_engine)
+    la = pick_lookat(rec_engine, light=light)
     plan.notes['lookat'] = '%s — %s' % (la, la.why)
+    # 光位：**只记人给的那个**，外加测量旁证（gap/span）供人判断，不拿判据代替人
     if la.light != 'unknown':
-        plan.notes['light'] = ('逆光（脸/背景 %.2f < %.1f）⇒ 该提的是脸，提完必须预备收白'
-                               % (rec_engine.get('light_ratio'), LIGHT_BACKLIT)
+        plan.notes['light'] = ('逆光（人给）⇒ 落点再推 %.0f L*，提完必须预备收白'
+                               % BACKLIT_EXTRA_L
                                if la.light == 'backlit' else
-                               '顺光（脸/背景 %.2f > %.1f）⇒ 只做微调'
-                               % (rec_engine.get('light_ratio'), LIGHT_FRONTLIT))
+                               '顺光（人给）⇒ 只做微调，不额外推落点')
+    else:
+        plan.notes['light'] = '未给（不猜；旁证见下）'
+    if la.light == 'unknown' and rec_engine.get('light_gap') is not None:
+        plan.notes['light_evidence'] = (
+            '光位未给（不认识画面）｜旁证：脸比背景亮部低 %.1f L*、背景跨度 %.1f L*'
+            % (rec_engine.get('light_gap'), rec_engine.get('light_span') or 0.0))
 
-    ex = solve_exposure(rec_engine, intent=intent)
+    ex = solve_exposure(rec_engine, intent=intent, light=light)
     plan.exposure_ev = ex.ev
     plan.notes['exposure'] = ex.why
     if ex.debt_ev > 1e-9:

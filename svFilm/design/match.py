@@ -66,7 +66,11 @@ def need_from_batch(recs: Dict[str, dict], intent=None) -> Need:
     clip = [(r.get('img') or {}).get('clip_pct') for r in recs.values()]
     clip = [c for c in clip if c is not None]
     sky = [r.get('sky_share') for r in recs.values() if r.get('sky_share') is not None]
-    lr = [r.get('light_ratio') for r in recs.values() if r.get('light_ratio') is not None]
+    # ★ 2026-10-29：宽容度需求改成用**场景动态范围**（背景 p90−p10），
+    #   不再用「脸÷背景中位」那个错的逆光判据 —— 那个判据把逆光判成顺光
+    #   （逆光时背景中位落在暗部），于是 latitude 恒为 0，选卡时"要宽肩"这一维整段失效。
+    span = [(r.get('bg') or {}).get('L_p90', 0) - (r.get('bg') or {}).get('L_p10', 0)
+            for r in recs.values() if (r.get('bg') or {}).get('L_p90') is not None]
 
     if clip or sky:
         s = 0.0
@@ -75,9 +79,9 @@ def need_from_batch(recs: Dict[str, dict], intent=None) -> Need:
         if sky:
             s += _clamp(st.median(sky) / 40.0)              # 天空多 ⇒ 要宽肩
         n.shoulder = _clamp(s)
-    if lr:
-        # 只在逆光（脸比背景暗）时要更大宽容度；顺光不许出现"要更小"
-        n.latitude = _clamp((1.3 - st.median(lr)) / 0.5)
+    if span:
+        # 场景明暗跨度大（逆光/大光比）⇒ 需要更宽容的肩部；跨度小 ⇒ 不提要求
+        n.latitude = _clamp((st.median(span) - 45.0) / 40.0)
     if intent is not None:
         n.dense = _clamp(getattr(intent, 'denser', 0.0))
         n.warm = _clamp(getattr(intent, 'warmer', 0.0))

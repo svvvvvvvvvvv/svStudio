@@ -24,6 +24,10 @@ from design.feasibility import gap_table, verdict
 
 # ---------------------------------------------------------------- 基本断言
 
+def same(a, b, msg=''):
+    assert a == b, '%r != %r %s' % (a, b, msg)
+
+
 def eq(a, b, tol=1e-9):
     assert abs(a - b) <= tol, '%r != %r (tol %r)' % (a, b, tol)
 
@@ -229,8 +233,8 @@ def test_land_tolerance_covers_measured_error():
 def test_exposure_backlit_goes_deeper():
     """§28 L3：逆光 ≠ 顺光。同一张脸，逆光的目标点要比顺光更深（更靠区内）。"""
     from design.lr import BACKLIT_EXTRA_L, LAND_TOL_L, solve_exposure
-    front = solve_exposure(_lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), light_ratio=1.6))
-    back = solve_exposure(_lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), light_ratio=0.8))
+    front = solve_exposure(_lr_rec(skin=dict(L=45.0, C=18.0, h=55.0)), light='frontlit')
+    back = solve_exposure(_lr_rec(skin=dict(L=45.0, C=18.0, h=55.0)), light='backlit')
     Lf = 45.0 + front.want_ev * eval_slope(45.0)
     Lb = 45.0 + back.want_ev * eval_slope(45.0)
     ok(abs(Lf - (55.0 + LAND_TOL_L)) < 0.6, '顺光目标 %.1f' % Lf)
@@ -279,20 +283,29 @@ def test_exposure_overruns_white_but_hands_over():
                % (p95, -over, ex.why))
 
 
-def test_light_state():
-    """H4 光位：脸/背景比 <1.0 逆光、>1.3 顺光、其它 unknown。"""
+def test_light_state_comes_from_person():
+    """★ 光位**由人给**，不由测量猜（两种自动判据都出过反例，10-29）。
+
+    反例1：脸÷背景中位 ⇒ 1608（真逆光）被算成顺光（逆光时背景中位落在暗部）。
+    反例2：脸 vs 背景亮部 p90 ⇒ 1307（脸被太阳直照）被算成逆光（画面里有天空）。
+    """
     from design.lr import light_state
-    ok(light_state(_lr_rec(light_ratio=0.8)) == 'backlit', '应判逆光')
-    ok(light_state(_lr_rec(light_ratio=1.5)) == 'frontlit', '应判顺光')
-    ok(light_state(_lr_rec(light_ratio=1.1)) == 'unknown', '中间应 unknown')
-    ok(light_state(dict(img={}, skin={})) == 'unknown', '没这个量应 unknown')
+    rec = dict(skin=dict(L=47.0), light_ratio=0.9,
+               bg=dict(L=29.0, L_p90=71.5, L_p10=9.0))
+    same(light_state(dict(rec)), 'unknown')        # 不给人 ⇒ 不猜
+    same(light_state(dict(rec), given='backlit'), 'backlit')
+    same(light_state(dict(rec), given='frontlit'), 'frontlit')
+    # 明确要求自动时才用近似判据，并把旁证记下来
+    r2 = dict(rec)
+    same(light_state(r2, given='auto'), 'backlit')
+    ok(abs(r2['light_gap'] - 24.5) < 0.3, '要记旁证 gap：%s' % r2.get('light_gap'))
 
 
 def test_backlit_note():
     """逆光出区要提亮，且理由里写明"提完必须预备收白"。"""
     from design.lr import solve_exposure
     ex = solve_exposure(_lr_rec(skin=dict(L=48.0, C=18.0, h=55.0),
-                                light_ratio=0.8, headroom_ev=1.0))
+                                headroom_ev=1.0), light='backlit')
     ok('逆光' in ex.why and '收白' in ex.why, '逆光说明缺：%s' % ex.why)
 
 
@@ -420,9 +433,8 @@ def test_curve_never_fixes_clip_in_lr_chain():
 def test_solve_one_order():
     """整条链 §31 ②→③：脸低 ⇒ ② 把曝光给满；③ 在 ①' 上判、收白并记欠账。"""
     from design.lr import solve_one
-    rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.0,
-                  light_ratio=0.8)
-    plan = solve_one(rec, log=lambda *_: None)
+    rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.0)
+    plan = solve_one(rec, light='backlit', log=lambda *_: None)
     ok(plan.exposure_ev > 0.5, '脸 L45 就该给（余量 0 不是理由）：%s' % plan.exposure_ev)
     ok('收白' in plan.notes.get('exposure', ''),
        '② 越过白平台要交代给 ③：%s' % plan.notes.get('exposure'))
@@ -430,7 +442,7 @@ def test_solve_one_order():
     ok('highlights' in plan.notes, '③ 的理由要落进 notes：%s' % list(plan.notes))
     ok('highlight_verify' in plan.notes, '③ 的验收量要写清：%s' % list(plan.notes))
     ok('逆光' in plan.notes.get('light', '') or 'backlit' in plan.notes.get('lookat', ''),
-       '光位要落进 notes：%s' % plan.notes)
+       '光位（或旁证）要落进 notes：%s' % plan.notes)
 
 
 # ---------------------------------------------------------------- 余量的可信性（10-29 实测钉住）

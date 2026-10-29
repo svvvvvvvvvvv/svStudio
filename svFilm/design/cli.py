@@ -288,7 +288,7 @@ def cmd_run(a):
         print('整批无一有效 ⇒ 停'); return
 
     print('\n[5/7] LR 计划 + XMP 作业单')
-    out = run_lr(b, recs, it, log=print)
+    out = run_lr(b, recs, it, light=getattr(a, 'light', None), log=print)
     print(xmp_summary(out['manifest']))
 
     reviewed = None
@@ -495,6 +495,8 @@ def main(argv=None):
     p.add_argument('--card', default='', help='手动指定卡名（跳过匹配排序）')
     p.add_argument('--export', action='store_true', help='用 LR 导出 ③（要 LR 在跑）')
     p.add_argument('--rounds', type=int, default=2, help='③ 出片最多几轮（收白按脸进退）')
+    p.add_argument('--light', default=None, choices=['backlit', 'frontlit', 'auto'],
+                   help='这批的光位由人给；不给=unknown（逆光才做的动作都不触发）')
 
     p = sub.add_parser('review'); p.set_defaults(fn=cmd_review)
     p.add_argument('recs1', help='① 的测量（measure_all 输出）')

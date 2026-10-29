@@ -173,19 +173,19 @@ def run_engine(b: Batch, choice: Choice, measure_fn=None, limit: int = 0,
 
 
 def plan_lr(recs: Dict[str, dict], intent: Optional[Intent] = None,
-            log=print) -> Dict[str, LRPlan]:
+            light: Optional[str] = None, log=print) -> Dict[str, LRPlan]:
     """① -> LR 计划（逐图）。"""
     plans = {}
     for st, rec in recs.items():
-        plans[st] = solve_one(rec, intent=intent, log=lambda *_: None)
+        plans[st] = solve_one(rec, intent=intent, light=light, log=lambda *_: None)
     log('LR 计划：%d 张' % len(plans))
     return plans
 
 
 def run_lr(b: Batch, recs: Dict[str, dict], intent: Optional[Intent] = None,
-           log=print) -> Dict[str, object]:
+           light: Optional[str] = None, log=print) -> Dict[str, object]:
     """① -> 计划 -> XMP 作业单（不驱动 LR）。"""
-    plans = plan_lr(recs, intent=intent, log=log)
+    plans = plan_lr(recs, intent=intent, light=light, log=log)
     mf = write_jobs(plans, b.sub('xmp'),
                     manifest_extra=dict(batch=b.name,
                                         card=(list(plans)[0] if plans else None),
