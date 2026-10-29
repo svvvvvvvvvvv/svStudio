@@ -96,8 +96,10 @@ def sample_skin(crop, meta, img_lab=None, mapper=None, fixed_xy=None, skin_mask=
     L, a, b = _lab_from(img_lab, crop)
     C = np.hypot(a, b)
     fw = float(meta['fw'])
-    if img_lab is not None and fw < FACE_W_MIN:
-        return dict(ok=False, why='face_small', fw=fw, sides=[])
+    # ★ 脸小**不弃权**（2026-10-30 SV）：脸检出来了，就一定有一块皮肤在那儿。
+    #   脸小只影响"样本多少"，不影响"有没有"；用 small_face 标记 + 按面积放宽样本门，
+    #   而不是直接拒绝。真不值钱的是"没检到脸"（no_face）与"样本少到 30 px 以下"。
+    small_face = bool(img_lab is not None and fw < FACE_W_MIN)
     if loose:
         skin_mask = None
     if skin_mask is None and not loose:
@@ -116,7 +118,13 @@ def sample_skin(crop, meta, img_lab=None, mapper=None, fixed_xy=None, skin_mask=
                0.5 * (re + rm) + np.array([OFF_X * fw, 0.0])]
     if fixed_xy is not None:
         centers = [np.asarray(fixed_xy, float)]
-    _mp = MIN_PX_LOOSE if loose else MIN_PX
+    # 样本门：脸小时 ROI 本身就小，按面积放宽（不是无限放宽 —— 30 px 以下是真没东西）
+    if loose:
+        _mp = MIN_PX_LOOSE
+    elif small_face:
+        _mp = max(60, int(MIN_PX * 0.4))
+    else:
+        _mp = MIN_PX
     sides = [_roi_stats(L, a, b, C, cx, cy, fw, mask=skin_mask, min_px=_mp)
              for cx, cy in centers]
     good = [s for s in sides if s]
@@ -134,10 +142,24 @@ def sample_skin(crop, meta, img_lab=None, mapper=None, fixed_xy=None, skin_mask=
         anchor = _ellipse(L.shape, ax, ay, 0.55 * fw, 0.75 * fw)
         anchor &= (skin_mask > 0.5) & (C >= MIN_C)
         if int(anchor.sum()) >= 500:
-            med_face = float(np.median(L[anchor]))
-            if abs(float(lit['L']) - med_face) > OFF_FACE_MAX:
-                return dict(ok=False, why='off_face', sides=sides, fw=fw,
-                            lit=lit, face_L=med_face)
+            La = float(np.median(L[anchor]))
+            if abs(float(lit['L']) - La) > OFF_FACE_MAX:
+                # ★ 不解弃权，改用**锚区本身**当肤色（2026-10-30 实测）：
+                #   13_t1 的颊 ROI 落到头发上（34.9）、无掩膜的 loose 落到亮墙上（88.6），
+                #   而"脸框椭圆 ∩ 掩膜"的中位是 59.6 —— 那才是这张脸。
+                #   02_t1 同理（锚 54.1 vs 亮墙 84）。
+                #   所以第三档 = anchor：仍然是脸内、仍然被掩膜限定，只是范围大一点。
+                am = float(np.median(a[anchor]))
+                bm = float(np.median(b[anchor]))
+                ys, xs = np.nonzero(anchor)
+                lit_a = dict(L=La, a=am, b=bm, C=float(np.hypot(am, bm)),
+                             h=float(np.degrees(np.arctan2(bm, am)) % 360.0),
+                             ita=ita(La, bm), n=int(anchor.sum()),
+                             xy=[int(xs.mean()), int(ys.mean())] if len(xs) else None)
+                return dict(ok=True, why='anchor', lit=lit_a, shadow=None, sides=sides,
+                            w=0.6, side_dE=None, region='face_anchor', fw=fw,
+                            small_face=small_face, src='anchor',
+                            roi_L=float(lit['L']))
     shadow = good[0] if len(good) > 1 else None
     de = None
     if shadow is not None:
@@ -145,4 +167,5 @@ def sample_skin(crop, meta, img_lab=None, mapper=None, fixed_xy=None, skin_mask=
     w = 1.0 if de is None else float(np.clip(1.0 - max(0.0, de - 6.0) / 18.0, 0.2, 1.0))
     return dict(ok=True, why='ok', lit=lit, shadow=shadow, sides=sides,
                 w=w, side_dE=de, region='cheek', fw=fw,
+                small_face=small_face,
                 src=('loose' if loose else 'strict'))
