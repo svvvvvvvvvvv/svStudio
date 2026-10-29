@@ -208,6 +208,20 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
                 raise RuntimeError('%s 补光没落下去（回读 %s ≠ %.4f）：%s'
                                    % (stem, _rb, _v, rp[:120]))
             log('    补光 %+.2f 档 ⇒ 蒙版 %.4f（回读 %s）' % (_ev, _v, _rb))
+            # ★ 2026-10-30：补光时把人的高光按住（否则白裙/衬衫会被一起提爆）
+            #   量级取 −50（LR 局部高光刻度 −100~100；−50 是"明显压、不致死白"）
+            _lh = float(getattr(plan, 'local_highlights', 0.0) or 0.0)
+            if abs(_lh) > 1e-6:
+                rh = LS.run('MASKPARAM %s LocalHighlights2012 %.4f' % (tmp, _lh), timeout=180)
+                _rbh = rh.split('readback=')[-1].split()[0] if 'readback=' in rh else '0'
+                try:
+                    _okh = abs(float(_rbh) - _lh) <= 1e-6
+                except ValueError:
+                    _okh = False
+                if not _okh:
+                    raise RuntimeError('%s 局部高光没落下去（回读 %s ≠ %.2f）：%s'
+                                       % (stem, _rbh, _lh, rh[:120]))
+                log('    局部高光 %+.0f（回读 %s）' % (_lh, _rbh))
         got = LS.expo(tmp, 'design_%s' % stem)
         dst = os.path.join(out_dir, '%s_final.tif' % stem)
         shutil.copy2(got, dst)

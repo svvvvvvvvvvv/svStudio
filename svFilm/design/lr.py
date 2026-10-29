@@ -160,6 +160,8 @@ class LRPlan:
     #   写进 LR 的值 = `LocalExposure2012 = fill_ev / 4`（实测公式，三档已验）。
     #   它作用在**主体蒙版**上，背景不动 —— 这是"背景定曝光 + 补光档"的实现。
     fill_ev: float = 0.0
+    # ★ 局部高光：补光时按住人的亮部（§43「局部是一整套旋钮」）
+    local_highlights: float = 0.0
     notes: Dict[str, str] = field(default_factory=dict)
 
     def as_xmp_scalars(self) -> Dict[str, float]:

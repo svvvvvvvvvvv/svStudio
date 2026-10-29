@@ -21,7 +21,7 @@ import json
 import os
 from typing import Dict, List, Optional
 
-from .solver import Plan, solve_pass
+from .solver import Entry, Plan, solve_pass
 
 # T1 的白端门（成片）——与设计文档 §4.1 一致
 P95_MAX = 93.0
@@ -113,6 +113,21 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
             card_in['person_med'] = (person_rel[0] * meas['bg_med'], person_rel[1] * meas['bg_med'])
 
         p: Plan = solve_pass(meas, card_in)
+        # ★ 2026-10-30：补光的**可算上限** —— 不许把人的亮部（p99）推过 P95_MAX。
+        #   p99_new = p99 + eval_slope(p99) * EV  ⇒  EV ≤ (P95_MAX - p99) / eval_slope(p99)
+        #   这是纯算式（CIELAB 斜率），不是测出来的；比'压局部高光'更稳——
+        #   桥对 LocalHighlights2012 的回读是 nil，报 ok 也不可信。
+        _p99 = (rec.get('person') or {}).get('clip_p95')
+        if _p99 is not None and p.local_ev > 0:
+            from .solver import eval_slope
+            _cap = max(0.0, (P95_MAX - float(_p99)) / max(eval_slope(float(_p99)), 1e-6))
+            if p.local_ev > _cap:
+                p.ledger.append(Entry(dim='local_cap', got=float(_p99), want=(0.0, P95_MAX),
+                                      gap=float(p.local_ev - _cap), layer='local',
+                                      action='补光 %.2f -> %.2f（人的亮部不许过 %.0f）'
+                                             % (p.local_ev, _cap, P95_MAX)))
+                p.local_ev = round(_cap, 3)
+                p.local_exposure = round(p.local_ev / 4.0, 5)
         out[stem] = dict(plan=p.as_dict(), white=white_end_plan(rec),
                          meas=meas, ledger=[str(e) for e in p.ledger])
     return out
