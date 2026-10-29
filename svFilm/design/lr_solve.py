@@ -79,6 +79,7 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
     """
     b = (card or {}).get('bands') or {}
     out = dict(saturation=0.0, vibrance=0.0,
+               local_saturation=0.0, local_vibrance=0.0,
                split_highlight_hue=0.0, split_highlight_sat=0.0,
                split_shadow_hue=0.0, split_shadow_sat=0.0, split_balance=0.0)
     notes = []
@@ -93,8 +94,10 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
         elif sk > hi:
             _dc = hi - sk
         if abs(_dc) > 0.05:
-            out['saturation'] = round(sat_for_dc(_dc), 1)
-            out['vibrance'] = round(sat_for_dc(_dc) * 0.4, 1)
+            # ★ 人像优先：饱和只加在**人身上**（LocalSaturation），背景不动。
+            #   全局 Saturation 会把背景/道具一起染，和"背景定曝光、人只调味"的分工冲突。
+            out['local_saturation'] = round(sat_for_dc(_dc), 1)
+            out['local_vibrance'] = round(sat_for_dc(_dc) * 0.4, 1)
             notes.append('脸 C %.1f 对卡带 [%.1f, %.1f] ⇒ ΔC%+.1f ⇒ Saturation %+.0f（实测 0.221 C*/单位）'
                          % (sk, lo, hi, _dc, out['saturation']))
     wc = b.get('warm_cool_b')
@@ -273,3 +276,58 @@ def main(argv: Optional[List[str]] = None) -> int:
 if __name__ == '__main__':
     import sys
     sys.exit(main())
+
+
+def refine(plans: Dict[str, dict], meas3: Dict[str, dict], card: dict) -> Dict[str, dict]:
+    """**一次验后修正**：用实测 ③ 的残差，重算第二轮的量（只用可算/已标定量）。
+
+    为什么需要：`compose` 是**开环预测**，而 LR 的实际传递（蒙版羽化、
+    曲线与曝光的交互）比线性模型复杂。我们已经在量 ③ 了，就没有理由不做闭环。
+
+    规则（只在残差超过门槛时才动，避免来回抖）：
+      · 脸 L 差 > 2 L*      ⇒ 用局部曝光补（EV = ΔL/slope，受 p99 上限约束）
+      · 脸 C 差 > 1.5 C*    ⇒ 用局部饱和补（ΔC/0.221，上限 ±30）
+      · 人 p99 > 卡的肩     ⇒ 局部曝光回撤
+    """
+    from .calibration import C_PER_SAT_UNIT, L_PER_SHADOW_UNIT
+    from .solver import eval_slope
+
+    bands = (card or {}).get('bands') or {}
+    out: Dict[str, dict] = {}
+    for stem, p in plans.items():
+        m3 = meas3.get(stem) or {}
+        sk = m3.get('skin') or {}
+        per = m3.get('person') or {}
+        cur = dict(p.get('plan') or {})
+        g = dict(p.get('grading') or {})
+        face = sk.get('L')
+        C = sk.get('C')
+        p99 = per.get('clip_p95')
+        cap = min(96.0, float((bands.get('p95') or [0, 96])[1]))
+        dL = 0.0
+        dC = 0.0
+        fb = (p.get('meas') or {}).get('face_target')
+        if face is not None and fb:
+            dL = float(fb) - float(face)
+        cb = bands.get('face_C')
+        if C is not None and isinstance(cb, list):
+            lo, hi = float(cb[0]), float(cb[1])
+            if C < lo:
+                dC = lo - C
+            elif C > hi:
+                dC = hi - C
+        add_fill = 0.0
+        if abs(dL) > 2.0:
+            add_fill = dL / max(eval_slope(float(face or 50.0)), 1e-6)
+            if p99 is not None and float(p99) + eval_slope(float(p99)) * add_fill > cap:
+                add_fill = max(0.0, (cap - float(p99)) / max(eval_slope(float(p99)), 1e-6))
+        add_sat = 0.0
+        if abs(dC) > 1.5:
+            add_sat = max(-30.0, min(30.0, dC / C_PER_SAT_UNIT))
+        cur['local_ev'] = round(float(cur.get('local_ev') or 0.0) + add_fill, 3)
+        cur['local_exposure'] = round(cur['local_ev'] / 4.0, 5)
+        g['local_saturation'] = round(float(g.get('local_saturation') or 0.0) + add_sat, 1)
+        out[stem] = dict(p, plan=cur, grading=g,
+                         refine=dict(dL=round(dL, 1), dC=round(dC, 1),
+                                     add_fill=round(add_fill, 2), add_sat=round(add_sat, 1)))
+    return out

@@ -170,6 +170,8 @@ class LRPlan:
     local_highlights: float = 0.0
     # ★ 局部阴影：提人身上的暗部（§6E：Shadows 按亮度选择性，不碰亮部）
     local_shadows: float = 0.0
+    # ★ 主体内的饱和度（⑧ 人像优先：背景不动）
+    local_saturation: float = 0.0
     # ★ 分级（⑧）：分离色调 + 色相/饱和（人像要保住肤色）
     split_shadow_hue: float = 0.0
     split_shadow_sat: float = 0.0
