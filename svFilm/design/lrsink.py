@@ -48,7 +48,10 @@ def point_color_record(plan: LRPlan) -> Optional[str]:
     from lr_xmp import point_color
     return point_color(plan.point_color_rgb,
                        sat_scale=float(plan.point_color.get('scale', 0.0)),
-                       hue_shift=float(plan.point_color.get('shift', 0.0)))
+                       hue_shift=float(plan.point_color.get('shift', 0.0)),
+                       # ★ 亮度：一直没接（10-29）。点颜色是**唯一只作用于肤色范围**的亮度旋钮，
+                       #   背景不是肤色 ⇒ 不动背景 ⇒ 不会触发"背景亮→收白→压脸"那条链
+                       lum_scale=float(plan.point_color.get('lum', 0.0)))
 
 
 def plan_to_xmp(plan: LRPlan, point_colors: Optional[List[str]] = None) -> str:

@@ -496,7 +496,10 @@ def solve_point_color(rec: dict, intent: Optional[Intent] = None,
         scale = gap / PC_FULL_CLOSES
     d = getattr(intent, 'denser', 0.0) if intent else 0.0
     scale += d * 0.5                       # 意图只加一半幅度，另一半交给整体饱和（政策）
-    return dict(scale=max(-1.0, min(1.0, scale)), shift=0.0)
+    # `lum` 是**肤色范围的亮度**（LR 的 PointColor LumScale）。默认 0：
+    # 补脸差额要靠出片验收，不能在这里拍一个数（同 ③ 的做法）。
+    return dict(scale=max(-1.0, min(1.0, scale)), shift=0.0,
+                lum=float(getattr(intent, 'brighter', 0.0) if intent else 0.0) * 0.0)
 
 
 # ---------------------------------------------------------------- 主流程
