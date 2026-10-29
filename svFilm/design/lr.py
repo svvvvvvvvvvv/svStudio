@@ -268,14 +268,18 @@ HL_STOP_STEP = 12.5                 # 对分到这个步长就停（1/8 量程�
 
 
 def solve_highlights(pred: dict, clip_max: Optional[float] = None,
-                     policy: Optional[float] = None):
+                     policy: Optional[float] = None,
+                     face_L: Optional[float] = None):
     """③ 高光收白：**在 ①'（提完曝光之后）上判**，不在 ① 上判。
 
-    判据（§32 ③）：`clip_pct` < T1；外加一条——上端不许被压到**比 ① 还低**（压过头）。
+    ★ 优先级（2026-10-29 定）：**脸 > 背景高光**。
+      脸必须进区、且不许为了收白把脸压暗；背景过曝**可以接受**，只记账不硬顶。
+      所以这里判的是"要不要收、从哪里起收"，**判不了"必须收到多少"**。
 
       · 不用收      ⇒ 0
-      · 要收        ⇒ 起点 `HL_SEARCH_MID`（对分第一步），并写明"这是搜索起点，
-                      不是算出来的幅度；③ 出片按 clip 决定加大/回退"
+      · 要收        ⇒ 起点 `HL_SEARCH_MID`（对分第一步），并写明这是搜索起点
+      · 脸已贴顶    ⇒ 那是**主体丢了**（收白救不回），单列，不算背景的账
+      · 只是背景爆  ⇒ 收白尽力，收不住就接受（不是欠账，不是流程错）
 
     **不算**具体压多少：`Highlights` 没有公开传递函数（见上面那段与 lrmodel.py H1）。
     编一个斜率比不给更糟 —— 那会把"没验过"包装成"算准了"。
@@ -285,18 +289,23 @@ def solve_highlights(pred: dict, clip_max: Optional[float] = None,
     c0 = float(pred.get('clip0') or 0.0)
     over = float(pred.get('over_ev') or 0.0)
     wl = float(pred.get('white_over_L') or 0.0)
+    fL = pred.get('pred', {}).get('skin', {}).get('L')
+    fL = face_L if face_L is not None else fL
 
-    blown_at_1 = c0 > cm            # ① 本身就爆 ⇒ 细节已经丢了，不是 LR 提亮的锅
-    need = blown_at_1 or (lb > cm) or (wl > 1e-9) or (over > 1e-9)
+    face_blown = fL is not None and fL >= HL_FACE_BLOWN_L
+    blown_at_1 = c0 > cm            # ① 本身就爆
+    need = face_blown or blown_at_1 or (lb > cm) or (wl > 1e-9) or (over > 1e-9)
     if not need:
         return 0.0, None
 
     start = float(policy if policy is not None else HL_SEARCH_MID)
     pieces = []
-    if blown_at_1:
-        pieces.append('① 本身就爆（clip %.2f%% > %.1f%%）⇒ 那部分细节在引擎就丢了，'
-                      'Highlights 只能把它压暗，补不回细节（这是引擎的账，§32 ③ 末条）'
-                      % (c0, cm))
+    if face_blown:
+        pieces.append('**脸已经贴顶（L %.1f ≥ %.0f）⇒ 主体丢了**：收白救不回细节，'
+                      '这要往上游查（入口曝光/场景），不是这里能修的' % (fL, HL_FACE_BLOWN_L))
+    if blown_at_1 and not face_blown:
+        pieces.append('① 背景就爆（clip %.2f%% > %.1f%%）——脸优先，背景爆可接受，'
+                      '收白只是让它别太扎眼' % (c0, cm))
     if wl > 1e-9 and not blown_at_1:
         pieces.append('上端过白 %.1f L*（未截断，按 p95/p99 的线性平移算）' % wl)
     if lb > cm and not blown_at_1:
@@ -304,50 +313,78 @@ def solve_highlights(pred: dict, clip_max: Optional[float] = None,
     if over > 1e-9:
         pieces.append('曝光超引擎余量 %.2f 档' % over)
     return start, (
-        '%s ⇒ 要收白。给 %+.0f：这是**对分搜索的第一步**（量程中点），'
-        'Highlights 无公开传递函数，幅度不能算（lrmodel.py H1）；'
-        '③ 出片量 clip 后：仍超 ⇒ 继续往 %.0f 走，上端被压到比 ① 还低 ⇒ 回退一半'
+        '%s ⇒ 收白。给 %+.0f：这是**对分搜索的第一步**（量程中点），'
+        'Highlights 无公开传递函数，幅度不能算（lrmodel.py H1）。'
+        '阶梯的**停止条件是脸**：脸一掉就停（再压就是拿脸换背景）；'
+        '收到 %.0f 还收不住 ⇒ 接受背景过曝，不回引擎'
         % ('；'.join(pieces), start, HL_END))
 
 
+# 脸被烧掉的门槛（L*）：到这个程度已经没有皮肤层次可救，属于主体丢失
+HL_FACE_BLOWN_L = 99.0
+# 收白允许把脸压暗多少（L*）；超过就是拿脸换背景
+HL_FACE_DROP_MAX = 1.0
+
+
 def next_highlights(prev: float, clip_pct: float,
+                    face_after: Optional[float] = None,
+                    face_before: Optional[float] = None,
                     p95_after: Optional[float] = None,
                     p95_before: Optional[float] = None,
                     clip_max: Optional[float] = None):
-    """§32 ③「不达标怎么办」：**加大 Highlights**；到量程尽头仍不达标 ⇒ 回引擎要余量。
+    """③ 的阶梯：**按"脸优先"判进退**（2026-10-29 晚重写）。
 
-    两个失败方向都要处理（压过头比压不够更糟，会吃掉整段高光层次）：
-      · `clip` 仍超            ⇒ 压得不够 ⇒ 往 HSL 尽头走（对分右半）
-      · 上端低于 ① 的 `p95`   ⇒ 压过头了 ⇒ 回退（对分左半）
+    退出的四个出口，按优先级排：
+      1. **脸被压暗了**（Δ > 1 L\\*）   ⇒ **回退**（脸优先；宁可背景更爆）
+      2. 没脸读数但上端掉到比 ① 还低  ⇒ 当压过头处理（降级判据，不是主判据）
+      3. `clip` 收住了                 ⇒ 停，达标
+      4. 走到 −100 仍超                ⇒ **接受背景过曝**，记账完事
 
-    返回 `(下一档 | None, 说明)`。None = 不用再动（已达标 / 已到阈值外 ⇒ 记欠账）。
+    ★ 不再有"回引擎要余量"这个出口 —— 回引擎实际只会整幅压暗，等于拿脸换背景，
+      与"脸优先"相反，也越过了分工（引擎不管逐图落点）。
+
+    返回 `(下一档 | None, 说明)`。None = 不用再动。
     """
     cm = T1['clip_max'] if clip_max is None else clip_max
-    over_white = (p95_after is not None and p95_before is not None
-                  and p95_after < p95_before - 1.0)
 
-    if clip_pct <= cm and not over_white:
-        return None, '③ 达标：clip %.2f%% ≤ %.1f%%（%+.0f 够用）' % (clip_pct, cm, prev)
+    # 1) 脸被压暗 ⇒ 回退（不是"停着不动"：不动就等于默认接受脸已经暗了）
+    if face_after is not None and face_before is not None:
+        drop = face_before - face_after
+        if drop > HL_FACE_DROP_MAX:
+            cand = prev / 2.0
+            if abs(cand) < HL_STOP_STEP:
+                return 0.0, ('③ 归零：收白把脸压暗了 %.1f L\\*（%.1f → %.1f），'
+                             '留在 %+.0f 已无意义 —— **脸优先**，按 0 处理'
+                             % (drop, face_before, face_after, prev))
+            return cand, ('③ 回退到 %+.0f：收白把脸压暗了 %.1f L\\*（%.1f → %.1f）——'
+                          '**脸优先**，宁可背景更爆也不压脸'
+                          % (cand, drop, face_before, face_after))
 
+    # 2) 上端掉太多（只在没有脸读数时当判据）
+    over_white = (face_after is None and p95_after is not None
+                  and p95_before is not None and p95_after < p95_before - 1.0)
     if over_white:
-        cand = prev / 2.0                       # 往 0 回退
+        cand = prev / 2.0
         if abs(cand) < HL_STOP_STEP:
-            return None, ('③ 压过头：上端 %.1f 已低于 ① 的 %.1f，且回退幅度已到最小步长'
-                          '（%.1f）⇒ 按 0 处理（宁可不动，也不要吃掉高光层次）'
-                          % (p95_after, p95_before, HL_STOP_STEP))
-        return cand, ('③ 压过头：上端 %.1f 低于 ① 的 %.1f ⇒ 回退到 %+.0f（对分左半）'
+            return None, ('③ 压过头：上端 %.1f 已低于 ① 的 %.1f，回退幅度也到最小步长'
+                          '⇒ 按 0 处理' % (p95_after, p95_before))
+        return cand, ('③ 压过头：上端 %.1f 低于 ① 的 %.1f ⇒ 回退到 %+.0f'
                       % (p95_after, p95_before, cand))
 
-    # 压得不够：往量程尽头走
+    # 3) 收住了
+    if clip_pct <= cm:
+        return None, '③ 达标：clip %.2f%% ≤ %.1f%%（%+.0f 够用）' % (clip_pct, cm, prev)
+
+    # 4) 还超：加大；到尽头就接受
     cand = prev - (abs(HL_END) - abs(prev)) / 2.0
     if abs(cand) >= abs(HL_END) - 1e-9 or abs(cand - prev) < HL_STOP_STEP:
         if abs(prev) >= abs(HL_END) - 1e-9:
-            return None, ('③ 已到量程尽头 %+.0f 仍不达标（clip %.2f%% > %.1f%%）'
-                          '⇒ 这是**引擎该留的余量**，按 §32 ③ 回引擎（T0 收紧）'
+            return None, ('③ 收白到尽头 %+.0f，背景仍爆（clip %.2f%% > %.1f%%）⇒ '
+                          '**接受**：脸没掉就不算账，记下爆了多少即可'
                           % (prev, clip_pct, cm))
-        return HL_END, ('③ 还差（clip %.2f%% > %.1f%%）⇒ 走到尽头 %+.0f 再验一次'
+        return HL_END, ('③ 还差（clip %.2f%% > %.1f%%）⇒ 走到尽头 %+.0f 再验'
                         % (clip_pct, cm, HL_END))
-    return cand, ('③ 还差（clip %.2f%% > %.1f%%）⇒ 加大到 %+.0f（对分右半）'
+    return cand, ('③ 还差（clip %.2f%% > %.1f%%）⇒ 加大到 %+.0f（脸没掉，可以继续）'
                   % (clip_pct, cm, cand))
 
 # ---------------------------------------------------------------- ④ 曲线
@@ -490,12 +527,17 @@ def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
     plan.highlights = round(hv, 1)
     if hnote:
         plan.notes['highlights'] = hnote
-        # ③ 的账：起点档是"待验"的，没有实测之前不许当成已解决
+        # ③ 的账：起点档是"待验"的，没有实测之前不许当成已解决。
+        # ★ 主判据是**脸**（脸优先）：clip 只是次要条件
         plan.notes['highlight_verify'] = (
-            '③ 出片要量的三样：clip_pct（< %.1f%%）· p95（不许低于 ① 的 %.1f）· p50（不许动，§33）'
-            % (T1['clip_max'], (rec_engine.get('img') or {}).get('p95') or 0.0))
-        if '量程尽头' in hnote or '① 本身就爆' in hnote:
+            '③ 出片要量的：**脸 L 掉没掉**（不许暗 > %.1f L\\*，这是停手线）· '
+            'clip_pct（< %.1f%% 最好，收不住可接受）· p50 不许动（§33）'
+            % (HL_FACE_DROP_MAX, T1['clip_max']))
+        if '主体丢了' in hnote:
             plan.notes['highlight_debt'] = hnote
+        elif '背景就爆' in hnote:
+            plan.notes['highlight_accept'] = (
+                '背景过曝按取舍接受：脸优先，收白收到"脸开始掉"就停；收不住也不回引擎（回引擎只会整幅压暗 = 拿脸换背景）')
 
     # 曲线看的是 ①'（等价于"提完曝光再修不变量"），否则曲线会去修一个已经不存在的问题
     rec_for_curve = dict(rec_engine)

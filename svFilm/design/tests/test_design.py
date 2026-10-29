@@ -314,12 +314,12 @@ def test_highlights_judged_after_exposure():
     hv1, note = solve_highlights(loud)
     ok(hv1 < 0, '提爆了就该收白：%s' % hv1)
     ok('对分' in (note or ''), '要写明这是搜索起点、不是算出来的幅度：%s' % note)
-    ok('clip' in (note or ''), '要写明出片量什么：%s' % note)
+    ok('脸' in (note or ''), '要写明停止条件是脸：%s' % note)
     ok(loud['white_over_L'] > 0, '要量出上端过了多少 L*：%s' % loud)
 
 
 def test_next_highlights_ladder():
-    """§32 ③：不达标 ⇒ 加大；压过头 ⇒ 回退；到尽头仍不达标 ⇒ 交给引擎（记欠账）。"""
+    """③ 的阶梯：不达标 ⇒ 加大；压过头 ⇒ 回退；吃到尽头 ⇒ 接受（不回引擎）。"""
     from design.lr import HL_END, HL_SEARCH_MID, next_highlights
     # 仍超 ⇒ 往尽头走
     v, why = next_highlights(HL_SEARCH_MID, 8.0)
@@ -329,15 +329,52 @@ def test_next_highlights_ladder():
     ok(v2 is not None and v2 < -75.0, '继续加大：%s %s' % (v2, why2))
     v2b, _ = next_highlights(v2, 8.0)
     eq(v2b, HL_END)
-    # 尽头仍不达标 ⇒ 记账回引擎（不许再编一个数）
+    # 尽头仍不达标 ⇒ **接受背景过曝**，不许再说"回引擎"
     v3, why3 = next_highlights(HL_END, 8.0)
-    ok(v3 is None and '回引擎' in why3, '尽头还超 ⇒ 回引擎：%s %s' % (v3, why3))
-    # 压过头（上端被压到比 ① 还低）⇒ 回退，不许继续加大
+    ok(v3 is None, '尽头就不该再动：%s' % v3)
+    ok('接受' in why3 and '回引擎' not in why3, '尽头应接受背景爆，不再回引擎：%s' % why3)
+    # 压过头（没脸读数时的降级判据）⇒ 回退
     v4, why4 = next_highlights(HL_SEARCH_MID, 0.0, p95_after=88.0, p95_before=95.0)
     ok(v4 is not None and abs(v4) < abs(HL_SEARCH_MID), '压过头应回退：%s' % v4)
     # 达标 ⇒ 不动
     v5, _ = next_highlights(HL_SEARCH_MID, 0.3, p95_after=95.0, p95_before=95.0)
     ok(v5 is None, '达标就不该再动：%s' % v5)
+
+
+def test_next_highlights_face_has_priority():
+    """★★ 脸优先：收白把脸压暗超过 1 L* ⇒ **回退**，哪怕背景还爆着。
+
+    回引擎那条出口已删：回引擎只会整幅压暗 = 拿脸换背景，与优先级相反。
+    """
+    from design.lr import HL_SEARCH_MID, next_highlights
+    # 脸掉 2.4 L*，背景还爆 ⇒ 回退（不是"停着不动"，不动等于默认接受脸已经暗了）
+    v, why = next_highlights(HL_SEARCH_MID, 9.0, face_after=62.0, face_before=64.4)
+    ok(v is not None and abs(v) < abs(HL_SEARCH_MID), '脸掉了应回退：%s' % v)
+    ok('脸' in why and '回退' in why, '要说清是脸的原因：%s' % why)
+    # 脸只掉 0.4 L*（噪声内）⇒ 可以继续
+    v2, why2 = next_highlights(HL_SEARCH_MID, 9.0, face_after=64.0, face_before=64.4)
+    ok(v2 is not None and v2 < HL_SEARCH_MID, '脸没掉就能继续：%s %s' % (v2, why2))
+    # 回退到最小步长以内 ⇒ 直接归零
+    v3, why3 = next_highlights(-10.0, 9.0, face_after=60.0, face_before=64.0)
+    eq(v3, 0.0)
+    ok('归零' in why3, why3)
+
+
+def test_highlights_face_blown_is_not_background_debt():
+    """脸贴顶 = 主体丢了（单列）；背景爆 = 取舍（可接受）。别混。"""
+    from design.expose import after_ev
+    from design.lr import solve_highlights
+    rec = _lr_rec(skin=dict(L=99.4, C=10.0, h=55.0), headroom_ev=0.0,
+                  img=dict(p1=8.0, p5=12.0, p25=30.0, p50=60.0, p75=85.0,
+                           p95=99.0, p99=99.9, clip_pct=6.0, contrast=87.0))
+    _, note = solve_highlights(after_ev(rec, 0.0))
+    ok('主体丢了' in (note or ''), '脸贴顶要单列：%s' % note)
+    rec2 = _lr_rec(skin=dict(L=70.0, C=12.0, h=55.0), headroom_ev=0.0,
+                   img=dict(p1=8.0, p5=12.0, p25=30.0, p50=60.0, p75=85.0,
+                            p95=99.0, p99=99.9, clip_pct=6.0, contrast=87.0))
+    _, note2 = solve_highlights(after_ev(rec2, 0.0))
+    ok('主体丢了' not in (note2 or ''), '脸没顶就不该说主体丢：%s' % note2)
+    ok('可接受' in (note2 or ''), '背景爆应写成取舍：%s' % note2)
 
 
 def test_curve_never_fixes_clip_in_lr_chain():
