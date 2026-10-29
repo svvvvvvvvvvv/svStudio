@@ -28,7 +28,6 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 from . import measure as M
-from .cards import cards as all_cards
 from .flow import Choice, choose, render_card
 from .intent import Intent
 from .lr import LRPlan, solve_one
@@ -107,7 +106,8 @@ def pilot(b: Batch, n: int = 2, card: Optional[str] = None,
     为什么试点卡的风格不影响选卡：`need_from_batch` 只读**场景侧量**
     （天空占比 / 爆白 / 光比），不读我们自己的颜色偏差。
     """
-    tb = all_cards()
+    from .matchcard import cards as _mc
+    tb = {c.name: c for c in _mc()}
     name = card or sorted(tb)[0]
     if name not in tb:
         raise KeyError('没有这张卡：%s（现有：%s）' % (name, ', '.join(tb)))
@@ -132,8 +132,8 @@ def pilot(b: Batch, n: int = 2, card: Optional[str] = None,
 
 
 def _fake_hit(card):
-    from .cards_match import CardHit
-    return CardHit(card=card, score=0.0)
+    from .flow import _Hit
+    return _Hit(card, 0.0)
 
 
 def _fake_texture(card):

@@ -87,39 +87,42 @@ class Offer:
 
 def choose(recs_engine: Dict[str, dict], intent: Optional[Intent] = None,
            style: Optional[Style] = None, reg: Optional[Registry] = None,
-           topn: int = 3) -> Offer:
-    reg = reg or registry()
-    tb = all_cards()
-    need = need_from_batch(recs_engine, intent)
-    offer = Offer(need=need)
-    for h in rank_cards(tb, reg, need)[:topn]:
-        tp = plan_texture(h.card.stock, h.card.paper, long_side=1080, style=style)
-        offer.choices.append(Choice(hit=h, texture=tp))
-    for h in rank_stocks(reg, need)[:3]:
-        offer.new_card_candidates.append(h.stock.name)
+           topn: int = 5, paths: Optional[Dict[str, str]] = None) -> Offer:
+    """选卡：**走匹配卡**（`matchcard.rank_top5`，设计真源 §57），不再走旧的两层卡体系。"""
+    from .matchcard import rank_top5
+    offer = Offer()
+    for h in rank_top5(recs_engine, k=topn, paths=paths):
+        c = h['card']
+        tp = plan_texture(c.stock, c.paper, long_side=1080, style=style)
+        hit = _Hit(c, h['score'])
+        offer.choices.append(Choice(hit=hit, texture=tp,
+                                    note=' ｜ '.join(list(h['reason']) + list(h['cost']))))
     return offer
 
 
+class _Hit:
+    """`rank_top5` 的一条结果 → Choice 需要的形状（`.card` 就是匹配卡本身）。"""
+
+    def __init__(self, card, score):
+        self.card = card
+        self.score = score
+        self.contrib = {}
+
+
 def describe(offer: Offer) -> str:
-    reg = registry()
-    lines = ['【选卡】']
-    lines.append(table_cards(all_cards(), reg, offer.need))
-    if offer.new_card_candidates:
-        lines.append('')
-        lines.append('【值得做新卡的卷】（参考，不是现在能选的）：')
-        lines.append('  ' + ', '.join(offer.new_card_candidates))
-        lines.append('  ! 换卷 = 做一张新卡，不是改一个键'
-                     '（卷/纸在卡构建时传进 params，overrides 改不了）')
-    if offer.choices:
-        lines.append('')
-        lines.append('【选中卡的质感参数】（查表 + 换算 + 档位，逐条带出处）')
-        lines.append(str(offer.choices[0].texture))
-        lines.extend(warn(offer.choices[0].texture, long_side=1080).splitlines())
+    """把 offer 说清楚（终端用）。**不推荐、不代选**：只列候选与代价。"""
+    if not offer.choices:
+        return '【选卡】没有候选（匹配卡为空？）'
+    lines = ['【选卡】前 %d 个候选（看样例图定，别只看分数）：' % len(offer.choices)]
+    for i, c in enumerate(offer.choices, 1):
+        lines.append('%d) %-28s %-6.2f  %s + %s'
+                     % (i, c.card.name, getattr(c.hit, 'score', 0.0),
+                        c.stock, c.paper))
+        if c.note:
+            lines.append('     ' + c.note[:120])
+    lines.append('')
+    lines.append('选定就回：--card <名字>')
     return '\n'.join(lines)
-
-
-# ---------------------------------------------------------------- 渲染（真路径）
-
 
 
 def headroom_clip(disp, ev: float = 1.0) -> float:
