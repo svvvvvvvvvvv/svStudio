@@ -604,35 +604,6 @@ def solve_point_color(rec: dict, intent: Optional[Intent] = None,
     return dict(scale=max(-1.0, min(1.0, scale)), shift=0.0, lum=round(float(lum), 3))
 
 
-def next_point_lum(prev: float, face_after: Optional[float], face_target: float,
-                   sens: float = PC_LUM_L_PER_UNIT) -> Tuple[Optional[float], str]:
-    """⑥ 的阶梯：**用肤色亮度补脸的最后一段**（只动肤色、不动背景）。
-
-    这是「以人为本」的第三段（②全局曝光 → ③收白 → ⑥肤色亮度）：
-    全局曝光提不动的差额，在这里补，代价只有"肤色范围内的亮度变了"。
-
-    `sens` = 推满 1.0 能抬多少 L*（实测单点 9.1，n=1）；所以这一步是**按实测补差**，
-    不是按模型算 —— 每次都用上一轮出片量到的脸去算下一步。
-
-    返回 (下一档 | None, 说明)。None = 不用再动。
-    """
-    if face_after is None:
-        return None, '⑥ 没有脸读数 ⇒ 不动'
-    deficit = float(face_target) - float(face_after)
-    if deficit <= 0.5:
-        return None, '⑥ 脸已到位（%.1f ≥ %.1f）⇒ 不动' % (face_after, face_target)
-    if abs(prev) >= PC_LUM_MAX - 1e-9:
-        return None, ('⑥ 肤色亮度已推满 %+.1f 仍差 %.1f L\\* ⇒ 记为欠账'
-                      '（这条链到此为止；再加就不是"只动肤色"了）' % (prev, deficit))
-    step = min(PC_LUM_MAX, abs(prev) + PC_LUM_STEP,
-               abs(prev) + deficit / max(sens, 1e-6))
-    if step <= abs(prev) + 1e-9:
-        return None, '⑥ 算出来的增量已小于最小步长 ⇒ 不动'
-    return round(-step if prev < 0 else step, 3), (
-        '⑥ 脸还差 %.1f L\\*（%.1f < %.1f）⇒ 肤色亮度推到 %+.2f（按实测 %.1f L\\*/单位）'
-        % (deficit, face_after, face_target, step, sens))
-
-
 # ---------------------------------------------------------------- 主流程
 
 def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,

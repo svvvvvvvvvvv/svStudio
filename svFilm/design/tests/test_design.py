@@ -639,32 +639,6 @@ def test_match_sheet_is_a_decision_page():
     ok('建议' not in html and '推荐' not in html, '页面上不许替他做决定')
 
 
-def test_point_color_backlit_adds_chroma():
-    """逆光肤色发闷 ⇒ 点颜色给一点彩度（风格剂量，不是靶）。"""
-    from design.lr import PC_BACKLIT_SAT, solve_point_color
-    rec = dict(skin=dict(C=20.0, L=60.0, h=55.0))
-    a = solve_point_color(rec, backlit=False)
-    b = solve_point_color(rec, backlit=True)
-    ok(abs((b['scale'] - a['scale']) - PC_BACKLIT_SAT) < 1e-6,
-       '逆光应多加 %.2f：%s vs %s' % (PC_BACKLIT_SAT, a, b))
-    ok(abs(a['lum']) < 1e-9 and abs(b['lum']) < 1e-9, '没有脸差额就不动亮度')
-
-
-def test_point_lum_fills_face_deficit():
-    """⑥ 肤色亮度：补脸的最后一段，按实测灵敏度给，推满就记欠账。"""
-    from design.lr import PC_LUM_L_PER_UNIT, PC_LUM_MAX, next_point_lum
-    v, why = next_point_lum(0.0, 50.0, 58.5)
-    ok(v is not None and 0 < v <= PC_LUM_MAX, '差 8.5 格应给一档：%s %s' % (v, why))
-    # ★ 单步封顶（灵敏度随起点变，单点线性会过冲）
-    from design.lr import PC_LUM_STEP
-    ok(abs(v - min(PC_LUM_MAX, PC_LUM_STEP, 8.5 / PC_LUM_L_PER_UNIT)) < 1e-3, v)
-    ok(v <= PC_LUM_STEP + 1e-9, '第一步不许超过单步上限：%s' % v)
-    ok(next_point_lum(0.5, 60.0, 58.5)[0] is None, '到位就不该动')
-    v3, why3 = next_point_lum(PC_LUM_MAX, 50.0, 58.5)
-    ok(v3 is None and '欠账' in why3, '推满仍差 ⇒ 记欠账：%s %s' % (v3, why3))
-    ok(next_point_lum(0.0, None, 58.5)[0] is None, '没脸读数不动')
-
-
 def test_contact_sheet_layout():
     """目检页：一图一行、占满宽、不放 <table>。"""
     import os as _os
@@ -741,6 +715,61 @@ def test_matchcard_one_set_per_card():
     ok(len(cs) > 10, '卡太少：%d' % len(cs))
     bad = [c.name for c in cs if not c.name[:3].isdigit()]
     ok(not bad, '混进了不是"套"的目录：%s' % bad[:3])
+
+
+def test_match_sheet_is_a_decision_page():
+    """选卡页要能让人做决定：像哪套 / 缺口关不关得掉 / 每张卡的代价，三样缺一不可。"""
+    import os as _os
+    import tempfile
+    import types
+    from design.review import match_sheet
+
+    def _card(name, stock, paper, rms, amount, fmt):
+        return types.SimpleNamespace(
+            name=name, stock=stock, paper=paper,
+            texture=dict(rms_granularity=(rms, rms, rms)),
+            style=dict(amount=amount, film_format_mm=fmt, diffusion='off'),
+            safety=dict(p95_max=96.0), label=lambda: '%s（%s + %s）' % (name, stock, paper))
+
+    def _choice(c, score):
+        hit = types.SimpleNamespace(card=c, score=score, contrib=dict(shoulder=0.1),
+                                   top=lambda k=2: [('shoulder', 0.1)])
+        return types.SimpleNamespace(card=c, hit=hit)
+
+    c1 = _card('卡A', 'gold_200', 'endura', 10.0, 1.2, 36)
+    c2 = _card('卡B', 'portra_400', 'endura', 21.0, 1.3, 35)
+    c3 = _card('卡C', 'portra_400', 'endura', 9.0, 0.65, 70)
+    offer = types.SimpleNamespace(choices=[_choice(c1, 0.14), _choice(c2, 0.0), _choice(c3, 0.0)],
+                                  new_card_candidates=['vision3_250d'])
+    ref = types.SimpleNamespace(label=lambda: '鹿井/001', n=18, diff={'L': 8.0, 'C': -12.4})
+    hit = types.SimpleNamespace(score=2.82, ref=ref, diff=ref.diff)
+
+    d = tempfile.mkdtemp()
+    p = _os.path.join(d, '选卡.html')
+    match_sheet('测批', dict(L=77.3, C=8.5, h=27.9, p50=59.0, p95=96.6), [hit], offer,
+                gap_rows=['C 缺口 +12.4 ⇒ 不可达'], gap_verdict='换卷/换纸', out_html=p,
+                n_img=9, caliber='abc123')
+    html = open(p, encoding='utf-8').read()
+    ok('<table' not in html, '不许用 table')
+    ok('这批画像' in html and '77.3' in html, '要给出这批画像')
+    ok('最像哪一套' in html and '鹿井/001' in html, '要给出最像哪套')
+    ok('缺口' in html, '要给出缺口可达性')
+    ok('卡B' in html and '卡C' in html, '三张卡都要在')
+    ok('同卷同纸' in html, '同卷同纸必须点出来（否则分数会骗人）')
+    ok('rms 21.0→9.0' in html or 'rms 9.0→21.0' in html, '要把真正的差别摆出来：质感档')
+    ok('--card' in html, '要告诉人怎么把它选回去')
+    ok('建议' not in html and '推荐' not in html, '页面上不许替他做决定')
+
+
+def test_point_color_backlit_adds_chroma():
+    """逆光肤色发闷 ⇒ 点颜色给一点彩度（风格剂量，不是靶）。"""
+    from design.lr import PC_BACKLIT_SAT, solve_point_color
+    rec = dict(skin=dict(C=20.0, L=60.0, h=55.0))
+    a = solve_point_color(rec, backlit=False)
+    b = solve_point_color(rec, backlit=True)
+    ok(abs((b['scale'] - a['scale']) - PC_BACKLIT_SAT) < 1e-6,
+       '逆光应多加 %.2f：%s vs %s' % (PC_BACKLIT_SAT, a, b))
+    ok(abs(a['lum']) < 1e-9 and abs(b['lum']) < 1e-9, '没有脸差额就不动亮度')
 
 
 def main():
