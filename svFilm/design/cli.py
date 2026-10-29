@@ -295,7 +295,8 @@ def cmd_run(a):
     if a.export:
         print('\n[6/7] 出片：LR 出成片 ③ → 量 → 验收 → 目检（唯一驱动 LR 的一步）')
         try:
-            o3 = run_final(b, recs, out['plans'], rounds=a.rounds, log=print)
+            o3 = run_final(b, recs, out['plans'], rounds=a.rounds,
+                           light=getattr(a, 'light', None), log=print)
             print(' ③ 成片 %d 张（%d 轮）' % (len(o3['recs3']), o3['rounds']))
             reviewed = build_review(b, recs, out['plans'], o3['recs3'],
                                     light=getattr(a, 'light', None), log=print)

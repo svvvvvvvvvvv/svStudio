@@ -71,7 +71,10 @@ def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True,
         # ★ 这条只能当信息：曝光对 L* 的**实际**响应与模型差得多
         #   （10-29 真跑：模型斜率 13~15 L*/EV，实测 11.4~18.5，散 ±30%）
         #   ⇒ |残差| ≤ 1 这种门在暗脸上必然误报，不能当硬门
-        if ev_known and abs(expect - float(L1)) <= 1e-9:
+        # 点颜色的亮度也会抬脸，而它没有可用的传递函数 ⇒ 有 lum 时这条只能当信息
+        _lum = float((getattr(plan, 'point_color', None) or {}).get('lum', 0.0) or 0.0) \
+            if plan is not None else 0.0
+        if ev_known and abs(expect - float(L1)) <= 1e-9 and abs(_lum) < 1e-9:
             hard.append(item)
         else:
             # 手里的"曝光档数"是重算的、不是实际落下去的那个 ⇒ 这条只能当信息
