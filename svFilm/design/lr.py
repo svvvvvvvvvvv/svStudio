@@ -162,6 +162,12 @@ class LRPlan:
     fill_ev: float = 0.0
     # ★ 局部高光：补光时按住人的亮部（§43「局部是一整套旋钮」）
     local_highlights: float = 0.0
+    # ★ 分级（⑧）：分离色调 + 色相/饱和（人像要保住肤色）
+    split_shadow_hue: float = 0.0
+    split_shadow_sat: float = 0.0
+    split_highlight_hue: float = 0.0
+    split_highlight_sat: float = 0.0
+    split_balance: float = 0.0
     notes: Dict[str, str] = field(default_factory=dict)
 
     def as_xmp_scalars(self) -> Dict[str, float]:

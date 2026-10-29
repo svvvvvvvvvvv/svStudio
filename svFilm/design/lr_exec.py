@@ -26,6 +26,7 @@ def to_lrplans(plans: Dict[str, dict]) -> Dict[str, LRPlan]:
     for stem, p in plans.items():
         pl = p.get('plan') or {}
         w = p.get('white') or {}
+        g = p.get('grading') or {}
         plan = LRPlan(
             exposure_ev=0.0,                      # ② 不为脸动
             whites=(WHITES_STEP if w.get('need') == 'down' else 0.0),
@@ -33,6 +34,14 @@ def to_lrplans(plans: Dict[str, dict]) -> Dict[str, LRPlan]:
             # local_highlights 暂不启用：桥对 LocalHighlights2012 的**回读是 nil**，
             #   '报 ok 但读不回来' = 不许信（老账）。改用'算好的上限'来防爆（见 lr_solve）。
             local_highlights=0.0,
+            curve=p.get('curve'),
+            saturation=float(g.get('saturation') or 0.0),
+            vibrance=float(g.get('vibrance') or 0.0),
+            split_highlight_hue=float(g.get('split_highlight_hue') or 0.0),
+            split_highlight_sat=float(g.get('split_highlight_sat') or 0.0),
+            split_shadow_hue=float(g.get('split_shadow_hue') or 0.0),
+            split_shadow_sat=float(g.get('split_shadow_sat') or 0.0),
+            split_balance=float(g.get('split_balance') or 0.0),
             notes=dict(
                 curve=str(pl.get('curve') or {}),
                 white_need=str(w.get('need')),

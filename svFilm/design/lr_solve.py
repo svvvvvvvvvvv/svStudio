@@ -21,6 +21,7 @@ import json
 import os
 from typing import Dict, List, Optional
 
+from .curve_design import apply_lut, curve_from_shape
 from .solver import Entry, Plan, solve_pass
 
 # T1 的白端门（成片）——与设计文档 §4.1 一致
@@ -54,6 +55,37 @@ def bands_of(card: dict) -> Dict[str, object]:
     return out
 
 
+def grading_of(card: dict, rec: dict) -> Dict[str, float]:
+    """⑧ 彩色：饱和 + 分离色调（量级由卡的色彩带决定，不拍脑袋）。
+
+    · 肤色保护：我们的脸 C 低于卡的脸 C 带 ⇒ 补饱和；高于 ⇒ 收一点
+    · 分离色调：卡的暖冷（warm_cool_b 带中点）为正 ⇒ 高光暖、阴影冷；为负则相反
+      —— 这是"模仿大师的色调分离"，不是随便给个色相
+    """
+    b = (card or {}).get('bands') or {}
+    out = dict(saturation=0.0, vibrance=0.0,
+               split_highlight_hue=0.0, split_highlight_sat=0.0,
+               split_shadow_hue=0.0, split_shadow_sat=0.0, split_balance=0.0)
+    cb = b.get('face_C')
+    sk = (rec.get('skin') or {}).get('C')
+    if isinstance(cb, list) and sk is not None:
+        lo, hi = float(cb[0]), float(cb[1])
+        if sk < lo:
+            out['saturation'] = float(min(12.0, (lo - sk) * 3.0))
+            out['vibrance'] = float(min(8.0, (lo - sk) * 2.0))
+        elif sk > hi:
+            out['saturation'] = float(max(-8.0, (hi - sk) * 2.0))
+    wc = b.get('warm_cool_b')
+    if isinstance(wc, list):
+        mid = 0.5 * (float(wc[0]) + float(wc[1]))
+        warm = mid >= 0
+        out['split_highlight_hue'] = 45.0 if warm else 210.0
+        out['split_shadow_hue'] = 210.0 if warm else 45.0
+        out['split_highlight_sat'] = float(min(8.0, 4.0 + abs(mid) * 0.5))
+        out['split_shadow_sat'] = float(min(6.0, 3.0 + abs(mid) * 0.4))
+    return out
+
+
 def _meas_of(rec: dict) -> Dict[str, object]:
     """① 的测录 → solve_pass 需要的形状。"""
     im = rec.get('img') or {}
@@ -62,6 +94,7 @@ def _meas_of(rec: dict) -> Dict[str, object]:
     bgr = rec.get('bg') or {}
     per = rec.get('person') or {}
     return dict(bg_hi=bgr.get('L_p90'), bg_med=bgr.get('L'), person_L=per.get('L'),
+                p99=(rec.get('person') or {}).get('clip_p95'),
                 p50=im.get('p50'), p95=im.get('p95'), p5=im.get('p5'),
                 face_L=sk.get('L'),
                 shape=dict(toe=sh.get('toe'), shoulder=sh.get('shoulder'),
@@ -99,6 +132,8 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
     shape_band = bands.get('shape') or {}
     face_band = bands.get('face_L')
     out: Dict[str, dict] = {}
+    # ⑥ 曲线：由卡的形状带反推（可算，不跑 LR）
+    curve = curve_from_shape(bands.get('shape') or {})
     face_rel = bands.get('face_over_bg')
     person_rel = bands.get('person_over_bg')
     for stem, rec in recs.items():
@@ -112,12 +147,34 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
         if person_rel and meas.get('bg_med'):
             card_in['person_med'] = (person_rel[0] * meas['bg_med'], person_rel[1] * meas['bg_med'])
 
+        # ★ 一起动起来：⑥ 曲线是全局的，它会改脸的亮度 ⇒ ⑦ 的起点要换成**曲线之后**的值。
+        #   否则曲线压暗多少，脸就白丢多少（实测 1772 脸 65.5→51.4）。
+        if curve:
+            for _k in ('face_L', 'person_L'):
+                if meas.get(_k) is not None:
+                    meas[_k] = apply_lut(curve, float(meas[_k]))
+            if meas.get('p99') is not None:
+                meas['p99'] = apply_lut(curve, float(meas['p99']))
         p: Plan = solve_pass(meas, card_in)
-        # ★ 2026-10-30：补光的**可算上限** —— 不许把人的亮部（p99）推过 P95_MAX。
-        #   p99_new = p99 + eval_slope(p99) * EV  ⇒  EV ≤ (P95_MAX - p99) / eval_slope(p99)
-        #   这是纯算式（CIELAB 斜率），不是测出来的；比'压局部高光'更稳——
-        #   桥对 LocalHighlights2012 的回读是 nil，报 ok 也不可信。
-        _p99 = (rec.get('person') or {}).get('clip_p95')
+
+        # ★ 脸是**一级目标**（人像优先）：曲线把脸压暗了，⑦ 必须补回来。
+        _fl = meas.get('face_L')
+        _fb = card_in.get('face_L')
+        if _fl is not None and _fb:
+            from .solver import eval_slope as _slope
+            _tgt = max(float(_fb[0]), 55.0)        # T4 下界 55；卡的带更宽时取高的那个
+            if float(_fl) < _tgt - 0.5:
+                _need = (_tgt - float(_fl)) / max(_slope(float(_fl)), 1e-6)
+                if _need > p.local_ev:
+                    p.ledger.append(Entry(dim='face_L', got=float(_fl), want=(_tgt, 1e9),
+                                          gap=float(_tgt - float(_fl)), layer='local',
+                                          action='脸低 => 局部 %.2f -> %.2f' % (p.local_ev, _need)))
+                    p.local_ev = round(float(_need), 3)
+                    p.local_exposure = round(p.local_ev / 4.0, 5)
+
+        # ★ 补光的**可算上限** —— 不许把人的亮部（p99）推过 P95_MAX。
+        #   p99_new = p99 + eval_slope(p99) · EV => EV <= (P95_MAX - p99) / eval_slope(p99)
+        _p99 = meas.get('p99') or (rec.get('person') or {}).get('clip_p95')
         if _p99 is not None and p.local_ev > 0:
             from .solver import eval_slope
             _cap = max(0.0, (P95_MAX - float(_p99)) / max(eval_slope(float(_p99)), 1e-6))
@@ -129,7 +186,8 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
                 p.local_ev = round(_cap, 3)
                 p.local_exposure = round(p.local_ev / 4.0, 5)
         out[stem] = dict(plan=p.as_dict(), white=white_end_plan(rec),
-                         meas=meas, ledger=[str(e) for e in p.ledger])
+                         meas=meas, ledger=[str(e) for e in p.ledger],
+                         curve=curve, grading=grading_of(card, rec))
     return out
 
 
