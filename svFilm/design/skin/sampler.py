@@ -21,6 +21,9 @@ import numpy as np
 
 R_ROI = 0.13          # ROI 半径 / 脸宽
 OFF_X = 0.15          # 颊心相对"眼-嘴中点"的外移量（脸宽）
+DOWN_Y = 0.00         # 下移量（脸宽）。实测 0.05 会把 ROI 推到脸颊外面（canary20i）
+NOSE_R = 0.24         # 鼻子排除圆半径（脸宽）
+ANCHOR_R = 0.30       # 锚区：颊圆并集的半径（脸宽）
 SPEC_PCT = 80.0       # 镜面剔除：ROI 内 L 的上分位
 DARK_PCT = 10.0       # 阴影剔除
 MIN_C = 10.0          # 皮肤彩度下限（灰/白/黑都在这之下）
@@ -56,16 +59,30 @@ def ita_class(v: float) -> str:
     return 'dark'
 
 
+
+def _nose_center(meta, le, re, lm, rm):
+    """鼻子中心：优先用五点里的 nose，没有就由眼/嘴推。"""
+    n = meta.get('nose') if isinstance(meta, dict) else None
+    if n is not None:
+        return np.asarray(n, float)
+    eye = 0.5 * (le + re)
+    mouth = 0.5 * (lm + rm)
+    v = mouth - eye
+    return eye + 0.55 * v
+
+
 def _ellipse(shape, cx, cy, rx, ry):
     yy, xx = np.mgrid[0:shape[0], 0:shape[1]]
     return (((xx - cx) / max(rx, 1e-6)) ** 2 + ((yy - cy) / max(ry, 1e-6)) ** 2) <= 1.0
 
 
-def _roi_stats(L, a, b, C, cx, cy, fw, mask=None, min_px=None):
+def _roi_stats(L, a, b, C, cx, cy, fw, mask=None, min_px=None, exclude=None):
     rx, ry = R_ROI * fw, R_ROI * 0.85 * fw
     m = _ellipse(L.shape, cx, cy, rx, ry)
     if mask is not None:
-        m &= (mask > 0.5)                 # ★ ROI 必须先落在脸上（几何外推会跑到背景/衣服上）
+        m &= (mask > 0.5)
+    if exclude is not None:
+        m &= ~exclude            # ★ 鼻子/鼻翼阴影不许进 ROI                 # ★ ROI 必须先落在脸上（几何外推会跑到背景/衣服上）
     m &= (C >= MIN_C)
     _mp = MIN_PX if min_px is None else int(min_px)
     if int(m.sum()) < _mp:
@@ -114,10 +131,14 @@ def sample_skin(crop, meta, img_lab=None, mapper=None, fixed_xy=None, skin_mask=
     if mapper is not None:
         le, re, lm, rm = (np.asarray(mapper['pt'](p[0], p[1]), float) for p in (le, re, lm, rm))
         fw = fw * mapper['s']
-    centers = [0.5 * (le + lm) + np.array([-OFF_X * fw, 0.0]),
-               0.5 * (re + rm) + np.array([OFF_X * fw, 0.0])]
+    _dy = np.array([0.0, DOWN_Y * fw])
+    centers = [0.5 * (le + lm) + np.array([-OFF_X * fw, 0.0]) + _dy,
+               0.5 * (re + rm) + np.array([OFF_X * fw, 0.0]) + _dy]
     if fixed_xy is not None:
         centers = [np.asarray(fixed_xy, float)]
+    # ★ 鼻子排除圆：鼻翼的阴影、鼻梁高光都不该进肤色
+    nose = _nose_center(meta, le, re, lm, rm)
+    exclude = _ellipse(L.shape, nose[0], nose[1], NOSE_R * fw, NOSE_R * fw)
     # 样本门：脸小时 ROI 本身就小，按面积放宽（不是无限放宽 —— 30 px 以下是真没东西）
     if loose:
         _mp = MIN_PX_LOOSE
@@ -125,10 +146,37 @@ def sample_skin(crop, meta, img_lab=None, mapper=None, fixed_xy=None, skin_mask=
         _mp = max(60, int(MIN_PX * 0.4))
     else:
         _mp = MIN_PX
-    sides = [_roi_stats(L, a, b, C, cx, cy, fw, mask=skin_mask, min_px=_mp)
+    sides = [_roi_stats(L, a, b, C, cx, cy, fw, mask=skin_mask, min_px=_mp,
+                        exclude=exclude)
              for cx, cy in centers]
+
+    def _anchor_result():
+        """整脸椭圆 ∩ 掩膜 ∩ ¬鼻 的分量中位（脸内、无鼻影、无墙）。"""
+        if skin_mask is None or loose:
+            return None
+        ax = 0.5 * (le[0] + re[0])
+        ay = 0.5 * (le[1] + rm[1])
+        anc = _ellipse(L.shape, ax, ay, 0.55 * fw, 0.75 * fw)
+        anc &= (skin_mask > 0.5) & (C >= MIN_C) & ~exclude
+        if int(anc.sum()) < 300:
+            return None
+        La = float(np.median(L[anc]))
+        am = float(np.median(a[anc]))
+        bm = float(np.median(b[anc]))
+        ys, xs = np.nonzero(anc)
+        return dict(L=La, a=am, b=bm, C=float(np.hypot(am, bm)),
+                    h=float(np.degrees(np.arctan2(bm, am)) % 360.0),
+                    ita=ita(La, bm), n=int(anc.sum()),
+                    xy=[int(xs.mean()), int(ys.mean())] if len(xs) else None)
+
     good = [s for s in sides if s]
     if not good:
+        # ★ ROI 一个都没成（样本太少）⇒ 先试锚区，别直接掉到"无掩膜"那档
+        anc = _anchor_result()
+        if anc is not None:
+            return dict(ok=True, why='anchor_only', lit=anc, shadow=None, sides=sides,
+                        w=0.55, side_dE=None, region='face_anchor', fw=fw,
+                        small_face=small_face, src='anchor')
         return dict(ok=False, why='roi_empty', sides=sides, fw=fw)
     good.sort(key=lambda s: s['L'])
     lit = good[-1]
@@ -137,29 +185,14 @@ def sample_skin(crop, meta, img_lab=None, mapper=None, fixed_xy=None, skin_mask=
     #   而那张的脸在阴影里）。拿"脸框内那圈（掩膜 ∩ 椭圆）的中位 L"当锚，
     #   肤色偏离超过 OFF_FACE_MAX 就弃权 —— 宁可弃权，不许给出一个亮墙当脸。
     if (skin_mask is not None) and (not loose):
-        ax = 0.5 * (le[0] + re[0])
-        ay = 0.5 * (le[1] + rm[1])
-        anchor = _ellipse(L.shape, ax, ay, 0.55 * fw, 0.75 * fw)
-        anchor &= (skin_mask > 0.5) & (C >= MIN_C)
-        if int(anchor.sum()) >= 500:
-            La = float(np.median(L[anchor]))
-            if abs(float(lit['L']) - La) > OFF_FACE_MAX:
-                # ★ 不解弃权，改用**锚区本身**当肤色（2026-10-30 实测）：
-                #   13_t1 的颊 ROI 落到头发上（34.9）、无掩膜的 loose 落到亮墙上（88.6），
-                #   而"脸框椭圆 ∩ 掩膜"的中位是 59.6 —— 那才是这张脸。
-                #   02_t1 同理（锚 54.1 vs 亮墙 84）。
-                #   所以第三档 = anchor：仍然是脸内、仍然被掩膜限定，只是范围大一点。
-                am = float(np.median(a[anchor]))
-                bm = float(np.median(b[anchor]))
-                ys, xs = np.nonzero(anchor)
-                lit_a = dict(L=La, a=am, b=bm, C=float(np.hypot(am, bm)),
-                             h=float(np.degrees(np.arctan2(bm, am)) % 360.0),
-                             ita=ita(La, bm), n=int(anchor.sum()),
-                             xy=[int(xs.mean()), int(ys.mean())] if len(xs) else None)
-                return dict(ok=True, why='anchor', lit=lit_a, shadow=None, sides=sides,
-                            w=0.6, side_dE=None, region='face_anchor', fw=fw,
-                            small_face=small_face, src='anchor',
-                            roi_L=float(lit['L']))
+        anc = _anchor_result()
+        if anc is not None and abs(float(lit['L']) - float(anc['L'])) > OFF_FACE_MAX:
+            # ★ 不解弃权，改用**锚区本身**（2026-10-30 实测）：13_t1 的颊 ROI 落到头发(34.9)、
+            #   无掩膜 loose 落到亮墙(88.6)，而锚区是 59.6 —— 那才是这张脸。
+            return dict(ok=True, why='anchor', lit=anc, shadow=None, sides=sides,
+                        w=0.6, side_dE=None, region='face_anchor', fw=fw,
+                        small_face=small_face, src='anchor',
+                        roi_L=float(lit['L']))
     shadow = good[0] if len(good) > 1 else None
     de = None
     if shadow is not None:
