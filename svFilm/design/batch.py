@@ -196,7 +196,8 @@ def run_lr(b: Batch, recs: Dict[str, dict], intent: Optional[Intent] = None,
 # ---------------------------------------------------------------- ③ 出片 + 量 + 验收
 
 def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
-              rounds: int = 2, measure_fn=None, log=print) -> Dict[str, object]:
+              rounds: int = 2, measure_fn=None, light: Optional[str] = None,
+              log=print) -> Dict[str, object]:
     """**导出 ③ → 量 ③ → 按"脸优先"决定要不要再导一轮。**
 
     这是流程里唯一驱动 LR 的地方（纪律：不许拿 LR 当标定台）。
@@ -205,7 +206,8 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
     收白的进退沿用 `lr.next_highlights`：脸被压暗 ⇒ 回退；脸没掉还爆 ⇒ 加大；
     到尽头 ⇒ 接受背景过曝。最多 `rounds` 轮，避免来回打。
     """
-    from .lr import next_highlights, next_point_lum, T4, LAND_TOL_L, PC_LUM_MAX
+    from .lr import (next_highlights, next_point_lum, zone_for, light_state,
+                     LAND_TOL_L, PC_LUM_MAX)
     from .lrsink import apply_and_export
 
     mf = measure_fn or measure_tif
@@ -252,7 +254,8 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
             s1 = (recs.get(st) or {}).get('skin') or {}
             # ★ 仲裁：脸不够亮、且肤色亮度还没推满 ⇒ **这一轮不动收白**，
             #   先让 ⑥ 去补（它不动背景，不会反过来压脸）。加满才轮到回退收白。
-            _tgt = T4['L_lo'] + LAND_TOL_L
+            _lt = light_state(dict(recs.get(st) or {}), given=light)
+            _tgt = zone_for(_lt)['L_lo'] + LAND_TOL_L
             _pc = getattr(plan, 'point_color', None) or {}
             _lum = float(_pc.get('lum', 0.0) or 0.0)
             _face_short = s3.get('L') is not None and float(s3['L']) < _tgt
@@ -271,7 +274,7 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
             # ⑥ 肤色亮度：全局曝光 + 收白都定了，脸还差多少就用它补（只动肤色）
             #   ★ 仲裁规矩（10-29 真跑吃过亏：收白和它互相抢，1665 打了两轮 −25→−12→−56）：
             #     脸不够亮 ⇒ **先加肤色亮度**（不动背景），加满才轮到回退收白。
-            target = T4['L_lo'] + LAND_TOL_L
+            target = _tgt      # 分光位的下界 + 落点容差（见上）
             rgb = ((recs.get(st) or {}).get('skin') or {}).get('rgb')
             if s3.get('L') is not None and rgb:
                 pc = getattr(plan, 'point_color', None) or dict(scale=0.0, shift=0.0, lum=0.0)
@@ -293,12 +296,13 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
 
 
 def build_review(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
-                 recs3: Dict[str, dict], log=print) -> Dict[str, object]:
+                 recs3: Dict[str, dict], light: Optional[str] = None,
+                 log=print) -> Dict[str, object]:
     """验收 + 目检页（G2/G3）。逻辑在 `review.make_review`（不依赖 Batch，能单独用）。"""
     from .review import make_review
     return make_review(recs, recs3, plans, b.out_dir,
                        tif_1_dir=b.sub('engine'), tif_3_dir=b.sub('final'),
-                       title='%s · 成片目检' % b.name, log=log)
+                       title='%s · 成片目检' % b.name, light=light, log=log)
 
 def estimate(n: int, per_image_s: float = 25.0) -> str:
     """给个时间预估（渲一张要跑两次 headroom 解，约 22~30 秒）。"""

@@ -30,7 +30,7 @@ from .curve import plan_curve
 # 规划预算（验收预算见 invariants.S3['anchor_max'] = 3.0）
 # 差 0.3 是给"16 点 LUT 插值 + 取整"的误差留的余量（实测 3.0 -> 3.14）
 S3_BUDGET_PLAN = 2.7
-from .invariants import T1, T2, T4
+from .invariants import T1, T2, T4, T4_BACKLIT
 from .intent import Intent
 
 # ---------------------------------------------------------------- 常数与出处
@@ -79,10 +79,15 @@ EDGE_MARGIN_L = 1.5
 #   ⇒ 目标点改成 `下界 + 落点容差`，容差取 3.5（覆盖实测最大 2.88）。
 LAND_TOL_L = 3.5
 #
-# ★ 逆光补偿（设计 §28 L3「逆光 ≠ 顺光」）。同一 L* 的脸在逆光下**看起来更暗**
-#   （背景压着）。10-29 目检：1289 光比 0.91，提 0.34 档到 56.8 仍显暗。
-#   ⇒ 逆光时目标点再往区内侧推 4 L*，走「提曝光 + 收白」两步（§31 ②→③）。
-BACKLIT_EXTRA_L = 4.0
+# ★ 逆光**不再额外往亮推**（2026-10-29 晚推翻）：目录卡实测逆光片脸 L 中位只有 50.4，
+#   比顺光（77.8）**暗 27 格里**——逆光做的是"脸暗、彩度高、留轮廓光"，不是把脸提亮。
+#   所以逆光只换一套区间（45~70），不再额外加 4 L*。
+BACKLIT_EXTRA_L = 0.0
+
+
+def zone_for(light: Optional[str]):
+    """脸亮区：逆光一套（45~70），顺光/未知一套（55~85）。"""
+    return T4_BACKLIT if light == 'backlit' else T4
 #
 # ★ 目标点上限：只在区间**中段**，不许贴着上界追（否则一动就进"过曝区"）。
 LAND_CAP_L = 70.0
@@ -270,9 +275,10 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
         §28 L2「提完之后 clip 仍 < T1，否则先收 Highlights」）。
         只有 Highlights 也收不回来，才按 §32 ③ 回引擎要余量。
     """
-    lo = T4['L_lo'] if L_lo is None else L_lo
-    hi = T4['L_hi'] if L_hi is None else L_hi
     la = pick_lookat(rec_engine, light=light)
+    _z = zone_for(la.light)
+    lo = _z['L_lo'] if L_lo is None else L_lo
+    hi = _z['L_hi'] if L_hi is None else L_hi
 
     ex = Exposure(cap_headroom=rec_engine.get('headroom_ev'),   # 只记录，不设限
                   cap_white=_cap_white(rec_engine))

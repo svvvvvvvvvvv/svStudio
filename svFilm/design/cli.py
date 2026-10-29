@@ -297,7 +297,8 @@ def cmd_run(a):
         try:
             o3 = run_final(b, recs, out['plans'], rounds=a.rounds, log=print)
             print(' ③ 成片 %d 张（%d 轮）' % (len(o3['recs3']), o3['rounds']))
-            reviewed = build_review(b, recs, out['plans'], o3['recs3'], log=print)
+            reviewed = build_review(b, recs, out['plans'], o3['recs3'],
+                                    light=getattr(a, 'light', None), log=print)
             print(' 验收：硬门（脸）过 %d/%d 张' % (reviewed['ok'], reviewed['n']))
             print(' 目检：%s' % reviewed['html'])
         except Exception as e:
@@ -495,7 +496,7 @@ def main(argv=None):
     p.add_argument('--card', default='', help='手动指定卡名（跳过匹配排序）')
     p.add_argument('--export', action='store_true', help='用 LR 导出 ③（要 LR 在跑）')
     p.add_argument('--rounds', type=int, default=2, help='③ 出片最多几轮（收白按脸进退）')
-    p.add_argument('--light', default=None, choices=['backlit', 'frontlit', 'auto'],
+    p.add_argument('--light', default='auto', choices=['backlit', 'frontlit', 'auto', 'none'],
                    help='这批的光位由人给；不给=unknown（逆光才做的动作都不触发）')
 
     p = sub.add_parser('review'); p.set_defaults(fn=cmd_review)

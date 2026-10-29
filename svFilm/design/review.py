@@ -16,11 +16,12 @@ import os
 from typing import Dict, List, Optional
 
 from .expose import eval_slope
-from .invariants import T1, T2, T3, T4, T5, S1, S3
+from .invariants import T1, T2, T3, T4, T4_BACKLIT, T5, S1, S3
 
 # ---------------------------------------------------------------- 验收
 
-def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True) -> Dict[str, object]:
+def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True,
+           light: Optional[str] = None) -> Dict[str, object]:
     """③ 的验收：**硬门（脸 + 没把脸改坏）+ 软门（背景）**。
 
     为什么不像 check_S 那样直接比 ①→③：②曝光本来就会改脸的亮度，
@@ -40,15 +41,17 @@ def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True) -> Dict[s
     # ★ ① 本身就不在区里/就发灰 ⇒ 只要求 ③ 不比 ① 更差（否则就是拿引擎的账罚 LR）
     L1, C1 = s1.get('L'), s1.get('C')
     L3, C3 = s3.get('L'), s3.get('C')
+    # ★ 脸亮区**分光位**（2026-10-29，目录卡实测 n=43）：逆光 45~70，顺光/未知 55~85
+    zlo, zhi = (T4_BACKLIT['L_lo'], T4_BACKLIT['L_hi']) if light == 'backlit' \
+        else (T4['L_lo'], T4['L_hi'])
     if L3 is not None:
-        if L1 is not None and not (T4['L_lo'] <= float(L1) <= T4['L_hi']):
-            okv = abs(float(L3) - T4['L_hi']) <= abs(float(L1) - T4['L_hi']) + 0.2 or \
-                  T4['L_lo'] <= float(L3) <= T4['L_hi']
+        if L1 is not None and not (zlo <= float(L1) <= zhi):
+            okv = abs(float(L3) - zhi) <= abs(float(L1) - zhi) + 0.2 or zlo <= float(L3) <= zhi
             hard.append(('T4 脸L', okv, round(float(L3), 1), '比 ①(%.1f) 更靠近区' % float(L1),
                          '① 本身出区 ⇒ 只要求别更远'))
         else:
-            hard.append(('T4 脸L', T4['L_lo'] <= float(L3) <= T4['L_hi'], round(float(L3), 1),
-                         '%g~%g' % (T4['L_lo'], T4['L_hi']), '脸在合理曝光区'))
+            hard.append(('T4 脸L', zlo <= float(L3) <= zhi, round(float(L3), 1),
+                         '%g~%g' % (zlo, zhi), '脸在合理曝光区（%s）' % (light or 'unknown')))
     if C3 is not None:
         if C1 is not None and float(C1) < T5['C_min']:
             hard.append(('T5 脸C', float(C3) >= float(C1) - 0.2, round(float(C3), 1),
@@ -261,6 +264,7 @@ def _find_tif(d: str, stem: str, allow_engine: bool = False) -> Optional[str]:
 def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict], plans: Dict[str, object],
                 out_dir: str, tif_1_dir: str = '', tif_3_dir: str = '',
                 title: str = '成片目检', sub: str = '', ev_known: bool = True,
+                light: Optional[str] = None,
                 url_map: Optional[Dict[str, str]] = None,
                 log=print) -> Dict[str, object]:
     """量完 ③ 之后：**验收 + 出一页目检**。只读，不改参数。
@@ -279,7 +283,7 @@ def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict], plans: Dict[st
         if not b:
             continue
         a = r1.get(st) or {}
-        v = verify(a, b, plan, ev_known=ev_known)
+        v = verify(a, b, plan, ev_known=ev_known, light=light)
         nok += 1 if v['ok'] else 0
 
         s1 = (a.get('skin') or {}).get('L')

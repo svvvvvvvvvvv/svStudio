@@ -230,17 +230,23 @@ def test_land_tolerance_covers_measured_error():
     ok(LAND_TOL_L <= 6.0, '容差 %.1f 太大，会把脸一路推到区间中上段' % LAND_TOL_L)
 
 
-def test_exposure_backlit_goes_deeper():
-    """§28 L3：逆光 ≠ 顺光。同一张脸，逆光的目标点要比顺光更深（更靠区内）。"""
-    from design.lr import BACKLIT_EXTRA_L, LAND_TOL_L, solve_exposure
-    front = solve_exposure(_lr_rec(skin=dict(L=45.0, C=18.0, h=55.0)), light='frontlit')
-    back = solve_exposure(_lr_rec(skin=dict(L=45.0, C=18.0, h=55.0)), light='backlit')
-    Lf = 45.0 + front.want_ev * eval_slope(45.0)
-    Lb = 45.0 + back.want_ev * eval_slope(45.0)
-    ok(abs(Lf - (55.0 + LAND_TOL_L)) < 0.6, '顺光目标 %.1f' % Lf)
-    ok(abs(Lb - (55.0 + LAND_TOL_L + BACKLIT_EXTRA_L)) < 0.6, '逆光目标 %.1f' % Lb)
-    ok(Lb > Lf + 3.0, '逆光应比顺光更深：%.1f vs %.1f' % (Lb, Lf))
-    ok('逆光' in back.why, '理由里要说清是逆光：%s' % back.why)
+def test_exposure_backlit_uses_its_own_zone():
+    """A 方案（2026-10-29）：逆光**换一套区间**（45~70），不额外往亮推。
+
+    依据：目录卡逆光片的脸 L 中位只有 50.4（P10~P90 42~58），
+    比顺光的 77.8 暗 27 格 —— 逆光不是"把脸提亮"，是"脸暗、彩度高、留轮廓光"。
+    """
+    from design.lr import LAND_TOL_L, T4_BACKLIT, solve_exposure
+    # 逆光：脸 46.8 已在 45~70 内 ⇒ 不动
+    ex = solve_exposure(_lr_rec(skin=dict(L=46.8, C=18.0, h=55.0)), light='backlit')
+    eq(ex.want_ev, 0.0, 1e-9)
+    # 逆光：脸 43.7 低于 45 ⇒ 只推到 45+容差
+    ex2 = solve_exposure(_lr_rec(skin=dict(L=43.7, C=18.0, h=55.0)), light='backlit')
+    L2 = 43.7 + ex2.want_ev * eval_slope(43.7)
+    ok(abs(L2 - (T4_BACKLIT['L_lo'] + LAND_TOL_L)) < 0.6, '逆光目标 %.1f' % L2)
+    # 同一张脸按顺光判，就要提到 58.5 —— 两套区间真的不同
+    ex3 = solve_exposure(_lr_rec(skin=dict(L=43.7, C=18.0, h=55.0)), light='frontlit')
+    ok(ex3.want_ev > ex2.want_ev + 0.3, '顺光该提更多：%.2f vs %.2f' % (ex3.want_ev, ex2.want_ev))
 
 
 def test_exposure_headroom_is_not_a_cap():
@@ -309,11 +315,12 @@ def test_light_state_comes_from_person():
 
 
 def test_backlit_note():
-    """逆光出区要提亮，且理由里写明"提完必须预备收白"。"""
+    """逆光：理由里要写明"提完必须预备收白"（逆光 = 提曝光 + 收白 两步）。"""
     from design.lr import solve_exposure
-    ex = solve_exposure(_lr_rec(skin=dict(L=48.0, C=18.0, h=55.0),
-                                headroom_ev=1.0), light='backlit')
-    ok('逆光' in ex.why and '收白' in ex.why, '逆光说明缺：%s' % ex.why)
+    # 逆光区 45~70：脸 43 出区 ⇒ 会提；提完若越过白平台就交给 ③
+    ex = solve_exposure(_lr_rec(skin=dict(L=43.0, C=18.0, h=55.0),
+                                headroom_ev=0.0), light='backlit')
+    ok('逆光' in ex.why or '收白' in ex.why, '逆光说明缺：%s' % ex.why)
 
 
 def test_after_ev_hue_invariant():
@@ -441,14 +448,14 @@ def test_solve_one_order():
     """整条链 §31 ②→③：脸低 ⇒ ② 把曝光给满；③ 在 ①' 上判、收白并记欠账。"""
     from design.lr import solve_one
     rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.0)
-    plan = solve_one(rec, light='backlit', log=lambda *_: None)
+    plan = solve_one(rec, light='frontlit', log=lambda *_: None)
     ok(plan.exposure_ev > 0.5, '脸 L45 就该给（余量 0 不是理由）：%s' % plan.exposure_ev)
     ok('收白' in plan.notes.get('exposure', ''),
        '② 越过白平台要交代给 ③：%s' % plan.notes.get('exposure'))
     ok(plan.highlights < 0.0, '② 给满后上端必爆 ⇒ ③ 必须收白：%s' % plan.highlights)
     ok('highlights' in plan.notes, '③ 的理由要落进 notes：%s' % list(plan.notes))
     ok('highlight_verify' in plan.notes, '③ 的验收量要写清：%s' % list(plan.notes))
-    ok('逆光' in plan.notes.get('light', '') or 'backlit' in plan.notes.get('lookat', ''),
+    ok('顺光' in plan.notes.get('light', '') or 'frontlit' in plan.notes.get('lookat', ''),
        '光位（或旁证）要落进 notes：%s' % plan.notes)
 
 
