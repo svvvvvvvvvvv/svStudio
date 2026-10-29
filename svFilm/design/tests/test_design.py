@@ -861,6 +861,33 @@ def test_solve_pass_boundaries():
     face_entry = [e for e in plan.ledger if e.dim == 'face_L'][0]
     ok(face_entry.layer == 'local', '脸的账必须归 local（⑦），实际 %s' % face_entry.layer)
 
+# ---------------------------------------------------------------- 肤色口径（design/skin）
+
+def test_skin_ita_is_monotonic():
+    """ITA° 随 L* 增大而增大、随 |b*| 增大而减小（文献定义直接对拍）。"""
+    from design.skin import ita
+    ok(ita(60, 20) > ita(50, 20) > ita(40, 20), 'L* 越大 ITA 越大')
+    ok(ita(55, 20) > ita(55, 28), '|b*| 越大 ITA 越小')
+    ok(abs(ita(50, 20)) < 1e-6, 'L*=50 ⇒ ITA=0')
+    ok(ita(60, 20) > 0 and ita(40, 20) < 0, 'ITA 的符号要跟着 L*−50 走')
+
+
+def test_skin_ita_classes():
+    """ITA 分级的边界（文献常用 55/41/28/10/−30）。"""
+    from design.skin import ita_class
+    for v, want in ((70, 'very_light'), (50, 'light'), (35, 'intermediate'),
+                    (20, 'tan'), (0, 'brown'), (-40, 'dark')):
+        ok(ita_class(v) == want, 'ITA %.0f 应判 %s，实际 %s' % (v, want, ita_class(v)))
+
+
+def test_skin_caliber_constants_are_documented():
+    """口径常量必须集中在包内且可读（防"到处各写一个 0.15"）。"""
+    from design.skin import (DARK_PCT, MIN_PX, OFF_X, R_ROI, SPEC_PCT)
+    ok(0.0 < R_ROI < 0.35, 'ROI 半径不合理：%s' % R_ROI)
+    ok(0.0 < OFF_X < 0.4, '外移量不合理：%s' % OFF_X)
+    ok(0.0 < DARK_PCT < SPEC_PCT < 100.0, '剔除分位不成立：%s / %s' % (DARK_PCT, SPEC_PCT))
+    ok(MIN_PX >= 100, '样本门太低：%s' % MIN_PX)
+
 def main():
     import traceback
     tests = [(n, f) for n, f in sorted(globals().items())
