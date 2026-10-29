@@ -714,6 +714,35 @@ def test_texture_overrides_are_runtime_paths():
     eq(float(ov3['film_render.halation.boost_ev']), 1.0, 1e-9)
 
 
+# ---------------------------------------------------------------- 匹配卡与匹配算法（§48/§55/§57）
+
+def test_matchcard_red_lines():
+    """§57.2 的红线：自指维（肤色/暖冷）**永远**不许进数值排序；单维要截断。
+
+    为什么钉这条：'越比越像基线卡' 在代码里只靠一个元组守着；
+    删掉或改名就会静默复发，而它坏了不会报错，只会让匹配偏向基线卡。
+    """
+    from design.matchcard import (MAX_ABS_IQR, NUM_KEYS_RANK, SELFREF_KEYS,
+                                  MatchCard, _num_distance)
+    ok(not (set(NUM_KEYS_RANK) & set(SELFREF_KEYS)),
+       '自指维混进了排序：%s' % (set(NUM_KEYS_RANK) & set(SELFREF_KEYS)))
+    for k in ('L', 'C', 'h', 'wc'):
+        ok(k not in NUM_KEYS_RANK, '%s 是自指维，不许进排序' % k)
+    c = MatchCard(name='x', profile=dict(sky=0.0, span=50.0))
+    _, dd = _num_distance(dict(sky=0.5, span=50.0), c, dict(sky=1e-6, span=100.0))
+    ok(abs(dd['sky']) <= MAX_ABS_IQR + 1e-9,
+       '近零离散度的维度必须截断到 %s 个 IQR，实际 %s' % (MAX_ABS_IQR, dd['sky']))
+
+
+def test_matchcard_one_set_per_card():
+    """一张卡 = 一套：目录名不是 NNN_ 开头的（散图汇总）不许算成一套。"""
+    from design.matchcard import cards
+    cs = cards()
+    ok(len(cs) > 10, '卡太少：%d' % len(cs))
+    bad = [c.name for c in cs if not c.name[:3].isdigit()]
+    ok(not bad, '混进了不是"套"的目录：%s' % bad[:3])
+
+
 def main():
     import traceback
     tests = [(n, f) for n, f in sorted(globals().items())
