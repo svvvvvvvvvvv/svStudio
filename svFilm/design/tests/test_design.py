@@ -784,6 +784,74 @@ def test_safety_is_not_a_constant():
        '两张卡算出来的边界一样 ⇒ 边界没从卡来')
 
 
+# ---------------------------------------------------------------- 一次算（§52/§61）
+
+def test_eval_slope_is_not_a_constant():
+    """每档抬多少 L* 随起点变（`0.231·(L+16)`）——钉住"不许当常数用"。"""
+    from design.solver import eval_slope
+    ok(abs(eval_slope(20) - 8.32) < 0.02, 'L=20 的斜率 %s' % eval_slope(20))
+    ok(abs(eval_slope(50) - 15.25) < 0.02, 'L=50 的斜率 %s' % eval_slope(50))
+    ok(eval_slope(80) > eval_slope(50) > eval_slope(20), '斜率必须随 L 单调增')
+
+
+def test_ev_to_reach_roundtrip():
+    """反解出的 EV 打回去要落回带边（CIELAB 立方根段的精确式）。"""
+    from design.solver import ev_to_reach
+    for cur, band in ((45.0, (55.0, 70.0)), (80.0, (55.0, 70.0)), (60.0, (55.0, 70.0))):
+        ev = ev_to_reach(cur, band)
+        if cur < band[0]:
+            back = (cur + 16.0) * 2 ** (ev / 3.0) - 16.0
+            ok(abs(back - band[0]) < 0.05, '%s 打进带边结果 %s' % (cur, back))
+        elif cur > band[1]:
+            back = (cur + 16.0) * 2 ** (ev / 3.0) - 16.0
+            ok(abs(back - band[1]) < 0.05, '%s 打进带边结果 %s' % (cur, back))
+        else:
+            ok(ev == 0.0, '带内不该动：%s' % ev)
+
+
+def test_ev_exact_vs_linear():
+    """精确式与设计里的线性式（ΔL/slope）在小步长时要接近，大步长会分开。"""
+    from design.solver import ev_to_reach, ev_to_reach_linear
+    small = ev_to_reach(52.0, (55.0, 70.0))
+    lin = ev_to_reach_linear(52.0, (55.0, 70.0))
+    ok(abs(small - lin) < 0.02, '小步长两者应接近：%s vs %s' % (small, lin))
+    big = ev_to_reach(20.0, (60.0, 80.0))
+    lin_big = ev_to_reach_linear(20.0, (60.0, 80.0))
+    ok(abs(big - lin_big) > 0.05, '大步长两者应分开：%s vs %s' % (big, lin_big))
+
+
+def test_local_exposure_scale():
+    """局部曝光写进 LR 的值 = EV/4（§61.1 ③，已验三档）。"""
+    from design.solver import local_exposure_for
+    ok(abs(local_exposure_for(0.8) - 0.2) < 1e-9, 'EV 0.8 ⇒ %s' % local_exposure_for(0.8))
+    ok(abs(local_exposure_for(-0.4) + 0.1) < 1e-9, 'EV -0.4 ⇒ %s' % local_exposure_for(-0.4))
+
+
+def test_curve_budget_is_respected():
+    """曲线每项位移 ≤ 预算；超了要记账，不许加宽预算（S5）。"""
+    from design.solver import curve_shifts
+    shifts, led = curve_shifts(dict(shoulder=12.0), dict(shoulder=(2.0, 6.0)), budget=3.0)
+    ok(abs(shifts['shoulder']) <= 3.0 + 1e-9, '超预算没截断：%s' % shifts)
+    ok(led and led[0].layer == 'curve', '超预算必须记账')
+    ok('撞曲线预算' in led[0].action, '账里要写清为什么：%s' % led[0].action)
+
+
+def test_solve_pass_boundaries():
+    """§38 的边界：② 曝光只为整幅；脸的账归 ⑦，不许进曝光。"""
+    from design.solver import solve_pass
+    plan = solve_pass(
+        dict(p50=43.0, face_L=45.0,
+             shape=dict(shoulder=8.0), person_L=44.0),
+        dict(p50=(45.0, 58.0), face_L=(55.0, 70.0),
+             person_med=(48.0, 62.0), shape=dict(shoulder=(2.0, 6.0))))
+    ok(plan.exposure_ev > 0, 'p50 在带下 ⇒ 曝光要往上：%s' % plan.exposure_ev)
+    ok(abs(plan.local_exposure - plan.local_ev / 4.0) < 1e-9, '局部曝光刻度错')
+    dims = [e.dim for e in plan.ledger]
+    ok('p50' in dims, '整幅出界要记账')
+    ok('face_L' in dims, '脸出界要记账')
+    face_entry = [e for e in plan.ledger if e.dim == 'face_L'][0]
+    ok(face_entry.layer == 'local', '脸的账必须归 local（⑦），实际 %s' % face_entry.layer)
+
 def main():
     import traceback
     tests = [(n, f) for n, f in sorted(globals().items())
