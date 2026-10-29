@@ -150,13 +150,12 @@ def pick_lookat(rec_engine: dict) -> LookAt:
 
 @dataclass
 class Exposure:
-    """曝光这一步的结果：值 + 两道预算 + 欠账。"""
+    """曝光这一步的结果：值 + 物理上限 + 欠账。"""
     ev: float = 0.0
     want_ev: float = 0.0              # 为了把脸放进区想要的档数（含意图）
-    cap_headroom: Optional[float] = None   # 引擎余量（"还能抬几档不剪"）
-    cap_white: Optional[float] = None      # 把 p95 推到白平台还差几档
-    cap_used: Optional[float] = None       # 实际取的那个上限（= min 两道）
-    debt_ev: float = 0.0              # 差多少档没给（引擎欠账 / 卡欠账）
+    cap_headroom: Optional[float] = None   # 引擎报的"还能抬几档"（**只作记录，不当上限**）
+    cap_white: Optional[float] = None      # 把 p95 推到白平台还差几档（物理上限，只作提示）
+    debt_ev: float = 0.0              # 差多少档没给
     why: str = ''
 
 
@@ -179,34 +178,24 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
                    intent: Optional[Intent] = None) -> Exposure:
     # `target_L` 只为兼容旧调用保留，**已经不参与计算**：
     # 脸是约束不是目标（§28 L1），落点只由 T4 的区边界决定。
-    """一次算到位。**脸是约束，不是目标**（设计 §28 L1）。
+    """② 曝光落点。**脸是约束，不是目标**（设计 §28 L1）。
 
-    2026-10-29 改（三处，都对着设计）：
-      ① **只在脸出区时才动**。原来 `target_L=72` 硬编码 = 给脸设了一个点靶，
-         与 §28 L1「脸要落进合理区，但不必落到某个具体值」冲突。
-         现在：区内 ⇒ 0 档；出区 ⇒ 只推到"刚进区 + 1.5 L* 余量"。
-      ② **白端保护（H3）用两道独立预算，取小**，不再笼统截到余量：
-         引擎余量 vs 把 p95 推到白平台的档数。差多少记 `debt_ev`，不硬顶。
-      ③ 意图叠在"想要的档数"上，**同样受两道预算约束**（S4：不许把脸推出人样）。
+    2026-10-29 中午重写（SV 当面纠正之后，对着 §19~§32）：
+      · **曝光/影调是 LR 的事**（§19 分工表），引擎只管卷纸/质感/白点。
+      · 所以这里的上限**只有物理的一条**：把 p95 推到白平台（L*100）就再也提不动了。
+      · ~~引擎余量 headroom_ev 当硬上限~~ —— 已删。那不是设计概念：
+        §21 引擎自带的中灰归一**就是余量保证机制**；它若不够是卷/纸或入口 WB 的问题，
+        不是"LR 少提一点"能补的。
+      · 提完会爆怎么办：**不是在这里否决**，是交给 ③ Highlights 收白（§31 ②→③，
+        §28 L2「提完之后 clip 仍 < T1，否则先收 Highlights」）。
+        只有 Highlights 也收不回来，才按 §32 ③ 回引擎要余量。
     """
     lo = T4['L_lo'] if L_lo is None else L_lo
     hi = T4['L_hi'] if L_hi is None else L_hi
     la = pick_lookat(rec_engine)
 
-    # ★★★ 先验余量的**可不可信**，再谈用不用它（2026-10-29 实测结论）
-    #   `headroom_ev` 在上端被 `scan_white_level` 砍过时是个恒等式：
-    #   headroom_ev ≡ −log2(Y(天花))，砍多少报多少，等于零，代价是高光被砍平。
-    #   ⇒ 这种底片的两道预算都不可算（_cap_white 也假设平台在 L*100）。
-    #     此时**不许猜**：曝光不动，写明原因，让人去把白端还原。
-    if rec_engine.get('headroom_valid') is False:
-        why = rec_engine.get('headroom_why') or '天花被砍，余量等于砍掉的高度（恒等式）'
-        return Exposure(why='拒算：余量不可信 —— %s' % why,
-                        cap_headroom=rec_engine.get('headroom_ev'))
-
-    ex = Exposure(cap_headroom=rec_engine.get('headroom_ev'),
+    ex = Exposure(cap_headroom=rec_engine.get('headroom_ev'),   # 只记录，不设限
                   cap_white=_cap_white(rec_engine))
-    caps = [c for c in (ex.cap_headroom, ex.cap_white) if c is not None]
-    ex.cap_used = min(caps) if caps else None
 
     if la.kind != 'face':
         ex.why = '弃权：%s（整幅没有落点不变量，曝光不动）' % la.why
@@ -235,65 +224,131 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
         elif newL < lo + EDGE_MARGIN_L:
             ex.want_ev += ev_for_dL((lo + EDGE_MARGIN_L) - newL, cur)
 
-    # ---- 光位说明（H4）：**两个分支都要带**，它讲的是"该不该提"，不是"能不能提"
-    light_hint = ''          # 详情在 plan.notes['light']，这里只留一个短标记
+    # ---- 光位说明（H4）：**两个分支都要带**，它讲的是"该怎么走"，不是"能不能提"
+    light_hint = ''
     if la.light == 'backlit':
-        light_hint = '（逆光，提完需预备收白）'
+        light_hint = '（逆光：提曝光 → 再收 Highlights，两步）'
     elif la.light == 'frontlit' and cur < lo:
-        light_hint = '（顺光但脸低 ⇒ 先查测光/卡，别靠曝光硬提）'
+        light_hint = '（顺光但脸低 ⇒ 先查入口 WB，别靠曝光硬提）'
 
-    # ---- ② 两道预算取小（H3 / L2）
-    if ex.cap_used is not None and ex.want_ev > ex.cap_used + 1e-9:
-        ex.ev = max(0.0, float(ex.cap_used))
-        ex.debt_ev = round(ex.want_ev - ex.ev, 3)
-        which = []
-        if ex.cap_headroom is not None and ex.cap_headroom <= ex.cap_used + 1e-9:
-            which.append('引擎只留了 %.2f 档余量' % ex.cap_headroom)
-        if ex.cap_white is not None and ex.cap_white <= ex.cap_used + 1e-9:
-            which.append('p95 距白平台只剩 %.2f 档' % ex.cap_white)
-        ex.why = ('%s（脸 %.1f，要 %+.2f 档，给了 %+.2f）⇒ 欠 %.2f 档：%s%s'
-                  % (side, cur, ex.want_ev, ex.ev, ex.debt_ev,
-                     '、'.join(which) or '预算缺', light_hint))
+    # ---- ② 按脸给满；白端那截**交给 ③ Highlights 收**，不在这里砍
+    #   ★ 为什么不砍：§31 的顺序是 ② 曝光 → ③ 收白，③ 用的就是"压亮部、不动中间调"的工具。
+    #     在这里按 p95 砍，等于假定 Highlights 不存在 —— 那 ② 永远提不动，脸永远进不了区。
+    #     `cap_white` 只当**距离提示**：越过它就意味着"提完必须收白"，写进 why 让 ③ 接手。
+    ex.ev = ex.want_ev
+    over = (ex.ev - ex.cap_white) if ex.cap_white is not None else 0.0
+    if want_dL == 0.0 and (intent is None or abs(ex.want_ev) < 1e-9):
+        ex.why = '区内（脸 %.1f）⇒ 不动' % cur
+    elif over > 1e-9:
+        ex.why = ('%s（脸 %.1f，给 %+.2f 档）⇒ 提完 p95 会过白平台 %.2f 档，'
+                  '**必须由 ③ Highlights 收白**（③ 出片验 clip 是否 < %.1f%%）%s'
+                  % (side, cur, ex.ev, over, T1['clip_max'], light_hint))
     else:
-        ex.ev = ex.want_ev
-        ex.why = '%s（脸 %.1f）%s%s' % (side, cur, '' if not want_dL else
-                                       '，目标 %.1f' % (cur + want_dL), light_hint)
+        ex.why = '%s（脸 %.1f，给 %+.2f 档）%s' % (side, cur, ex.ev, light_hint)
     ex.ev = round(float(ex.ev), 3)
     ex.want_ev = round(float(ex.want_ev), 3)
     return ex
 
 
 # ---------------------------------------------------------------- ③ 收白
+#
+# ★ 为什么这里**没有公式**（2026-10-29 查过，别再来一遍）：
+#   · Adobe 官方只写「Highlights / Shadows 按亮度区域自适应、会保护其它区域」，
+#     并明说它们「比一条曲线复杂得多」——**没有公开传递函数**。
+#     → https://helpx.adobe.com/lightroom-classic/desktop/help/tone-control-adjustment.html
+#   · 第三方近似（agx-photo 的 basic_tone：weight=(u−0.5)/0.5，out=u+weight·h/100·0.5，
+#     sRGB 伽马域）是对**手感**的仿写，不是 Adobe 的算法；拿它算幅度只会得到一个
+#     "看起来很精确"的假值。→ https://docs.rs/agx-photo/0.1.0/.../basic_tone
+#   ⇒ 结论同 lrmodel.py H1：**只当方向用，幅度靠"加到目标为止"的验收**。
+#   ⇒ 所以 ③ 输出的是「起点档（对分第一步）+ 阶梯 + 验收量」，**不是"算出来的幅度"**。
 
-def solve_highlights(pred: dict, clip_max: Optional[float] = None):
-    """高光收白：**在 ①'（提完曝光之后）上判**，不在 ① 上判。
+HL_END = -100.0                     # 滑杆下限（Adobe：−100..+100）
+HL_SEARCH_MID = -50.0               # 起点 = 量程中点：响应单调 ⇒ 对分最省步数，且不给假精度
+HL_STOP_STEP = 12.5                 # 对分到这个步长就停（1/8 量程，再细没有画面意义）
 
-    2026-10-29 修：原来传进来的是 ① 的记录 —— 等于"先收白、后算曝光"，顺序倒了。
-    现在吃 `expose.after_ev()` 的结果：
-      · ① 本身就爆（引擎欠账）        ⇒ 政策值 + 记欠账
-      · 提了曝光才爆（超预算，本批 9/10）⇒ 政策值 + 标"待验收"，③ 必须验 clip
-      · 都没爆                        ⇒ 不动
 
-    **不算**具体压多少：`Highlights` 没有公开传递函数（见 lrmodel.py），
-    编一个斜率比不给更糟。这里给的是政策档，且明确标成 policy。
+def solve_highlights(pred: dict, clip_max: Optional[float] = None,
+                     policy: Optional[float] = None):
+    """③ 高光收白：**在 ①'（提完曝光之后）上判**，不在 ① 上判。
+
+    判据（§32 ③）：`clip_pct` < T1；外加一条——上端不许被压到**比 ① 还低**（压过头）。
+
+      · 不用收      ⇒ 0
+      · 要收        ⇒ 起点 `HL_SEARCH_MID`（对分第一步），并写明"这是搜索起点，
+                      不是算出来的幅度；③ 出片按 clip 决定加大/回退"
+
+    **不算**具体压多少：`Highlights` 没有公开传递函数（见上面那段与 lrmodel.py H1）。
+    编一个斜率比不给更糟 —— 那会把"没验过"包装成"算准了"。
     """
     cm = T1['clip_max'] if clip_max is None else clip_max
     lb = float(pred.get('clip_lb') or 0.0)
+    c0 = float(pred.get('clip0') or 0.0)
     over = float(pred.get('over_ev') or 0.0)
-    if lb <= cm and over <= 1e-9:
+    wl = float(pred.get('white_over_L') or 0.0)
+
+    blown_at_1 = c0 > cm            # ① 本身就爆 ⇒ 细节已经丢了，不是 LR 提亮的锅
+    need = blown_at_1 or (lb > cm) or (wl > 1e-9) or (over > 1e-9)
+    if not need:
         return 0.0, None
+
+    start = float(policy if policy is not None else HL_SEARCH_MID)
+    pieces = []
+    if blown_at_1:
+        pieces.append('① 本身就爆（clip %.2f%% > %.1f%%）⇒ 那部分细节在引擎就丢了，'
+                      'Highlights 只能把它压暗，补不回细节（这是引擎的账，§32 ③ 末条）'
+                      % (c0, cm))
+    if wl > 1e-9 and not blown_at_1:
+        pieces.append('上端过白 %.1f L*（未截断，按 p95/p99 的线性平移算）' % wl)
+    if lb > cm and not blown_at_1:
+        pieces.append('爆白下界 %.2f%% > %.1f%%' % (lb, cm))
     if over > 1e-9:
-        return float(HIGHLIGHT_POLICY), (
-            '曝光超预算 %.2f 档 ⇒ p95 会被推高（下界 %.2f%%）；'
-            'Highlights 给的是政策值 %+.0f（无公开传递函数，未标定）⇒ ③ 出片必须验 clip'
-            % (over, lb, HIGHLIGHT_POLICY))
-    return float(HIGHLIGHT_POLICY), (
-        '① 已爆（下界 %.2f%% > %.2f%%）⇒ 引擎欠账（T0 没留够余量）；'
-        'LR 这里给的是政策值 %+.0f，不是算出来的' % (lb, cm, HIGHLIGHT_POLICY))
+        pieces.append('曝光超引擎余量 %.2f 档' % over)
+    return start, (
+        '%s ⇒ 要收白。给 %+.0f：这是**对分搜索的第一步**（量程中点），'
+        'Highlights 无公开传递函数，幅度不能算（lrmodel.py H1）；'
+        '③ 出片量 clip 后：仍超 ⇒ 继续往 %.0f 走，上端被压到比 ① 还低 ⇒ 回退一半'
+        % ('；'.join(pieces), start, HL_END))
 
 
-# 政策档：不是公式。等实测标定后替换（当前只保证方向：压）
-HIGHLIGHT_POLICY = -35.0
+def next_highlights(prev: float, clip_pct: float,
+                    p95_after: Optional[float] = None,
+                    p95_before: Optional[float] = None,
+                    clip_max: Optional[float] = None):
+    """§32 ③「不达标怎么办」：**加大 Highlights**；到量程尽头仍不达标 ⇒ 回引擎要余量。
+
+    两个失败方向都要处理（压过头比压不够更糟，会吃掉整段高光层次）：
+      · `clip` 仍超            ⇒ 压得不够 ⇒ 往 HSL 尽头走（对分右半）
+      · 上端低于 ① 的 `p95`   ⇒ 压过头了 ⇒ 回退（对分左半）
+
+    返回 `(下一档 | None, 说明)`。None = 不用再动（已达标 / 已到阈值外 ⇒ 记欠账）。
+    """
+    cm = T1['clip_max'] if clip_max is None else clip_max
+    over_white = (p95_after is not None and p95_before is not None
+                  and p95_after < p95_before - 1.0)
+
+    if clip_pct <= cm and not over_white:
+        return None, '③ 达标：clip %.2f%% ≤ %.1f%%（%+.0f 够用）' % (clip_pct, cm, prev)
+
+    if over_white:
+        cand = prev / 2.0                       # 往 0 回退
+        if abs(cand) < HL_STOP_STEP:
+            return None, ('③ 压过头：上端 %.1f 已低于 ① 的 %.1f，且回退幅度已到最小步长'
+                          '（%.1f）⇒ 按 0 处理（宁可不动，也不要吃掉高光层次）'
+                          % (p95_after, p95_before, HL_STOP_STEP))
+        return cand, ('③ 压过头：上端 %.1f 低于 ① 的 %.1f ⇒ 回退到 %+.0f（对分左半）'
+                      % (p95_after, p95_before, cand))
+
+    # 压得不够：往量程尽头走
+    cand = prev - (abs(HL_END) - abs(prev)) / 2.0
+    if abs(cand) >= abs(HL_END) - 1e-9 or abs(cand - prev) < HL_STOP_STEP:
+        if abs(prev) >= abs(HL_END) - 1e-9:
+            return None, ('③ 已到量程尽头 %+.0f 仍不达标（clip %.2f%% > %.1f%%）'
+                          '⇒ 这是**引擎该留的余量**，按 §32 ③ 回引擎（T0 收紧）'
+                          % (prev, clip_pct, cm))
+        return HL_END, ('③ 还差（clip %.2f%% > %.1f%%）⇒ 走到尽头 %+.0f 再验一次'
+                        % (clip_pct, cm, HL_END))
+    return cand, ('③ 还差（clip %.2f%% > %.1f%%）⇒ 加大到 %+.0f（对分右半）'
+                  % (clip_pct, cm, cand))
 
 # ---------------------------------------------------------------- ④ 曲线
 
@@ -427,7 +482,13 @@ def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
     hv, hnote = solve_highlights(pred)
     plan.highlights = round(hv, 1)
     if hnote:
-        plan.notes['highlight_debt'] = hnote
+        plan.notes['highlights'] = hnote
+        # ③ 的账：起点档是"待验"的，没有实测之前不许当成已解决
+        plan.notes['highlight_verify'] = (
+            '③ 出片要量的三样：clip_pct（< %.1f%%）· p95（不许低于 ① 的 %.1f）· p50（不许动，§33）'
+            % (T1['clip_max'], (rec_engine.get('img') or {}).get('p95') or 0.0))
+        if '量程尽头' in hnote or '① 本身就爆' in hnote:
+            plan.notes['highlight_debt'] = hnote
 
     # 曲线看的是 ①'（等价于"提完曝光再修不变量"），否则曲线会去修一个已经不存在的问题
     rec_for_curve = dict(rec_engine)

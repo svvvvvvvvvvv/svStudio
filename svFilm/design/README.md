@@ -102,11 +102,16 @@ S5  一段顶到上限 = 上游错，不许用别的旋钮补
 | 拿自己出片的偏差当需求 | 拿缺陷当需求（循环论证） | match.py |
 | 缺规格的卷被当成"最细" | verita 不在 grain.toml 里 | cards_match.py |
 | 曝光不看余量 | 会安静输出 +2.4 档的毁图计划 ⇒ 现在两道预算取小 + 记欠账 | lr.py / expose.py |
+| ~~**两道预算取小**~~ | 那是拿引擎的账卡死 LR 的曝光（§19 分工反了）：余量 0 ⇒ 曝光恒 0、脸永远进不了区。现在按脸给满，越过白平台交给 ③ | lr.py |
 | 收白拿 ① 的旧 clip 判 | 先收白、后算曝光，顺序倒了 ⇒ 现在判 ①'（提完曝光的态） | expose.py |
 | 没脸的图静默不动曝光 | `person` 档 cur=None ⇒ 0 档，等于弃权却不写 | lr.py |
 | **降白端"换"余量** | `scan_white_level` 是**上端硬天花**：砍多少就报多少余量（恒等式），还赔掉 5 个 L\* 的高光 ⇒ 零和 | flow.py 常数区 |
 | **天花 <100 时 `clip` 恒为 0** | `(L>99)%` 在 95.5 的天花下永不可能触发 ⇒ "clip 全 0"是假达标 | invariants.py |
 | `render_card` 的 `p95_max` 入参被忽略 | 算完之后又 `saf.get()` 读回 ⇒ 传什么都没用 | flow.py |
+| **`after_ev` 把上端夹在 100** | 一夹就丢掉"过了多远" ⇒ ③ 分不清爆 2 与爆 20 ⇒ 补未截断的 `white_over_L` | expose.py |
+| **① 已爆 当成 LR 的活** | ① 的 clip 是引擎丢的细节，Highlights 只压暗、补不回 ⇒ 单列"引擎的账" | lr.py |
+| **`m_state*.json` 混着 `_sim.png` / `_it.png`** | 同一张图四个态全进来，9 张算成 36 张 ⇒ 无 `--stem` 时只取 `_engine.tif` | cli.py |
+| **给 Highlights 编传递函数** | Adobe 没公开函数，第三方（agx-photo）那份是手感仿写 ⇒ 编出来的斜率是"看起来很精确的假值"；改成对分搜索 + 出片验收 | lr.py ③ |
 
 ---
 
@@ -130,7 +135,7 @@ S5  一段顶到上限 = 上游错，不许用别的旋钮补
 ## 6 测试
 
 ```powershell
-& $py -X utf8 design\tests\test_design.py      # 12 项，纯函数，不渲不碰 LR
+& $py -X utf8 design\tests\test_design.py      # 31 项，纯函数，不渲不碰 LR
 ```
 
 ---
@@ -140,7 +145,9 @@ S5  一段顶到上限 = 上游错，不许用别的旋钮补
 ```
 · match.rank 与 cards_match.rank_cards 有重复逻辑（卷层/卡层各一份）
 · ②→③ 算不了（点颜色无公开传递函数）⇒ 只能在 LR 出片后验收
-· 三个政策值未标定：HIGHLIGHT_POLICY=-35 / PC_FULL_CLOSES=0.35 / INTENT_EV_PER_UNIT=0.5
+· 两个政策值未标定：PC_FULL_CLOSES=0.35 / INTENT_EV_PER_UNIT=0.5
+  （~~HIGHLIGHT_POLICY=-35~~ 已换成对分搜索起点 HL_SEARCH_MID=-50，不是标定值）
+· ③ 的阶梯**还没被真实出片走过一遍**（clip 实测回来的那一步没人做）
 · 纸的 γ 在正片纸（2383，实为电影正片）与负片纸之间是否可比，未核
 · 换卷 = 做新卡的流程还没实现（现在只能提示"该做新卡"）
 ```

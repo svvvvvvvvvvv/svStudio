@@ -214,30 +214,44 @@ def test_exposure_low_face_targets_zone_not_72():
        '提到刚落区附近 %.1f，不该到 72' % newL)
 
 
-def test_exposure_two_caps_take_min():
-    """两道预算取小：引擎余量 0.2 / p95 到白平台 0.1 ⇒ 只能用 0.1 并记欠账。"""
+def test_exposure_headroom_is_not_a_cap():
+    """★★ 引擎余量**不再**充当曝光上限（§19 分工：曝光归 LR）。
+
+    旧行为是"两道预算取小"（余量 0.2 / 白端 0.1 ⇒ 只给 0.1，还记欠账）。
+    新行为：脸要 +0.8 就给 +0.8；引擎余量只作记录，越过白平台的那截
+    **写明交给 ③ Highlights 收白**，不在这里砍。
+    """
     from design.lr import solve_exposure
     rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.2,
                   img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
                            p95=97.5, p99=99.9, clip_pct=0.2, contrast=90.0))
     ex = solve_exposure(rec)
     cap_w = (100.0 - 97.5) / eval_slope(97.5)
-    ok(abs(ex.cap_white - cap_w) < 1e-6, 'p95 预算算错：%s' % ex.cap_white)
-    # ev 落值是 round(...,3)，所以容差给 1e-3
-    ok(abs(ex.ev - min(0.2, cap_w)) < 1e-3, '应取两道预算的小值：%s' % ex.ev)
-    ok(ex.debt_ev > 0.0, '预算不够必须记欠账：%s' % ex.debt_ev)
+    ok(abs(ex.cap_white - cap_w) < 1e-6, 'p95 到白平台的距离算错：%s' % ex.cap_white)
+    eq(ex.cap_headroom, 0.2)                       # 只记录
+    eq(ex.ev, ex.want_ev)                          # 给满，不被两道预算砍
+    ok(ex.ev > 0.5, '脸 L45 至少要 +0.5 档：%.3f' % ex.ev)
+    ok(ex.ev > ex.cap_white, '本例白端近 ⇒ 必然越过白平台')
+    ok('收白' in ex.why and '③' in ex.why, '越过白平台必须点明交给 ③：%s' % ex.why)
+    eq(ex.debt_ev, 0.0)                            # 欠账不在 ② 记，在 ③ 收白收不回时记
 
 
-def test_exposure_never_blows_white_for_face():
-    """脸推到区里的代价不许超过白端预算（H3：不为提脸把白推爆）。"""
+def test_exposure_overruns_white_but_hands_over():
+    """曝光可以越过白平台 —— 但**必须写明这一截交给 ③**；没越过就不许瞎报收白。"""
     from design.lr import solve_exposure
-    for p95, hr in ((98.0, 0.5), (97.0, 0.05), (90.0, 0.0)):
-        rec = _lr_rec(skin=dict(L=40.0, C=18.0, h=55.0), headroom_ev=hr,
+    for p95 in (98.0, 97.0, 90.0, 60.0):
+        rec = _lr_rec(skin=dict(L=40.0, C=18.0, h=55.0), headroom_ev=0.0,
                       img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
                                p95=p95, p99=99.9, clip_pct=0.2, contrast=90.0))
         ex = solve_exposure(rec)
-        ok(ex.ev <= (ex.cap_used or 0) + 1e-3,
-           'p95=%.1f hr=%.2f 时超了预算：%s' % (p95, hr, ex.ev))
+        eq(ex.ev, ex.want_ev)                      # 任何 p95 都不砍曝光
+        over = ex.ev - ex.cap_white
+        if over > 1e-9:
+            ok('收白' in ex.why, 'p95=%.1f 越过 %.2f 档 ⇒ 要点明收白：%s'
+               % (p95, over, ex.why))
+        else:
+            ok('收白' not in ex.why, 'p95=%.1f 没越过（余 %.2f 档）⇒ 不该报收白：%s'
+               % (p95, -over, ex.why))
 
 
 def test_light_state():
@@ -299,20 +313,47 @@ def test_highlights_judged_after_exposure():
     loud = after_ev(rec, 0.5)               # 提了 ⇒ 上端被推爆
     hv1, note = solve_highlights(loud)
     ok(hv1 < 0, '提爆了就该收白：%s' % hv1)
-    ok('待验收' in (note or '') or '验 clip' in (note or ''), '要写明待验收：%s' % note)
+    ok('对分' in (note or ''), '要写明这是搜索起点、不是算出来的幅度：%s' % note)
+    ok('clip' in (note or ''), '要写明出片量什么：%s' % note)
+    ok(loud['white_over_L'] > 0, '要量出上端过了多少 L*：%s' % loud)
+
+
+def test_next_highlights_ladder():
+    """§32 ③：不达标 ⇒ 加大；压过头 ⇒ 回退；到尽头仍不达标 ⇒ 交给引擎（记欠账）。"""
+    from design.lr import HL_END, HL_SEARCH_MID, next_highlights
+    # 仍超 ⇒ 往尽头走
+    v, why = next_highlights(HL_SEARCH_MID, 8.0)
+    ok(v is not None and v < HL_SEARCH_MID, '压得不够应加大：%s %s' % (v, why))
+    # 一路对分下去：−50 → −75 → −87.5 → −100
+    v2, why2 = next_highlights(-75.0, 8.0)
+    ok(v2 is not None and v2 < -75.0, '继续加大：%s %s' % (v2, why2))
+    v2b, _ = next_highlights(v2, 8.0)
+    eq(v2b, HL_END)
+    # 尽头仍不达标 ⇒ 记账回引擎（不许再编一个数）
+    v3, why3 = next_highlights(HL_END, 8.0)
+    ok(v3 is None and '回引擎' in why3, '尽头还超 ⇒ 回引擎：%s %s' % (v3, why3))
+    # 压过头（上端被压到比 ① 还低）⇒ 回退，不许继续加大
+    v4, why4 = next_highlights(HL_SEARCH_MID, 0.0, p95_after=88.0, p95_before=95.0)
+    ok(v4 is not None and abs(v4) < abs(HL_SEARCH_MID), '压过头应回退：%s' % v4)
+    # 达标 ⇒ 不动
+    v5, _ = next_highlights(HL_SEARCH_MID, 0.3, p95_after=95.0, p95_before=95.0)
+    ok(v5 is None, '达标就不该再动：%s' % v5)
 
 
 def test_solve_one_order():
-    """整条链：脸低 ⇒ 先算 ①' 再收白；欠账与理由都落进 notes。"""
+    """整条链 §31 ②→③：脸低 ⇒ ② 把曝光给满；③ 在 ①' 上判、收白并记欠账。"""
     from design.lr import solve_one
     rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.0,
                   light_ratio=0.8)
     plan = solve_one(rec, log=lambda *_: None)
-    ok(plan.exposure_ev <= 1e-9, '余量 0 时不该乱提：%s' % plan.exposure_ev)
-    ok('exposure_debt' in plan.notes, '欠账要写：%s' % list(plan.notes))
-    ok('backlit' in plan.notes.get('lookat', '') or '逆光' in plan.notes.get('light', ''),
+    ok(plan.exposure_ev > 0.5, '脸 L45 就该给（余量 0 不是理由）：%s' % plan.exposure_ev)
+    ok('收白' in plan.notes.get('exposure', ''),
+       '② 越过白平台要交代给 ③：%s' % plan.notes.get('exposure'))
+    ok(plan.highlights < 0.0, '② 给满后上端必爆 ⇒ ③ 必须收白：%s' % plan.highlights)
+    ok('highlights' in plan.notes, '③ 的理由要落进 notes：%s' % list(plan.notes))
+    ok('highlight_verify' in plan.notes, '③ 的验收量要写清：%s' % list(plan.notes))
+    ok('逆光' in plan.notes.get('light', '') or 'backlit' in plan.notes.get('lookat', ''),
        '光位要落进 notes：%s' % plan.notes)
-    ok(plan.highlights <= 0.0, '上端贴死应收白：%s' % plan.highlights)
 
 
 # ---------------------------------------------------------------- 余量的可信性（10-29 实测钉住）
@@ -369,33 +410,23 @@ def test_headroom_report_low_key_is_not_cut():
     ok(same['valid'] is False, '白端=0.95 时余量必须判不可信：%s' % same['why'])
 
 
-def test_exposure_refuses_invalid_headroom():
-    """余量不可信时**不许猜**：曝光给 0 档，并把原因写出来（不是静默放行）。"""
+def test_exposure_invalid_headroom_is_only_recorded():
+    """★ 余量不可信 **不再拦 LR 曝光** —— 那是引擎的事（§21 中灰归一就是余量机制）。
+
+    `headroom_valid=False` 只说明"引擎那边天花被砍了"，与"脸该不该提"无关。
+    旧行为是拒算 + 让脸留在区外，等于拿引擎的账卡死 LR 的活。
+    """
     from design.lr import solve_exposure
     rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.15,
                   headroom_valid=False, headroom_why='天花只有 L*95.5',
                   img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
                            p95=92.0, p99=95.0, clip_pct=0.0, contrast=90.0))
     ex = solve_exposure(rec)
-    eq(ex.ev, 0.0)
-    ok('拒算' in ex.why, '必须写明拒算原因：%s' % ex.why)
-    ok('天花' in ex.why, '原因里要带证据：%s' % ex.why)
+    ok(ex.ev > 0.5, '余量不可信不该让脸提不起来：%s' % ex.ev)
+    eq(ex.ev, ex.want_ev)
+    ok('拒算' not in ex.why, '不该再拒算：%s' % ex.why)
+    eq(ex.cap_headroom, 0.15)                  # 读数照样记下来（报告要用）
 
-
-
-def test_solve_pe_for_p5_monotone():
-    """二分 pe：pe 越大越暗 ⇒ p5 单调降。锚点找得到、边界撞得住。"""
-    from design.flow import solve_pe_for_p5
-    # 造一条单调降的 p5(pe)：pe=1 时 p5=10，pe=2 时 p5=2
-    def m(pe):
-        return 18.0 - 8.0 * pe
-    pe, got = solve_pe_for_p5(m, 0.2, 3.0, 6.0, iters=10)
-    ok(abs(got - 6.0) < 0.05, '应找到 p5=6：pe=%s got=%s' % (pe, got))
-    ok(abs(m(pe) - 6.0) < 0.05, 'pe 反代回去也该是 6：%s' % m(pe))
-    # 目标超出边界（要更暗但 hi 到不了）⇒ 夹在 hi 附近，如实报回边界处的 p5
-    pe2, got2 = solve_pe_for_p5(m, 0.2, 1.0, 0.0, iters=10)
-    ok(pe2 > 0.99, '撞边界应贴到 hi：%s' % pe2)
-    ok(abs(got2 - 10.0) < 0.1, '边界处的 p5 应被如实报回（≈10）：%s' % got2)
 
 
 # ---------------------------------------------------------------- runner

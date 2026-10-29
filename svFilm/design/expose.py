@@ -68,6 +68,7 @@ def after_ev(rec: dict, ev: float, headroom: Optional[float] = None) -> Dict:
         over_ev   超预算几档（0 = 在引擎给的余量内）
         in_budget 是否在预算内
         clip_lb   爆白**下界**（由分位是否被推到 100 得到；None = 分位没被推满，下界就是 ① 的现值）
+        white_over_L  上端**越过白平台多少 L\\***（未截断；0 = 没过）
         notes     人话说明（写进 LRPlan.notes，不许静默）
 
     只算"线性平移"这一层；高光肩部的压缩不在这一层（那是纸/曲线的事）。
@@ -95,6 +96,16 @@ def after_ev(rec: dict, ev: float, headroom: Optional[float] = None) -> Dict:
     if why:
         notes.append('；'.join(why) + '（这是下界，不是估算）')
 
+    # 白端**过了多少**（不夹到 100）：`_shift_L` 把上端夹在 100，
+    # 一夹就丢掉"过了多远" ⇒ ③ 没法判断该压多少。这里按未截断的线性平移算。
+    over_L = 0.0
+    for q in (99, 95):
+        L0 = img.get('p%d' % q)
+        if L0 is None:
+            continue
+        over_L = max(over_L, float(L0) + ev * eval_slope(L0) - 100.0)
+    over_L = max(0.0, over_L)
+
     # 预算：引擎已经给了"还能抬几档"
     over = 0.0
     in_budget = True
@@ -107,7 +118,8 @@ def after_ev(rec: dict, ev: float, headroom: Optional[float] = None) -> Dict:
     return dict(ev=float(ev), pred=dict(img=pred_img, skin=pred_skin),
                 headroom=None if hr is None else float(hr),
                 over_ev=round(over, 3), in_budget=in_budget,
-                clip_lb=round(float(lb), 3), notes=notes)
+                clip_lb=round(float(lb), 3), clip0=round(float(clip0 or 0.0), 3),
+                white_over_L=round(over_L, 3), notes=notes)
 
 
 def headroom_note(headroom: Optional[float]) -> str:

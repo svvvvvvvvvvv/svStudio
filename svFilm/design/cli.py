@@ -117,6 +117,9 @@ def cmd_plan(a):
                     pass
     if a.stem:
         recs = M.only(recs, a.stem)
+    else:
+        # 默认只看**引擎那一态**：`_sim.png` 是仿真预览，混进来会把同一张图算两遍
+        recs = M.only(recs, r'_engine\.tif$')
     it = _intent(a.intent)
     print('口径 sha = %s ｜ %d 张 ｜ %s' % (M.measure_sha(), len(recs), it.describe()))
     for name, rec in list(recs.items())[:a.show]:
@@ -128,7 +131,11 @@ def cmd_plan(a):
             print('  欠账  %s' % p.notes['exposure_debt'])
         if p.notes.get('after_ev'):
             print('  ①\'   %s' % p.notes['after_ev'])
-        print('  收白  %+.0f ｜ %s' % (p.highlights, p.notes.get('highlight_debt') or '不动'))
+        print('  收白  %+.0f ｜ %s' % (p.highlights, p.notes.get('highlights') or '不动'))
+        if p.notes.get('highlight_verify'):
+            print('  待验  %s' % p.notes['highlight_verify'])
+        if p.notes.get('highlight_debt'):
+            print('  欠账  %s' % p.notes['highlight_debt'])
         print('  曲线  %s' % p.notes.get('curve'))
 
 
