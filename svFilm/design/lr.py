@@ -192,6 +192,17 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
     lo = T4['L_lo'] if L_lo is None else L_lo
     hi = T4['L_hi'] if L_hi is None else L_hi
     la = pick_lookat(rec_engine)
+
+    # ★★★ 先验余量的**可不可信**，再谈用不用它（2026-10-29 实测结论）
+    #   `headroom_ev` 在上端被 `scan_white_level` 砍过时是个恒等式：
+    #   headroom_ev ≡ −log2(Y(天花))，砍多少报多少，等于零，代价是高光被砍平。
+    #   ⇒ 这种底片的两道预算都不可算（_cap_white 也假设平台在 L*100）。
+    #     此时**不许猜**：曝光不动，写明原因，让人去把白端还原。
+    if rec_engine.get('headroom_valid') is False:
+        why = rec_engine.get('headroom_why') or '天花被砍，余量等于砍掉的高度（恒等式）'
+        return Exposure(why='拒算：余量不可信 —— %s' % why,
+                        cap_headroom=rec_engine.get('headroom_ev'))
+
     ex = Exposure(cap_headroom=rec_engine.get('headroom_ev'),
                   cap_white=_cap_white(rec_engine))
     caps = [c for c in (ex.cap_headroom, ex.cap_white) if c is not None]

@@ -315,6 +315,73 @@ def test_solve_one_order():
     ok(plan.highlights <= 0.0, '上端贴死应收白：%s' % plan.highlights)
 
 
+# ---------------------------------------------------------------- 余量的可信性（10-29 实测钉住）
+
+def _disp_with_ceiling(top_l, n=4000):
+    """造一张**上端被硬切在 top_l** 的灰阶图（模拟 scan_white_level < 1）。"""
+    import numpy as np
+    # 显示码从 0 线性排到"天花对应的码"，全部是中性灰 ⇒ L* 最高就是 top_l
+    y = ((top_l + 16.0) / 116.0) ** 3
+    u = 1.055 * (y ** (1 / 2.4)) - 0.055 if y > 0.0031308 else y * 12.92
+    ramp = np.linspace(0.0, u, n)
+    return np.repeat(ramp[:, None], 3, axis=1).reshape(n, 1, 3)
+
+
+def test_headroom_report_marks_cut_ceiling_invalid():
+    """★★★ 降白端换来的"余量"必须被判为不可信 —— 它是恒等式，不是收益。
+
+    2026-10-29 实测：scan_white_level 1.0→0.95 ⇒ 天花 L*100→95.5，
+    报出来的余量 10/10 吻合 −log2(Y(天花))，差的只是取整；
+    代价是中位 4.65% 的像素被从 ≥96 压到 95.5 以下（直方图 96+ 段精确归零）。
+    """
+    from design.flow import headroom_report
+    bad = headroom_report(_disp_with_ceiling(95.5), white_level=0.95)
+    ok(bad['valid'] is False, '天花 95.5 应判不可信：%s' % bad)
+    ok(bad['ceiling_L'] < 96.0, '天花应量到 95.5 附近：%s' % bad['ceiling_L'])
+    # 恒等式：报的余量 ≈ 砍掉的高度
+    ok(abs(bad['headroom_ev'] - bad['tautology_ev']) <= 0.06,
+       '余量应≈砍掉的高度（恒等式）：ev=%s 预言=%s' % (bad['headroom_ev'], bad['tautology_ev']))
+    ok('scan_white_level' in bad['why'], '话要说清是谁砍的：%s' % bad['why'])
+
+
+def test_headroom_report_accepts_full_ceiling():
+    """天花在 100 附近 ⇒ 余量可信，且恒等式预言值应为 0（没被砍）。"""
+    from design.flow import headroom_report
+    good = headroom_report(_disp_with_ceiling(99.7), white_level=1.0)
+    ok(good['valid'] is True, '天花 99.7 应判可信：%s' % good)
+    ok(good['tautology_ev'] < 0.02, '没砍过 ⇒ 预言余量应≈0：%s' % good['tautology_ev'])
+
+
+def test_headroom_report_low_key_is_not_cut():
+    """★ 低反差图不是"被砍"：白端是 1.0 时天花低只说明这张上端到不了顶。
+
+    实测反例：DSCF1726 白端=1.0 但天花只有 L*98.4、DSCF1289 99.25、DSCF1608 99.35。
+    若拿"天花 <99.5 就算砍"当判据，这三张会全成误报。
+    反之白端一旦 <1，余量就被那条线限住（与图像内容无关），所以只按白端判。
+    """
+    from design.flow import _code_to_L, headroom_report
+    ok(_code_to_L(1.0) > 99.9, '白端 1.0 的预期天花应≈100：%s' % _code_to_L(1.0))
+    ok(_code_to_L(0.95) < 96.0, '白端 0.95 的预期天花应≈95.5：%s' % _code_to_L(0.95))
+    low = headroom_report(_disp_with_ceiling(93.0), white_level=1.0)
+    ok(low['valid'] is True, '白端=1.0 的暗图不该判被砍：%s' % low['why'])
+    # 同一张图，白端设成 0.95 就必须判不可信（说明问题在锯子，不在图）
+    same = headroom_report(_disp_with_ceiling(93.0), white_level=0.95)
+    ok(same['valid'] is False, '白端=0.95 时余量必须判不可信：%s' % same['why'])
+
+
+def test_exposure_refuses_invalid_headroom():
+    """余量不可信时**不许猜**：曝光给 0 档，并把原因写出来（不是静默放行）。"""
+    from design.lr import solve_exposure
+    rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.15,
+                  headroom_valid=False, headroom_why='天花只有 L*95.5',
+                  img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
+                           p95=92.0, p99=95.0, clip_pct=0.0, contrast=90.0))
+    ex = solve_exposure(rec)
+    eq(ex.ev, 0.0)
+    ok('拒算' in ex.why, '必须写明拒算原因：%s' % ex.why)
+    ok('天花' in ex.why, '原因里要带证据：%s' % ex.why)
+
+
 # ---------------------------------------------------------------- runner
 def main():
     import traceback

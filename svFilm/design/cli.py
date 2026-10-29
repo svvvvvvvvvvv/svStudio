@@ -27,7 +27,7 @@ from .batch import Batch, pilot, run_engine, run_lr, estimate
 from .cards import cards as all_cards
 from .texture import Style, plan_texture, warn as tex_warn
 from .cards import cards as all_cards
-from .flow import choose, describe
+from .flow import Choice, choose, describe
 
 
 def _intent(pairs):
@@ -107,7 +107,12 @@ def cmd_plan(a):
             if os.path.isfile(p):
                 import json as _j
                 try:
-                    rec['headroom_ev'] = float(_j.load(open(p, encoding='utf-8'))['headroom_ev'])
+                    j = _j.load(open(p, encoding='utf-8'))
+                    rec['headroom_ev'] = float(j['headroom_ev'])
+                    # ★ 余量可不可信，一起带进去（降白端换来的余量是零和，见 flow 常数区）
+                    if 'valid' in j:
+                        rec['headroom_valid'] = bool(j['valid'])
+                        rec['headroom_why'] = str(j.get('why') or '')
                 except Exception:
                     pass
     if a.stem:
@@ -178,6 +183,19 @@ def cmd_run(a):
 
     print('\n[3/5] 现有生产卡（能渲的）')
     offer = choose(recs0, it, topn=3)
+    if getattr(a, 'card', ''):
+        # 手动指定卡（不靠匹配排序）：验证某张卡的参数时用
+        import types
+        from .cards import cards as _cards
+        from .texture import plan_texture as _plan_tex
+        cc = _cards().get(a.card)
+        if cc is None:
+            print('没有这张卡：%s（有：%s）' % (a.card, ' / '.join(sorted(_cards()))))
+            return
+        offer.choices.insert(0, Choice(
+            hit=types.SimpleNamespace(card=cc, score=0.0, why='手动指定，不经匹配'),
+            texture=_plan_tex(cc.stock, cc.paper, long_side=1080)))
+        print('  ★ 手动指定：%s（匹配排序已让位）' % cc.label())
     print(describe(offer))
 
     print('\n[3b] 可行性：最近那套参照卡的缺口，关得掉吗？')
@@ -367,6 +385,7 @@ def main(argv=None):
     p.add_argument('--pilot', type=int, default=2, help='试点渲染张数')
     p.add_argument('--intent', action='append')
     p.add_argument('--yes', action='store_true', help='选卡后不再等确认')
+    p.add_argument('--card', default='', help='手动指定卡名（跳过匹配排序）')
     p.add_argument('--export', action='store_true', help='用 LR 导出 ③（要 LR 在跑）')
 
     p = sub.add_parser('states'); p.set_defaults(fn=cmd_states)

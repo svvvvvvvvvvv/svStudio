@@ -38,6 +38,15 @@ from .texture import Style, TexturePlan, plan_texture, warn
 #   引擎不管脸、不管落点 —— 那是 LR 的事（分工见 design/__init__.py）。
 BLACK_MAX = 3.0
 P95_ENGINE_SAFE = 96.0
+# ★★★ 余量只有在"上端没被砍"时才是一个可用的数（2026-10-29 实测，见下）
+#   `scan_white_level` 是**上端硬天花**：它按 sRGB 显示码切顶。
+#     white_level=1.00 ⇒ 天花 L*≈100（能到顶、clip 可测）
+#     white_level=0.95 ⇒ 天花 L*≈95.5（96~100 那 4~5 L* 直接归零）
+#   ⇒ 降它换来的"余量"是个恒等式：headroom_ev ≡ −log2(Y(天花))，砍多少报多少，一进一出等于零。
+#   实测 10/10 吻合（推算 0.167~0.223 / 实测 0.13~0.19，差 ≤0.04 EV），
+#   代价是中位 4.65%（1.5~14%）的像素被从 ≥96 压到 95.5 以下、直方图 96+ 段精确归零。
+#   ⇒ **不许再用降白端去制造余量**。天花低于此值 ⇒ 余量判为不可信。
+CEILING_MIN_L = 99.5
 # ★ 两条斜率都是实测出来的，各有适用范围，别混用
 SLOPE_MID_L_PER_EV = 30.0    # 中间调（曝光落点用这个）
 SLOPE_HIGH_L_PER_EV = 8.0    # 高光端（余量/收白用这个）
@@ -137,6 +146,10 @@ def headroom_ev(disp, clip_max: float = 0.5, hi: float = 3.0) -> float:
     这是引擎该报给 LR 的数：LR 的曝光计划不许超过它，否则计划本身就会毁图
     （2026-10-29 首次真跑发现：引擎为留余量压暗 -> 脸 L≈45 -> LR 要 +2.4 档，
       而 +1 档已经剪 8.69% ⇒ 计划不可行，系统却没拦）。
+
+    ⚠ **这个数只在上端没被砍时可信**。若底的最高 L* 明显低于 100（`scan_white_level`
+      小于 1），它报出来的就是"你刚砍掉的天花板高度" —— 恒等式，不是收益。
+      调用方要先用 `ceiling_L()` 判一下；`headroom_report()` 已经把这两件事绑在一起。
     """
     lo = 0.0
     if headroom_clip(disp, hi) <= clip_max:
@@ -148,6 +161,72 @@ def headroom_ev(disp, clip_max: float = 0.5, hi: float = 3.0) -> float:
         else:
             hi = mid
     return round(float(lo), 2)
+
+
+def ceiling_L(disp) -> float:
+    """这张底片的**上端天花**（全图最高 L*）。"""
+    import numpy as _np
+    return float(_np.max(_lab_of_disp(disp)))
+
+
+def _code_to_L(code: float) -> float:
+    """sRGB 显示码 → L*（内部口径，与 `_lab_of_disp` 一致）。"""
+    import numpy as _np
+    c = max(0.0, min(1.0, float(code)))
+    y = c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+    return 116.0 * (y ** (1.0 / 3.0)) - 16.0
+
+
+def headroom_report(disp, clip_max: float = 0.5, white_level: float = None,
+                    max_px: int = 1_200_000) -> dict:
+    """余量 + 它**可不可信**，一起报。
+
+    ★ 判据（2026-10-29 实测）：`scan_white_level` 是**上端硬天花**。
+      它小于 1 时，图会被切在 `code=white_level` 那条线上（0.95 ⇒ L*95.5），
+      而 `headroom_ev` 这时精确等于"砍掉的高度"（10/10 吻合）⇒ 报给 LR 是假预算。
+
+    ★ 判别"被砍"和"这张本来就暗"必须分开（否则低反差图全成误报）：
+      被砍 ⇒ 分布**正好顶到**白端那条线（实测天花 ≈ 预期天花）；
+      本来就暗 ⇒ 天花明显**低于**这条线（1289/1608/1726 就是这种）。
+
+    `white_level`：卡里那个白端值。不传 ⇒ 按 1.0 处理并降级为"疑似"（说明里写明）。
+    `max_px`：余量是**二分搜索**，要跑十几次全图转换，原生尺寸会吃爆内存
+    ⇒ 超过就**走位抽样**（不是缩放：抽样不改分布，缩放会削掉极值）。
+    """
+    import math as _math
+    import numpy as _np
+    top = ceiling_L(disp)
+    wl_known = white_level is not None
+    wl = 1.0 if white_level is None else float(white_level)
+    expect = _code_to_L(wl)
+    # ★ 判据只看把锯子设成多少，**不看这张图亮不亮**：
+    #   白端 < 1 ⇒ 整批的天花被那条线限住 ⇒ 余量结构上不会超过"砍掉的高度"，
+    #   是硬不变量，与图像内容无关（1726 的天花离切线 1.3 L*，按"顶到没顶到"判会漏掉）。
+    cut = expect < CEILING_MIN_L
+
+    arr = _np.asarray(disp)
+    n = int(arr[..., 0].size) if arr.ndim >= 2 else int(arr.size)
+    step = 1
+    while n // (step * step) > max_px:
+        step += 1
+    sub = arr[::step, ::step] if arr.ndim >= 2 else arr[::step]
+    ev = headroom_ev(sub, clip_max=clip_max)
+
+    y = ((top + 16.0) / 116.0) ** 3 if top > -16.0 else 0.0
+    taut = float(-_math.log2(y)) if y > 0 else None       # 恒等式预言的值
+    if cut:
+        why = ('白端 scan_white_level=%.2f（期望天花 L*%.1f，实测 L*%.1f）⇒ '
+               '天花被那条线限住，报的 %.2f 档最多就是砍掉的高度（恒等式 %s），不是可用余量'
+               '（要抬就把白端还原成 1.0）'
+               % (wl, expect, top, ev,
+                  '%.2f' % taut if taut is not None else '—'))
+    elif not wl_known:
+        why = '天花 L*%.1f；没传白端值，按 1.0 处理（若卡里不是 1.0，这个判定不作数）' % top
+    else:
+        why = '天花 L*%.1f，白端 1.0 ⇒ 余量可信' % top
+    return dict(headroom_ev=ev, ceiling_L=round(top, 2), valid=bool(not cut),
+                ceiling_expect_L=round(expect, 2), white_level=wl,
+                tautology_ev=(round(taut, 3) if taut is not None else None), why=why)
 
 
 def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
@@ -166,6 +245,16 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
     saf = getattr(choice.card, 'safety', None) or {}
     p95_max = float(saf.get('p95_max', P95_ENGINE_SAFE) if p95_max is None else p95_max)
     black_max = float(saf.get('black_max', BLACK_MAX) if black_max is None else black_max)
+    # ★ 白端要**记下来**：它决定这张底片的天花，也决定"余量"这个数可不可信
+    try:
+        import svFilm.presets as _presets
+        white_level = float(_presets.load_raw(choice.card.name)['simulation']['scan_white_level'])
+    except Exception:
+        white_level = None
+    if white_level is not None and white_level < 1.0:
+        log('  ! 卡的白端 scan_white_level=%.2f < 1.0：天花会被切在 L*%.1f，'
+            '换来的余量是零和（砍多少报多少）⇒ 出片后余量判为不可信'
+            % (white_level, _code_to_L(white_level)))
     out = {}
     for stem, raf in raf_paths.items():
         log('  渲 %s ← %s（卡 %s，p95_max=%.1f）' % (stem, os.path.basename(raf),
@@ -175,18 +264,27 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
         # 引擎用**它自己的测光**出片（不管脸；脸是 LR 的事）
         # render_safe = "两端都不死，取最暗可行解"（黑端二分 6 次；白端只微调 3 次）
         disp = presets.render_safe(lin, choice.card.name,
-                                   p95_max=float(saf.get('p95_max', 96.0)),
-                                   black_max=float(saf.get('black_max', 3.0)))
+                                   p95_max=p95_max, black_max=black_max)
         dst = os.path.join(out_dir, '%s_engine.tif' % stem)
         lrbase.save_tiff16(disp, dst)
         out[stem] = dst
-        hr_ev = headroom_ev(disp)
+        # ★ 余量要连"可不可信"一起报（2026-10-29：降白端换余量是零和，实测见常数区）
+        hr = headroom_report(disp, white_level=white_level)
         with open(os.path.join(out_dir, '%s_headroom.json' % stem), 'w',
                   encoding='utf-8') as fh:
-            json.dump(dict(stem=stem, headroom_ev=hr_ev, limit_clip=0.5,
+            json.dump(dict(stem=stem, headroom_ev=hr['headroom_ev'],
+                           ceiling_L=hr['ceiling_L'], valid=hr['valid'],
+                           ceiling_expect_L=hr['ceiling_expect_L'],
+                           white_level=hr['white_level'],
+                           tautology_ev=hr['tautology_ev'], why=hr['why'],
+                           limit_clip=0.5,
                            note='引擎自己的测光（render_safe）；脸归 LR'),
                   fh, ensure_ascii=False, indent=1)
-        log('  可抬 %.2f 档（到 clip 0.5%% 为止）' % hr_ev)
+        if hr['valid']:
+            log('  可抬 %.2f 档（到 clip 0.5%% 为止）｜天花 L*%.1f'
+                % (hr['headroom_ev'], hr['ceiling_L']))
+        else:
+            log('  !!! 余量不可信：%s' % hr['why'])
         # ★ 余量不能外包给 render_safe：它的白端循环只有 3 次 ×1.15，对高光亮的图不够。
         #   ⇒ 渲完必须自己量一次 T0；不达标就明说，不许静默放过。
         # ★ 余量判据：**加 X 档之后还剪不剪**（比 p99 更贴用途）

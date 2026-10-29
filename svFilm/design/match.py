@@ -158,6 +158,16 @@ def rank(reg: Registry, need: Need, only_negative: bool = True,
                  rms=_zstat([_rms_mean(s) for s in pool if s.rms] or [0.0]))
     pg = _zstat([paper_axes(reg.papers.get(s.target_print))['gamma'] for s in pool])
 
+    # ★ Dmax 必须**按介质类各自标准化**（2026-10-29）：
+    #   相纸 2.25~2.48 vs 电影正片 3.80~4.63，差 1.7 倍；
+    #   混着做 z 会让电影卷白拿"宽肩"分。原来这里引用了一个没定义的 `dmax_by_class`
+    #   ⇒ `cli run` 在选卡那一步直接 NameError（d482ddc 引入，10-29 上午才发现）。
+    _dmax_by_cls: Dict[str, List[float]] = {}
+    for s in pool:
+        ax = paper_axes(reg.papers.get(s.target_print))
+        _dmax_by_cls.setdefault(paper_class(ax), []).append(ax['dmax'])
+    dmax_by_class = {k: _zstat(v) for k, v in _dmax_by_cls.items()}
+
     def z(name, v):
         m, sd = stats[name]
         return (v - m) / sd
