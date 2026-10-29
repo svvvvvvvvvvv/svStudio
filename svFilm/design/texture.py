@@ -44,6 +44,14 @@ SPEC_KEYS = ('grain.rms_granularity',)
 # 永不可复现（不进任何"取差"对比）
 NONREPRO = ('print_render.glare',)
 
+# ★ 团径按**画面宽度的比例**表述（分辨率无关），再换算成 `grain.blur` 的基准值：
+#   `_scale_px_keys` 会把它 ×(实际长边/6264)，所以 blur_base = frac × 6264
+#   就等于"团径永远是画面宽的 frac"。
+#   出处：2026-10-22 实测（2048 上团 3~5 px = 画面宽的 0.147%~0.244%）；
+#   ⚠ 那组数是在**没有缩放钩子**的情况下量的，和现在的机制差一个 2048/6264，
+#     所以这里只取"比例"这个不变量，绝对值靠一次试点量团径来校。
+CLUMP_FRAC_DEFAULT = 0.0015      # 0.15% 画面宽（起点，试点校）
+
 GRAIN_SPEC_FILE = os.path.join(os.path.dirname(__file__), 'data', 'grain_specs.json')
 
 
@@ -190,6 +198,50 @@ def plan_texture(stock: str, paper: str, long_side: int = 1080,
     plan.params['print_render.glare'] = 'off'
     plan.provenance['print_render.glare'] = '不可复现（numba RNG）⇒ 不参与任何取差'
     return plan
+
+
+def to_overrides(plan: TexturePlan, long_side: int = 1080,
+                 clump_frac: Optional[float] = None,
+                 glare_off: bool = True,
+                 boost_ev: Optional[float] = None,
+                 mult_usm: Optional[tuple] = None) -> Dict[str, object]:
+    """质感计划 → `presets.render(overrides=…)` 能吃的**运行时属性路径**。
+
+    ★★★ **`clump_frac` 默认 None = 不动 `grain.blur`**。这一条是 10-29 晚的教训：
+      `apply_grain()` 的返回值**就是密度场**（随机实现替换真值，均值不变）⇒
+      `grain.blur` 是**给整幅图加一道高斯**，不是"只糊颗粒"。
+      我把它当作"团径旋钮"调到 0.15% 画面宽（基准 9.4 ⇒ 2048 上 3.07 px），
+      结果整批 ① 的梯度 p90 掉到 **0.58**、高频 RMS 掉到 **0.28**，肉眼就是"全糊了"。
+      而且当时只看了 p95（78.1→77.7 几乎不变）就放行 —— **直方图对模糊不敏感，锐度才敏感**。
+      ⇒ 想改团径必须先开 `mult_usm` 成对补偿，并且**用梯度/高频验收**，不许用分位。
+      ⇒ 在没验成之前，`grain.blur` 一律用卡里的值（不动）。
+
+    其余几类（染料云 µm / glare 关 / boost）都是安全的，照给。
+    """
+    ov: Dict[str, object] = {}
+    prov: Dict[str, str] = {}
+    if clump_frac is not None:
+        ov['film_render.grain.blur'] = round(float(clump_frac) * REF_LONG_SIDE, 3)
+        prov['film_render.grain.blur'] = ('团径 %.3f%% 画面宽 × 基准长边 %d'
+                                          '（⚠ 会连整幅一起糊，必须先开 mult_usm 并用梯度验收）'
+                                          % (100 * clump_frac, REF_LONG_SIDE))
+    dye = plan.params.get('grain.blur_dye_clouds_um')
+    if dye is not None:
+        ov['film_render.grain.blur_dye_clouds_um'] = float(dye)
+        prov['film_render.grain.blur_dye_clouds_um'] = '风格档（µm，分辨率无关）'
+    if glare_off:
+        ov['print_render.glare.active'] = False
+        prov['print_render.glare.active'] = '不可复现（numba RNG）⇒ 生产也关'
+    if boost_ev is not None:
+        ov['film_render.halation.boost_ev'] = float(boost_ev)
+        prov['film_render.halation.boost_ev'] = '场景档：有强光源时重建被剪的高光'
+    if mult_usm:
+        s, a = mult_usm
+        ov['film_render.grain.mult_usm_sigma'] = float(s)
+        ov['film_render.grain.mult_usm_amount'] = float(a)
+        prov['film_render.grain.mult_usm_amount'] = '与 blur 成对的乘性 USM（补回锐度）'
+    plan.provenance.update(prov)
+    return ov
 
 
 def warn(plan: TexturePlan, long_side: Optional[int] = None) -> str:

@@ -445,16 +445,21 @@ def test_curve_never_fixes_clip_in_lr_chain():
 
 
 def test_solve_one_order():
-    """整条链 §31 ②→③：脸低 ⇒ ② 把曝光给满；③ 在 ①' 上判、收白并记欠账。"""
+    """整条链 §31 ②→③：**② 不再为脸动全局曝光**（10-29 晚改，旧断言按新行为重写）。
+
+    旧行为（已废）：脸低 ⇒ ② 把曝光给满，背景陪葬。
+    新行为：② 恒 0（背景由引擎定），③ 仍然在 ① 上判收白；脸的亮度交给 ⑥ 的
+            `fill_ev`（主体蒙版），而 `solve_one` 只出**第一版**计划 ⇒ 这里 fill_ev 还是 0。
+    """
     from design.lr import solve_one
     rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.0)
     plan = solve_one(rec, light='frontlit', log=lambda *_: None)
-    ok(plan.exposure_ev > 0.5, '脸 L45 就该给（余量 0 不是理由）：%s' % plan.exposure_ev)
-    ok('收白' in plan.notes.get('exposure', ''),
-       '② 越过白平台要交代给 ③：%s' % plan.notes.get('exposure'))
-    ok(plan.highlights < 0.0, '② 给满后上端必爆 ⇒ ③ 必须收白：%s' % plan.highlights)
-    ok('highlights' in plan.notes, '③ 的理由要落进 notes：%s' % list(plan.notes))
-    ok('highlight_verify' in plan.notes, '③ 的验收量要写清：%s' % list(plan.notes))
+    same(plan.exposure_ev, 0.0, '② 不许再为脸动全局曝光：%s' % plan.exposure_ev)
+    ok('不动全局曝光' in plan.notes.get('exposure', ''),
+       '② 改口的原因要落进 notes：%s' % plan.notes.get('exposure'))
+    ok('补光' in plan.notes.get('exposure', ''),
+       '要说清脸改由谁负责：%s' % plan.notes.get('exposure'))
+    same(plan.fill_ev, 0.0, 'solve_one 只出第一版（补光由 run_final 按出片量算）')
     ok('顺光' in plan.notes.get('light', '') or 'frontlit' in plan.notes.get('lookat', ''),
        '光位（或旁证）要落进 notes：%s' % plan.notes)
 
@@ -682,6 +687,33 @@ def test_contact_sheet_layout():
 
 
 # ---------------------------------------------------------------- runner
+def test_texture_overrides_are_runtime_paths():
+    """质感计划 → overrides：键必须是**运行时属性路径**，且**默认不动 grain.blur**。
+
+    为什么钉这条：
+      ① `render_safe` 原来一个参数都不传，`plan_texture()` 算完就扔（"算值不落地"）。
+      ② `grain.blur` **糊的是整张密度场**（`apply_grain` 返回的就是密度场）——
+         10-29 晚拿它当"团径旋钮"调到 0.15% 画面宽，整批 ① 的梯度掉到 0.58、
+         高频 RMS 掉到 0.28，肉眼"全糊"。而且当时只看 p95（几乎不变）就放行。
+         ⇒ 所以默认**不许**动它；要动必须显式传 clump_frac，并且先开 mult_usm 用梯度验收。
+    """
+    from design.texture import CLUMP_FRAC_DEFAULT, REF_LONG_SIDE, Style, plan_texture, to_overrides
+    p = plan_texture('kodak_gold_200', 'kodak_portra_endura', long_side=2048, style=Style())
+    ov = to_overrides(p, long_side=2048)
+    ok('film_render.grain.blur' not in ov,
+       '默认不许动 grain.blur（它糊整幅）：%s' % list(ov))
+    ok(ov.get('print_render.glare.active') is False, 'glare 必须关（不可复现）')
+    ok('film_render.grain.rms_granularity' not in ov,
+       'rms 不在这步动 —— 团径与幅度要分开验')
+    # 显式传才写；换算仍是"画面比 × 基准长边"
+    ov2 = to_overrides(p, long_side=2048, clump_frac=CLUMP_FRAC_DEFAULT)
+    eq(float(ov2['film_render.grain.blur']),
+       round(CLUMP_FRAC_DEFAULT * REF_LONG_SIDE, 3), 1e-3)
+    # 传了 boost 才写 boost
+    ov3 = to_overrides(p, long_side=2048, boost_ev=1.0)
+    eq(float(ov3['film_render.halation.boost_ev']), 1.0, 1e-9)
+
+
 def main():
     import traceback
     tests = [(n, f) for n, f in sorted(globals().items())

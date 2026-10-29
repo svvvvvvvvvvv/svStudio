@@ -473,16 +473,22 @@ def render(lin, name, cfg=C, print_exposure=None, print_profile=None, overrides=
         return _post_scan(
             _render_locked(p, name, lin, cfg, print_exposure, print_profile, overrides), cfg)
 
-def render_safe(lin, name, cfg=C, *, black_max=3.0, p95_max=96.0, iters=6):
+def render_safe(lin, name, cfg=C, *, black_max=3.0, p95_max=96.0, iters=6,
+                overrides=None):
     r"""安全曝光：两端都不许死，取"最暗可行解"（余量留给 LR）。
 
     压黑 <= black_max 的前提下尽量暗（最大 pe）；若白端仍 > p95_max 再往暗收。
     若压黑被白端保护顶破 5%，回退到最后一次压黑合格的解（宁可白端高一点也不压死暗部）。
+
+    `overrides`：**质感那一层**（颗粒 / 光晕 / 柔光 / glare）的运行时属性路径。
+    为什么要它：`render_safe` 原来是"零参数、只按卡出图"，于是 `design/texture.py`
+    算出来的质感计划**一行都进不去渲染**（对齐审计 G 系列的老毛病：算值与落地脱节）。
+    现在整份往下传，二分求解的每一次 render 都带着同一份质感 ⇒ 前后一致。
     """
     import numpy as _np
 
     def _m(pe):
-        d = render(lin, name, cfg, print_exposure=pe)
+        d = render(lin, name, cfg, print_exposure=pe, overrides=overrides)
         L = _np.asarray(_lab_of(d))
         return d, L
 

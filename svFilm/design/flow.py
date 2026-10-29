@@ -256,47 +256,102 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
             '换来的余量是零和（砍多少报多少）⇒ 出片后余量判为不可信'
             % (white_level, _code_to_L(white_level)))
     out = {}
+    # ★ 质感这层要**真的进渲染**：`render_safe` 原来一个参数都不传，于是
+    #   `plan_texture()` 算完就扔（对齐审计那类"算值不落地"）。现在整份 overrides 传下去。
+    from .texture import to_overrides
+    tex = choice.texture
+    long_side = 2048
+    try:
+        from svFilm import presets as _ps
+        long_side = int(getattr(_ps.C, 'MAX_SIDE', 2048) or 2048)
+    except Exception:                                      # noqa: BLE001
+        pass
+    ov = to_overrides(tex, long_side=long_side)
+    log('  质感 overrides：%d 根（%s）'
+        % (len(ov), '、'.join(sorted(k.split('.')[-1] for k in ov))))
+    jobs = engine_jobs(len(raf_paths))
+    if jobs > 1:
+        log('  并行渲：%d 路（长边 %d，内存预算 %d GB）'
+            % (jobs, long_side, ENGINE_PER_JOB_GB * jobs))
+        from multiprocessing import get_context
+        argv = [(stem, raf, choice.card.name, out_dir, ov, p95_max, black_max,
+                 white_level) for stem, raf in raf_paths.items()]
+        with get_context('spawn').Pool(jobs) as pool:
+            for stem, dst, hr, c0, c1, msgs in pool.imap_unordered(_render_one, argv):
+                out[stem] = dst
+                _write_headroom(out_dir, stem, hr)
+                for m in msgs:
+                    log(m)
+        return out
+
     for stem, raf in raf_paths.items():
-        log('  渲 %s ← %s（卡 %s，p95_max=%.1f）' % (stem, os.path.basename(raf),
-                                                     choice.card.name, p95_max))
-        # io.load_raw 返回 Sample（.lin = 场景线性）；引擎要的是数组
-        lin = io.load_raw(raf).lin
-        # 引擎用**它自己的测光**出片（不管脸；脸是 LR 的事）
-        # render_safe = "两端都不死，取最暗可行解"（黑端二分 6 次；白端只微调 3 次）
-        disp = presets.render_safe(lin, choice.card.name,
-                                   p95_max=p95_max, black_max=black_max)
-        dst = os.path.join(out_dir, '%s_engine.tif' % stem)
-        lrbase.save_tiff16(disp, dst)
+        stem, dst, hr, c0, c1, msgs = _render_one(
+            (stem, raf, choice.card.name, out_dir, ov, p95_max, black_max, white_level))
         out[stem] = dst
-        # ★ 余量要连"可不可信"一起报（2026-10-29：降白端换余量是零和，实测见常数区）
-        hr = headroom_report(disp, white_level=white_level)
-        with open(os.path.join(out_dir, '%s_headroom.json' % stem), 'w',
-                  encoding='utf-8') as fh:
-            json.dump(dict(stem=stem, headroom_ev=hr['headroom_ev'],
-                           ceiling_L=hr['ceiling_L'], valid=hr['valid'],
-                           ceiling_expect_L=hr['ceiling_expect_L'],
-                           white_level=hr['white_level'],
-                           tautology_ev=hr['tautology_ev'], why=hr['why'],
-                           limit_clip=0.5,
-                           note='引擎自己的测光（render_safe）；脸归 LR'),
-                  fh, ensure_ascii=False, indent=1)
-        if hr['valid']:
-            log('  可抬 %.2f 档（到 clip 0.5%% 为止）｜天花 L*%.1f'
-                % (hr['headroom_ev'], hr['ceiling_L']))
-        else:
-            log('  !!! 余量不可信：%s' % hr['why'])
-        # ★ 余量不能外包给 render_safe：它的白端循环只有 3 次 ×1.15，对高光亮的图不够。
-        #   ⇒ 渲完必须自己量一次 T0；不达标就明说，不许静默放过。
-        # ★ 余量判据：**加 X 档之后还剪不剪**（比 p99 更贴用途）
-        ev_plan = 1.0
-        c0 = float((_lab_of_disp(disp) > 99).mean() * 100.0)
-        c1 = headroom_clip(disp, ev_plan)
-        log('  余量：当前 clip=%.2f%% ｜ +%.1fEV 后 clip=%.2f%%（限 0.5%%）'
-            % (c0, ev_plan, c1))
-        if c1 > 0.5:
-            log('  ! 余量不足：抬 %.1f EV 就剪 %.2f%% ⇒ 引擎该再暗一点（调卡的 safety）'
-                % (ev_plan, c1))
+        _write_headroom(out_dir, stem, hr)
+        for m in msgs:
+            log(m)
     return out
+
+
+# ---------------------------------------------------------------- 单张渲染（串行/并行共用）
+
+# ★★ 引擎渲染一律"最大限程 + 最快速度"（10-29 SV 定）。
+#   实测本机 32 GB / 24 核 32 线程：2048 长边渲染峰值 2.3~3.1 GB/路 ⇒ 6 路 ≈ 17 GB，安全；
+#   6264 全尺寸 ~8 GB/路 ⇒ 只有 1~2 路。**路数由内存算，不由核数算。**
+ENGINE_PER_JOB_GB = 3.1
+ENGINE_MEM_BUDGET_GB = 24.0      # 留 8 GB 给系统 / LR / 测量
+
+
+def engine_jobs(n_images: int) -> int:
+    """能开几路：内存预算是上限，图片数是不够就少开。"""
+    import os
+    want = int(os.environ.get('SV_ENGINE_JOBS', '0') or 0)
+    if want > 0:
+        return max(1, min(want, n_images))
+    by_mem = int(ENGINE_MEM_BUDGET_GB // ENGINE_PER_JOB_GB)
+    return max(1, min(by_mem, os.cpu_count() or 1, n_images))
+
+
+def _render_one(args):
+    """渲一张 + 量余量（**必须在模块级**：Windows 的 spawn 不能 pickle 闭包）。"""
+    (stem, raf, card_name, out_dir, ov, p95_max, black_max, white_level) = args
+    from svFilm import presets, io, lrbase       # 子进程里自己 import
+    msgs = ['  渲 %s ← %s（卡 %s，p95_max=%.1f）'
+            % (stem, os.path.basename(raf), card_name, p95_max)]
+    lin = io.load_raw(raf).lin
+    disp = presets.render_safe(lin, card_name, p95_max=p95_max,
+                               black_max=black_max, overrides=ov)
+    dst = os.path.join(out_dir, '%s_engine.tif' % stem)
+    lrbase.save_tiff16(disp, dst)
+    hr = headroom_report(disp, white_level=white_level)
+    if hr['valid']:
+        msgs.append('  可抬 %.2f 档（到 clip 0.5%% 为止）｜天花 L*%.1f'
+                    % (hr['headroom_ev'], hr['ceiling_L']))
+    else:
+        msgs.append('  !!! 余量不可信：%s' % hr['why'])
+    ev_plan = 1.0
+    c0 = float((_lab_of_disp(disp) > 99).mean() * 100.0)
+    c1 = headroom_clip(disp, ev_plan)
+    msgs.append('  余量：当前 clip=%.2f%% ｜ +%.1fEV 后 clip=%.2f%%（限 0.5%%）'
+                % (c0, ev_plan, c1))
+    if c1 > 0.5:
+        msgs.append('  ! 余量不足：抬 %.1f EV 就剪 %.2f%% ⇒ 引擎该再暗一点（调卡的 safety）'
+                    % (ev_plan, c1))
+    return stem, dst, hr, c0, c1, msgs
+
+
+def _write_headroom(out_dir, stem, hr):
+    with open(os.path.join(out_dir, '%s_headroom.json' % stem), 'w',
+              encoding='utf-8') as fh:
+        json.dump(dict(stem=stem, headroom_ev=hr['headroom_ev'],
+                       ceiling_L=hr['ceiling_L'], valid=hr['valid'],
+                       ceiling_expect_L=hr['ceiling_expect_L'],
+                       white_level=hr['white_level'],
+                       tautology_ev=hr['tautology_ev'], why=hr['why'],
+                       limit_clip=0.5,
+                       note='引擎自己的测光（render_safe）；脸归 LR'),
+                  fh, ensure_ascii=False, indent=1)
 
 
 def _lab_of_disp(disp):

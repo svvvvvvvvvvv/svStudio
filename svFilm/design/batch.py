@@ -195,6 +195,27 @@ def run_lr(b: Batch, recs: Dict[str, dict], intent: Optional[Intent] = None,
 
 # ---------------------------------------------------------------- ③ 出片 + 量 + 验收
 
+def _light_kind(p_engine, p_final):
+    """光位：先 **light_probe**（成片口径），拿不到再退回 `light_state`。
+
+    为什么换：`light_state` 只判得清极端情况（dark≥0.35 且 gap≥12，或 gap≥35），
+    中间一律 unknown ⇒ 今天这批 10 张只判出 4 张，补光档因此几乎不触发。
+    `light_probe` 用的是"脸上梯度 + 近邻背景 + 发丝"三个量，10-29 三百张目检过。
+    """
+    try:
+        import light_probe as LP
+        # ★ 只看 **①**（我们还没动手的那张）：光位必须**前馈**。
+        #   拿 ③ 判就是"改完再看自己改得对不对"，会自己跟自己反馈（手册那条振荡）。
+        for p in (p_engine, p_final):
+            if p and os.path.isfile(p):
+                k, _, _, _ = LP.classify(LP.probe(p))
+                if k and k != 'unknown':
+                    return k
+    except Exception:                                      # noqa: BLE001
+        pass
+    return 'unknown'
+
+
 def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
               rounds: int = 2, measure_fn=None, light: Optional[str] = None,
               log=print) -> Dict[str, object]:
@@ -206,8 +227,9 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
     收白的进退沿用 `lr.next_highlights`：脸被压暗 ⇒ 回退；脸没掉还爆 ⇒ 加大；
     到尽头 ⇒ 接受背景过曝。最多 `rounds` 轮，避免来回打。
     """
-    from .lr import (next_highlights, next_point_lum, zone_for, light_state,
-                     LAND_TOL_L, PC_LUM_MAX)
+    from .lr import (next_highlights, zone_for, light_state, LAND_TOL_L,
+                     FILL_L_PER_EV, FILL_MAX_EV, SAT_C_PER_UNIT, SAT_MAX,
+                     FILL_FLOOR_BACKLIT)
     from .lrsink import apply_and_export
 
     mf = measure_fn or measure_tif
@@ -215,6 +237,7 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
     final_dir = b.sub('final')
     recs3: Dict[str, dict] = {}
     used = 0
+    c_prefill: Dict[str, float] = {}      # 补光**之前**那一轮 ③ 的 C（回彩的参考点）
 
     for rnd in range(max(1, rounds)):
         pairs = [(st, os.path.join(engine_dir, st + '_engine.tif'), p)
@@ -252,43 +275,78 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
             plan = plans[st]
             s3 = rec.get('skin') or {}
             s1 = (recs.get(st) or {}).get('skin') or {}
-            # ★ 仲裁：脸不够亮、且肤色亮度还没推满 ⇒ **这一轮不动收白**，
-            #   先让 ⑥ 去补（它不动背景，不会反过来压脸）。加满才轮到回退收白。
-            _lt = light_state(dict(recs.get(st) or {}), given=light)
+            # ★ 分工改口（2026-10-29 晚）：**脸的亮度从此只由 ⑥ 局部给**，
+            #   ② 全局曝光不再为脸动 ⇒ ③ 收白与 ⑥ 不再抢，原来那条仲裁删掉。
+            #   光位用 **light_probe**（成片口径的判据，10-29 三百张验过），
+            #   不再用 `light_state`（它只判得清极端情况，中间一律 unknown）。
+            _kind = _light_kind(os.path.join(b.sub('engine'), st + '_engine.tif'),
+                                os.path.join(b.sub('final'), st + '_final.tif'))
+            _lt = 'backlit' if _kind in ('back', 'back_side') else (
+                'frontlit' if _kind == 'front' else 'unknown')
             _tgt = zone_for(_lt)['L_lo'] + LAND_TOL_L
-            _pc = getattr(plan, 'point_color', None) or {}
-            _lum = float(_pc.get('lum', 0.0) or 0.0)
-            _face_short = s3.get('L') is not None and float(s3['L']) < _tgt
-            _lum_can = _lum < PC_LUM_MAX - 1e-9
-            if _face_short and _lum_can:
-                nv, why = None, ''
-            else:
-                nv, why = next_highlights(
-                    float(getattr(plan, 'highlights', 0.0) or 0.0),
-                    float((rec.get('img') or {}).get('clip_pct') or 0.0),
-                    face_after=s3.get('L'), face_before=s1.get('L'))
+            # 补光档地板：逆光/侧逆的脸至少提到这里（10-29 fill 阶梯目检定下的口味值）
+            if _kind in ('back', 'back_side'):
+                _tgt = max(_tgt, FILL_FLOOR_BACKLIT)
+            plan.notes['light_probe'] = '光位 %s（light_probe；目标脸 L %.1f）' % (_kind, _tgt)
+            # ③ 收白：只对**背景高光**负责
+            nv, why = next_highlights(
+                float(getattr(plan, 'highlights', 0.0) or 0.0),
+                float((rec.get('img') or {}).get('clip_pct') or 0.0),
+                face_after=s3.get('L'), face_before=s1.get('L'))
             if nv is not None and abs(float(nv) - float(getattr(plan, 'highlights', 0.0))) > 1e-9:
                 log('   ↻ %s 收白 %+.0f → %+.0f ｜ %s' % (st, plan.highlights, nv, why))
                 plan.highlights = float(nv)
                 changed += 1
-            # ⑥ 肤色亮度：全局曝光 + 收白都定了，脸还差多少就用它补（只动肤色）
-            #   ★ 仲裁规矩（10-29 真跑吃过亏：收白和它互相抢，1665 打了两轮 −25→−12→−56）：
-            #     脸不够亮 ⇒ **先加肤色亮度**（不动背景），加满才轮到回退收白。
-            target = _tgt      # 分光位的下界 + 落点容差（见上）
-            rgb = ((recs.get(st) or {}).get('skin') or {}).get('rgb')
-            if s3.get('L') is not None and rgb:
-                pc = getattr(plan, 'point_color', None) or dict(scale=0.0, shift=0.0, lum=0.0)
-                cur_lum = float(pc.get('lum', 0.0) or 0.0)
-                lv, lwhy = next_point_lum(cur_lum, s3.get('L'), target)
-                if lv is not None and abs(lv - cur_lum) > 1e-9:
-                    log('   ↻ %s 肤色亮度 %+.2f → %+.2f ｜ %s'
-                        % (st, cur_lum, lv, lwhy))
-                    pc['lum'] = float(lv)
-                    plan.point_color = pc
-                    plan.point_color_rgb = list(rgb)
-                    changed += 1
+            # ⑥ 补光（主体蒙版 LocalExposure = EV/4）：只提不压，封顶 +1.0 档（白裙先爆）
+            if s3.get('L') is not None:
+                deficit = float(_tgt) - float(s3['L'])
+                if deficit > 0.5:
+                    want = deficit / FILL_L_PER_EV
+                    cur = float(getattr(plan, 'fill_ev', 0.0) or 0.0)
+                    new = min(FILL_MAX_EV, cur + want)
+                    if new > cur + 1e-6:
+                        plan.fill_ev = round(float(new), 3)
+                        if st not in c_prefill and s3.get('C') is not None:
+                            # ★ 参考点是**补光前那一轮 ③ 的 C**，不是 ① 的 C。
+                            #   ① 到 ③ 之间还有印相/收白，C 本来就会变；拿 ① 当参考
+                            #   ⇒ 判出来的"掉了多少"是两件事混在一起（10-29 两次都栽在这）。
+                            c_prefill[st] = float(s3['C'])
+                        plan.notes['fill'] = (
+                            '补光 +%.2f 档（脸 %.1f < 目标 %.1f，差 %.1f L*；'
+                            '实测传递 %.0f L*/档、封顶 %.1f）'
+                            % (plan.fill_ev, s3['L'], _tgt, deficit,
+                               FILL_L_PER_EV, FILL_MAX_EV))
+                        log('   ↻ %s 补光 %+.2f → %+.2f ｜ 脸 %.1f 差 %.1f L*'
+                            % (st, cur, plan.fill_ev, s3['L'], deficit))
+                        changed += 1
+                # ⑦ 回彩：把**已经补过光**丢掉的彩度补回来（实测 12 C/单位）。
+                #   ★ 参考点 = `c_prefill`（补光前那一轮 ③ 的 C）。
+                #     两次栽过的错：拿第 1 轮的 ③ 比（那是补光前的，永远"没掉"）、
+                #     拿 ① 的 C 比（①→③ 之间还有印相/收白，混了两件事）。
+                c3 = s3.get('C')
+                cur_fill = float(getattr(plan, 'fill_ev', 0.0) or 0.0)
+                c_ref = c_prefill.get(st)
+                if (cur_fill > 1e-6 and c_ref is not None and c3 is not None
+                        and float(c_ref) - float(c3) > 0.5):
+                    sat = min(SAT_MAX, (float(c_ref) - float(c3)) / SAT_C_PER_UNIT)
+                    rgb = s1.get('rgb')
+                    if sat > 1e-6 and rgb:
+                        pc = dict(getattr(plan, 'point_color', None) or {})
+                        if abs(float(pc.get('scale') or 0.0) - sat) > 0.02:
+                            pc.update(dict(scale=round(float(sat), 3),
+                                           shift=0.0, lum=0.0))
+                            plan.point_color = pc
+                            plan.point_color_rgb = list(rgb)
+                            plan.notes['fill_sat'] = (
+                                '回彩 sat %+.2f（补光前 C %.1f → 补光后 %.1f，差 %.1f；'
+                                '实测 %.0f C/单位）'
+                                % (sat, float(c_ref), float(c3),
+                                   float(c_ref) - float(c3), SAT_C_PER_UNIT))
+                            log('   ↻ %s 回彩 sat %+.2f ｜ C %.1f → %.1f（补光后）'
+                                % (st, sat, float(c_ref), float(c3)))
+                            changed += 1
         if not changed:
-            log('   收白都定了，不再导')
+            log('   收白与补光都定了，不再导')
             break
         write_jobs(plans, b.sub('xmp'),
                    manifest_extra=dict(batch=b.name, final_round=rnd + 2))

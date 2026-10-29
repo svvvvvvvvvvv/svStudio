@@ -65,22 +65,28 @@ def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True,
             hard.append(('T5 脸C', (C3 or 0) >= T5['C_min'], round(float(C3), 1),
                          T5['C_min'], '脸不灰'))
 
-    # ---- 硬门：脸的明暗残差（曝光之外，别的步骤不许动脸）
+    # ---- 硬门：脸的明暗残差（曝光与补光之外，别的步骤不许动脸）
     ev = float(getattr(plan, 'exposure_ev', 0.0) or 0.0) if plan is not None else 0.0
+    fill = float(getattr(plan, 'fill_ev', 0.0) or 0.0) if plan is not None else 0.0
     L1 = s1.get('L')
     if L1 is not None and L3 is not None:
-        expect = L1 + ev * eval_slope(L1)
+        from .lr import FILL_L_PER_EV
+        expect = L1 + ev * eval_slope(L1) + fill * FILL_L_PER_EV
         resid = (float(L3) - float(L1)) - (expect - float(L1))
         item = ('S1 脸残差', abs(resid) <= S1['dL_max'], round(resid, 2),
-                S1['dL_max'], '③ 的脸位移 − 曝光该带来的位移')
+                S1['dL_max'], '③ 的脸位移 − 曝光/补光该带来的位移')
         # ★ 这条只能当信息：曝光对 L* 的**实际**响应与模型差得多
         #   （10-29 真跑：模型斜率 13~15 L*/EV，实测 11.4~18.5，散 ±30%）
         #   ⇒ |残差| ≤ 1 这种门在暗脸上必然误报，不能当硬门
         # 点颜色的亮度也会抬脸，而它没有可用的传递函数 ⇒ 有 lum 时这条只能当信息
+        # ★ 补光（主体蒙版）的实测传递是 10~20 L*/档（10-29 十张：18~20，1627 只有 10）
+        #   ⇒ 有补光时把它当**硬门必误报**，降级为信息。
         _lum = float((getattr(plan, 'point_color', None) or {}).get('lum', 0.0) or 0.0) \
             if plan is not None else 0.0
         if ev_known and abs(expect - float(L1)) <= 1e-9 and abs(_lum) < 1e-9:
             hard.append(item)
+        elif fill > 1e-9:
+            soft.append(item[:4] + (item[4] + '（补光传递实测 10~20 L*/档，残差只当信息）',))
         else:
             # 手里的"曝光档数"是重算的、不是实际落下去的那个 ⇒ 这条只能当信息
             soft.append(item[:4] + (item[4] + '（参数是重算值，不是实际值 ⇒ 只报不算）',))

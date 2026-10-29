@@ -55,6 +55,21 @@ PC_LUM_MAX = 1.0
 #   不够下一轮再加（阶梯本来就有轮次）。
 PC_LUM_STEP = 0.25
 
+# ★★ 局部补光（主体蒙版）——2026-10-29 晚改的**唯一执行者**：
+#   分工改成"全局只对背景负责、脸的亮度只由局部给"之后，这几个数是唯一的传递常数。
+#   出处：`_fill` 四档阶梯（1608/1665）+ `_broute` 十张实测（1231/1422/1608/1627），
+#   传递 18~20 L*/档 ⇒ 取 20 当分母；白裙 p95 在 +1.25 档到 96~98 ⇒ 封顶 1.0。
+FILL_L_PER_EV = 20.0
+FILL_MAX_EV = 1.0
+#   回彩：点颜色饱和 ±1 = 面板 ±100。实测 +0.25 → +3.6 C、+0.50 → +6.0~+7.5 C ⇒ 约 12 C/单位。
+#   ⚠ 色相**不动**：实测我们的皮肤本来就比大师红 8~12°（h 45.6/42.5 vs 53.7/54.6）。
+SAT_C_PER_UNIT = 12.0
+SAT_MAX = 0.5
+#   补光档的地板：逆光/侧逆的脸**至少**提在这里（fill 阶梯目检定下的口味值，不是物理值）。
+#   为什么需要它：区间下界 + 3.5 对逆光只有 48.5，而那正是"无补光档"的样子（目录卡口径）。
+#   补光档要的是"亮、白、有血气" ⇒ 逆光不能还落在 48~50。
+FILL_FLOOR_BACKLIT = 62.0
+
 # ★ 逆光的肤色彩度补偿（2026-10-29 SV 目检：「逆光下的肤色有点沉闷」）。
 #   逆光时脸大部分在阴影里，提亮 + 收白之后暗部被抬、彩度看着更灰。
 #   这是**风格剂量**（不是靶）：起点给 +0.15，靠目检定够不够。
@@ -141,6 +156,10 @@ class LRPlan:
     curve: Optional[List[Tuple[int, int]]] = None
     point_color: Optional[Dict[str, float]] = None
     point_color_rgb: Optional[list] = None      # ②处取样色（过完曲线后），造 19 数字要用它
+    # ★ 补光（2026-10-29 晚，分工改口）：**脸的亮度从此只由局部给**，全局曝光不再为脸动。
+    #   写进 LR 的值 = `LocalExposure2012 = fill_ev / 4`（实测公式，三档已验）。
+    #   它作用在**主体蒙版**上，背景不动 —— 这是"背景定曝光 + 补光档"的实现。
+    fill_ev: float = 0.0
     notes: Dict[str, str] = field(default_factory=dict)
 
     def as_xmp_scalars(self) -> Dict[str, float]:
@@ -647,8 +666,14 @@ def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
 
     ex = solve_exposure(rec_engine, intent=intent, light=light,
                         sky_L=(rec_engine.get('bg') or {}).get('L_p90'))
-    plan.exposure_ev = ex.ev
-    plan.notes['exposure'] = ex.why
+    # ★★ 分工改口（2026-10-29 晚，SV 定）：**② 不再为脸动全局曝光**。
+    #   背景落位由引擎 `render_safe`（黑≤3% / p95≤96）负责；脸的亮度交给 ⑥ 局部补光。
+    #   原来那套"按脸算档 / 白端预算 / 欠账"全部停用 —— 它是"全局替局部干活"的病根，
+    #   也是背景被炸掉的唯一原因。这里保留 `solve_exposure` 的**说明**（为什么该提/不该提），
+    #   只把那个数**丢掉**。整段删除等图片过目之后再动（留一条退路）。
+    plan.exposure_ev = 0.0
+    plan.notes['exposure'] = ('不动全局曝光：背景已由引擎定（黑≤3%% / p95≤96）；'
+                              '脸的亮度归 ⑥ 补光。原判断：%s' % ex.why)
     if ex.debt_ev > 1e-9:
         plan.notes['exposure_debt'] = (
             '要 %+.2f 档，给了 %+.2f ⇒ 欠 %.2f 档（引擎余量 %s / p95 到白平台 %s）；'

@@ -187,6 +187,27 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
         r = LS.run('ADD ' + tmp, timeout=180)
         if 'ADD' not in r.upper() and 'EXIST' not in r.upper():
             raise RuntimeError('ADD 失败 %s: %s' % (stem, r[:120]))
+        # ★★ 补光：主体蒙版 + `LocalExposure2012 = EV/4`
+        #   两个坑（都真踩过）：
+        #   ① `MASK ... LocalExposure2012=` 走 LrDevelopController.setValue，命令报 ok、
+        #      蒙版也建了，但导出时**一个字都不落**（四档脸 L 全一样）⇒ 必须用 MASKPARAM；
+        #   ② MASKPARAM 要**回读**：读回来的值不匹配就当这一步没做，不许静默通过。
+        _ev = float(getattr(plan, 'fill_ev', 0.0) or 0.0)
+        if _ev > 1e-6:
+            rm = LS.run('MASK %s subject' % tmp, timeout=180)
+            if 'groups=0->0' in rm:
+                raise RuntimeError('%s 主体蒙版没建出来：%s' % (stem, rm[:120]))
+            _v = _ev / 4.0
+            rp = LS.run('MASKPARAM %s LocalExposure2012 %.6f' % (tmp, _v), timeout=180)
+            _rb = rp.split('readback=')[-1].split()[0] if 'readback=' in rp else '0'
+            try:
+                _okv = abs(float(_rb) - _v) <= 1e-6
+            except ValueError:
+                _okv = False
+            if not _okv:
+                raise RuntimeError('%s 补光没落下去（回读 %s ≠ %.4f）：%s'
+                                   % (stem, _rb, _v, rp[:120]))
+            log('    补光 %+.2f 档 ⇒ 蒙版 %.4f（回读 %s）' % (_ev, _v, _rb))
         got = LS.expo(tmp, 'design_%s' % stem)
         dst = os.path.join(out_dir, '%s_final.tif' % stem)
         shutil.copy2(got, dst)
