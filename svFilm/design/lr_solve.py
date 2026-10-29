@@ -85,11 +85,18 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
     cb = b.get('face_C')
     sk = (rec.get('skin') or {}).get('C')
     if isinstance(cb, list) and sk is not None:
+        from .calibration import sat_for_dc
         lo, hi = float(cb[0]), float(cb[1])
+        _dc = 0.0
         if sk < lo:
-            notes.append('脸 C %.1f < 卡带下沿 %.1f ⇒ 需要加饱和（幅度待标定）' % (sk, lo))
+            _dc = lo - sk
         elif sk > hi:
-            notes.append('脸 C %.1f > 卡带上沿 %.1f ⇒ 需要减饱和（幅度待标定）' % (sk, hi))
+            _dc = hi - sk
+        if abs(_dc) > 0.05:
+            out['saturation'] = round(sat_for_dc(_dc), 1)
+            out['vibrance'] = round(sat_for_dc(_dc) * 0.4, 1)
+            notes.append('脸 C %.1f 对卡带 [%.1f, %.1f] ⇒ ΔC%+.1f ⇒ Saturation %+.0f（实测 0.221 C*/单位）'
+                         % (sk, lo, hi, _dc, out['saturation']))
     wc = b.get('warm_cool_b')
     if isinstance(wc, list):
         mid = 0.5 * (float(wc[0]) + float(wc[1]))
@@ -239,9 +246,14 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
         # §6E：脸要提 ⇒ **Shadows 为主**（文档保证按亮度选择性，提暗部不碰亮部）；
         #      人的亮部贴近卡的肩 ⇒ Highlights 压一手。
         # 量级是**方向量**（40 / −30），等 §6E.3 那次标定出来再换成实测斜率。
+        from .calibration import shadows_for_dl
         _need_lift = float(p.local_ev or 0.0) > 0.05
         _near_cap = (_p99 is not None and float(_p99) > _cap_hi - 6.0)
-        p.local_shadows = 40.0 if _need_lift else 0.0
+        # Shadows 的量 = 还差多少 L* / 实测斜率（0.147 L*/单位）；上限 60
+        _fl2 = meas.get('face_L')
+        _tgt2 = card_in.get('face_L')
+        _dl = (max(float(_tgt2[0]), 55.0) - float(_fl2)) if (_fl2 is not None and _tgt2) else 0.0
+        p.local_shadows = round(shadows_for_dl(max(_dl, 0.0)), 0) if _need_lift else 0.0
         p.local_highlights = -30.0 if (_need_lift or _near_cap) else 0.0
         out[stem] = dict(plan=p.as_dict(), white=white_end_plan(rec, card, curve),
                          meas=meas, ledger=[str(e) for e in p.ledger],
