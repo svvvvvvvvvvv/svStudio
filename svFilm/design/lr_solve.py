@@ -24,9 +24,19 @@ from typing import Dict, List, Optional
 from .curve_design import apply_lut, curve_from_shape
 from .solver import Entry, Plan, solve_pass
 
-# T1 的白端门（成片）——与设计文档 §4.1 一致
-P95_MAX = 93.0
-CLIP_MAX = 0.5
+# ★ 2026-10-30：**所有阈值改从卡带来**（SV：求解必须照着匹配卡）。
+#   原来这里的 P95_MAX=93 / CLIP_MAX=0.5 是我自己的常数，属于"乱搞"，
+#   已删除；下面 _gate() 从卡带的上下沿取，取不到才退回物理线。
+PHYS_P95 = 96.0      # 物理线：L* 99 是可见平台，96 是"还没撞平台"的保守上界
+PHYS_CLIP = 1.0      # 物理线：超过 1% 的爆白在任何成片里都是缺陷
+
+
+def _hi(band, default):
+    return float(band[1]) if isinstance(band, (list, tuple)) and len(band) == 2 else float(default)
+
+
+def _lo(band, default):
+    return float(band[0]) if isinstance(band, (list, tuple)) and len(band) == 2 else float(default)
 
 
 def bands_of(card: dict) -> Dict[str, object]:
@@ -101,7 +111,8 @@ def _meas_of(rec: dict) -> Dict[str, object]:
                            contrast_win=sh.get('contrast_win'), skew=sh.get('skew')))
 
 
-def white_end_plan(rec: dict) -> Dict[str, object]:
+def white_end_plan(rec: dict, card: Optional[dict] = None,
+                   curve=None) -> Dict[str, object]:
     """③ 白端：判据只看**人身上的爆白**（人像优先级最高）。
 
     2026-10-30 定：整幅/天空的 clip 是**线索**，不是门。
@@ -116,14 +127,23 @@ def white_end_plan(rec: dict) -> Dict[str, object]:
     p95 = im.get('p95')
     p_clip = per.get('clip_pct')
     b_clip = bgr.get('clip_pct')
+    # ★ 门 = 卡的带（上沿），不是我的常数
+    b = (card or {}).get('bands') or {}
+    p95_gate = min(PHYS_P95, _hi(b.get('p95'), PHYS_P95))
+    clip_gate = min(PHYS_CLIP, max(_hi(b.get('clip'), PHYS_CLIP), 0.3))
+    # ★ ③ 的判据是**曲线之后**的残差（§6B.2）：
+    #   曲线已经把肩部收到卡的带里 ⇒ 不动（上一版拿 ① 的 p95 当门，所以每张都压）。
+    from .curve_design import apply_lut
+    p95_res = apply_lut(curve, float(p95)) if (curve and p95 is not None) else p95
     need = None
-    if p95 is not None and p95 > P95_MAX:
+    if p95_res is not None and p95_res > p95_gate:
         need = 'down'
-    if p_clip is not None and p_clip >= CLIP_MAX:
+    if p_clip is not None and p_clip >= clip_gate:
         need = 'down'
-    return dict(need=need, p95=p95, clip=p_clip, person_clip=p_clip,
+    return dict(need=need, p95=p95, p95_after_curve=p95_res, clip=p_clip, person_clip=p_clip,
                 bg_clip=b_clip, frame_clip=im.get('clip_pct'),
-                gate=dict(p95_max=P95_MAX, person_clip_max=CLIP_MAX))
+                gate=dict(p95_max=round(p95_gate, 1), person_clip_max=round(clip_gate, 2),
+                          from_card=bool(b)))
 
 
 def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
@@ -174,18 +194,19 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
 
         # ★ 补光的**可算上限** —— 不许把人的亮部（p99）推过 P95_MAX。
         #   p99_new = p99 + eval_slope(p99) · EV => EV <= (P95_MAX - p99) / eval_slope(p99)
+        _cap_hi = min(PHYS_P95, _hi((card or {}).get('bands', {}).get('p95'), PHYS_P95))
         _p99 = meas.get('p99') or (rec.get('person') or {}).get('clip_p95')
         if _p99 is not None and p.local_ev > 0:
             from .solver import eval_slope
-            _cap = max(0.0, (P95_MAX - float(_p99)) / max(eval_slope(float(_p99)), 1e-6))
+            _cap = max(0.0, (_cap_hi - float(_p99)) / max(eval_slope(float(_p99)), 1e-6))
             if p.local_ev > _cap:
-                p.ledger.append(Entry(dim='local_cap', got=float(_p99), want=(0.0, P95_MAX),
+                p.ledger.append(Entry(dim='local_cap', got=float(_p99), want=(0.0, _cap_hi),
                                       gap=float(p.local_ev - _cap), layer='local',
-                                      action='补光 %.2f -> %.2f（人的亮部不许过 %.0f）'
-                                             % (p.local_ev, _cap, P95_MAX)))
+                                      action='补光 %.2f -> %.2f（人的亮部不许过卡的 %.0f）'
+                                             % (p.local_ev, _cap, _cap_hi)))
                 p.local_ev = round(_cap, 3)
                 p.local_exposure = round(p.local_ev / 4.0, 5)
-        out[stem] = dict(plan=p.as_dict(), white=white_end_plan(rec),
+        out[stem] = dict(plan=p.as_dict(), white=white_end_plan(rec, card, curve),
                          meas=meas, ledger=[str(e) for e in p.ledger],
                          curve=curve, grading=grading_of(card, rec))
     return out
