@@ -235,6 +235,16 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
             r['file'] = os.path.basename(p)
             recs3[st] = r
 
+        # ★ 轮廓光保护：逆光的"魂"是发丝边缘那圈亮边。收白如果把它压掉，
+        #   光比是平了，氛围也死了（实操资料一致口径）。这里只**报警**，不自动回退
+        #   —— 回退多少没有依据。
+        for st, rec in recs3.items():
+            r0 = ((recs.get(st) or {}).get('rim') or {}).get('bright_share')
+            r1 = (rec.get('rim') or {}).get('bright_share')
+            if r0 and r1 is not None and r1 < r0 * 0.5:
+                log('   ! %s 轮廓光被吃掉一半以上（亮边占比 %.2f → %.2f）⇒ 收白可能压过头'
+                    % (st, r0, r1))
+
         changed = 0
         for st, rec in recs3.items():
             plan = plans[st]

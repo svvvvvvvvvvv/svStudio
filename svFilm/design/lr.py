@@ -87,6 +87,11 @@ BACKLIT_EXTRA_L = 4.0
 # ★ 目标点上限：只在区间**中段**，不许贴着上界追（否则一动就进"过曝区"）。
 LAND_CAP_L = 70.0
 #
+# ★★ 逆光下的"分寸"（有出处，不是自定）：实操资料一致说
+#   「脸提到比天空暗半档就停手」——半档 = 0.5 EV ≈ 7~9 L*（按当前亮度段斜率）。
+#   天空用**背景亮部** `bg.L_p90` 近似（比 img.p95 干净：不含脸）。
+LAND_BELOW_SKY_L = 8.0
+#
 # ★ 脸的"够大"判据（H2 降级链用）：face_w_native ≥ 40 px 才算能当锚。
 #   出处：手掩膜守卫 [0.005, 0.70] 与旧链实测（脸太小则颊读数不可靠）。
 FACE_MIN_W = 40.0
@@ -103,9 +108,16 @@ FACE_MIN_W = 40.0
 #
 #   ⚠ 这是近似判据，不是物理测量。真逆光的直接证据是**轮廓光**（脸外圈比脸亮），
 #     测量层还没量那个，所以保留 unknown 这条退路。
-LIGHT_GAP_BACKLIT = 15.0
-LIGHT_GAP_FRONT = 8.0
-LIGHT_SPAN_MIN = 55.0
+# 双区统计（专利 CN109815905B 的"亮区 vs 暗区" + CN102013006B 的"前景暗像素占比"）
+#   实测标定（已知答案的 4 张）：
+#     1608 逆光：脸内暗(<40) 0.56、gap 24.6   ｜ 1307 顺光：0.17、gap 17.3
+#     1627 逆光：0.48、28.2                   ｜ 1289 顺光：0.10、gap 8.2
+#   ⇒ 只把"两边都够极端"的判出来，中间一律 unknown（模糊的交给 --light）
+LIGHT_DARK_SHARE = 0.35     # 脸内 L≤40 的像素占比 ≥ 这个 ⇒ 脸大部分在阴影里
+LIGHT_GAP_MIN = 12.0        # 且脸比背景亮部低这么多
+LIGHT_GAP_HUGE = 35.0       # 或者差得极其悬殊（暗占比可以不满足）
+LIGHT_FRONT_DARK = 0.12     # 顺光：脸内几乎没有暗部
+LIGHT_FRONT_GAP = 12.0      # 且不比背景亮部低
 # 老数据（没有 bg.L_p90）退回旧比值，只作兼容，**标记为不可靠**
 LIGHT_BACKLIT, LIGHT_FRONTLIT = 1.0, 1.3
 
@@ -172,14 +184,15 @@ def light_state(rec: dict, given: Optional[str] = None) -> str:
         rec['light_why'] = '人给（--light %s）' % given
         return given
     if given == 'auto':
-        # 明确要求"自己猜"时才用判据，并标明是近似
         gap = rec.get('light_gap')
-        span = rec.get('light_span')
-        if gap is not None and span is not None:
-            rec['light_why'] = '自动判据（近似，已两次出反例，不建议用）'
-            if gap >= LIGHT_GAP_BACKLIT and span >= LIGHT_SPAN_MIN:
+        dark = rec.get('face_dark_share40')
+        if gap is not None:
+            rec['light_why'] = '双区统计（自动；只判得清极端情况，中间给 unknown）'
+            if dark is not None and dark >= LIGHT_DARK_SHARE and gap >= LIGHT_GAP_MIN:
                 return 'backlit'
-            if gap <= LIGHT_GAP_FRONT:
+            if gap >= LIGHT_GAP_HUGE:
+                return 'backlit'
+            if dark is not None and dark <= LIGHT_FRONT_DARK and gap <= LIGHT_FRONT_GAP:
                 return 'frontlit'
     return 'unknown'
 
@@ -241,7 +254,8 @@ def _cap_white(rec_engine: dict) -> Optional[float]:
 def solve_exposure(rec_engine: dict, target_L: float = 72.0,
                    L_lo: float = None, L_hi: float = None,
                    intent: Optional[Intent] = None,
-                   light: Optional[str] = None) -> Exposure:
+                   light: Optional[str] = None,
+                   sky_L: Optional[float] = None) -> Exposure:
     # `target_L` 只为兼容旧调用保留，**已经不参与计算**：
     # 脸是约束不是目标（§28 L1），落点只由 T4 的区边界决定。
     """② 曝光落点。**脸是约束，不是目标**（设计 §28 L1）。
@@ -277,6 +291,10 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
     margin = LAND_TOL_L + (BACKLIT_EXTRA_L if la.light == 'backlit' else 0.0)
     if cur < lo:
         target = min(lo + margin, LAND_CAP_L)
+        # ★ 逆光：按"比天空暗半档"定分寸（有出处的分寸，取代自定的 58.5）
+        if la.light == 'backlit' and sky_L:
+            target = min(target, float(sky_L) - LAND_BELOW_SKY_L)
+            target = max(target, lo + LAND_TOL_L)
         want_dL, side = target - cur, '暗于下界'
     elif cur > hi:
         want_dL, side = (hi - LAND_TOL_L) - cur, '亮于上界'
@@ -621,7 +639,8 @@ def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
             '光位未给（不认识画面）｜旁证：脸比背景亮部低 %.1f L*、背景跨度 %.1f L*'
             % (rec_engine.get('light_gap'), rec_engine.get('light_span') or 0.0))
 
-    ex = solve_exposure(rec_engine, intent=intent, light=light)
+    ex = solve_exposure(rec_engine, intent=intent, light=light,
+                        sky_L=(rec_engine.get('bg') or {}).get('L_p90'))
     plan.exposure_ev = ex.ev
     plan.notes['exposure'] = ex.why
     if ex.debt_ev > 1e-9:

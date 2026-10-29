@@ -290,7 +290,7 @@ def test_light_state_comes_from_person():
     反例2：脸 vs 背景亮部 p90 ⇒ 1307（脸被太阳直照）被算成逆光（画面里有天空）。
     """
     from design.lr import light_state
-    rec = dict(skin=dict(L=47.0), light_ratio=0.9,
+    rec = dict(skin=dict(L=47.0), light_ratio=0.9, face_dark_share40=0.56,
                bg=dict(L=29.0, L_p90=71.5, L_p10=9.0))
     same(light_state(dict(rec)), 'unknown')        # 不给人 ⇒ 不猜
     same(light_state(dict(rec), given='backlit'), 'backlit')
@@ -299,6 +299,13 @@ def test_light_state_comes_from_person():
     r2 = dict(rec)
     same(light_state(r2, given='auto'), 'backlit')
     ok(abs(r2['light_gap'] - 24.5) < 0.3, '要记旁证 gap：%s' % r2.get('light_gap'))
+    # 双区统计的反例回归：脸亮、脸内几乎没有暗部 ⇒ 顺光（1307 那种）
+    r3 = dict(rec, skin=dict(L=73.5), face_dark_share40=0.17,
+              bg=dict(L=61.8, L_p90=90.8, L_p10=7.7))
+    same(light_state(r3, given='auto'), 'unknown')   # 中间地带：宁可 unknown
+    r4 = dict(rec, skin=dict(L=78.8), face_dark_share40=0.10,
+              bg=dict(L=56.8, L_p90=87.0, L_p10=7.0))
+    same(light_state(r4, given='auto'), 'frontlit')
 
 
 def test_backlit_note():
