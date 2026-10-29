@@ -166,19 +166,21 @@ def cmd_match(a):
 
 
 def cmd_run(a):
-    """端到端：试点 -> 选卡 -> 整批渲 -> 量 -> LR 计划 -> XMP（**不驱动 LR**）。"""
+    """端到端七步：试点 → 匹配选卡 → 整批渲+量① → LR 计划+XMP → 出③+量+验收+目检 → 回归。
+
+    前五步不碰 LR；**只有第 6 步（出 ③ 成片）才驱动 LR**（`--export` 打开）。"""
     b = Batch.of(a.raf, a.out, limit=a.limit)
     print('批次 %s：%d 张 RAW ｜ %s' % (b.name, len(b.stems), estimate(len(b.stems))))
     it = _intent(a.intent)
     if it.describe() != '意图：无（只守不变量）':
         print(it.describe())
 
-    print('\n[1/5] 试点（渲 %d 张，用来算需求）' % a.pilot)
+    print('\n[1/7] 试点（渲 %d 张，用来算需求）' % a.pilot)
     recs0 = pilot(b, n=a.pilot, log=print)
     if not recs0:
         print('试点无一有效 ⇒ 停（查 RAF / 卡）'); return
 
-    print('\n[2/5] 这批像哪一套（参照卡 = 大师的每一套）')
+    print('\n[2/7] 这批像哪一套（64 张参照卡 = 大师的每一套）')
     tb = profile_batch(recs0)
     refs = refcards()
     hits = rank_refs(tb, refs)
@@ -188,7 +190,7 @@ def cmd_run(a):
     for h in hits[:5]:
         print('    ' + str(h))
 
-    print('\n[3/5] 现有生产卡（能渲的）')
+    print('\n[3/7] 现有生产卡（能渲的）+ 选卡')
     offer = choose(recs0, it, topn=3)
     if getattr(a, 'card', ''):
         # 手动指定卡（不靠匹配排序）：验证某张卡的参数时用
@@ -205,7 +207,7 @@ def cmd_run(a):
         print('  ★ 手动指定：%s（匹配排序已让位）' % cc.label())
     print(describe(offer))
 
-    print('\n[3b] 可行性：最近那套参照卡的缺口，关得掉吗？')
+    print('\n[3/7-b] 可行性：最近那套参照卡的缺口，关得掉吗？')
     rows = gap_table(tb, hits[0].ref.profile, headroom_ev=0.15)
     for r in rows:
         print(str(r))
@@ -220,7 +222,7 @@ def cmd_run(a):
         return
     print('\n选中：%s' % best.card.label())
 
-    print('\n[4/5] 整批渲 + 量')
+    print('\n[4/7] 整批渲 + 量（①）')
     recs = run_engine(b, best, limit=a.render_limit, log=print,
                       skip=list(recs0.keys()))
     # 试点那两张如果用的就是选中的卡，直接把旧测量并回来（避免漏）
@@ -230,13 +232,13 @@ def cmd_run(a):
     if not recs:
         print('整批无一有效 ⇒ 停'); return
 
-    print('\n[5/5] LR 计划 + XMP 作业单')
+    print('\n[5/7] LR 计划 + XMP 作业单')
     out = run_lr(b, recs, it, log=print)
     print(xmp_summary(out['manifest']))
 
     reviewed = None
     if a.export:
-        print('\n[4b/5] 产品阶段：LR 出成片 ③ → 量 → 验收（唯一驱动 LR 的一步）')
+        print('\n[6/7] 出片：LR 出成片 ③ → 量 → 验收 → 目检（唯一驱动 LR 的一步）')
         try:
             o3 = run_final(b, recs, out['plans'], rounds=a.rounds, log=print)
             print(' ③ 成片 %d 张（%d 轮）' % (len(o3['recs3']), o3['rounds']))
@@ -247,7 +249,7 @@ def cmd_run(a):
             print(' ! LR 出片失败：%s' % str(e)[:160])
             print('   （LR 没启动？桥不通只会挡"出片"这一步；算值与作业单不受影响）')
 
-    print('\n[6/6] ①→② 曲线回归（不用 LR 的便宜检查）')
+    print('\n[7/7] ①→② 曲线回归（不用 LR 的便宜检查）')
     nok = 0
     for st, plan in out['plans'].items():
         import os as _os
