@@ -61,7 +61,7 @@ def preset_for(card) -> str:
 
 
 def _band(card, key: str, k: float = 1.5) -> Optional[Tuple[float, float]]:
-    """卡的某一维 → (下, 上)。中位 ± k×IQR 近似 P10~P90（见文件头）。"""
+    """卡的某一维 → (下, 上)。中位 ± k×IQR 近似 P10~P90（见文件头）。**只当参考用。**"""
     prof = getattr(card, 'profile', {}) or {}
     sp = getattr(card, 'spread', {}) or {}
     v = prof.get(key)
@@ -73,22 +73,35 @@ def _band(card, key: str, k: float = 1.5) -> Optional[Tuple[float, float]]:
     return (float(v) - k * float(q), float(v) + k * float(q))
 
 
-def safety_for(card) -> Dict[str, float]:
-    """引擎的两端边界（§20 ②）：**从卡的区间来**，不是卡里写死的 96 / 3。
+# ★ 不变量阈值（§58.1 T0 / §63.7）：来自物理与量化下限，**不来自卡的分布**。
+#   p95 ≤ 93 —— 大师语料自己的 p95 上沿本来就在 92.9~96.5，93 不严于任何一套；
+#   clip < 0.5% —— 可见剪裁的量级；
+#   p1 ≥ 1.0 —— 黑端不堵。
+INVARIANT_P95_MAX = 93.0
+INVARIANT_CLIP_MAX = 0.5
+INVARIANT_P1_MIN = 1.0
 
-    · `p95_max` = 卡 p95 区间的**上界**（我们的底片亮部不该越过它）
-    · `black_max` = 卡 p5 区间**下界对应的暗部占比口径**——这里没有直方图，
-      只能用 clip/p1 的关系给一个**保守值**：拿卡自己的 clip 中位（它说明这套片子
-      能容忍多少爆白），黑端仍用历史标准的 3% 起步，并标注"待用卡的 p1 区间替换"。
+
+def safety_for(card) -> Dict[str, float]:
+    """引擎的两端边界 = **不变量**（§63.7）。
+
+    卡在这件事上只当参考：它的 p95 说明"这套通常多亮"，用来在匹配页讲代价，
+    **不拿来当门的阈值**（拿卡的分布当门 = 把场景当标准）。
     """
-    out: Dict[str, float] = {}
-    b95 = _band(card, 'p95')
-    if b95:
-        out['p95_max'] = round(float(b95[1]), 2)
-    clip = (getattr(card, 'profile', {}) or {}).get('clip')
-    if clip is not None:
-        # 底片的爆白不该超过这套大师成片的爆白太多：取 2× 它的 clip，最少 0.5%
-        out['clip_max'] = round(max(0.5, 2.0 * float(clip)), 2)
-    out['black_max'] = float((getattr(card, 'safety', None) or {}).get('black_max', 3.0)) \
-        if isinstance(getattr(card, 'safety', None), dict) else 3.0
+    return dict(p95_max=INVARIANT_P95_MAX,
+                clip_max=INVARIANT_CLIP_MAX,
+                p1_min=INVARIANT_P1_MIN,
+                black_max=3.0)
+
+
+def reference_for(card) -> Dict[str, object]:
+    """卡的数值 → **只报不判**的参考（匹配页/账里用）。"""
+    out: Dict[str, object] = {}
+    for key in ('p95', 'p50', 'clip'):
+        b = _band(card, key)
+        if b:
+            out[key + '_band'] = (round(b[0], 1), round(b[1], 1))
+    v = (getattr(card, 'profile', {}) or {}).get('p95')
+    if v is not None:
+        out['p95'] = round(float(v), 1)
     return out

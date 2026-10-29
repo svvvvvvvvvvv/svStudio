@@ -756,18 +756,22 @@ def test_point_color_backlit_adds_chroma():
 
 # ---------------------------------------------------------------- 匹配卡 → 能渲的那一份（§20/§48）
 
+
 def test_card_render_maps_medium_and_bounds():
-    """卡的介质要映射到 preset；两端边界要从**卡的区间**来（不是写死 96/3）。"""
+    """卡的介质要映射到 preset；两端边界要来自**不变量**（§63.7），不是卡的分布。"""
     from design.matchcard import MatchCard
-    from design.card_render import preset_for, safety_for, _preset_media
+    from design.card_render import (INVARIANT_P95_MAX, _preset_media, preset_for,
+                                    reference_for, safety_for)
     ok(bool(_preset_media()), '一个 preset 都没读到，介质映射无从谈起')
     c = MatchCard(name='x', stock='kodak_portra_400', paper='kodak_portra_endura',
                   profile=dict(p95=90.0), spread=dict(p95=2.0))
     ok(preset_for(c) in _preset_media(), '映射出来的 preset 不存在：%s' % preset_for(c))
     s = safety_for(c)
-    ok(abs(s['p95_max'] - (90.0 + 1.5 * 2.0)) < 1e-6,
-       'p95_max 应该是卡区间上界（中位+1.5·IQR），实际 %s' % s['p95_max'])
-    # 映射不上必须抛，不许悄悄回退到默认卡
+    ok(abs(s['p95_max'] - INVARIANT_P95_MAX) < 1e-9,
+       '白端必须是不变量 %s，实际 %s（拿卡的分布当门 = 把场景当标准）'
+       % (INVARIANT_P95_MAX, s['p95_max']))
+    r = reference_for(c)
+    ok(r.get('p95') == 90.0, '卡的 p95 要留在参考里，实际 %s' % r.get('p95'))
     bad = MatchCard(name='y', stock='no_such_stock', paper='no_such_paper')
     try:
         preset_for(bad)
@@ -776,17 +780,20 @@ def test_card_render_maps_medium_and_bounds():
         pass
 
 
-def test_safety_is_not_a_constant():
-    """两张不同的卡，p95_max 必须不同 —— 这条防的是"又写死成 96"。"""
+
+def test_safety_is_invariant_but_reference_differs():
+    """边界对所有卡都该一样（那是不变量）；**参考**才随卡变。
+
+    这条以前是反的（钉'两张卡边界必须不同'）——那是把卡的分布当门，
+    2026-10-29 按 §63.7 翻过来。
+    """
     from design.matchcard import MatchCard
-    from design.card_render import safety_for
+    from design.card_render import reference_for, safety_for
     a = MatchCard(name='a', profile=dict(p95=88.0), spread=dict(p95=1.0))
     b = MatchCard(name='b', profile=dict(p95=96.0), spread=dict(p95=1.0))
-    ok(safety_for(a)['p95_max'] != safety_for(b)['p95_max'],
-       '两张卡算出来的边界一样 ⇒ 边界没从卡来')
-
-
-# ---------------------------------------------------------------- 一次算（§52/§61）
+    ok(safety_for(a)['p95_max'] == safety_for(b)['p95_max'],
+       '不变量不该随卡变：%s vs %s' % (safety_for(a)['p95_max'], safety_for(b)['p95_max']))
+    ok(reference_for(a)['p95'] != reference_for(b)['p95'], '参考应该随卡变')
 
 def test_eval_slope_is_not_a_constant():
     """每档抬多少 L* 随起点变（`0.231·(L+16)`）——钉住"不许当常数用"。"""
