@@ -42,7 +42,12 @@ def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True,
     L1, C1 = s1.get('L'), s1.get('C')
     L3, C3 = s3.get('L'), s3.get('C')
     # ★ 脸亮区**分光位**（2026-10-29，目录卡实测 n=43）：逆光 45~70，顺光/未知 55~85
-    zlo, zhi = (T4_BACKLIT['L_lo'], T4_BACKLIT['L_hi']) if light == 'backlit' \
+    # `auto` 要**逐图**解析成具体光位（传 'auto' 进来直接比字符串是错的）
+    lt = light
+    if lt in (None, 'auto', 'none', ''):
+        from .lr import light_state
+        lt = light_state(dict(rec_1 or {}), given='auto')
+    zlo, zhi = (T4_BACKLIT['L_lo'], T4_BACKLIT['L_hi']) if lt == 'backlit' \
         else (T4['L_lo'], T4['L_hi'])
     if L3 is not None:
         if L1 is not None and not (zlo <= float(L1) <= zhi):
@@ -51,7 +56,7 @@ def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True,
                          '① 本身出区 ⇒ 只要求别更远'))
         else:
             hard.append(('T4 脸L', zlo <= float(L3) <= zhi, round(float(L3), 1),
-                         '%g~%g' % (zlo, zhi), '脸在合理曝光区（%s）' % (light or 'unknown')))
+                         '%g~%g' % (zlo, zhi), '脸在合理曝光区（%s）' % (lt or 'unknown')))
     if C3 is not None:
         if C1 is not None and float(C1) < T5['C_min']:
             hard.append(('T5 脸C', float(C3) >= float(C1) - 0.2, round(float(C3), 1),
