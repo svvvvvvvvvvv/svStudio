@@ -171,12 +171,24 @@ def measure_one(path: str, light_probe=None) -> dict:
             r = sample_skin(native, meta, img_lab=(Ln, an, bn, Cn, hn),
                             mapper=None, skin_mask=cv2.resize(fs, (W0, H0)) if fs.shape != Ln.shape else fs)
             r = r or {}
+            # ★ 分层口径（2026-10-30）：严格口径弃权 ⇒ 退到宽松口径
+            #   （无掩膜、彩度门 + 去镜面），并把来源写进 skin_src。
+            #   不静默：下游可以只用 strict，或按 src 分开统计。
+            if not r.get('ok'):
+                _why_strict = r.get('why')
+                _r2 = sample_skin(native, meta, img_lab=(Ln, an, bn, Cn, hn),
+                                  mapper=None, skin_mask=None, loose=True) or {}
+                if _r2.get('ok'):
+                    _r2['strict_why'] = _why_strict
+                    r = _r2
             lit = r.get('lit') or {}
             if r.get('ok'):
                 out['skin'] = dict(L=lit.get('L'), C=lit.get('C'), h=lit.get('h'),
                                    a=lit.get('a'), b=lit.get('b'), ita=lit.get('ita'),
                                    n=lit.get('n'), xy=lit.get('xy'),
-                                   side_dE=r.get('side_dE'), w=r.get('w'))
+                                   side_dE=r.get('side_dE'), w=r.get('w'),
+                                   src=r.get('src') or 'strict',
+                                   strict_why=r.get('strict_why'))
                 out['skin_err'] = None
             else:
                 out['skin'] = None
