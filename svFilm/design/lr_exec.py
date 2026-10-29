@@ -32,7 +32,8 @@ def to_lrplans(plans: Dict[str, dict]) -> Dict[str, LRPlan]:
             fill_ev=float(pl.get('local_ev') or 0.0),
             # local_highlights 暂不启用：桥对 LocalHighlights2012 的**回读是 nil**，
             #   '报 ok 但读不回来' = 不许信（老账）。改用'算好的上限'来防爆（见 lr_solve）。
-            local_highlights=0.0,
+            local_shadows=float(pl.get('local_shadows') or 0.0),
+            local_highlights=float(pl.get('local_highlights') or 0.0),
             curve=p.get('curve'),
             saturation=float(g.get('saturation') or 0.0),
             vibrance=float(g.get('vibrance') or 0.0),

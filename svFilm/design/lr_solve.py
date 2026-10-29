@@ -236,6 +236,13 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
                                              % (p.local_ev, _cap, _cap_hi)))
                 p.local_ev = round(_cap, 3)
                 p.local_exposure = round(p.local_ev / 4.0, 5)
+        # §6E：脸要提 ⇒ **Shadows 为主**（文档保证按亮度选择性，提暗部不碰亮部）；
+        #      人的亮部贴近卡的肩 ⇒ Highlights 压一手。
+        # 量级是**方向量**（40 / −30），等 §6E.3 那次标定出来再换成实测斜率。
+        _need_lift = float(p.local_ev or 0.0) > 0.05
+        _near_cap = (_p99 is not None and float(_p99) > _cap_hi - 6.0)
+        p.local_shadows = 40.0 if _need_lift else 0.0
+        p.local_highlights = -30.0 if (_need_lift or _near_cap) else 0.0
         out[stem] = dict(plan=p.as_dict(), white=white_end_plan(rec, card, curve),
                          meas=meas, ledger=[str(e) for e in p.ledger],
                          curve=curve, grading=grading_of(card, rec))

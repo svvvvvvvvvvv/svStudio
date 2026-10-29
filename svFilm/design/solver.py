@@ -137,6 +137,8 @@ class Plan:
     curve: Dict[str, float] = field(default_factory=dict)
     local_ev: float = 0.0
     local_exposure: float = 0.0
+    local_shadows: float = 0.0
+    local_highlights: float = 0.0
     ledger: List[Entry] = field(default_factory=list)
 
     def as_dict(self) -> dict:

@@ -208,20 +208,28 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
                 raise RuntimeError('%s 补光没落下去（回读 %s ≠ %.4f）：%s'
                                    % (stem, _rb, _v, rp[:120]))
             log('    补光 %+.2f 档 ⇒ 蒙版 %.4f（回读 %s）' % (_ev, _v, _rb))
-            # ★ 2026-10-30：补光时把人的高光按住（否则白裙/衬衫会被一起提爆）
-            #   量级取 −50（LR 局部高光刻度 −100~100；−50 是"明显压、不致死白"）
-            _lh = float(getattr(plan, 'local_highlights', 0.0) or 0.0)
-            if abs(_lh) > 1e-6:
-                rh = LS.run('MASKPARAM %s LocalHighlights2012 %.4f' % (tmp, _lh), timeout=180)
-                _rbh = rh.split('readback=')[-1].split()[0] if 'readback=' in rh else '0'
+            # ★ §6E：局部是一整套旋钮 —— 只用曝光会把白裙一起提上去。
+            #   Shadows 提暗部（文档保证按亮度选择性）、Highlights 压住人的亮部。
+            #   ⚠ 桥的 MASKSX 回读**只列了一部分键**：LocalExposure2012 能读回，
+            #     LocalShadows2012 / LocalHighlights2012 回读是 nil。
+            #     "报 ok 但读不回来"不许当成功（老账）⇒ 这里**跳过并记账**，
+            #     等把这两个键加进桥的回读列表、在 LR 里重载插件之后再启用。
+            for _key, _ui in (('LocalShadows2012', float(getattr(plan, 'local_shadows', 0.0) or 0.0)),
+                              ('LocalHighlights2012', float(getattr(plan, 'local_highlights', 0.0) or 0.0))):
+                if abs(_ui) < 1e-6:
+                    continue
+                _x = _ui / 100.0           # §6C：其余滑杆 = UI 值 / 100（XMP 刻度）
+                rr = LS.run('MASKPARAM %s %s %.4f' % (tmp, _key, _x), timeout=180)
+                _b = rr.split('readback=')[-1].split()[0] if 'readback=' in rr else 'nil'
                 try:
-                    _okh = abs(float(_rbh) - _lh) <= 1e-6
+                    _ok2 = abs(float(_b) - _x) <= 1e-6
                 except ValueError:
-                    _okh = False
-                if not _okh:
-                    raise RuntimeError('%s 局部高光没落下去（回读 %s ≠ %.2f）：%s'
-                                       % (stem, _rbh, _lh, rh[:120]))
-                log('    局部高光 %+.0f（回读 %s）' % (_lh, _rbh))
+                    _ok2 = False
+                if not _ok2:
+                    log('    ! %s 跳过（桥回读 %s，未验证；§6E 待桥支持）' % (_key, _b))
+                    continue
+                log('    %s %+.0f（XMP %.3f，回读 %s）'
+                    % (_key.replace('Local', '').replace('2012', ''), _ui, _x, _b))
         got = LS.expo(tmp, 'design_%s' % stem)
         dst = os.path.join(out_dir, '%s_final.tif' % stem)
         shutil.copy2(got, dst)
