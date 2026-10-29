@@ -25,10 +25,7 @@ from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional
 
 from . import measure as M
-from .cards import Card, cards as all_cards
-from .cards_match import CardHit, rank_cards, table_cards
 from .intent import Intent
-from .match import Need, need_from_batch, rank as rank_stocks
 from .stocks import Registry, registry
 from .texture import Style, TexturePlan, plan_texture, warn
 
@@ -79,7 +76,7 @@ class Choice:
 class Offer:
     choices: List[Choice] = field(default_factory=list)
     new_card_candidates: List[str] = field(default_factory=list)
-    need: Optional[Need] = None
+    need: Optional[object] = None     # 旧 Need 已随两层卡体系废弃
 
     def best(self) -> Optional[Choice]:
         return self.choices[0] if self.choices else None

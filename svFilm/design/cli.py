@@ -18,16 +18,12 @@ from .intent import Intent
 from .invariants import check_T, report
 from .lr import solve_curve, solve_one
 from .lrsink import apply_and_export, summary as xmp_summary, write_jobs
-from .match import need_from_batch, report as match_report
-from .review import match_sheet
 from .stocks import registry
-from .feasibility import gap_table, verdict
-from .refcards import profile_batch, rank_refs, refcards
+from .matchcard import batch_profile, batch_tags, cards as match_cards
+from .matchpage import make_match_page
 from .states import limit_note, regression_curve
 from .batch import Batch, pilot, run_engine, run_lr, run_final, build_review, estimate
-from .cards import cards as all_cards
 from .texture import Style, plan_texture, warn as tex_warn
-from .cards import cards as all_cards
 from .flow import Choice, Offer, choose, describe
 
 
@@ -53,50 +49,43 @@ def _median_headroom(recs):
 
 
 def _match_page(recs, it, out_html, batch_name='', samples=None):
-    """算匹配 + 出选卡页。返回 (html, hits, offer, rows, verdict_text)。
+    """出匹配页（§56 步 3）。返回 (html 路径, None, None, None, '')。
 
-    ★ 页面上"该用哪张卡"**不给结论** —— 那是人定的（SV：匹配出 html 我来挑）。
+    ★ 页面上"该用哪张卡"**不给结论** —— 那由人拍板。
     """
-    import statistics as _st
-    from .review import match_sheet
-
-    tb = profile_batch(recs)
-    refs = refcards()
-    hits = rank_refs(tb, refs)
-    offer = choose(recs, it, topn=3)
-    hr = [r.get('headroom_ev') for r in recs.values() if isinstance(r.get('headroom_ev'), (int, float))]
-    rows = gap_table(tb, hits[0].ref.profile, headroom_ev=(_st.median(hr) if hr else None))
-    vd = verdict(rows)
-    html = match_sheet(batch_name or '这批', tb, hits[:5], offer, gap_rows=rows,
-                       gap_verdict=vd, out_html=out_html, samples=samples,
-                       n_img=len(recs), caliber=M.measure_sha())
-    return html, hits, offer, rows, vd
+    out_dir = os.path.dirname(out_html) if out_html else os.path.join(
+        getattr(it, 'out_dir', '.') or '.', 'match')
+    page = make_match_page(recs, os.path.dirname(out_dir) or '.',
+                           title='%s · 匹配五选一' % (batch_name or '这批'))
+    if out_html and os.path.abspath(page) != os.path.abspath(out_html):
+        try:
+            import shutil as _sh
+            _sh.copyfile(page, out_html)
+            page = out_html
+        except Exception:                                  # noqa: BLE001
+            pass
+    return page, None, None, None, ''
 
 
 def cmd_refs(a):
-    """在**大师的每一套**里找"这批最像哪一套"（64 张参照卡，不是 3 张生产卡）。"""
+    """这批最像哪几张匹配卡（§57）。**这不是靶**：只回答"像谁"，不给结论。"""
+    from .matchcard import rank_top5, shortlist
     recs = M.load(a.recs)
     if a.stem:
         recs = M.only(recs, a.stem)
-    tb = profile_batch(recs)
     print('口径 sha = %s ｜ 本批 %d 张' % (M.measure_sha(), len(recs)))
-    print('本批画像: 脸L=%.1f 脸C=%.1f 脸h=%.1f p50=%.1f p95=%.1f'
-          % (tb['L'], tb['C'], tb['h'], tb['p50'], tb['p95']))
+    print(shortlist(rank_top5(recs, k=a.top)))
     print()
-    refs = refcards()
-    print('参照卡 %d 张（大师的每一套一张）' % len(refs))
-    print('  分数   套                                  张数  差在哪')
-    for h in rank_refs(tb, refs)[:a.top]:
-        print('  ' + str(h))
-    print()
-    print('  ⚠ 这只是"最像哪一套"，不是靶；参照卡只有画像、没有配方。')
+    print('  ⚠ 这只是"最像哪一套"，不是靶；看样例图定，别只看分数。')
 
 
 def cmd_cards(a):
-    tb = all_cards()
-    print('卡 %d 张' % len(tb))
-    for c in tb.values():
-        print('  ' + str(c))
+    cs = match_cards()
+    print('匹配卡 %d 张（一张 = 一套风格：介质 + 画像 + 分面 + 样片）' % len(cs))
+    for c in cs:
+        print('  %-28s %-18s %-20s n=%-3d %s'
+              % (c.name, c.stock, c.paper, c.n,
+                 '/'.join(str(v) for v in list(c.tags.values())[:3])))
 
 
 def cmd_stocks(a):
@@ -224,47 +213,41 @@ def cmd_run(a):
     if use_card:
         # ★ 卡由人定 ⇒ 不再试点、不再匹配（省掉两遍渲）。选卡页只在没指定卡时才有意义。
         import types
-        from .cards import cards as _cards
         from .texture import plan_texture as _plan_tex
-        cc = _cards().get(a.card)
+        _tb = {c.name: c for c in match_cards()}
+        cc = _tb.get(a.card)
         if cc is None:
-            print('没有这张卡：%s（有：%s）' % (a.card, ' / '.join(sorted(_cards()))))
+            print('没有这张卡：%s（有 %d 张，例如：%s）'
+                  % (a.card, len(_tb), ' / '.join(sorted(_tb)[:3])))
             return
         offer = Offer(choices=[Choice(
             hit=types.SimpleNamespace(card=cc, score=0.0, why='人工指定，不经匹配'),
             texture=_plan_tex(cc.stock, cc.paper, long_side=1080))])
         print('\n[1/7] 卡已指定 ⇒ **跳过试点与匹配**（省掉两遍渲）')
     else:
-        print('\n[1/7] 试点（渲 %d 张，用来算需求）' % a.pilot)
-        recs0 = pilot(b, n=a.pilot, log=print)
-        if not recs0:
-            print('试点无一有效 ⇒ 停（查 RAF / 卡）'); return
+        # ★ §56 步 1：**整批渲完**再匹配（不是试点 2 张）。
+        #   2 张的"中位"就是那 2 张；全批才有分布，匹配才有分辨力。
+        print('\n[1/7] 整批渲（用基线卡），再拿全批测量去匹配')
+        _base = sorted(c.name for c in match_cards())[0]
+        _bch = Choice(hit=types.SimpleNamespace(card=_tb[_base], score=0.0),
+                      texture=None)
+        recs0 = run_engine(b, _bch, limit=a.render_limit, log=print)
 
-        print('\n[2/7] 这批像哪一套（64 张参照卡 = 大师的每一套）')
-        tb = profile_batch(recs0)
-        refs = refcards()
-        hits = rank_refs(tb, refs)
-        print('  本批画像：脸L=%.1f 脸C=%.1f 脸h=%.1f p50=%.1f p95=%.1f（%d 张试点）'
-              % (tb['L'], tb['C'], tb['h'], tb['p50'], tb['p95'], len(recs0)))
-        print('  %d 张参照卡里最像的：' % len(refs))
-        for h in hits[:5]:
-            print('    ' + str(h))
-
-        print('\n[3/7] 现有生产卡（能渲的）+ 选卡')
-        offer = choose(recs0, it, topn=3)
+        print('\n[2/7] 用全批 %d 张的测量算匹配' % len(recs0))
+        offer = choose(recs0, it, topn=5)
         print(describe(offer))
 
-        print('\n[3/7-b] 可行性：最近那套参照卡的缺口，关得掉吗？')
-        rows = gap_table(tb, hits[0].ref.profile, headroom_ev=_median_headroom(recs0))
-        for r in rows:
-            print(str(r))
-        print('  ' + verdict(rows).replace('\n', '\n  '))
-
-        # ★ 选卡页：**给人挑**（这一步的出口就是"你去页面定"，不给结论）
-        page = os.path.join(b.out_dir, '选卡.html')
-        match_sheet(b.name, tb, hits[:5], offer, gap_rows=rows, gap_verdict=verdict(rows),
-                    out_html=page, n_img=len(recs0), caliber=M.measure_sha())
-        print('  选卡页：%s' % page)
+        print('\n[3/7] 出匹配页')
+        tb = batch_profile(recs0)
+        print('  本批：%s ｜ 分面：%s'
+              % ('、'.join('%s=%.1f' % (k, v) for k, v in tb.items() if k in ('sky', 'span')),
+                 '、'.join('%s=%s' % kv for kv in batch_tags(recs0).items()) or '（判不出）'))
+        page = make_match_page(recs0, b.out_dir,
+                               title='%s · 匹配五选一' % b.name)
+        print('  匹配页：%s' % page)
+        print('\n[4/7] **停在这里等你拍板**（不自动往下走）')
+        print('  看完回我：--card <名字>')
+        return
 
     best = offer.best()
     if best is None:
@@ -281,7 +264,7 @@ def cmd_run(a):
     recs = run_engine(b, best, limit=a.render_limit, log=print,
                       skip=list(recs0.keys()))
     # 试点那两张如果用的就是选中的卡，直接把旧测量并回来（避免漏）
-    if best.card.name == sorted(all_cards())[0]:
+    if best.card.name == sorted(c.name for c in match_cards())[0]:
         for k, v in recs0.items():
             recs.setdefault(k, v)
     if not recs:
@@ -436,7 +419,7 @@ def cmd_flow(a):
         recs = M.only(recs, a.stem)
     it = _intent(a.intent)
     print('口径 sha = %s ｜ %d 张 ｜ %s' % (M.measure_sha(), len(recs), it.describe()))
-    tb = all_cards()
+    tb = {c.name: c for c in match_cards()}
     print('现有卡 %d 张：%s' % (len(tb), ', '.join(c.label() for c in tb.values())))
     print()
     print(describe(choose(recs, it, topn=a.top)))

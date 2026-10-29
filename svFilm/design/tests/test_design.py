@@ -19,7 +19,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 from design.curve import _fit_points, _pchip, apply_curve_rgb, displacement, plan_curve
 from design.invariants import T0, check_T
 from design.lr import eval_slope, ev_for_dL
-from design.feasibility import gap_table, verdict
 
 
 # ---------------------------------------------------------------- 基本断言
@@ -137,25 +136,6 @@ def test_T0_thresholds_from_masters():
 
 
 # ---------------------------------------------------------------- 可行性
-
-def test_feasibility_amount_cap():
-    """彩度缺口超出 amount 量程时，不许判"可达"（γ_blue 是脏解，不算数）。"""
-    batch = dict(L=70.0, C=8.0, h=55.0, p95=92.0)
-    target = dict(L=70.0, C=22.0, h=55.0, p95=92.0)
-    rows = gap_table(batch, target, headroom_ev=0.2)
-    c = [r for r in rows if r.dim == 'C'][0]
-    ok(not c.reachable, 'C 缺口 +14 不该判可达（amount 只够 +1.8）')
-    ok('换卷' in verdict(rows) or '换纸' in verdict(rows), '应指向换卷/换纸')
-
-
-def test_feasibility_hue_ok():
-    """色相小幅缺口应可由 γ 关掉（γ 量程是绝对值 0.25~4.0）。"""
-    batch = dict(L=70.0, C=18.0, h=55.0, p95=92.0)
-    target = dict(L=70.0, C=18.0, h=63.0, p95=92.0)
-    rows = gap_table(batch, target, headroom_ev=0.2)
-    h = [r for r in rows if r.dim == 'h'][0]
-    ok(h.reachable, '色相 +8° 应可达（γ 只需 Δ0.055）')
-
 
 # ---------------------------------------------------------------- LR：以人为本
 # 钉住 2026-10-29 补的四件事（H2 降级链 / L1 脸是约束 / H3 两道预算 / H4 光位）
