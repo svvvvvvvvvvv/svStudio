@@ -242,13 +242,19 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
     from svFilm import lrbase
 
     os.makedirs(out_dir, exist_ok=True)
-    saf = getattr(choice.card, 'safety', None) or {}
+    # ★ §20② / §48.2：引擎的两端边界**从卡来**（匹配卡的画像区间），不是卡里写死的 96/3。
+    #   匹配卡自己没有 preset 名（它是一套风格），要映射到能渲的 preset —— 映射不上就抛。
+    from .card_render import preset_for, safety_for
+    saf = getattr(choice.card, 'safety', None)
+    if not isinstance(saf, dict) or not saf:
+        saf = safety_for(choice.card)
+    preset_name = getattr(choice.card, 'preset', None) or preset_for(choice.card)
     p95_max = float(saf.get('p95_max', P95_ENGINE_SAFE) if p95_max is None else p95_max)
     black_max = float(saf.get('black_max', BLACK_MAX) if black_max is None else black_max)
     # ★ 白端要**记下来**：它决定这张底片的天花，也决定"余量"这个数可不可信
     try:
         import svFilm.presets as _presets
-        white_level = float(_presets.load_raw(choice.card.name)['simulation']['scan_white_level'])
+        white_level = float(_presets.load_raw(preset_name)['simulation']['scan_white_level'])
     except Exception:
         white_level = None
     if white_level is not None and white_level < 1.0:
@@ -274,7 +280,7 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
         log('  并行渲：%d 路（长边 %d，内存预算 %d GB）'
             % (jobs, long_side, ENGINE_PER_JOB_GB * jobs))
         from multiprocessing import get_context
-        argv = [(stem, raf, choice.card.name, out_dir, ov, p95_max, black_max,
+        argv = [(stem, raf, preset_name, out_dir, ov, p95_max, black_max,
                  white_level) for stem, raf in raf_paths.items()]
         with get_context('spawn').Pool(jobs) as pool:
             for stem, dst, hr, c0, c1, msgs in pool.imap_unordered(_render_one, argv):
@@ -286,7 +292,7 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
 
     for stem, raf in raf_paths.items():
         stem, dst, hr, c0, c1, msgs = _render_one(
-            (stem, raf, choice.card.name, out_dir, ov, p95_max, black_max, white_level))
+            (stem, raf, preset_name, out_dir, ov, p95_max, black_max, white_level))
         out[stem] = dst
         _write_headroom(out_dir, stem, hr)
         for m in msgs:

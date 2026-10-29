@@ -772,6 +772,38 @@ def test_point_color_backlit_adds_chroma():
     ok(abs(a['lum']) < 1e-9 and abs(b['lum']) < 1e-9, '没有脸差额就不动亮度')
 
 
+# ---------------------------------------------------------------- 匹配卡 → 能渲的那一份（§20/§48）
+
+def test_card_render_maps_medium_and_bounds():
+    """卡的介质要映射到 preset；两端边界要从**卡的区间**来（不是写死 96/3）。"""
+    from design.matchcard import MatchCard
+    from design.card_render import preset_for, safety_for, _preset_media
+    ok(bool(_preset_media()), '一个 preset 都没读到，介质映射无从谈起')
+    c = MatchCard(name='x', stock='kodak_portra_400', paper='kodak_portra_endura',
+                  profile=dict(p95=90.0), spread=dict(p95=2.0))
+    ok(preset_for(c) in _preset_media(), '映射出来的 preset 不存在：%s' % preset_for(c))
+    s = safety_for(c)
+    ok(abs(s['p95_max'] - (90.0 + 1.5 * 2.0)) < 1e-6,
+       'p95_max 应该是卡区间上界（中位+1.5·IQR），实际 %s' % s['p95_max'])
+    # 映射不上必须抛，不许悄悄回退到默认卡
+    bad = MatchCard(name='y', stock='no_such_stock', paper='no_such_paper')
+    try:
+        preset_for(bad)
+        ok(False, '映射不上却返回了 preset（会静默换掉整条链的介质）')
+    except KeyError:
+        pass
+
+
+def test_safety_is_not_a_constant():
+    """两张不同的卡，p95_max 必须不同 —— 这条防的是"又写死成 96"。"""
+    from design.matchcard import MatchCard
+    from design.card_render import safety_for
+    a = MatchCard(name='a', profile=dict(p95=88.0), spread=dict(p95=1.0))
+    b = MatchCard(name='b', profile=dict(p95=96.0), spread=dict(p95=1.0))
+    ok(safety_for(a)['p95_max'] != safety_for(b)['p95_max'],
+       '两张卡算出来的边界一样 ⇒ 边界没从卡来')
+
+
 def main():
     import traceback
     tests = [(n, f) for n, f in sorted(globals().items())
