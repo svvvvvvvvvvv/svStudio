@@ -608,6 +608,17 @@ def test_match_sheet_is_a_decision_page():
     ok('建议' not in html and '推荐' not in html, '页面上不许替他做决定')
 
 
+def test_point_color_backlit_adds_chroma():
+    """逆光肤色发闷 ⇒ 点颜色给一点彩度（风格剂量，不是靶）。"""
+    from design.lr import PC_BACKLIT_SAT, solve_point_color
+    rec = dict(skin=dict(C=20.0, L=60.0, h=55.0))
+    a = solve_point_color(rec, backlit=False)
+    b = solve_point_color(rec, backlit=True)
+    ok(abs((b['scale'] - a['scale']) - PC_BACKLIT_SAT) < 1e-6,
+       '逆光应多加 %.2f：%s vs %s' % (PC_BACKLIT_SAT, a, b))
+    ok(abs(a['lum']) < 1e-9 and abs(b['lum']) < 1e-9, '没有脸差额就不动亮度')
+
+
 def test_point_lum_fills_face_deficit():
     """⑥ 肤色亮度：补脸的最后一段，按实测灵敏度给，推满就记欠账。"""
     from design.lr import PC_LUM_L_PER_UNIT, PC_LUM_MAX, next_point_lum

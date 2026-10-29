@@ -55,6 +55,11 @@ PC_LUM_MAX = 1.0
 #   不够下一轮再加（阶梯本来就有轮次）。
 PC_LUM_STEP = 0.25
 
+# ★ 逆光的肤色彩度补偿（2026-10-29 SV 目检：「逆光下的肤色有点沉闷」）。
+#   逆光时脸大部分在阴影里，提亮 + 收白之后暗部被抬、彩度看着更灰。
+#   这是**风格剂量**（不是靶）：起点给 +0.15，靠目检定够不够。
+PC_BACKLIT_SAT = 0.15
+
 # ★ 点颜色：**每一次推满（±1）能补多少比例**——这是**政策**，不是物理常数。
 #   原因：Point Color 的 SatScale 没有公开传递函数（见 lrmodel.py）。
 #   政策含义：缺口 ≤ 这个比例时，一次推满；缺口更大时分多次/报欠账。
@@ -490,7 +495,8 @@ def solve_saturation(rec_engine: dict, intent: Optional[Intent] = None) -> float
 
 def solve_point_color(rec: dict, intent: Optional[Intent] = None,
                       C_min: float = 10.0,
-                      face_deficit_L: float = 0.0) -> Optional[Dict[str, float]]:
+                      face_deficit_L: float = 0.0,
+                      backlit: bool = False) -> Optional[Dict[str, float]]:
     """肤色剂量（批次一套）。**新体系里没有"肤色靶"**，所以只做两件事：
 
       (a) 不变量：肤色 C 低于 C_min（发灰）⇒ 推一点
@@ -514,6 +520,9 @@ def solve_point_color(rec: dict, intent: Optional[Intent] = None,
     lum = 0.0
     if face_deficit_L > 0.5:
         lum = min(PC_LUM_MAX, face_deficit_L / PC_LUM_L_PER_UNIT)
+    # 逆光：肤色补一点彩度（阴影侧被抬平之后发灰）
+    if backlit:
+        scale += PC_BACKLIT_SAT
     return dict(scale=max(-1.0, min(1.0, scale)), shift=0.0, lum=round(float(lum), 3))
 
 
@@ -619,7 +628,8 @@ def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
 
     # 点颜色吃 ①' 的肤色（② 的真值算不了，这是最接近的一层）
     rec_pc = rec_final or dict(rec_engine, skin=pred['pred']['skin'])
-    pc = solve_point_color(rec_pc, intent=intent)
+    pc = solve_point_color(rec_pc, intent=intent,
+                           backlit=(la.light == 'backlit'))
     # ★ 三个分量任一非零都要带上（10-29 真跑：只判 scale/shift ⇒ 只有 lum 时被丢掉，
     #   ⑥ 的阶梯永远拿不到 point_color，整段是死的）
     if pc and (abs(pc['scale']) > 1e-6 or abs(pc['shift']) > 1e-6

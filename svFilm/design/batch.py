@@ -74,7 +74,7 @@ class Batch:
 
 # ---------------------------------------------------------------- 测量
 
-def measure_tif(path: str, with_bg: bool = True) -> dict:
+def measure_tif(path: str, with_bg: bool = True, fixed_xy=None) -> dict:
     """渲出来的 TIF 立刻量。
 
     `with_bg=True` 是**必须的**（2026-10-29 真跑发现）：没有背景就**没有 `light_ratio`**，
@@ -86,7 +86,7 @@ def measure_tif(path: str, with_bg: bool = True) -> dict:
     if P not in sys.path:
         sys.path.insert(0, P)
     import measure_all as MA
-    rec = MA.measure_one(path, with_bg=with_bg)
+    rec = MA.measure_one(path, with_bg=with_bg, fixed_xy=fixed_xy)
     # 引擎渲完会写一张 sidecar：这张底片还能抬几档
     import json
     side = path.replace('_engine.tif', '_headroom.json')
@@ -225,7 +225,13 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
         used = rnd + 1
         recs3 = {}
         for st, p in got.items():
-            r = mf(p)
+            # ★ ③ 的取样点**固定用 ① 的那个像素**：否则"挑最平整的点"会在
+            #   不同处理结果上跳到另一侧颊（真跑里 1307 一轮读 39.7、底片是 73.5）
+            xy = ((recs.get(st) or {}).get('skin') or {}).get('xy')
+            try:
+                r = mf(p, fixed_xy=xy) if xy else mf(p)
+            except TypeError:
+                r = mf(p)
             r['file'] = os.path.basename(p)
             recs3[st] = r
 
