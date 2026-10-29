@@ -124,6 +124,7 @@ def build() -> List[dict]:
         out.append(dict(
             name=k, corpus=c['corpus'], n=len(rows), n_face=len(wit),
             n_skin=n_skin, n_strict=n_strict,
+            thin=bool(n_skin < 8),      # §65.4：样本 <8 的卡不进匹配，只留档
             bands=dict(
                 p50=_band(get_img('p50')), p95=_band(get_img('p95')), p5=_band(get_img('p5')),
                 contrast=_band(get_img('contrast')), clip=_band(get_img('clip_pct')),
@@ -151,7 +152,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                        cards=cards), fh, ensure_ascii=False, indent=1)
     print('写出 %s ｜ 卡 %d 张' % (a.out, len(cards)))
     # ---- 摘要
-    thin = [c for c in cards if c['n_skin'] < 8]
+    thin = [c for c in cards if c.get('thin')]
     print('n_skin < 8 的卡：%d 张' % len(thin))
     print('%-30s %5s %6s %7s  %-14s %s' % ('卡', 'n', 'n_skin', 'n_strict', '脸L 带', 'p50 带'))
     for c in sorted(cards, key=lambda x: -(x['n_skin'] or 0))[:8]:

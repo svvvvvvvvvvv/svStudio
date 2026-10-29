@@ -84,6 +84,7 @@ class MatchCard:
     tags: Dict[str, str] = field(default_factory=dict)      # 分面 -> dominant
     tag_conf: Dict[str, str] = field(default_factory=dict)
     samples: List[str] = field(default_factory=list)
+    thin: bool = False        # 样本不足的卡（不进匹配，只留档）
 
     def label(self) -> str:
         t = self.tags
@@ -189,7 +190,8 @@ def _from_v3() -> List['MatchCard']:
                              profile=prof, spread=spread,
                              tags=dict(tg.get('tags') or {}),
                              tag_conf=dict(tg.get('conf') or {}),
-                             samples=list(c.get('samples') or [])))
+                             samples=list(c.get('samples') or []),
+                             thin=bool(c.get('thin'))))
     return out
 
 
@@ -201,7 +203,8 @@ def cards() -> List[MatchCard]:
     """
     v3 = _from_v3()
     if v3:
-        return v3
+        # 薄卡不进匹配（§65.4），但仍留在 cards_v3.json 里备查
+        return [c for c in v3 if not c.thin]
     from .refcards import refcards as _refs
     tags = _tags_by_dir()
     samples = _samples_by_dir()
