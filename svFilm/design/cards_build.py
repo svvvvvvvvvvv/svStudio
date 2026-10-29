@@ -95,11 +95,14 @@ def build() -> List[dict]:
         get_img = lambda key: img(lambda r: (r.get('img') or {}).get(key), key)
         shape = lambda key: img(lambda r: (r.get('shape') or {}).get(key), key)
         # ---- 关系
+        # ★ 关系量：分母太小（暗背景）会把比值炸掉 ⇒ 只在 bg 够亮时参与
         rel_fb = [(s['L'] / r['bg']['L_p90']) for r, s in
                   ((r, r.get('skin')) for r in rows)
-                  if s and (r.get('bg') or {}).get('L_p90')]
+                  if s and (r.get('bg') or {}).get('L_p90')
+                  and r['bg']['L_p90'] >= 20.0]
         rel_pb = [((r['person'] or {}).get('L') / (r['bg'] or {}).get('L'))
-                  for r in rows if (r.get('person') or {}).get('L') and (r.get('bg') or {}).get('L')]
+                  for r in rows if (r.get('person') or {}).get('L')
+                  and (r.get('bg') or {}).get('L') and r['bg']['L'] >= 20.0]
         # ---- 色彩：中性轴五段 / 色相六段（逐图取中位再在套内取中位）
         na = []
         for i in range(5):
@@ -132,7 +135,8 @@ def build() -> List[dict]:
                 face_h=_band([s['h'] for s in sk]),
                 toe=_band(shape('toe')), shoulder=_band(shape('shoulder')),
                 contrast_win=_band(shape('contrast_win')), skew=_band(shape('skew')),
-                face_over_bg=_band(rel_fb), person_over_bg=_band(rel_pb),
+                # 关系用**鲁棒带** P25~P75：P10~P90 会被极端场景拉宽到没有判别力
+                face_over_bg=_band(rel_fb, 25, 75), person_over_bg=_band(rel_pb, 25, 75),
                 light_ratio=_band([r.get('light_ratio') for r in rows]),
                 warm_cool_b=_band([r.get('warm_cool_b') for r in rows]),
             ),

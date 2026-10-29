@@ -69,18 +69,28 @@ def _meas_of(rec: dict) -> Dict[str, object]:
 
 
 def white_end_plan(rec: dict) -> Dict[str, object]:
-    """③ 白端：① 的 p95/clip 说明要不要压、压多少（方向 + 一档）。
+    """③ 白端：判据只看**人身上的爆白**（人像优先级最高）。
 
-    半可算（Whites 无公开传递函数）⇒ 只给**方向与档级**，出片后一次验（§52.1）。
+    2026-10-30 定：整幅/天空的 clip 是**线索**，不是门。
+    实测 919 那批：1231 整幅 clip 5.29% 但人 0.00%（全是天空）；
+    1526 整幅 1.58% 而人 **9.53%**（白裙爆了）—— 该压的正是后者。
+
+    Whites 半可算（无公开传递函数）⇒ 只给**方向与档级**，出片后一次验（§52.1）。
     """
     im = rec.get('img') or {}
-    p95, clip = im.get('p95'), im.get('clip_pct')
+    per = rec.get('person') or {}
+    bgr = rec.get('bg') or {}
+    p95 = im.get('p95')
+    p_clip = per.get('clip_pct')
+    b_clip = bgr.get('clip_pct')
     need = None
     if p95 is not None and p95 > P95_MAX:
         need = 'down'
-    if clip is not None and clip >= CLIP_MAX:
+    if p_clip is not None and p_clip >= CLIP_MAX:
         need = 'down'
-    return dict(need=need, p95=p95, clip=clip, gate=dict(p95_max=P95_MAX, clip_max=CLIP_MAX))
+    return dict(need=need, p95=p95, clip=p_clip, person_clip=p_clip,
+                bg_clip=b_clip, frame_clip=im.get('clip_pct'),
+                gate=dict(p95_max=P95_MAX, person_clip_max=CLIP_MAX))
 
 
 def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
@@ -110,14 +120,15 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
 
 def summary(plans: Dict[str, dict], card_name: str = '') -> str:
     lines = ['【LR 计划】卡 %s' % card_name]
-    lines.append('%-10s %8s %8s  %-22s %s' % ('stem', '曝光EV', '局部EV', '曲线', '白端'))
+    lines.append('%-10s %8s %8s  %-22s %-10s %s' % ('stem', '曝光EV', '局部EV', '曲线', '白端', '人clip/天空clip'))
     for stem, p in sorted(plans.items()):
         pl = p['plan']
         w = p['white']
-        lines.append('%-10s %+8.2f %+8.2f  %-22s %s(p95 %.1f / clip %.2f)'
+        lines.append('%-10s %+8.2f %+8.2f  %-22s %-10s %.2f%% / %.2f%% (p95 %.1f)'
                      % (stem, pl['exposure_ev'], pl['local_ev'],
                         ','.join('%s%+.1f' % (k, v) for k, v in (pl.get('curve') or {}).items()) or '—',
-                        w['need'] or '不动', w['p95'] or 0, w['clip'] or 0))
+                        w['need'] or '不动', w.get('person_clip') or 0, w.get('bg_clip') or 0,
+                        w['p95'] or 0))
     return '\n'.join(lines)
 
 

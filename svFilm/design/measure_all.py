@@ -137,9 +137,13 @@ def measure_one(path: str, light_probe=None) -> dict:
         bg = ~pm
         out['env_share'] = float(bg.mean())
         out['person'] = dict(share=float(pm.mean()), L=_med(Ln[pm]) if pm.any() else None,
-                             p95=_pct(Ln[pm], 95))
+                             p95=_pct(Ln[pm], 95),
+                             # ★ 2026-10-30：爆白要分**人身上**与**背景/天空**（人像优先级最高）
+                             clip_pct=(float((Ln[pm] >= 99).mean() * 100) if pm.any() else None),
+                             clip_p95=(_pct(Ln[pm], 99) if pm.any() else None))
         Lbg = Ln[bg]
         out['bg'] = dict(L=_med(Lbg), C=_med(Cn[bg]), a=_med(an[bg]), b=_med(bn[bg]),
+                      clip_pct=(float((Lbg >= 99).mean() * 100) if bg.any() else None),
                          L_p10=_pct(Lbg, 10), L_p90=_pct(Lbg, 90), L_p95=_pct(Lbg, 95),
                          n=int(bg.sum()))
 
