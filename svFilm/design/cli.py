@@ -359,8 +359,12 @@ def cmd_review(a):
             plans[st] = solve_one(rec, log=lambda *_: None)
         print('参数来源：按当前代码重算（%d 张）' % len(plans))
 
+    um = {}
+    if getattr(a, 'urls', ''):
+        um = json.load(open(a.urls, encoding='utf-8'))
+        print('用托管直链：%d 条' % len(um))
     out = make_review(r1, r3, plans, a.out, tif_1_dir=a.tif1, tif_3_dir=a.tif3,
-                      title=a.title, ev_known=bool(a.manifest), log=print)
+                      title=a.title, ev_known=bool(a.manifest), url_map=um, log=print)
     print('\n验收：硬门（脸）过 %d/%d' % (out['ok'], out['n']))
     for r in out['rows']:
         print('  %-10s %s' % (r['stem'], r['verdict']))
@@ -499,6 +503,7 @@ def main(argv=None):
     p.add_argument('--tif1', default='', help='① 的 tif 目录（出图用）')
     p.add_argument('--tif3', default='', help='③ 的 tif 目录（出图用）')
     p.add_argument('--manifest', default='', help='LR 作业单 manifest.json（读实际参数）')
+    p.add_argument('--urls', default='', help='图片直链 json（{本地文件名: url}），手机端页面用')
     p.add_argument('--stem', default='')
     p.add_argument('--title', default='成片目检')
 

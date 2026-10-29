@@ -245,10 +245,14 @@ def _find_tif(d: str, stem: str, allow_engine: bool = False) -> Optional[str]:
 def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict], plans: Dict[str, object],
                 out_dir: str, tif_1_dir: str = '', tif_3_dir: str = '',
                 title: str = '成片目检', sub: str = '', ev_known: bool = True,
+                url_map: Optional[Dict[str, str]] = None,
                 log=print) -> Dict[str, object]:
     """量完 ③ 之后：**验收 + 出一页目检**。只读，不改参数。
 
     这是 G1/G2/G3 的落地：以前流程走到"导出"就断了，现在导出之后必须过这里。
+
+    `url_map`：`{本地jpg文件名: 托管直链}`。传了就用直链（**手机端看资料库必须用这个**），
+    没传就写相对路径（本地桌面看）。直链来自 `manage/upload_image.py`。
     """
     r1, r3 = by_stem(recs_1), by_stem(recs_3)
     prev_dir = os.path.join(out_dir, 'preview')
@@ -281,12 +285,15 @@ def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict], plans: Dict[st
         fin = _find_tif(tif_3_dir, st)
         eng = _find_tif(tif_1_dir, st, allow_engine=True) if tif_1_dir else None
         fj = ej = None
+        um = url_map or {}
         if fin:
             p = jpg_of(fin, os.path.join(prev_dir, st + '_3.jpg'))
             fj = 'preview/%s_3.jpg' % st if p else None
+            fj = um.get(st + '_3.jpg') or um.get(st + '_3') or fj
         if eng:
             p = jpg_of(eng, os.path.join(prev_dir, st + '_1.jpg'))
             ej = 'preview/%s_1.jpg' % st if p else None
+            ej = um.get(st + '_1.jpg') or um.get(st + '_1') or ej
 
         rows.append(dict(stem=st, values=vals + ' ｜ ', note=note, verdict=verify_line(v),
                          final_jpg=fj, engine_jpg=ej, _v=v))
