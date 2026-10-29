@@ -256,6 +256,13 @@ def measure_one(path: str, light_probe=None) -> dict:
     return out
 
 
+# ---------------------------------------------------------------- 并行
+
+def _worker(path: str) -> dict:
+    """进程池里的单张测量（必须模块级，才能被 pickle）。"""
+    return measure_one(path)
+
+
 # ---------------------------------------------------------------- CLI
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -266,6 +273,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument('--out', default='')
     ap.add_argument('--limit', type=int, default=0)
     ap.add_argument('--ext', default='jpg,jpeg,png,tif,tiff')
+    ap.add_argument('--jobs', type=int, default=1, help='并行进程数（0=CPU 核数-2）')
     a = ap.parse_args(argv)
 
     paths = list(a.files)
@@ -282,7 +290,34 @@ def main(argv: Optional[List[str]] = None) -> int:
         print('没有图'); return 2
 
     rows = []
-    for i, p in enumerate(paths, 1):
+    jobs = a.jobs
+    if jobs == 0:
+        jobs = max(1, (os.cpu_count() or 4) - 2)
+    jobs = min(max(1, jobs), 16)
+    if jobs > 1:
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+        print('并行 %d 路 ｜ %d 张' % (jobs, len(paths)))
+        with ProcessPoolExecutor(max_workers=jobs) as ex:
+            futs = {ex.submit(_worker, p): (i, p) for i, p in enumerate(paths, 1)}
+            done = 0
+            for fu in as_completed(futs):
+                i, p = futs[fu]
+                try:
+                    r = fu.result()
+                except Exception as e:                      # noqa: BLE001
+                    r = dict(file=p, err='%s: %s' % (type(e).__name__, str(e)[:120]))
+                rows.append(r)
+                done += 1
+                sk = r.get('skin') or {}
+                print('%3d/%3d %-42s %s' % (
+                    done, len(paths), os.path.basename(p)[:42],
+                    ('L%.1f C%.1f h%.0f ITA%+.0f n%d [%s]' % (sk['L'], sk['C'], sk['h'],
+                                                              sk.get('ita') or 0,
+                                                              sk.get('n') or 0,
+                                                              sk.get('src'))
+                     if sk else ('弃权:%s' % r.get('skin_err')))))
+        rows.sort(key=lambda r: r['file'])
+    for i, p in enumerate(paths, 1) if jobs <= 1 else []:
         r = measure_one(p)
         rows.append(r)
         sk = r.get('skin') or {}

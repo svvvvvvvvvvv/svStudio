@@ -152,8 +152,56 @@ def _medium_by_corpus() -> Dict[str, Tuple[str, str]]:
             'xhs': ('kodak_ultramax_400', 'kodak_portra_endura')}
 
 
+
+_CARDS_V3 = r'E:\ds\photo\_corpus\kurai\full\cards_v3.json'
+
+
+def _from_v3() -> List['MatchCard']:
+    """从 cards_v3.json（§65 聚合产物）装卡：带的**中点**当画像，半宽当 spread。"""
+    if not os.path.isfile(_CARDS_V3):
+        return []
+    d = json.load(open(_CARDS_V3, encoding='utf-8'))
+    tags = _tags_by_dir()
+    med = _medium_by_corpus()
+    out: List[MatchCard] = []
+    for c in d.get('cards') or []:
+        b = c.get('bands') or {}
+        prof: Dict[str, float] = {}
+        spread: Dict[str, float] = {}
+        for key, bname in (('p5', 'p5'), ('p50', 'p50'), ('p95', 'p95'),
+                           ('contrast', 'contrast'), ('clip', 'clip')):
+            band = b.get(bname)
+            if isinstance(band, list) and len(band) == 2:
+                prof[key] = 0.5 * (band[0] + band[1])
+                spread[key] = max((band[1] - band[0]) / 2.0, 1e-6)
+        fb = b.get('face_L')
+        if isinstance(fb, list):
+            prof['L'] = 0.5 * (fb[0] + fb[1])
+            spread['L'] = max((fb[1] - fb[0]) / 2.0, 1e-6)
+        cb = b.get('face_C')
+        if isinstance(cb, list):
+            prof['C'] = 0.5 * (cb[0] + cb[1])
+        if prof.get('p95') is not None and prof.get('p5') is not None:
+            prof['span'] = prof['p95'] - prof['p5']
+        tg = tags.get(c['name']) or {}
+        st_, pp = med.get(c.get('corpus') or '', ('kodak_portra_400', 'kodak_portra_endura'))
+        out.append(MatchCard(name=c['name'], n=int(c.get('n') or 0), stock=st_, paper=pp,
+                             profile=prof, spread=spread,
+                             tags=dict(tg.get('tags') or {}),
+                             tag_conf=dict(tg.get('conf') or {}),
+                             samples=list(c.get('samples') or [])))
+    return out
+
+
 def cards() -> List[MatchCard]:
-    """全部匹配卡（64 张大师卡 + 现有 preset 卡），按 §55 的字段装好。"""
+    """全部匹配卡，按 §55 的字段装好。
+
+    优先读 `cards_v3.json`（新口径 v7 的聚合，含 person/near_bg/light 三块）；
+    没有才退回 `refcards()`（v2 老口径，只作兜底）。
+    """
+    v3 = _from_v3()
+    if v3:
+        return v3
     from .refcards import refcards as _refs
     tags = _tags_by_dir()
     samples = _samples_by_dir()
