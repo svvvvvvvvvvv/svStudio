@@ -26,7 +26,8 @@ DARK_PCT = 10.0       # 阴影剔除
 MIN_C = 10.0          # 皮肤彩度下限（灰/白/黑都在这之下）
 DE_MED = 10.0         # 离群剔除
 MIN_PX = 300          # 弃权门（低于此，中位不稳）
-FACE_W_MIN = 40.0     # 1080 域脸宽下限
+FACE_W_MIN = 80.0     # 1080 域脸宽下限
+OFF_FACE_MAX = 12.0   # 肤色 L 与"脸区中位 L"的最大允许差（超了说明 ROI 跑到墙/衣服/高光上）
 
 
 def _lab_from(img_lab, crop):
@@ -116,6 +117,20 @@ def sample_skin(crop, meta, img_lab=None, mapper=None, fixed_xy=None, skin_mask=
         return dict(ok=False, why='roi_empty', sides=sides, fw=fw)
     good.sort(key=lambda s: s['L'])
     lit = good[-1]
+    # ★ 离脸检查（2026-10-30 20 张 canary 抓到）：强光高键的片子上，256 分辨率的掩膜
+    #   会把亮墙/白衣服也标成"脸皮肤"，ROI 中位因此虚高 20~30 L*（02_t1 读出 L86，
+    #   而那张的脸在阴影里）。拿"脸框内那圈（掩膜 ∩ 椭圆）的中位 L"当锚，
+    #   肤色偏离超过 OFF_FACE_MAX 就弃权 —— 宁可弃权，不许给出一个亮墙当脸。
+    if skin_mask is not None:
+        ax = 0.5 * (le[0] + re[0])
+        ay = 0.5 * (le[1] + rm[1])
+        anchor = _ellipse(L.shape, ax, ay, 0.55 * fw, 0.75 * fw)
+        anchor &= (skin_mask > 0.5) & (C >= MIN_C)
+        if int(anchor.sum()) >= 500:
+            med_face = float(np.median(L[anchor]))
+            if abs(float(lit['L']) - med_face) > OFF_FACE_MAX:
+                return dict(ok=False, why='off_face', sides=sides, fw=fw,
+                            lit=lit, face_L=med_face)
     shadow = good[0] if len(good) > 1 else None
     de = None
     if shadow is not None:
