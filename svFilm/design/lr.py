@@ -30,17 +30,15 @@ from .curve import plan_curve
 # 规划预算（验收预算见 invariants.S3['anchor_max'] = 3.0）
 # 差 0.3 是给"16 点 LUT 插值 + 取整"的误差留的余量（实测 3.0 -> 3.14）
 S3_BUDGET_PLAN = 2.7
-from .invariants import T1, T2
+from .invariants import T1, T2, T4
 from .intent import Intent
 
 # ---------------------------------------------------------------- 常数与出处
 #
-# ★ 中间调斜率：**能推**，不用猜
-#   CIELAB: L* = 116·(Y/Yn)^(1/3) − 16 ；曝光是线性光倍数 Y ∝ 2^EV
-#   ⇒ dL*/dEV = (116/3)·ln2·(Y/Yn)^(1/3) = 0.2310·(L*+16)
-#   验证：L*=50 -> 15.2 ｜ 70 -> 19.9 ｜ 90 -> 24.5
-#   （原来用的 30 偏高 1.5 倍，而且与 L* 无关 —— 已替换）
-LAB_SLOPE_K = 0.2310
+# ★ 中间调斜率与"曝光后那一态"：**能推**，已移到 expose.py（曝光前后共用一套）
+#   `eval_slope` / `ev_for_dL` 在这里保留同名导出，老调用点不用改。
+from .expose import (LAB_SLOPE_K, after_ev, eval_slope, ev_for_dL,
+                     headroom_note)
 #
 # ★ 高光端斜率：理论值不适用（印相肩部压缩），只能实测。实测 8~16 L*/EV。
 #   见 design 文档「高光端斜率」与 DSCF1289 那组实测（8~16 L*/EV）。
@@ -53,17 +51,17 @@ PC_FULL_CLOSES = 0.35
 #
 # ★ 意图：±1 意图 = ±0.5 档。这是**接口定义**（"+1 是什么意思"），不是物理断言。
 INTENT_EV_PER_UNIT = 0.5
-
-
-def eval_slope(L: float) -> float:
-    """中间调 dL*/dEV（CIELAB 立方根律，L 依赖）。"""
-    return LAB_SLOPE_K * (max(0.0, float(L)) + 16.0)
-
-
-def ev_for_dL(dL: float, L: float) -> float:
-    """把"要改多少 L*"换成档数（在给定 L* 处取局部斜率）。"""
-    s = eval_slope(L)
-    return float(dL) / s if s > 1e-9 else 0.0
+#
+# ★ 落区边界要留的余量：脸进区就停，但**目标点要离边界 ≥ 测量容差**，
+#   否则量出来刚过线、下一张又掉出去。容差 L* ±1.0（量化下限）⇒ 取 1.5。
+EDGE_MARGIN_L = 1.5
+#
+# ★ 脸的"够大"判据（H2 降级链用）：face_w_native ≥ 40 px 才算能当锚。
+#   出处：手掩膜守卫 [0.005, 0.70] 与旧链实测（脸太小则颊读数不可靠）。
+FACE_MIN_W = 40.0
+#
+# ★ 光位判据（H4）：设计 §3.1「逆光（脸/背景亮度比 < 1.0）· 顺光（比 > 1.3）」
+LIGHT_BACKLIT, LIGHT_FRONTLIT = 1.0, 1.3
 
 
 
@@ -91,76 +89,196 @@ class LRPlan:
 
 # ---------------------------------------------------------------- ① 看哪里
 
-def pick_lookat(rec_engine: dict) -> str:
-    """有脸→face，没脸但有人→person，都没有→matrix（H2 降级链）。"""
-    skin = rec_engine.get('skin')
+@dataclass
+class LookAt:
+    """「看哪里」的结果：**带理由**，不许静默选一个档。"""
+    kind: str                 # face | matrix
+    source: str               # 读的是哪个量（如 'skin.L' / 'img.p50'）
+    why: str
+    light: str = 'unknown'    # backlit | frontlit | unknown（H4）
+
+    def __str__(self):
+        return '%s（%s）%s' % (self.kind, self.source,
+                              '' if self.light == 'unknown' else ' · ' + self.light)
+
+
+def light_state(rec: dict) -> str:
+    """光位（H4）：脸/背景亮度比 < 1.0 逆光，> 1.3 顺光。
+
+    出处：设计 §3.1 的分类依据；比值来自测量层的 `light_ratio`。
+    为什么要它：逆光与顺光要**相反**处理（§28 L3）——
+    逆光该提的是脸（并且要预备收白）；顺光脸还低，那就不是光位的事。
+    """
+    lr = rec.get('light_ratio')
+    if lr is None:
+        return 'unknown'
+    if lr < LIGHT_BACKLIT:
+        return 'backlit'
+    if lr > LIGHT_FRONTLIT:
+        return 'frontlit'
+    return 'unknown'
+
+
+def pick_lookat(rec_engine: dict) -> LookAt:
+    """H2 降级链：脸 → 人 → 整幅。**每一档都要解释为什么，降级了要写出来。**
+
+    2026-10-29 修（原代码的两个毛病）：
+      ① `person` 档 `cur = None` ⇒ 直接返回 0 档 —— 等于"没脸的图整批不动曝光"，静默；
+      ② 判"有人"用的是 `env_share < 0.95`（背景占比），跟"有没有人"不是一回事。
+
+    现在：
+      · 脸够大 → face（读 skin.L，r²=0.890，手册 §15.1）
+      · 有脸但太小 → 设计要"人"的读数，**测量层目前不给人的亮度** ⇒
+        明确降级到整幅，并把"人读数缺"写进理由（不假装做了 person 档）
+      · 没有人脸 → 整幅。整幅的**落点没有不变量**（T4 是给脸的）⇒ 曝光弃权，
+        只保 T1/T2（那是 Highlights/曲线的活）。弃权也要写出来（§7 失败与弃权）。
+    """
+    skin = rec_engine.get('skin') or {}
     fw = rec_engine.get('face_w_native') or 0
-    if skin and fw >= 40:
-        return 'face'
-    if (rec_engine.get('env_share') or 0) < 0.95:
-        return 'person'
-    return 'matrix'
+    light = light_state(rec_engine)
+    if skin.get('L') is not None and fw >= FACE_MIN_W:
+        return LookAt('face', 'skin.L',
+                      '有脸且够大（face_w %.0f ≥ %.0f）' % (fw, FACE_MIN_W), light)
+    if skin.get('L') is not None or (rec_engine.get('face_mask_share') or 0) > 0:
+        return LookAt('matrix', 'img.p50',
+                      '有脸但太小（face_w %.0f < %.0f）：人的读数测量层还没接 ⇒ 降级整幅，'
+                      '不假装有 person 档' % (fw, FACE_MIN_W), light)
+    return LookAt('matrix', 'img.p50', '未检到脸 ⇒ 整幅；整幅落点没有不变量 ⇒ 曝光弃权', light)
 
 
 # ---------------------------------------------------------------- ② 曝光
 
+@dataclass
+class Exposure:
+    """曝光这一步的结果：值 + 两道预算 + 欠账。"""
+    ev: float = 0.0
+    want_ev: float = 0.0              # 为了把脸放进区想要的档数（含意图）
+    cap_headroom: Optional[float] = None   # 引擎余量（"还能抬几档不剪"）
+    cap_white: Optional[float] = None      # 把 p95 推到白平台还差几档
+    cap_used: Optional[float] = None       # 实际取的那个上限（= min 两道）
+    debt_ev: float = 0.0              # 差多少档没给（引擎欠账 / 卡欠账）
+    why: str = ''
+
+
+def _cap_white(rec_engine: dict) -> Optional[float]:
+    """第二道预算：把 p95 推到白平台还差几档。
+
+    为什么用 p95 而不是 p99：p99 已经贴死在 99.9（本批实测），拿它算上限永远是 0，
+    等于不许提亮；p95 是"5% 到顶"的位置，用它当白端预算才有分辨力。
+    ⚠ 这是**近似**：真实肩部会压缩，所以它偏保守（真能提的比它多一点）。
+    """
+    p95 = (rec_engine.get('img') or {}).get('p95')
+    if p95 is None:
+        return None
+    s = eval_slope(p95)
+    return (100.0 - float(p95)) / s if s > 1e-9 else None
+
+
 def solve_exposure(rec_engine: dict, target_L: float = 72.0,
-                   L_lo: float = 55.0, L_hi: float = 85.0,
-                   intent: Optional[Intent] = None) -> float:
-    """一次算到位。`target_L` 只是合理区里的一个落点，不是某个靶。"""
-    lookat = pick_lookat(rec_engine)
-    if lookat == 'face':
-        cur = (rec_engine.get('skin') or {}).get('L')
-    elif lookat == 'person':
-        cur = None
-    else:
-        cur = (rec_engine.get('img') or {}).get('p50')
+                   L_lo: float = None, L_hi: float = None,
+                   intent: Optional[Intent] = None) -> Exposure:
+    # `target_L` 只为兼容旧调用保留，**已经不参与计算**：
+    # 脸是约束不是目标（§28 L1），落点只由 T4 的区边界决定。
+    """一次算到位。**脸是约束，不是目标**（设计 §28 L1）。
+
+    2026-10-29 改（三处，都对着设计）：
+      ① **只在脸出区时才动**。原来 `target_L=72` 硬编码 = 给脸设了一个点靶，
+         与 §28 L1「脸要落进合理区，但不必落到某个具体值」冲突。
+         现在：区内 ⇒ 0 档；出区 ⇒ 只推到"刚进区 + 1.5 L* 余量"。
+      ② **白端保护（H3）用两道独立预算，取小**，不再笼统截到余量：
+         引擎余量 vs 把 p95 推到白平台的档数。差多少记 `debt_ev`，不硬顶。
+      ③ 意图叠在"想要的档数"上，**同样受两道预算约束**（S4：不许把脸推出人样）。
+    """
+    lo = T4['L_lo'] if L_lo is None else L_lo
+    hi = T4['L_hi'] if L_hi is None else L_hi
+    la = pick_lookat(rec_engine)
+    ex = Exposure(cap_headroom=rec_engine.get('headroom_ev'),
+                  cap_white=_cap_white(rec_engine))
+    caps = [c for c in (ex.cap_headroom, ex.cap_white) if c is not None]
+    ex.cap_used = min(caps) if caps else None
+
+    if la.kind != 'face':
+        ex.why = '弃权：%s（整幅没有落点不变量，曝光不动）' % la.why
+        return ex
+
+    cur = (rec_engine.get('skin') or {}).get('L')
     if cur is None:
-        return 0.0
-    tgt = min(max(target_L, L_lo), L_hi)
-    ev = ev_for_dL(tgt - cur, cur)          # 斜率随 L* 变（CIELAB）
-    # ★ 曝光计划**不许超过引擎报的余量**：否则计划本身就会毁图
-    #   （2026-10-29 首次真跑：引擎压暗留余量 -> 脸 L≈45 -> 计划 +2.4 档，
-    #     而 +1 档已剪 8.69%。没有这一条，系统会安静地输出毁图的计划。）
-    hr = rec_engine.get('headroom_ev')
-    if hr is not None and ev > float(hr):
-        ev = float(hr)
+        ex.why = '弃权：脸读数为空'
+        return ex
+
+    # ---- ① 约束式：只在出区时动，目标是"刚进区"（留测量容差）
+    if cur < lo:
+        want_dL, side = (lo + EDGE_MARGIN_L) - cur, '暗于下界'
+    elif cur > hi:
+        want_dL, side = (hi - EDGE_MARGIN_L) - cur, '亮于上界'
+    else:
+        want_dL, side = 0.0, '区内'
+    ex.want_ev = ev_for_dL(want_dL, cur)
+
+    # ---- 意图：只改方向与幅度，不许把脸推出人样（S4）
     if intent is not None:
-        # 意图只改**曝光**，且不许把脸推出合理区（S4）
-        ev += getattr(intent, 'brighter', 0.0) * INTENT_EV_PER_UNIT
-        newL = cur + ev * eval_slope(cur)
-        if newL > L_hi:
-            ev -= ev_for_dL(newL - L_hi, cur)
-        elif newL < L_lo:
-            ev += ev_for_dL(L_lo - newL, cur)
-    return ev
+        ex.want_ev += getattr(intent, 'brighter', 0.0) * INTENT_EV_PER_UNIT
+        newL = cur + ex.want_ev * eval_slope(cur)
+        if newL > hi - EDGE_MARGIN_L:
+            ex.want_ev -= ev_for_dL(newL - (hi - EDGE_MARGIN_L), cur)
+        elif newL < lo + EDGE_MARGIN_L:
+            ex.want_ev += ev_for_dL((lo + EDGE_MARGIN_L) - newL, cur)
+
+    # ---- 光位说明（H4）：**两个分支都要带**，它讲的是"该不该提"，不是"能不能提"
+    light_hint = ''          # 详情在 plan.notes['light']，这里只留一个短标记
+    if la.light == 'backlit':
+        light_hint = '（逆光，提完需预备收白）'
+    elif la.light == 'frontlit' and cur < lo:
+        light_hint = '（顺光但脸低 ⇒ 先查测光/卡，别靠曝光硬提）'
+
+    # ---- ② 两道预算取小（H3 / L2）
+    if ex.cap_used is not None and ex.want_ev > ex.cap_used + 1e-9:
+        ex.ev = max(0.0, float(ex.cap_used))
+        ex.debt_ev = round(ex.want_ev - ex.ev, 3)
+        which = []
+        if ex.cap_headroom is not None and ex.cap_headroom <= ex.cap_used + 1e-9:
+            which.append('引擎只留了 %.2f 档余量' % ex.cap_headroom)
+        if ex.cap_white is not None and ex.cap_white <= ex.cap_used + 1e-9:
+            which.append('p95 距白平台只剩 %.2f 档' % ex.cap_white)
+        ex.why = ('%s（脸 %.1f，要 %+.2f 档，给了 %+.2f）⇒ 欠 %.2f 档：%s%s'
+                  % (side, cur, ex.want_ev, ex.ev, ex.debt_ev,
+                     '、'.join(which) or '预算缺', light_hint))
+    else:
+        ex.ev = ex.want_ev
+        ex.why = '%s（脸 %.1f）%s%s' % (side, cur, '' if not want_dL else
+                                       '，目标 %.1f' % (cur + want_dL), light_hint)
+    ex.ev = round(float(ex.ev), 3)
+    ex.want_ev = round(float(ex.want_ev), 3)
+    return ex
 
 
 # ---------------------------------------------------------------- ③ 收白
 
-def solve_highlights(rec_after_ev: dict, clip_max: Optional[float] = None):
-    """高光收白：**没有公式可算**，所以只给"政策性"一档，并把欠账记下来。
+def solve_highlights(pred: dict, clip_max: Optional[float] = None):
+    """高光收白：**在 ①'（提完曝光之后）上判**，不在 ① 上判。
 
-    为什么删掉原来的公式（2026-10-29 自审）：
-      原来是 `-(over-1)*40`，纯拍脑袋；而 `Highlights` 在 Adobe 文档里
-      **没有公开传递函数**（见 lrmodel.py 的"没有公开闭式"一节）。
-      给一个编出来的斜率比不给更糟 —— 它会让人以为这是算出来的。
+    2026-10-29 修：原来传进来的是 ① 的记录 —— 等于"先收白、后算曝光"，顺序倒了。
+    现在吃 `expose.after_ev()` 的结果：
+      · ① 本身就爆（引擎欠账）        ⇒ 政策值 + 记欠账
+      · 提了曝光才爆（超预算，本批 9/10）⇒ 政策值 + 标"待验收"，③ 必须验 clip
+      · 都没爆                        ⇒ 不动
 
-    现在只做两件事：
-      1. 超标就报**欠账**（这活本该由引擎余量 T0 解决，不是 LR 补）
-      2. 需要先兜一下就用 HIGHLIGHT_POLICY 这一档固定值，标成 policy
-
-    返回 (value, note)；value=0.0 表示不动。
+    **不算**具体压多少：`Highlights` 没有公开传递函数（见 lrmodel.py），
+    编一个斜率比不给更糟。这里给的是政策档，且明确标成 policy。
     """
     cm = T1['clip_max'] if clip_max is None else clip_max
-    img = rec_after_ev.get('img') or {}
-    clip = img.get('clip_pct') or 0.0
-    if clip <= cm:
+    lb = float(pred.get('clip_lb') or 0.0)
+    over = float(pred.get('over_ev') or 0.0)
+    if lb <= cm and over <= 1e-9:
         return 0.0, None
-    note = ('clip=%.2f%% > %.2f%% => 引擎欠账（T0 没留够余量）；'
-            'LR 这里给的是政策值 %+.0f，不是算出来的'
-            % (clip, cm, HIGHLIGHT_POLICY))
-    return float(HIGHLIGHT_POLICY), note
+    if over > 1e-9:
+        return float(HIGHLIGHT_POLICY), (
+            '曝光超预算 %.2f 档 ⇒ p95 会被推高（下界 %.2f%%）；'
+            'Highlights 给的是政策值 %+.0f（无公开传递函数，未标定）⇒ ③ 出片必须验 clip'
+            % (over, lb, HIGHLIGHT_POLICY))
+    return float(HIGHLIGHT_POLICY), (
+        '① 已爆（下界 %.2f%% > %.2f%%）⇒ 引擎欠账（T0 没留够余量）；'
+        'LR 这里给的是政策值 %+.0f，不是算出来的' % (lb, cm, HIGHLIGHT_POLICY))
 
 
 # 政策档：不是公式。等实测标定后替换（当前只保证方向：压）
@@ -258,35 +376,66 @@ def solve_point_color(rec: dict, intent: Optional[Intent] = None,
 def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
               rec_final: Optional[dict] = None, intent: Optional[Intent] = None,
               log=print) -> LRPlan:
-    """单图的 LR 计划。缺的中间态留空，等测量接上再填。"""
-    plan = LRPlan()
-    plan.notes['lookat'] = pick_lookat(rec_engine)
-    want_ev = solve_exposure(rec_engine, intent=intent)
-    got_ev = want_ev
-    hr = rec_engine.get('headroom_ev')
-    if hr is not None and want_ev > float(hr):
-        plan.notes['exposure_debt'] = (
-            '要 %+.2f 档才把脸放到落点，但引擎只留了 %.2f 档余量 ⇒ 按余量截断；'
-            '要更多请让引擎更暗（或换肩部更宽的卡）' % (want_ev, float(hr)))
-    plan.exposure_ev = round(got_ev, 3)
+    """单图的 LR 计划。
 
-    base = rec_after_ev or rec_engine
-    hv, hnote = solve_highlights(base)
+    2026-10-29 修（顺序 + 口径，都对着设计 §35 的数据接口）：
+      · **先算 ①'（提完曝光之后的态），再拿它判收白**。原来 `rec_after_ev`
+        永远是 None ⇒ `solve_highlights` 看的是 ① 的 clip，先收白后算曝光，顺序倒了。
+        现在没人传就用 `expose.after_ev` 现算（纯算，不渲、不驱动 LR）。
+      · 点颜色改吃 **①'** 的肤色（比 ① 更接近 ②）；② 的真值仍然算不了（点颜色无函数）。
+      · 每一步的理由都落进 `notes`，弃权/欠账/降级一律显式写，不许静默。
+    """
+    plan = LRPlan()
+    la = pick_lookat(rec_engine)
+    plan.notes['lookat'] = '%s — %s' % (la, la.why)
+    if la.light != 'unknown':
+        plan.notes['light'] = ('逆光（脸/背景 %.2f < %.1f）⇒ 该提的是脸，提完必须预备收白'
+                               % (rec_engine.get('light_ratio'), LIGHT_BACKLIT)
+                               if la.light == 'backlit' else
+                               '顺光（脸/背景 %.2f > %.1f）⇒ 只做微调'
+                               % (rec_engine.get('light_ratio'), LIGHT_FRONTLIT))
+
+    ex = solve_exposure(rec_engine, intent=intent)
+    plan.exposure_ev = ex.ev
+    plan.notes['exposure'] = ex.why
+    if ex.debt_ev > 1e-9:
+        plan.notes['exposure_debt'] = (
+            '要 %+.2f 档，给了 %+.2f ⇒ 欠 %.2f 档（引擎余量 %s / p95 到白平台 %s）；'
+            '这不是 LR 能顶的，回去查引擎余量或换肩部更宽的卡'
+            % (ex.want_ev, ex.ev, ex.debt_ev,
+               '—' if ex.cap_headroom is None else '%.2f' % ex.cap_headroom,
+               '—' if ex.cap_white is None else '%.2f' % ex.cap_white))
+    if ex.cap_headroom is not None:
+        plan.notes['headroom'] = headroom_note(ex.cap_headroom)
+
+    # ---- ①' ：提完曝光之后的态（纯算）
+    pred = rec_after_ev or after_ev(rec_engine, ex.ev)
+    if pred.get('notes'):
+        plan.notes['after_ev'] = '；'.join(pred['notes'])
+
+    hv, hnote = solve_highlights(pred)
     plan.highlights = round(hv, 1)
     if hnote:
         plan.notes['highlight_debt'] = hnote
-    pts, info = solve_curve(rec_engine, intent=intent)
+
+    # 曲线看的是 ①'（等价于"提完曝光再修不变量"），否则曲线会去修一个已经不存在的问题
+    rec_for_curve = dict(rec_engine)
+    rec_for_curve['img'] = dict(pred['pred']['img'])
+    if rec_for_curve['img'].get('p1') is None:
+        rec_for_curve['img']['p1'] = (rec_engine.get('img') or {}).get('p1')
+    pts, info = solve_curve(rec_for_curve, intent=intent)
     plan.curve = pts
     plan.notes['curve'] = ('无需' if pts is None else
                            '修正 %s ｜ 最大位移 %.2f' % (info.get('fixed') or '意图',
                                                        info.get('max_abs_delta') or 0))
     plan.saturation = round(solve_saturation(rec_engine, intent), 1)
 
-    pc = solve_point_color(rec_final or rec_engine, intent=intent)
+    # 点颜色吃 ①' 的肤色（② 的真值算不了，这是最接近的一层）
+    rec_pc = rec_final or dict(rec_engine, skin=pred['pred']['skin'])
+    pc = solve_point_color(rec_pc, intent=intent)
     if pc and (abs(pc['scale']) > 1e-6 or abs(pc['shift']) > 1e-6):
         plan.point_color = pc
-        # 取样色要取**过完曲线之后**的（点颜色作用在 ② 上）
-        rgb = ((rec_final or rec_engine).get('skin') or {}).get('rgb')
+        rgb = (rec_pc.get('skin') or {}).get('rgb')
         if rgb:
             from .curve import apply_curve_rgb
             plan.point_color_rgb = list(apply_curve_rgb(rgb, plan.curve or []))

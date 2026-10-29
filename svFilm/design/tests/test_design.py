@@ -153,8 +153,169 @@ def test_feasibility_hue_ok():
     ok(h.reachable, '色相 +8° 应可达（γ 只需 Δ0.055）')
 
 
-# ---------------------------------------------------------------- runner
+# ---------------------------------------------------------------- LR：以人为本
+# 钉住 2026-10-29 补的四件事（H2 降级链 / L1 脸是约束 / H3 两道预算 / H4 光位）
 
+def _lr_rec(**kw):
+    """① 的一份测量（够 LR 那几步用）。默认：脸在区内、余量 0、不爆、顺光。"""
+    base = dict(img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
+                         p95=96.0, p99=99.9, clip_pct=0.2, contrast=90.0),
+                skin=dict(L=70.0, C=18.0, h=55.0, rgb=[0.6, 0.45, 0.34]),
+                headroom_ev=0.0, light_ratio=1.5,
+                face_w_native=120.0, face_mask_share=0.03)
+    base.update(kw)
+    return base
+
+
+def test_lookat_face():
+    from design.lr import pick_lookat
+    la = pick_lookat(_lr_rec())
+    eq_str = la.kind
+    ok(eq_str == 'face' and la.source == 'skin.L', '有脸够大应看脸：%s' % la)
+
+
+def test_lookat_small_face_degrades_with_reason():
+    """脸太小 ⇒ 降级整幅，并且**写明人读数没接**（不假装有 person 档）。"""
+    from design.lr import pick_lookat
+    la = pick_lookat(_lr_rec(face_w_native=12.0))
+    ok(la.kind == 'matrix', '脸太小应降级整幅：%s' % la)
+    ok('人的读数测量层还没接' in la.why, '降级必须写理由：%s' % la.why)
+
+
+def test_lookat_no_face_gives_up():
+    """没脸 ⇒ 整幅且**弃权**（整幅落点没有不变量），不许静默算一个落点。"""
+    from design.lr import pick_lookat, solve_exposure
+    rec = _lr_rec(skin=dict(L=None, C=None, h=None), face_w_native=0.0,
+                  face_mask_share=0.0)
+    la = pick_lookat(rec)
+    ok(la.kind == 'matrix', la)
+    ex = solve_exposure(rec)
+    eq(ex.ev, 0.0, 1e-9)
+    ok('弃权' in ex.why, '弃权要写出来：%s' % ex.why)
+
+
+def test_exposure_face_in_zone_does_nothing():
+    """★ 脸在 55~85 内 ⇒ 0 档。这是「脸是约束不是目标」（§28 L1）。"""
+    from design.lr import solve_exposure
+    for L in (56.0, 70.0, 84.0):
+        ex = solve_exposure(_lr_rec(skin=dict(L=L, C=18.0, h=55.0)))
+        eq(ex.ev, 0.0, 1e-9)
+        eq(ex.want_ev, 0.0, 1e-9)
+
+
+def test_exposure_low_face_targets_zone_not_72():
+    """脸低于下界 ⇒ 只推到"刚进区 + 余量"，**不是推到 72**。"""
+    from design.lr import EDGE_MARGIN_L, solve_exposure
+    ex = solve_exposure(_lr_rec(skin=dict(L=45.0, C=18.0, h=55.0),
+                                headroom_ev=5.0))
+    ok(ex.want_ev > 0.2, 'L45 应要提亮：%s' % ex.want_ev)
+    newL = 45.0 + ex.want_ev * eval_slope(45.0)
+    ok(abs(newL - (55.0 + EDGE_MARGIN_L)) < 0.6,
+       '提到刚落区附近 %.1f，不该到 72' % newL)
+
+
+def test_exposure_two_caps_take_min():
+    """两道预算取小：引擎余量 0.2 / p95 到白平台 0.1 ⇒ 只能用 0.1 并记欠账。"""
+    from design.lr import solve_exposure
+    rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.2,
+                  img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
+                           p95=97.5, p99=99.9, clip_pct=0.2, contrast=90.0))
+    ex = solve_exposure(rec)
+    cap_w = (100.0 - 97.5) / eval_slope(97.5)
+    ok(abs(ex.cap_white - cap_w) < 1e-6, 'p95 预算算错：%s' % ex.cap_white)
+    # ev 落值是 round(...,3)，所以容差给 1e-3
+    ok(abs(ex.ev - min(0.2, cap_w)) < 1e-3, '应取两道预算的小值：%s' % ex.ev)
+    ok(ex.debt_ev > 0.0, '预算不够必须记欠账：%s' % ex.debt_ev)
+
+
+def test_exposure_never_blows_white_for_face():
+    """脸推到区里的代价不许超过白端预算（H3：不为提脸把白推爆）。"""
+    from design.lr import solve_exposure
+    for p95, hr in ((98.0, 0.5), (97.0, 0.05), (90.0, 0.0)):
+        rec = _lr_rec(skin=dict(L=40.0, C=18.0, h=55.0), headroom_ev=hr,
+                      img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
+                               p95=p95, p99=99.9, clip_pct=0.2, contrast=90.0))
+        ex = solve_exposure(rec)
+        ok(ex.ev <= (ex.cap_used or 0) + 1e-3,
+           'p95=%.1f hr=%.2f 时超了预算：%s' % (p95, hr, ex.ev))
+
+
+def test_light_state():
+    """H4 光位：脸/背景比 <1.0 逆光、>1.3 顺光、其它 unknown。"""
+    from design.lr import light_state
+    ok(light_state(_lr_rec(light_ratio=0.8)) == 'backlit', '应判逆光')
+    ok(light_state(_lr_rec(light_ratio=1.5)) == 'frontlit', '应判顺光')
+    ok(light_state(_lr_rec(light_ratio=1.1)) == 'unknown', '中间应 unknown')
+    ok(light_state(dict(img={}, skin={})) == 'unknown', '没这个量应 unknown')
+
+
+def test_backlit_note():
+    """逆光出区要提亮，且理由里写明"提完必须预备收白"。"""
+    from design.lr import solve_exposure
+    ex = solve_exposure(_lr_rec(skin=dict(L=48.0, C=18.0, h=55.0),
+                                light_ratio=0.8, headroom_ev=1.0))
+    ok('逆光' in ex.why and '收白' in ex.why, '逆光说明缺：%s' % ex.why)
+
+
+def test_after_ev_hue_invariant():
+    """曝光是线性增益 ⇒ 色相不动、L 按局部斜率走（可推，不是拟合）。"""
+    from design.expose import after_ev
+    rec = _lr_rec(skin=dict(L=50.0, C=18.0, h=55.0))
+    p = after_ev(rec, 0.5)
+    eq(p['pred']['skin']['h'], 55.0, 1e-9)
+    eq(p['pred']['skin']['L'], 50.0 + 0.5 * eval_slope(50.0), 1e-6)
+
+
+def test_after_ev_clip_lower_bound():
+    """分位被推出 100 ⇒ 爆白**下界**至少那么多（不等式，不是模型）。"""
+    from design.expose import after_ev
+    rec = _lr_rec(img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
+                           p95=98.0, p99=99.9, clip_pct=0.1, contrast=90.0))
+    p = after_ev(rec, 0.2)
+    ok(p['clip_lb'] >= 5.0, 'p95 推过 100 应给 ≥5%% 的下界：%s' % p['clip_lb'])
+    q = after_ev(rec, 0.0)
+    ok(q['clip_lb'] <= 0.11, '不推就不该编出爆白：%s' % q['clip_lb'])
+
+
+def test_after_ev_budget():
+    """超引擎余量 ⇒ over_ev 记出来，并要求 ③ 验 clip。"""
+    from design.expose import after_ev
+    rec = _lr_rec(headroom_ev=0.0)
+    p = after_ev(rec, 0.4)
+    ok(not p['in_budget'] and abs(p['over_ev'] - 0.4) < 1e-6, p)
+    ok(any('验 clip' in n for n in p['notes']), '要写明待验收：%s' % p['notes'])
+
+
+def test_highlights_judged_after_exposure():
+    """收白要在 ①'（提完曝光之后）上判 —— 不能拿 ① 的旧数先收。"""
+    from design.expose import after_ev
+    from design.lr import solve_highlights
+    rec = _lr_rec(img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
+                           p95=97.8, p99=99.9, clip_pct=0.1, contrast=90.0),
+                  headroom_ev=0.0)
+    quiet = after_ev(rec, 0.0)
+    hv0, _ = solve_highlights(quiet)
+    eq(hv0, 0.0, 1e-9)                      # 不提就不该压
+    loud = after_ev(rec, 0.5)               # 提了 ⇒ 上端被推爆
+    hv1, note = solve_highlights(loud)
+    ok(hv1 < 0, '提爆了就该收白：%s' % hv1)
+    ok('待验收' in (note or '') or '验 clip' in (note or ''), '要写明待验收：%s' % note)
+
+
+def test_solve_one_order():
+    """整条链：脸低 ⇒ 先算 ①' 再收白；欠账与理由都落进 notes。"""
+    from design.lr import solve_one
+    rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.0,
+                  light_ratio=0.8)
+    plan = solve_one(rec, log=lambda *_: None)
+    ok(plan.exposure_ev <= 1e-9, '余量 0 时不该乱提：%s' % plan.exposure_ev)
+    ok('exposure_debt' in plan.notes, '欠账要写：%s' % list(plan.notes))
+    ok('backlit' in plan.notes.get('lookat', '') or '逆光' in plan.notes.get('light', ''),
+       '光位要落进 notes：%s' % plan.notes)
+    ok(plan.highlights <= 0.0, '上端贴死应收白：%s' % plan.highlights)
+
+
+# ---------------------------------------------------------------- runner
 def main():
     import traceback
     tests = [(n, f) for n, f in sorted(globals().items())

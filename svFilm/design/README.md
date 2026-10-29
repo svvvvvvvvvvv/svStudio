@@ -51,7 +51,7 @@ final/    <stem>_final.tif       ③ 成片（只在 --export 时）
 | `cli check <recs.json> --stage engine` | 判 T0（余量/白点/脸区间） | 不 |
 | `cli match <recs.json>` | 卷层排序（"值得做新卡的卷"） | 不 |
 | `cli flow <recs.json>` | 卡层排序 + 质感参数 | 不 |
-| `cli plan <recs.json>` | LR 计划（曝光/收白/曲线） | 不 |
+| `cli plan <recs.json> --headroom-dir <引擎片目录>` | LR 计划（看哪里/曝光/收白/曲线）；不给 headroom 就只剩白端一道预算 | 不 |
 | `cli curve <recs.json>` | 只造曲线，看预算够不够 | 不 |
 | `cli states <recs.json> --tifs <dir>` | ①→② 回归（S2/S3） | 不 |
 | `cli texture <stock>` | 质感参数（查表+换算+档位） | 不 |
@@ -101,7 +101,26 @@ S5  一段顶到上限 = 上游错，不许用别的旋钮补
 | 意图被算两次 | 曝光和曲线都加了一次 | lr.py |
 | 拿自己出片的偏差当需求 | 拿缺陷当需求（循环论证） | match.py |
 | 缺规格的卷被当成"最细" | verita 不在 grain.toml 里 | cards_match.py |
-| 曝光计划超过余量 | 会安静输出 +2.4 档的毁图计划 | lr.py |
+| 曝光不看余量 | 会安静输出 +2.4 档的毁图计划 ⇒ 现在两道预算取小 + 记欠账 | lr.py / expose.py |
+| 收白拿 ① 的旧 clip 判 | 先收白、后算曝光，顺序倒了 ⇒ 现在判 ①'（提完曝光的态） | expose.py |
+| 没脸的图静默不动曝光 | `person` 档 cur=None ⇒ 0 档，等于弃权却不写 | lr.py |
+
+---
+
+## 5.5 「以人为本」在 LR 侧落在哪四行（2026-10-29 补齐）
+
+设计出处：分工设计 §25~§29（原则保留，执行位置从引擎迁到 LR）。
+
+| 规则 | 落点 | 判据 |
+|---|---|---|
+| H1 有脸用脸 | `lr.pick_lookat` → 读 `skin.L` | `face_w_native ≥ 40`（FACE_MIN_W） |
+| H2 降级链 | 同上，**降级必须写理由**；人的读数测量层还没接 ⇒ 降到整幅，不假装有 person 档 | 整幅落点没有不变量 ⇒ 曝光**弃权**并写明 |
+| H3 白端保护 | `lr.solve_exposure` 两道预算取小：引擎余量 ∩ p95 到白平台 | 差多少记 `exposure_debt`，不硬顶 |
+| H4 逆光识别 | `lr.light_state`：脸/背景 <1.0 逆光、>1.3 顺光 | 逆光 ⇒ 提脸 + 预备收白；顺光脸仍低 ⇒ 提示先查测光 |
+
+**L1「脸是约束不是目标」**：脸在 55~85 内 ⇒ 曝光 0 档（不再往 72 硬推）。
+**L2 / 顺序**：先 `expose.after_ev()` 算 ①'，再在 ①' 上判收白（原来拿 ① 的 clip 判，顺序是反的）。
+**算不了的部分**：`Highlights` 没有公开传递函数 ⇒ 只给政策值 −35 + 明确标"待验收"，③ 必须验 clip。
 
 ---
 

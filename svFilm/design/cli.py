@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 
 from . import measure as M
 from .intent import Intent
@@ -97,6 +98,18 @@ def cmd_check(a):
 
 def cmd_plan(a):
     recs = M.load(a.recs)
+    if a.headroom_dir:
+        # 引擎渲完写的 sidecar：这张底片还能抬几档（没有它，预算判断就只剩白端一道）
+        import glob
+        for name, rec in recs.items():
+            st = name.split('_')[0]
+            p = os.path.join(a.headroom_dir, st + '_headroom.json')
+            if os.path.isfile(p):
+                import json as _j
+                try:
+                    rec['headroom_ev'] = float(_j.load(open(p, encoding='utf-8'))['headroom_ev'])
+                except Exception:
+                    pass
     if a.stem:
         recs = M.only(recs, a.stem)
     it = _intent(a.intent)
@@ -104,9 +117,14 @@ def cmd_plan(a):
     for name, rec in list(recs.items())[:a.show]:
         p = solve_one(rec, intent=it)
         print('\n%s' % name)
-        print('  看哪里=%s  曝光=%+.2f EV  收白=%+.0f  饱和=%+.0f'
-              % (p.notes.get('lookat'), p.exposure_ev, p.highlights, p.saturation))
-        print('  曲线：%s' % p.notes.get('curve'))
+        print('  看哪里=%s' % p.notes.get('lookat'))
+        print('  曝光  %+.2f EV ｜ %s' % (p.exposure_ev, p.notes.get('exposure', '')))
+        if p.notes.get('exposure_debt'):
+            print('  欠账  %s' % p.notes['exposure_debt'])
+        if p.notes.get('after_ev'):
+            print('  ①\'   %s' % p.notes['after_ev'])
+        print('  收白  %+.0f ｜ %s' % (p.highlights, p.notes.get('highlight_debt') or '不动'))
+        print('  曲线  %s' % p.notes.get('curve'))
 
 
 def cmd_curve(a):
@@ -326,6 +344,8 @@ def main(argv=None):
     p = sub.add_parser('plan'); p.set_defaults(fn=cmd_plan)
     p.add_argument('recs'); p.add_argument('--stem', default='')
     p.add_argument('--show', type=int, default=3)
+    p.add_argument('--headroom-dir', default='',
+                   help='引擎片目录（读 *_headroom.json 补"还能抬几档"）')
     p.add_argument('--intent', action='append', help='例: brighter=0.3')
 
     p = sub.add_parser('curve'); p.set_defaults(fn=cmd_curve)
