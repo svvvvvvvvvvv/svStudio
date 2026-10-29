@@ -187,13 +187,15 @@ def contact_sheet(rows: List[dict], out_html: str, title: str, sub: str = '') ->
         out.append('<div class="lab"><span class="name">%s</span>'
                    '<span class="num">%s</span></div>' % (r.get('stem', ''), r.get('values', '')))
         if r.get('final_jpg'):
-            out.append('<img src="%s" alt="%s">' % (r['final_jpg'], r.get('stem', '')))
+            out.append('<img loading="lazy" src="%s" alt="%s">'
+                       % (r['final_jpg'], r.get('stem', '')))
         v = r.get('verdict') or ''
         cls = 'ok' if v.startswith('✓') else 'bad'
         out.append('<p class="cap">成片 · %s<span class="%s">%s</span></p>' % (r.get('note', ''),
                                                                               cls, v))
         if r.get('engine_jpg'):
-            out.append('<details><summary>看① 引擎底片</summary><img src="%s" alt="%s 底片"></details>'
+            out.append('<details><summary>看① 引擎底片</summary>'
+                       '<img loading="lazy" src="%s" alt="%s 底片"></details>'
                        % (r['engine_jpg'], r.get('stem', '')))
         out.append('</figure>')
     out.append('<p class="foot">③ 是 LR 出的成片（曝光/收白/曲线/点颜色都在里面）；'
@@ -311,7 +313,8 @@ def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict], plans: Dict[st
 # ---------------------------------------------------------------- 选卡页（人定，不是自动挑）
 
 _MATCH_CSS = _CSS + """
-.sec{font-size:13px;color:#8f8b84;margin:26px 0 10px;letter-spacing:.5px}
+.sec{font-size:13px;color:#8f8b84;margin:26px 0 10px;letter-spacing:.5px;scroll-margin-top:12px}
+a{text-decoration:none}
 .lead{font-size:14.5px;margin:0 0 10px;color:#dcd9d3}
 .lead b{color:#fff}
 .row{display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid #2e2d2b;font-size:13.5px}
@@ -343,12 +346,14 @@ def _card_diffs(a, b) -> List[str]:
 def match_sheet(batch_name: str, profile: Dict[str, float], refs: List[object],
                 offer, gap_rows=None, gap_verdict: str = '', out_html: str = '',
                 samples: Optional[Dict[str, str]] = None, n_img: int = 0,
-                caliber: str = '', log=print) -> str:
+                caliber: str = '', master_sets: Optional[List[dict]] = None,
+                log=print) -> str:
     """选卡页：**给人挑**，不给结论。
 
     页面上必须有三件事，缺一件人就挑不了：
       ① 这批像哪一套（画像级，不是靶）；② 最近那套的缺口关不关得掉；
       ③ 现有卡各自的代价（卷/纸/质感档）。有样片就放样片，没有就明说"未渲"。
+      `master_sets`：匹配到的几套**大师成片**（每套给全部图），排在图区里给人看"像的那套长什么样"。
     """
     samples = samples or {}
     out = ['<!DOCTYPE html>', '<html lang="zh-CN"><head><meta charset="utf-8">',
@@ -430,6 +435,39 @@ def match_sheet(batch_name: str, profile: Dict[str, float], refs: List[object],
         out.append('<p class="mono">值得做新卡的卷：%s</p>' % '、'.join(offer.new_card_candidates))
         out.append('<p class="cap">卷/纸在卡构建时就传进 params，overrides 改不了；'
                    '换卷 = 做一张新卡。</p>')
+
+    if master_sets:
+        out.append('<div class="sec">④ 这几套大师的成片（点名字跳过去）</div>')
+        for i, m in enumerate(master_sets, 1):
+            out.append('<div class="row"><span class="k">%.2f</span>'
+                       '<span class="v"><a href="#m%d" style="color:#cfe3d2">%s</a>'
+                       '<span class="mono">　%d 张 ｜ %s</span></span></div>'
+                       % (m.get('score', 0), i, m.get('label', ''), m.get('n', 0),
+                          m.get('diff', '')))
+        for i, m in enumerate(master_sets, 1):
+            out.append('<div class="sec" id="m%d">第 %d 套 · %s　'
+                       '<span class="mono">%.2f ｜ %s ｜ %d 张</span></div>'
+                       % (i, i, m.get('label', ''), m.get('score', 0),
+                          m.get('diff', ''), m.get('n', 0)))
+            out.append('<p class="cap">同一个拍点如果有两个版本，只展开一张，'
+                       '另一版折在下面（不重复占屏）。</p>')
+            # 按拍点分组：第一张直接显示，同拍点的其余版本折进 <details>
+            groups, order = {}, []
+            for item in (m.get('imgs') or []):
+                k, u = (item if isinstance(item, (tuple, list)) else ('', item))
+                if k not in groups:
+                    groups[k] = []
+                    order.append(k)
+                groups[k].append(u)
+            for k in order:
+                us = groups[k]
+                out.append('<figure><img loading="lazy" src="%s" alt="%s"></figure>'
+                           % (us[0], m.get('label', '')))
+                if len(us) > 1:
+                    inner = ''.join('<img loading="lazy" src="%s" alt="%s">' % (x, k)
+                                    for x in us[1:])
+                    out.append('<details><summary>同拍点另一版（%d）</summary>%s</details>'
+                               % (len(us) - 1, inner))
 
     out.append('<div class="pick">选好之后这样告诉流程：<br>'
                '<code>--card &lt;卡名&gt;</code>（卡名就是上面每个小标题括号前的那个，'
