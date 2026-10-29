@@ -692,7 +692,7 @@ def test_matchcard_one_set_per_card():
     """§63：**一个目录 = 一张卡**（鹿井逐目录；滨田/小红书各一整套）。"""
     from design.matchcard import cards
     cs = cards()
-    ok(len(cs) >= 60, '卡太少：%d' % len(cs))
+    ok(len(cs) >= 50, '参与匹配的卡太少：%d（薄卡已按 §65.4 过滤）' % len(cs))
     names = [c.name for c in cs]
     ok(len(set(names)) == len(names), '卡名有重复（顶层的散图会撞名）：%s'
        % [n for n in names if names.count(n) > 1][:3])
