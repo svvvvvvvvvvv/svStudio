@@ -202,7 +202,8 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
                 meas['p99'] = apply_lut(curve, float(meas['p99']))
         # ★ 白端：曲线之后仍超卡的肩 ⇒ 用**曝光**把它压下来（EV 有文档单位）
         from .solver import eval_slope as _sl
-        _p95_res = apply_lut(curve, float(meas.get('p95') or 0.0)) if curve else meas.get('p95')
+        # ★ 人像优先：白端只为**人**服务 —— 整幅 p95 高（天空）不压，人 p99 高才压。
+        _p95_res = apply_lut(curve, float(meas.get('p99') or meas.get('p95') or 0.0)) if curve else (meas.get('p99') or meas.get('p95'))
         _ev_white = 0.0
         if _p95_res is not None and float(_p95_res) > _cap_hi:
             _ev_white = (_cap_hi - float(_p95_res)) / max(_sl(float(_p95_res)), 1e-6)
@@ -211,49 +212,23 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
                 if meas.get(_k) is not None:
                     meas[_k] = float(meas[_k]) + _sl(float(meas[_k])) * _ev_white
 
+        # ★ ⑦ 的量交给预测合成器（先用 Shadows 提人身上的暗部，不够再用局部曝光）
+        from .compose import compose
+        _tf = None
+        if card_in.get('face_L'):
+            _tf = max(float(card_in['face_L'][0]), 55.0)
+        _c = compose(meas, curve, _ev_white, _tf, _cap_hi)
         p: Plan = solve_pass(meas, card_in)
         p.exposure_ev = round(float(_ev_white), 3)
-
-        # ★ 脸是**一级目标**（人像优先）：曲线把脸压暗了，⑦ 必须补回来。
-        _fl = meas.get('face_L')
-        _fb = card_in.get('face_L')
-        if _fl is not None and _fb:
-            from .solver import eval_slope as _slope
-            _tgt = max(float(_fb[0]), 55.0)        # T4 下界 55；卡的带更宽时取高的那个
-            if float(_fl) < _tgt - 0.5:
-                _need = (_tgt - float(_fl)) / max(_slope(float(_fl)), 1e-6)
-                if _need > p.local_ev:
-                    p.ledger.append(Entry(dim='face_L', got=float(_fl), want=(_tgt, 1e9),
-                                          gap=float(_tgt - float(_fl)), layer='local',
-                                          action='脸低 => 局部 %.2f -> %.2f' % (p.local_ev, _need)))
-                    p.local_ev = round(float(_need), 3)
-                    p.local_exposure = round(p.local_ev / 4.0, 5)
-
-        # ★ 补光的**可算上限** —— 不许把人的亮部（p99）推过 P95_MAX。
-        #   p99_new = p99 + eval_slope(p99) · EV => EV <= (P95_MAX - p99) / eval_slope(p99)
-        _cap_hi = min(PHYS_P95, _hi((card or {}).get('bands', {}).get('p95'), PHYS_P95))
-        _p99 = meas.get('p99') or (rec.get('person') or {}).get('clip_p95')
-        if _p99 is not None and p.local_ev > 0:
-            from .solver import eval_slope
-            _cap = max(0.0, (_cap_hi - float(_p99)) / max(eval_slope(float(_p99)), 1e-6))
-            if p.local_ev > _cap:
-                p.ledger.append(Entry(dim='local_cap', got=float(_p99), want=(0.0, _cap_hi),
-                                      gap=float(p.local_ev - _cap), layer='local',
-                                      action='补光 %.2f -> %.2f（人的亮部不许过卡的 %.0f）'
-                                             % (p.local_ev, _cap, _cap_hi)))
-                p.local_ev = round(_cap, 3)
-                p.local_exposure = round(p.local_ev / 4.0, 5)
-        # §6E：脸要提 ⇒ **Shadows 为主**（文档保证按亮度选择性，提暗部不碰亮部）；
-        #      人的亮部贴近卡的肩 ⇒ Highlights 压一手。
-        # 量级是**方向量**（40 / −30），等 §6E.3 那次标定出来再换成实测斜率。
-        from .calibration import shadows_for_dl
-        _need_lift = float(p.local_ev or 0.0) > 0.05
-        _near_cap = (_p99 is not None and float(_p99) > _cap_hi - 6.0)
-        # Shadows 的量 = 还差多少 L* / 实测斜率（0.147 L*/单位）；上限 60
-        _fl2 = meas.get('face_L')
-        _tgt2 = card_in.get('face_L')
-        _dl = (max(float(_tgt2[0]), 55.0) - float(_fl2)) if (_fl2 is not None and _tgt2) else 0.0
-        p.local_shadows = round(shadows_for_dl(max(_dl, 0.0)), 0) if _need_lift else 0.0
+        p.local_ev = float(_c['fill_ev'])
+        p.local_exposure = round(p.local_ev / 4.0, 5)
+        p.local_shadows = float(_c['local_shadows'])
+        p.pred_face = _c.get('predicted_face')
+        p.pred_p99 = _c.get('predicted_p99')
+        # §6E：人的亮部贴近卡的肩 ⇒ Highlights 压一手（方向量 −30；强度待标定）
+        _p99m = meas.get('p99')
+        _need_lift = float(p.local_ev or 0.0) > 0.05 or float(p.local_shadows or 0.0) > 0.5
+        _near_cap = (_p99m is not None and float(_p99m) > _cap_hi - 6.0)
         p.local_highlights = -30.0 if (_need_lift or _near_cap) else 0.0
         out[stem] = dict(plan=p.as_dict(), white=white_end_plan(rec, card, curve),
                          meas=meas, ledger=[str(e) for e in p.ledger],
