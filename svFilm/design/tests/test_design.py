@@ -204,14 +204,39 @@ def test_exposure_face_in_zone_does_nothing():
 
 
 def test_exposure_low_face_targets_zone_not_72():
-    """脸低于下界 ⇒ 只推到"刚进区 + 余量"，**不是推到 72**。"""
-    from design.lr import EDGE_MARGIN_L, solve_exposure
+    """脸低于下界 ⇒ 推到「下界 + 落点容差」，**不是推到 72**，也不是贴边。"""
+    from design.lr import LAND_TOL_L, solve_exposure
     ex = solve_exposure(_lr_rec(skin=dict(L=45.0, C=18.0, h=55.0),
                                 headroom_ev=5.0))
     ok(ex.want_ev > 0.2, 'L45 应要提亮：%s' % ex.want_ev)
     newL = 45.0 + ex.want_ev * eval_slope(45.0)
-    ok(abs(newL - (55.0 + EDGE_MARGIN_L)) < 0.6,
-       '提到刚落区附近 %.1f，不该到 72' % newL)
+    ok(abs(newL - (55.0 + LAND_TOL_L)) < 0.6,
+       '应推到 %.1f（下界+容差），实际 %.1f' % (55.0 + LAND_TOL_L, newL))
+    ok(newL < 65.0, '不该往 72 追')
+
+
+def test_land_tolerance_covers_measured_error():
+    """★ 落点容差必须 ≥ 实测落点误差 —— 否则贴边、误差一来就掉出区。
+
+    2026-10-29 真跑 n=5：|残差| 中位 0.92 / P90 2.30 / 最大 **2.88**
+    （DSCF1627：给 +0.88 档，模型 56.5，实测 54.2 ⇒ 差 0.8 没进区）。
+    """
+    from design.lr import LAND_TOL_L
+    ok(LAND_TOL_L >= 2.88, '容差 %.1f < 实测最大误差 2.88 ⇒ 会重犯贴边的错' % LAND_TOL_L)
+    ok(LAND_TOL_L <= 6.0, '容差 %.1f 太大，会把脸一路推到区间中上段' % LAND_TOL_L)
+
+
+def test_exposure_backlit_goes_deeper():
+    """§28 L3：逆光 ≠ 顺光。同一张脸，逆光的目标点要比顺光更深（更靠区内）。"""
+    from design.lr import BACKLIT_EXTRA_L, LAND_TOL_L, solve_exposure
+    front = solve_exposure(_lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), light_ratio=1.6))
+    back = solve_exposure(_lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), light_ratio=0.8))
+    Lf = 45.0 + front.want_ev * eval_slope(45.0)
+    Lb = 45.0 + back.want_ev * eval_slope(45.0)
+    ok(abs(Lf - (55.0 + LAND_TOL_L)) < 0.6, '顺光目标 %.1f' % Lf)
+    ok(abs(Lb - (55.0 + LAND_TOL_L + BACKLIT_EXTRA_L)) < 0.6, '逆光目标 %.1f' % Lb)
+    ok(Lb > Lf + 3.0, '逆光应比顺光更深：%.1f vs %.1f' % (Lb, Lf))
+    ok('逆光' in back.why, '理由里要说清是逆光：%s' % back.why)
 
 
 def test_exposure_headroom_is_not_a_cap():

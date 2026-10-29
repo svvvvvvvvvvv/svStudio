@@ -56,6 +56,21 @@ INTENT_EV_PER_UNIT = 0.5
 #   否则量出来刚过线、下一张又掉出去。容差 L* ±1.0（量化下限）⇒ 取 1.5。
 EDGE_MARGIN_L = 1.5
 #
+# ★★ 落点容差（2026-10-29 真跑实测，n=5）：按模型给的曝光，实际落点误差
+#   |残差| 中位 0.92 / P90 2.30 / **最大 2.88** —— 模型斜率 13~15 L*/EV，
+#   实际响应 11.4~18.5（散 ±30%）。目标贴边 1.5 格时，误差一来就掉到区外
+#   （DSCF1627：给 +0.88 档，模型说 56.5，实际 54.2，差 0.8 没进区）。
+#   ⇒ 目标点改成 `下界 + 落点容差`，容差取 3.5（覆盖实测最大 2.88）。
+LAND_TOL_L = 3.5
+#
+# ★ 逆光补偿（设计 §28 L3「逆光 ≠ 顺光」）。同一 L* 的脸在逆光下**看起来更暗**
+#   （背景压着）。10-29 目检：1289 光比 0.91，提 0.34 档到 56.8 仍显暗。
+#   ⇒ 逆光时目标点再往区内侧推 4 L*，走「提曝光 + 收白」两步（§31 ②→③）。
+BACKLIT_EXTRA_L = 4.0
+#
+# ★ 目标点上限：只在区间**中段**，不许贴着上界追（否则一动就进"过曝区"）。
+LAND_CAP_L = 70.0
+#
 # ★ 脸的"够大"判据（H2 降级链用）：face_w_native ≥ 40 px 才算能当锚。
 #   出处：手掩膜守卫 [0.005, 0.70] 与旧链实测（脸太小则颊读数不可靠）。
 FACE_MIN_W = 40.0
@@ -206,11 +221,14 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
         ex.why = '弃权：脸读数为空'
         return ex
 
-    # ---- ① 约束式：只在出区时动，目标是"刚进区"（留测量容差）
+    # ---- ① 约束式：只在出区时动。目标 = 下界 + 落点容差（+逆光补偿）
+    #   ★ 不再"刚进区 + 1.5"贴边：实测落点误差最大 2.88，贴边必然掉出去
+    margin = LAND_TOL_L + (BACKLIT_EXTRA_L if la.light == 'backlit' else 0.0)
     if cur < lo:
-        want_dL, side = (lo + EDGE_MARGIN_L) - cur, '暗于下界'
+        target = min(lo + margin, LAND_CAP_L)
+        want_dL, side = target - cur, '暗于下界'
     elif cur > hi:
-        want_dL, side = (hi - EDGE_MARGIN_L) - cur, '亮于上界'
+        want_dL, side = (hi - LAND_TOL_L) - cur, '亮于上界'
     else:
         want_dL, side = 0.0, '区内'
     ex.want_ev = ev_for_dL(want_dL, cur)
@@ -221,8 +239,8 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
         newL = cur + ex.want_ev * eval_slope(cur)
         if newL > hi - EDGE_MARGIN_L:
             ex.want_ev -= ev_for_dL(newL - (hi - EDGE_MARGIN_L), cur)
-        elif newL < lo + EDGE_MARGIN_L:
-            ex.want_ev += ev_for_dL((lo + EDGE_MARGIN_L) - newL, cur)
+        elif newL < lo + LAND_TOL_L:
+            ex.want_ev += ev_for_dL((lo + LAND_TOL_L) - newL, cur)
 
     # ---- 光位说明（H4）：**两个分支都要带**，它讲的是"该怎么走"，不是"能不能提"
     light_hint = ''

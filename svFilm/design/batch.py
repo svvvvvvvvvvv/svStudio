@@ -74,8 +74,13 @@ class Batch:
 
 # ---------------------------------------------------------------- 测量
 
-def measure_tif(path: str, with_bg: bool = False) -> dict:
-    """渲出来的 TIF 立刻量（默认不跑背景掩膜，省时间；要 A6 才开）。"""
+def measure_tif(path: str, with_bg: bool = True) -> dict:
+    """渲出来的 TIF 立刻量。
+
+    `with_bg=True` 是**必须的**（2026-10-29 真跑发现）：没有背景就**没有 `light_ratio`**，
+    `light_state()` 永远返回 unknown ⇒ 逆光补偿、光位提示全是死的。
+    代价很小（9 张量背景约 1 秒/张）。
+    """
     import sys
     P = r'E:\ds\photo\_corpus\kurai\full'
     if P not in sys.path:
