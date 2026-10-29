@@ -98,6 +98,8 @@ def write_jobs(plans: Dict[str, LRPlan], out_dir: str,
                           curve_points=(len(plan.curve) if plan.curve else 0),
                           lookat=plan.notes.get('lookat'),
                           curve_note=plan.notes.get('curve'),
+                          highlights_note=plan.notes.get('highlights'),
+                          highlight_verify=plan.notes.get('highlight_verify'),
                           highlight_debt=plan.notes.get('highlight_debt'),
                           exposure_debt=plan.notes.get('exposure_debt'),
                           point_color=plan.point_color,
@@ -128,14 +130,19 @@ def summary(manifest: Dict[str, object]) -> str:
                                          if (i.get('diag') or {}).get('has_point_colors'))))
     ed = [i for i in items if i.get('exposure_debt')]
     if ed:
-        lines.append('  ⚠ 曝光被余量截断 %d 张：' % len(ed))
+        lines.append('  ⚠ 曝光欠账 %d 张（现在是引擎的账，不是 LR 截断的）：' % len(ed))
         for i in ed[:3]:
             lines.append('    %s: %s' % (i['stem'], i['exposure_debt']))
+    hl = [i for i in items if i.get('highlights')]
+    if hl:
+        vals = sorted(i['highlights'] for i in hl)
+        lines.append('  收白：%d 张 ｜ 起点 %+.0f（对分第一步，不是算出来的幅度）'
+                     % (len(hl), vals[len(vals) // 2]))
     debt = [i for i in items if i.get('highlight_debt')]
     if debt:
-        lines.append('  ⚠ 引擎欠账 %d 张（高光余量不足，LR 只在政策值上兜一下）：' % len(debt))
+        lines.append('  ⚠ 收白欠账 %d 张（① 已爆 = 引擎丢的细节 / 到尽头仍不达标）：' % len(debt))
         for i in debt[:3]:
-            lines.append('    %s: %s' % (i['stem'], i['highlight_debt']))
+            lines.append('    %s: %s' % (i['stem'], i['highlight_debt'][:80]))
     for i in bad[:3]:
         lines.append('  ! %s 自检不过：%s' % (i['stem'], i['diag']))
     lines.append('  ★ 只写了 XMP 与 manifest，**没有驱动 LR**')

@@ -340,6 +340,21 @@ def test_next_highlights_ladder():
     ok(v5 is None, '达标就不该再动：%s' % v5)
 
 
+def test_curve_never_fixes_clip_in_lr_chain():
+    """★ §33：爆白只归 ③ Highlights，曲线**不许**再压一次肩部。
+
+    旧实现里这个分支是"碰巧没触发"（`after_ev` 的 pred 里没有 `clip_pct`），
+    那是碰巧对；现在显式关掉，防止有人"修好"它之后两处同时压。
+    """
+    from design.lr import solve_curve
+    rec = _lr_rec(img=dict(p1=12.0, p5=20.0, p25=40.0, p50=60.0, p75=80.0,
+                           p95=99.5, p99=99.9, clip_pct=18.0, contrast=79.5))
+    pts, info = solve_curve(rec, allow_clip=False)
+    ok(pts is None, '爆白时曲线不该动（交给 ③）：%s' % info)
+    pts2, info2 = solve_curve(rec, allow_clip=True)      # 独立工具（cli curve）仍可压
+    ok(pts2 is not None and '压白端' in str(info2.get('fixed')), info2)
+
+
 def test_solve_one_order():
     """整条链 §31 ②→③：脸低 ⇒ ② 把曝光给满；③ 在 ①' 上判、收白并记欠账。"""
     from design.lr import solve_one

@@ -353,8 +353,15 @@ def next_highlights(prev: float, clip_pct: float,
 # ---------------------------------------------------------------- ④ 曲线
 
 def solve_curve(rec_engine: dict, intent: Optional[Intent] = None,
-                budget: Optional[float] = None) -> Tuple[Optional[List[Tuple[int, int]]], dict]:
+                budget: Optional[float] = None,
+                allow_clip: bool = True) -> Tuple[Optional[List[Tuple[int, int]]], dict]:
     """**只修不变量 + 落地意图**，不对任何"别人的分位"造形。
+
+    `allow_clip=False`：**在 LR 全链里用这个**。§33 裁决「Highlights vs 曲线肩部 ⇒
+    只用 Highlights，曲线肩部不动」——爆白是 ③ 的活，曲线再压一次就是两处同时动。
+
+    （顺带一个坑：`after_ev` 的 `pred['img']` 里**没有 `clip_pct`**，
+    所以流程里这个分支本来就没触发过；那是碰巧对，不是设计对。现在显式写死。）
 
     返回 (16 点曲线 | None, 说明)。None = 不需要曲线或预算内无解。
     """
@@ -374,11 +381,11 @@ def solve_curve(rec_engine: dict, intent: Optional[Intent] = None,
     # ★ 意图**不由曲线落地**（2026-10-29 修正：曝光与曲线都加一次 = 意图被算两次）。
     #   亮暗意图归曝光滑杆；曲线只修不变量。
 
-    # (a) 不变量：爆白压低端、堵黑抬趾部
+    # (a) 不变量：爆白压低端（**流程里关掉，见 §33**）、堵黑抬趾部
     clip = img.get('clip_pct') or 0.0
     fixed, unmet = [], {}
-    if clip > T1['clip_max']:
-        want = clip - T1['clip_max']            # 想压多少（L*）
+    if allow_clip and clip > T1['clip_max']:
+        want = clip - T1['clip_max']            # 图便宜：按可见剪裁比例给（不是靶）
         d = min(budget, want)
         dst['95'] -= d
         dst['75'] -= d * 0.5
@@ -495,7 +502,8 @@ def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
     rec_for_curve['img'] = dict(pred['pred']['img'])
     if rec_for_curve['img'].get('p1') is None:
         rec_for_curve['img']['p1'] = (rec_engine.get('img') or {}).get('p1')
-    pts, info = solve_curve(rec_for_curve, intent=intent)
+    pts, info = solve_curve(rec_for_curve, intent=intent, allow_clip=False)
+    # ↑ allow_clip=False：爆白归 ③（§33「Highlights vs 曲线肩部 ⇒ 只用 Highlights」）
     plan.curve = pts
     plan.notes['curve'] = ('无需' if pts is None else
                            '修正 %s ｜ 最大位移 %.2f' % (info.get('fixed') or '意图',
