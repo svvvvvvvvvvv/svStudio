@@ -481,6 +481,85 @@ def test_exposure_invalid_headroom_is_only_recorded():
 
 
 
+# ---------------------------------------------------------------- ③ 的验收与目检（G1/G2/G3）
+
+def _p3(ev=0.0, curve=None):
+    class _P:
+        exposure_ev = ev
+    _P.curve = curve
+    return _P()
+
+
+def test_verify_face_first():
+    """硬门只看脸与"有没有把脸改坏"；背景爆只进软门。"""
+    from design.review import verify
+    r1 = dict(img=dict(p1=5.0, clip_pct=0.2), skin=dict(L=62.0, C=14.0))
+    # ③ 脸没动、背景更爆 ⇒ 硬门全过，clip 落软门
+    v = verify(r1, dict(img=dict(p1=5.0, clip_pct=9.0), skin=dict(L=62.4, C=14.0)), _p3())
+    ok(v['ok'], '脸没动就该过硬门：%s' % v['hard'])
+    ok(any((not x[1]) for x in v['soft']), '背景爆要进软门：%s' % v['soft'])
+    # ③ 把脸压暗 2 L* ⇒ 硬门破（S1 残差）
+    v2 = verify(r1, dict(img=dict(p1=5.0, clip_pct=1.0), skin=dict(L=60.0, C=14.0)), _p3())
+    ok(not v2['ok'], '把脸压暗必须破硬门')
+    ok(any(x[0].startswith('S1') and not x[1] for x in v2['hard']), v2['hard'])
+    # 脸出区 ⇒ T4 破
+    v3 = verify(r1, dict(img=dict(p1=5.0, clip_pct=1.0), skin=dict(L=50.0, C=14.0)), _p3())
+    ok(any(x[0].startswith('T4') and not x[1] for x in v3['hard']), v3['hard'])
+
+
+def test_verify_exposure_move_is_not_a_violation():
+    """曝光本来就该改脸的亮度：位移等于曝光该带来的量 ⇒ 不算违规。"""
+    from design.review import verify
+    r1 = dict(img=dict(p1=5.0, clip_pct=0.2), skin=dict(L=50.0, C=14.0))
+    ev = 0.8
+    L3 = 50.0 + ev * eval_slope(50.0)
+    v = verify(r1, dict(img=dict(p1=5.0, clip_pct=0.3), skin=dict(L=L3, C=14.0)), _p3(ev))
+    ok(all(x[1] for x in v['hard']), '曝光带来的位移不该破门：%s' % v['hard'])
+
+
+def test_verify_does_not_punish_engine_leftovers():
+    """① 本身就堵黑/白点偏 ⇒ 只要求 ③ **不比 ① 更差**（不许拿引擎的账罚 LR）。"""
+    from design.review import verify
+    r1 = dict(img=dict(p1=0.8, clip_pct=0.2), skin=dict(L=60.0, C=14.0),
+              white_point=dict(a=3.0, b=1.0))
+    ok3 = dict(img=dict(p1=0.9, clip_pct=0.2), skin=dict(L=60.0, C=14.0),
+               white_point=dict(a=3.2, b=1.0))
+    v = verify(r1, ok3, _p3())
+    ok(all(x[1] for x in v['hard']), '① 的旧账不该算在 ③ 头上：%s' % v['hard'])
+    ok(any(x[0].startswith('T3') and x[1] for x in v['hard']), '白点要看"相对位移"')
+    # 但 ③ 把 ① 的窟窿捅更大就要罚
+    worse = dict(img=dict(p1=0.2, clip_pct=0.2), skin=dict(L=60.0, C=14.0),
+                 white_point=dict(a=3.0, b=1.0))
+    v2 = verify(r1, worse, _p3())
+    ok(any(x[0].startswith('T2') and not x[1] for x in v2['hard']), v2['hard'])
+    # 白点被 LR 挪走 > 2 也要罚
+    moved = dict(img=dict(p1=0.9, clip_pct=0.2), skin=dict(L=60.0, C=14.0),
+                 white_point=dict(a=6.0, b=1.0))
+    v3 = verify(r1, moved, _p3())
+    ok(any(x[0].startswith('T3') and not x[1] for x in v3['hard']), v3['hard'])
+
+
+def test_contact_sheet_layout():
+    """目检页：一图一行、占满宽、不放 <table>。"""
+    import os as _os
+    import tempfile
+    from design.review import contact_sheet
+    d = tempfile.mkdtemp()
+    p = _os.path.join(d, '目检.html')
+    rows = [dict(stem='A', final_jpg='preview/A_3.jpg', engine_jpg='preview/A_1.jpg',
+                 values='曝光 +0.2 ｜ 收白 -50', note='脸 L 62.0 → 62.3 ｜ clip 5% → 1%',
+                 verdict='✓ 全过'),
+            dict(stem='B', final_jpg='preview/B_3.jpg', engine_jpg=None,
+                 values='曝光 +0.0', note='', verdict='硬门破 1：T4 脸L')]
+    contact_sheet(rows, p, title='测试', sub='副标题')
+    html = open(p, encoding='utf-8').read()
+    ok('<table' not in html, '不许用 table（会撑破手机屏）')
+    ok(html.count('<figure>') == 2, '一张图一节')
+    ok('preview/A_3.jpg' in html and 'preview/B_3.jpg' in html, '图要引到')
+    ok('看① 引擎底片' in html, '① 底片要能展开看')
+    ok(html.count('<img') == 3, '两张成片 + 一张①')
+
+
 # ---------------------------------------------------------------- runner
 def main():
     import traceback

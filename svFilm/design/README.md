@@ -38,6 +38,24 @@ engine/   <stem>_engine.tif      ① 引擎片（16-bit）
 xmp/      <stem>.xmp             LR 作业单（曝光/曲线/点颜色）
           manifest.json          每张的计划与自检
 final/    <stem>_final.tif       ③ 成片（只在 --export 时）
+preview/  <stem>_1.jpg / _3.jpg  目检用的预览图
+目检.html                        一页看完全部成片（竖排、占满宽；① 折叠在下面）
+```
+
+`--export` 之后自动接着做三件事（`--rounds` 控制最多导几轮，默认 2）：
+
+```
+量 ③   → 用同一套测量代码量 final/*.tif
+验收   → 硬门：脸 T4/T5 · S1 脸残差 · T2 p1 · T3 白点位移 · S3 曲线预算
+         软门：T1 clip · T3 白点绝对值（背景/卷纸的账，只报不拦）
+再导   → 收白按"脸优先"进退：脸被压暗 ⇒ 回退；脸没掉还爆 ⇒ 加大；尽头 ⇒ 接受
+```
+
+**只做验收 + 目检**（不用 LR，拿两份测量就够）：
+
+```
+& $py -X utf8 -m design.cli review <①测量.json> <③测量.json> --out <目录> `
+    --tif1 <①目录> --tif3 <③目录> [--manifest <作业单.json>]
 ```
 
 ---
@@ -137,7 +155,7 @@ S5  一段顶到上限 = 上游错，不许用别的旋钮补
 ## 6 测试
 
 ```powershell
-& $py -X utf8 design\tests\test_design.py      # 31 项，纯函数，不渲不碰 LR
+& $py -X utf8 design\tests\test_design.py      # 38 项，纯函数，不渲不碰 LR
 ```
 
 ---

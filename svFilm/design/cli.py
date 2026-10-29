@@ -23,7 +23,7 @@ from .stocks import registry
 from .feasibility import gap_table, verdict
 from .refcards import profile_batch, rank_refs, refcards
 from .states import limit_note, regression_curve
-from .batch import Batch, pilot, run_engine, run_lr, estimate
+from .batch import Batch, pilot, run_engine, run_lr, run_final, build_review, estimate
 from .cards import cards as all_cards
 from .texture import Style, plan_texture, warn as tex_warn
 from .cards import cards as all_cards
@@ -234,22 +234,20 @@ def cmd_run(a):
     out = run_lr(b, recs, it, log=print)
     print(xmp_summary(out['manifest']))
 
+    reviewed = None
     if a.export:
-        print('\n[4b/5] 产品阶段：在 LR 里跑一遍并导出 ③')
-        pairs = []
-        import os as _os
-        for st, plan in out['plans'].items():
-            src = _os.path.join(b.sub('engine'), st + '_engine.tif')
-            if _os.path.isfile(src):
-                pairs.append((st, src, plan))
+        print('\n[4b/5] 产品阶段：LR 出成片 ③ → 量 → 验收（唯一驱动 LR 的一步）')
         try:
-            got = apply_and_export(pairs, b.sub('final'), log=print)
-            print(' ③ 导出 %d 张' % len(got))
+            o3 = run_final(b, recs, out['plans'], rounds=a.rounds, log=print)
+            print(' ③ 成片 %d 张（%d 轮）' % (len(o3['recs3']), o3['rounds']))
+            reviewed = build_review(b, recs, out['plans'], o3['recs3'], log=print)
+            print(' 验收：硬门（脸）过 %d/%d 张' % (reviewed['ok'], reviewed['n']))
+            print(' 目检：%s' % reviewed['html'])
         except Exception as e:
-            print(' ! LR 导出失败：%s' % str(e)[:120])
-            print('   （LR 没启动？桥不通会导致这一步失败；算值不受影响）')
+            print(' ! LR 出片失败：%s' % str(e)[:160])
+            print('   （LR 没启动？桥不通只会挡"出片"这一步；算值与作业单不受影响）')
 
-    print('\n[6/6] ①→② 回归')
+    print('\n[6/6] ①→② 曲线回归（不用 LR 的便宜检查）')
     nok = 0
     for st, plan in out['plans'].items():
         import os as _os
@@ -271,6 +269,46 @@ def cmd_run(a):
     print('①→② 回归：%d/%d 通过' % (nok, len(out['plans'])))
     print(limit_note())
     print('\n产物：%s（engine/ 与 xmp/）' % b.out_dir)
+
+
+def cmd_review(a):
+    """验收 + 目检页：拿 ① 与 ③ 的**测量**对比，出一页能看的图。
+
+    不驱动 LR、不改参数。③ 的量从哪来都行（真出片 / 历史 run 的测量文件）。
+    参数优先读 `--manifest`（LR 作业单里记的实际值）；没有就按当前代码重算一遍。
+    """
+    import json
+    import types
+    from .review import by_stem, make_review
+
+    r1 = M.load(a.recs1)
+    r3 = M.load(a.recs3)
+    if a.stem:
+        r1, r3 = M.only(r1, a.stem), M.only(r3, a.stem)
+
+    plans = {}
+    if a.manifest and os.path.isfile(a.manifest):
+        man = json.load(open(a.manifest, encoding='utf-8'))
+        for it in man.get('items') or []:
+            plans[it['stem']] = types.SimpleNamespace(
+                exposure_ev=it.get('exposure_ev') or 0.0,
+                highlights=it.get('highlights') or 0.0,
+                saturation=it.get('saturation') or 0.0,
+                point_color=it.get('point_color'),
+                curve=None)
+        print('参数来源：%s（%d 张）' % (os.path.basename(a.manifest), len(plans)))
+    if not plans:
+        for st, rec in by_stem(r1).items():
+            plans[st] = solve_one(rec, log=lambda *_: None)
+        print('参数来源：按当前代码重算（%d 张）' % len(plans))
+
+    out = make_review(r1, r3, plans, a.out, tif_1_dir=a.tif1, tif_3_dir=a.tif3,
+                      title=a.title, ev_known=bool(a.manifest), log=print)
+    print('\n验收：硬门（脸）过 %d/%d' % (out['ok'], out['n']))
+    for r in out['rows']:
+        print('  %-10s %s' % (r['stem'], r['verdict']))
+        print('             %s%s' % (r['values'], r['note']))
+    print('\n目检页：%s' % out['html'])
 
 
 def cmd_states(a):
@@ -394,6 +432,17 @@ def main(argv=None):
     p.add_argument('--yes', action='store_true', help='选卡后不再等确认')
     p.add_argument('--card', default='', help='手动指定卡名（跳过匹配排序）')
     p.add_argument('--export', action='store_true', help='用 LR 导出 ③（要 LR 在跑）')
+    p.add_argument('--rounds', type=int, default=2, help='③ 出片最多几轮（收白按脸进退）')
+
+    p = sub.add_parser('review'); p.set_defaults(fn=cmd_review)
+    p.add_argument('recs1', help='① 的测量（measure_all 输出）')
+    p.add_argument('recs3', help='③ 的测量')
+    p.add_argument('--out', required=True, help='目检页输出目录')
+    p.add_argument('--tif1', default='', help='① 的 tif 目录（出图用）')
+    p.add_argument('--tif3', default='', help='③ 的 tif 目录（出图用）')
+    p.add_argument('--manifest', default='', help='LR 作业单 manifest.json（读实际参数）')
+    p.add_argument('--stem', default='')
+    p.add_argument('--title', default='成片目检')
 
     p = sub.add_parser('states'); p.set_defaults(fn=cmd_states)
     p.add_argument('recs'); p.add_argument('--tifs', required=True)

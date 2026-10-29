@@ -184,6 +184,71 @@ def run_lr(b: Batch, recs: Dict[str, dict], intent: Optional[Intent] = None,
     return dict(plans=plans, manifest=mf)
 
 
+# ---------------------------------------------------------------- ③ 出片 + 量 + 验收
+
+def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
+              rounds: int = 2, measure_fn=None, log=print) -> Dict[str, object]:
+    """**导出 ③ → 量 ③ → 按"脸优先"决定要不要再导一轮。**
+
+    这是流程里唯一驱动 LR 的地方（纪律：不许拿 LR 当标定台）。
+    每一轮都从**同一张 ① 底片**重导，所以不会累积副作用。
+
+    收白的进退沿用 `lr.next_highlights`：脸被压暗 ⇒ 回退；脸没掉还爆 ⇒ 加大；
+    到尽头 ⇒ 接受背景过曝。最多 `rounds` 轮，避免来回打。
+    """
+    from .lr import next_highlights
+    from .lrsink import apply_and_export
+
+    mf = measure_fn or measure_tif
+    engine_dir = b.sub('engine')
+    final_dir = b.sub('final')
+    recs3: Dict[str, dict] = {}
+    used = 0
+
+    for rnd in range(max(1, rounds)):
+        pairs = [(st, os.path.join(engine_dir, st + '_engine.tif'), p)
+                 for st, p in plans.items()
+                 if os.path.isfile(os.path.join(engine_dir, st + '_engine.tif'))]
+        if not pairs:
+            raise RuntimeError('没有 ① 底片可导：%s' % engine_dir)
+        log('③ 第 %d 轮：导出 %d 张（LR）' % (rnd + 1, len(pairs)))
+        got = apply_and_export(pairs, final_dir, log=log)
+        used = rnd + 1
+        recs3 = {}
+        for st, p in got.items():
+            r = mf(p)
+            r['file'] = os.path.basename(p)
+            recs3[st] = r
+
+        changed = 0
+        for st, rec in recs3.items():
+            plan = plans[st]
+            s3 = rec.get('skin') or {}
+            s1 = (recs.get(st) or {}).get('skin') or {}
+            nv, why = next_highlights(
+                float(getattr(plan, 'highlights', 0.0) or 0.0),
+                float((rec.get('img') or {}).get('clip_pct') or 0.0),
+                face_after=s3.get('L'), face_before=s1.get('L'))
+            if nv is not None and abs(float(nv) - float(getattr(plan, 'highlights', 0.0))) > 1e-9:
+                log('   ↻ %s 收白 %+.0f → %+.0f ｜ %s' % (st, plan.highlights, nv, why))
+                plan.highlights = float(nv)
+                changed += 1
+        if not changed:
+            log('   收白都定了，不再导')
+            break
+        write_jobs(plans, b.sub('xmp'),
+                   manifest_extra=dict(batch=b.name, final_round=rnd + 2))
+    return dict(recs3=recs3, rounds=used)
+
+
+def build_review(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
+                 recs3: Dict[str, dict], log=print) -> Dict[str, object]:
+    """验收 + 目检页（G2/G3）。逻辑在 `review.make_review`（不依赖 Batch，能单独用）。"""
+    from .review import make_review
+    return make_review(recs, recs3, plans, b.out_dir,
+                       tif_1_dir=b.sub('engine'), tif_3_dir=b.sub('final'),
+                       title='%s · 成片目检' % b.name, log=log)
+
 def estimate(n: int, per_image_s: float = 25.0) -> str:
     """给个时间预估（渲一张要跑两次 headroom 解，约 22~30 秒）。"""
     t = n * per_image_s
