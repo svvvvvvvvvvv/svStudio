@@ -54,6 +54,20 @@ def load(path: str) -> Dict[str, dict]:
     return {r['file']: r for r in rows if r.get('skin')}
 
 
+def load_all(path: str) -> Dict[str, dict]:
+    """读一份 measure_all 输出，**不过滤没皮肤的图**。
+
+    为什么要这个（2026-10-29 真跑）：`load()` 只留有 skin 的记录 ⇒ 没脸的图
+    （DSCF1726）在验收页里直接消失，而它恰恰是要被检查的那一张。
+    画像/匹配仍然用 `load()`（那里确实只要脸）。
+    """
+    d = json.load(open(path, encoding='utf-8'))
+    rows = d.get('per_image') or []
+    if isinstance(rows, dict):
+        return dict(rows)
+    return {r['file']: r for r in rows}
+
+
 def meta(path: str) -> dict:
     d = json.load(open(path, encoding='utf-8'))
     return d.get('_meta') or {}

@@ -338,8 +338,8 @@ def cmd_review(a):
     import types
     from .review import by_stem, make_review
 
-    r1 = M.load(a.recs1)
-    r3 = M.load(a.recs3)
+    r1 = M.load_all(a.recs1)
+    r3 = M.load_all(a.recs3)
     if a.stem:
         r1, r3 = M.only(r1, a.stem), M.only(r3, a.stem)
 
