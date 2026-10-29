@@ -44,6 +44,13 @@ from .expose import (LAB_SLOPE_K, after_ev, eval_slope, ev_for_dL,
 #   见 design 文档「高光端斜率」与 DSCF1289 那组实测（8~16 L*/EV）。
 SLOPE_HIGH_MIN, SLOPE_HIGH_MAX = 8.0, 16.0
 #
+# ★ 点颜色的**亮度**：推满（lum=+1）实测能抬多少 L*（2026-10-29 实测，n=1）
+#   DSCF1627：脸 45.7 → 54.8（+9.1），背景 39.8 → 40.3（+0.5）⇒ 只动肤色，不动背景。
+#   ⚠ 单点线性外推，只用来给**起点**；真正的量靠出片验收（同 ③ 的做法）。
+PC_LUM_L_PER_UNIT = 9.1
+# 局部提脸只补"全局曝光补不动的差额"，且不许把脸推过头
+PC_LUM_MAX = 1.0
+
 # ★ 点颜色：**每一次推满（±1）能补多少比例**——这是**政策**，不是物理常数。
 #   原因：Point Color 的 SatScale 没有公开传递函数（见 lrmodel.py）。
 #   政策含义：缺口 ≤ 这个比例时，一次推满；缺口更大时分多次/报欠账。
@@ -478,7 +485,8 @@ def solve_saturation(rec_engine: dict, intent: Optional[Intent] = None) -> float
 # ---------------------------------------------------------------- ⑥ 点颜色
 
 def solve_point_color(rec: dict, intent: Optional[Intent] = None,
-                      C_min: float = 10.0) -> Optional[Dict[str, float]]:
+                      C_min: float = 10.0,
+                      face_deficit_L: float = 0.0) -> Optional[Dict[str, float]]:
     """肤色剂量（批次一套）。**新体系里没有"肤色靶"**，所以只做两件事：
 
       (a) 不变量：肤色 C 低于 C_min（发灰）⇒ 推一点
@@ -496,10 +504,41 @@ def solve_point_color(rec: dict, intent: Optional[Intent] = None,
         scale = gap / PC_FULL_CLOSES
     d = getattr(intent, 'denser', 0.0) if intent else 0.0
     scale += d * 0.5                       # 意图只加一半幅度，另一半交给整体饱和（政策）
-    # `lum` 是**肤色范围的亮度**（LR 的 PointColor LumScale）。默认 0：
-    # 补脸差额要靠出片验收，不能在这里拍一个数（同 ③ 的做法）。
-    return dict(scale=max(-1.0, min(1.0, scale)), shift=0.0,
-                lum=float(getattr(intent, 'brighter', 0.0) if intent else 0.0) * 0.0)
+    # ★ 脸部亮度差额（`face_deficit_L` > 0 = 还差多少才进区）：
+    #   全局曝光提不动的那一段，用**只在肤色范围**的亮度补 —— 不动背景，
+    #   所以不会触发"背景变亮 → 收白 → 压脸"那条链。只给起点，量靠出片验收。
+    lum = 0.0
+    if face_deficit_L > 0.5:
+        lum = min(PC_LUM_MAX, face_deficit_L / PC_LUM_L_PER_UNIT)
+    return dict(scale=max(-1.0, min(1.0, scale)), shift=0.0, lum=round(float(lum), 3))
+
+
+def next_point_lum(prev: float, face_after: Optional[float], face_target: float,
+                   sens: float = PC_LUM_L_PER_UNIT) -> Tuple[Optional[float], str]:
+    """⑥ 的阶梯：**用肤色亮度补脸的最后一段**（只动肤色、不动背景）。
+
+    这是「以人为本」的第三段（②全局曝光 → ③收白 → ⑥肤色亮度）：
+    全局曝光提不动的差额，在这里补，代价只有"肤色范围内的亮度变了"。
+
+    `sens` = 推满 1.0 能抬多少 L*（实测单点 9.1，n=1）；所以这一步是**按实测补差**，
+    不是按模型算 —— 每次都用上一轮出片量到的脸去算下一步。
+
+    返回 (下一档 | None, 说明)。None = 不用再动。
+    """
+    if face_after is None:
+        return None, '⑥ 没有脸读数 ⇒ 不动'
+    deficit = float(face_target) - float(face_after)
+    if deficit <= 0.5:
+        return None, '⑥ 脸已到位（%.1f ≥ %.1f）⇒ 不动' % (face_after, face_target)
+    if abs(prev) >= PC_LUM_MAX - 1e-9:
+        return None, ('⑥ 肤色亮度已推满 %+.1f 仍差 %.1f L\\* ⇒ 记为欠账'
+                      '（这条链到此为止；再加就不是"只动肤色"了）' % (prev, deficit))
+    step = min(PC_LUM_MAX, abs(prev) + deficit / max(sens, 1e-6))
+    if step <= abs(prev) + 1e-9:
+        return None, '⑥ 算出来的增量已小于最小步长 ⇒ 不动'
+    return round(-step if prev < 0 else step, 3), (
+        '⑥ 脸还差 %.1f L\\*（%.1f < %.1f）⇒ 肤色亮度推到 %+.2f（按实测 %.1f L\\*/单位）'
+        % (deficit, face_after, face_target, step, sens))
 
 
 # ---------------------------------------------------------------- 主流程

@@ -205,7 +205,7 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
     收白的进退沿用 `lr.next_highlights`：脸被压暗 ⇒ 回退；脸没掉还爆 ⇒ 加大；
     到尽头 ⇒ 接受背景过曝。最多 `rounds` 轮，避免来回打。
     """
-    from .lr import next_highlights
+    from .lr import next_highlights, next_point_lum, T4, LAND_TOL_L
     from .lrsink import apply_and_export
 
     mf = measure_fn or measure_tif
@@ -242,6 +242,18 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
                 log('   ↻ %s 收白 %+.0f → %+.0f ｜ %s' % (st, plan.highlights, nv, why))
                 plan.highlights = float(nv)
                 changed += 1
+            # ⑥ 肤色亮度：全局曝光 + 收白都定了，脸还差多少就用它补（只动肤色）
+            pc = getattr(plan, 'point_color', None)
+            if pc is not None and s3.get('L') is not None:
+                target = T4['L_lo'] + LAND_TOL_L
+                cur_lum = float(pc.get('lum', 0.0) or 0.0)
+                lv, lwhy = next_point_lum(cur_lum, s3.get('L'), target)
+                if lv is not None and abs(lv - cur_lum) > 1e-9:
+                    log('   ↻ %s 肤色亮度 %+.2f → %+.2f ｜ %s'
+                        % (st, cur_lum, lv, lwhy))
+                    pc['lum'] = float(lv)
+                    plan.point_color = pc
+                    changed += 1
         if not changed:
             log('   收白都定了，不再导')
             break

@@ -608,6 +608,18 @@ def test_match_sheet_is_a_decision_page():
     ok('建议' not in html and '推荐' not in html, '页面上不许替他做决定')
 
 
+def test_point_lum_fills_face_deficit():
+    """⑥ 肤色亮度：补脸的最后一段，按实测灵敏度给，推满就记欠账。"""
+    from design.lr import PC_LUM_L_PER_UNIT, PC_LUM_MAX, next_point_lum
+    v, why = next_point_lum(0.0, 50.0, 58.5)
+    ok(v is not None and 0 < v <= PC_LUM_MAX, '差 8.5 格应给一档：%s %s' % (v, why))
+    ok(abs(v - min(PC_LUM_MAX, 8.5 / PC_LUM_L_PER_UNIT)) < 1e-3, v)
+    ok(next_point_lum(0.5, 60.0, 58.5)[0] is None, '到位就不该动')
+    v3, why3 = next_point_lum(PC_LUM_MAX, 50.0, 58.5)
+    ok(v3 is None and '欠账' in why3, '推满仍差 ⇒ 记欠账：%s %s' % (v3, why3))
+    ok(next_point_lum(0.0, None, 58.5)[0] is None, '没脸读数不动')
+
+
 def test_contact_sheet_layout():
     """目检页：一图一行、占满宽、不放 <table>。"""
     import os as _os
