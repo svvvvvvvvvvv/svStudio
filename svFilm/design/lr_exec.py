@@ -28,8 +28,8 @@ def to_lrplans(plans: Dict[str, dict]) -> Dict[str, LRPlan]:
         w = p.get('white') or {}
         g = p.get('grading') or {}
         plan = LRPlan(
-            exposure_ev=0.0,                      # ② 不为脸动
-            whites=(WHITES_STEP if w.get('need') == 'down' else 0.0),
+            exposure_ev=float(pl.get('exposure_ev') or 0.0),   # ② 白端（EV，文档单位）
+            whites=0.0,   # ③ 不写白端：白端由 ② 的 EV 承担（§6B.2 最终口径）
             fill_ev=float(pl.get('local_ev') or 0.0),
             # local_highlights 暂不启用：桥对 LocalHighlights2012 的**回读是 nil**，
             #   '报 ok 但读不回来' = 不许信（老账）。改用'算好的上限'来防爆（见 lr_solve）。

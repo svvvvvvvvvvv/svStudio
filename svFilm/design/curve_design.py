@@ -1,36 +1,29 @@
 # -*- coding: utf-8 -*-
-"""⑥ 主色调曲线：**从卡的形状带反推一条曲线**（模仿大师的影调形状）。
+"""⑥ 主色调曲线：**图定位置、卡定间距**（§6B.3 / §6D，2026-10-30 重写）。
 
-文献口径（不是自己拍的）：
-  · 胶片的影调是"中调近似线性 + 肩部渐压 + 趾部渐抬"；肩部压多少、从哪开始压，
-    由**形状三项**（toe / shoulder / contrast_win）描述 —— 这正是我们把卡聚合出来的量。
-  · 色调曲线的作用在**中间调为主**（Adobe Lightroom 参考手册："Contrast … mainly affecting midtones"），
-    高光段是肩部：输入越接近 255，输出斜率越小（rolloff）。
-  · 参考实现的口径（darktable filmic / IC Filmic Tone Curve）：
-    pivot 固定在中灰（0.18 线性 ≈ 45% sRGB），对比围绕 pivot 展开，
-    肩部用单调递减斜率，不许出现反折（否则出 banding）。
+上一版的错：我把锚点写成 6/24/45/66/86 这些**绝对分位** —— 那是自造的（§6D 已列为待清）。
 
-做法（可复算，不跑 LR）：
-  1. 取卡的形状带中点：toe / shoulder / contrast_win（P25~P75 的中点）
-  2. 把它们换算成**百分位上的位移**：我们量到的 toe/shoulder/contrast_win 就是
-     p25−p5 / p95−p75 / p75−p25（§13.3），所以卡带直接给出"目标分位间距"
-  3. 用单调三次插值（PCHIP）过 5 个锚点，得到 16 点 LUT：
-        p5  → 目标 p5
-        p25 → p5' + toe'
-        p50 → p25' + 0.5·contrast_win'      （中调不动，除非卡要求）
-        p75 → p25' + contrast_win'
-        p95 → p75' + shoulder'
-  4. 高光端额外压一手：若肩部带的上沿仍 > 93，把 p95 目标钳到 93（这正是 T1 的白端），
-     并保证单调（y 不递减）
+正确做法：
+  · **位置**由这张图自己的分位给（p5/p25/p50/p75/p95，来自 ① 的测量）
+  · **间距**由卡的 toe / contrast_win / shoulder 带中点给
+  · 肩部落点由卡的 p95 带上沿给（不许把高光推过卡的肩）
 
-★ 为什么用曲线而不是 Whites：实测 Whites −8 对 p95 无影响（99.2→99.2）；
-  曲线是**直接改输出值**的旋钮，压 1 个单位就换 1 个 L\*，可算、可验。
+公式（L* 域，全部可复算）：
+
+    new_p5  = p5
+    new_p25 = new_p5 + toe_card
+    new_p75 = new_p25 + cw_card
+    new_p95 = min(new_p75 + sh_card, p95_cap)
+    new_p50 = new_p25 + skew_card · (new_p75 − new_p25)
+
+插值：PCHIP（单调，不反折 ⇒ 不出 banding）。
+
+文献口径：Adobe Lightroom 参考手册说 Contrast「mainly affecting midtones」，
+高光是肩部 rolloff；ToneCurvePV2012 的坐标是 **0..255 显示域分段线性**（§6C）。
 """
 from __future__ import annotations
 
 from typing import Dict, List, Optional, Sequence, Tuple
-
-P95_MAX = 93.0
 
 
 def _pchip(xs: Sequence[float], ys: Sequence[float], x: float) -> float:
@@ -62,54 +55,81 @@ def _pchip(xs: Sequence[float], ys: Sequence[float], x: float) -> float:
     return h00 * ys[i] + h10 * h[i] * m[i] + h01 * ys[i + 1] + h11 * h[i] * m[i + 1]
 
 
-def curve_from_shape(shape: Dict[str, Sequence[float]],
-                     p95_cap: float = P95_MAX,
-                     points: int = 16) -> Optional[List[Tuple[int, int]]]:
-    """卡的形状带 → 16 点主色调曲线（0..255）。
+def _mid(band) -> Optional[float]:
+    if isinstance(band, (list, tuple)) and len(band) == 2:
+        return 0.5 * (float(band[0]) + float(band[1]))
+    return None
 
-    `shape` 里是 (lo, hi) 带：toe / shoulder / contrast_win。
-    返回 None 表示"形状带不全，这一版不动曲线"。
-    """
-    def mid(k):
-        v = shape.get(k)
-        if isinstance(v, (list, tuple)) and len(v) == 2:
-            return 0.5 * (float(v[0]) + float(v[1]))
-        return None
 
-    toe, sh, cw = mid('toe'), mid('shoulder'), mid('contrast_win')
-    if None in (toe, sh, cw):
+def curve_from_quantiles(quantiles: Dict[str, float],
+                         shape: Dict[str, Sequence[float]],
+                         p95_cap: Optional[float] = None,
+                         points: int = 16) -> Optional[List[Tuple[int, int]]]:
+    """图的分位 + 卡的间距 → 16 点 LUT（0..255）。返回 None = 这一版不动曲线。"""
+    q5, q25, q50, q75, q95 = (quantiles.get('p5'), quantiles.get('p25'),
+                              quantiles.get('p50'), quantiles.get('p75'),
+                              quantiles.get('p95'))
+    if None in (q5, q25, q50, q75, q95):
         return None
-    # 目标分位（L* → 0..255 的 sRGB 编码值用 L* 近似，二者在本讨论里同序）
-    p5, p25, p50, p75, p95 = 6.0, 24.0, 45.0, 66.0, 86.0      # 中性起点（不是靶，是曲线的参考刻度）
-    t5 = p5
-    t25 = t5 + max(toe, 1.0)
-    t75 = t25 + max(cw, 2.0)
-    t95 = min(t75 + max(sh, 1.0), p95_cap)
-    t50 = 0.5 * (t25 + t75)
-    xs = [p5, p25, p50, p75, p95]
-    ys = [t5, t25, t50, t75, t95]
+    toe = _mid(shape.get('toe'))
+    cw = _mid(shape.get('contrast_win'))
+    sh = _mid(shape.get('shoulder'))
+    if None in (toe, cw, sh):
+        return None
+    skew = _mid(shape.get('skew'))
+    skew = 0.5 if skew is None else max(0.05, min(0.95, skew))
+
+    # ★ 2026-10-30 最终口径：**只修形状残差**。
+    #   ① 绝对间距重置两端 → 低键图被压到底（1608 p95 79.6→66）
+    #   ② 按比例重分配   → 高键图中间调塌（1289 脸 63.9→41.3）
+    #   正确：量这张图自己的 toe/cw/sh，把它 clamp 进卡的带，只补**差量**。
+    def _clamp(v, band, lo_guard=1.0):
+        if isinstance(band, (list, tuple)) and len(band) == 2:
+            return max(float(band[0]), min(float(band[1]), float(v)))
+        return float(v)
+
+    toe_i = max(float(q25) - float(q5), lo_guard if False else 1.0)
+    cw_i = max(float(q75) - float(q25), 1.0)
+    sh_i = max(float(q95) - float(q75), 1.0)
+    toe_t = _clamp(toe_i, shape.get('toe'))
+    cw_t = _clamp(cw_i, shape.get('contrast_win'))
+    sh_t = _clamp(sh_i, shape.get('shoulder'))
+    d_toe = toe_t - toe_i
+    d_cw = cw_t - cw_i
+    d_sh = sh_t - sh_i
+
+    cap = float(p95_cap) if p95_cap is not None else float(q95)
+    new5 = float(q5)
+    new25 = float(q25) + d_toe
+    new75 = float(q75) + d_toe + d_cw
+    new95 = min(float(q95) + d_toe + d_cw + d_sh, max(cap, float(q95) + d_toe + d_cw + d_sh, new75 + 1.0))
+    new50 = float(q50)
+
+    xs_in = sorted([float(q5), float(q25), float(q50), float(q75), float(q95)])
+    ys = [new5, new25, new50, new75, new95]
+    ys = [max(a, b) for a, b in zip(ys, xs_in)]        # 不许把任何分位往下压过原值太多
+    prev = None
+    mono = []
+    for v in ys:
+        prev = v if prev is None else max(prev, v)
+        mono.append(prev)
+    ys = mono
+
     out: List[Tuple[int, int]] = []
     prev = -1
     for i in range(points):
         x = 255.0 * i / (points - 1)
-        # 把 0..255 的 x 映射到 L* 域再插值（同一序，线性近似）
         xl = 100.0 * x / 255.0
-        yl = _pchip(xs, ys, xl)
+        yl = _pchip(xs_in, ys, xl)
         y = int(round(255.0 * yl / 100.0))
-        y = max(prev, min(255, max(0, y)))            # 单调、不越界
-        out.append((int(round(x)), int(y)))
+        y = max(prev, min(255, max(0, y)))
+        out.append((int(round(x)), y))
         prev = y
     return out
 
 
-def describe(curve: Optional[List[Tuple[int, int]]]) -> str:
-    if not curve:
-        return '曲线：不动'
-    return '曲线：%d 点，p95 目标 %.0f' % (len(curve), 255.0 * curve[-2][1] / 255.0)
-
-
 def apply_lut(curve, L: float) -> float:
-    """把曲线作用到一个 L* 上（0..255 的 LUT，线性插值）。"""
+    """把曲线作用到一个 L* 上（0..255 LUT，线性插值）。"""
     if not curve:
         return float(L)
     x = max(0.0, min(255.0, float(L) * 2.55))

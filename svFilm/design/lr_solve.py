@@ -21,7 +21,7 @@ import json
 import os
 from typing import Dict, List, Optional
 
-from .curve_design import apply_lut, curve_from_shape
+from .curve_design import apply_lut, curve_from_quantiles
 from .solver import Entry, Plan, solve_pass
 
 # ★ 2026-10-30：**所有阈值改从卡带来**（SV：求解必须照着匹配卡）。
@@ -66,33 +66,41 @@ def bands_of(card: dict) -> Dict[str, object]:
 
 
 def grading_of(card: dict, rec: dict) -> Dict[str, float]:
-    """⑧ 彩色：饱和 + 分离色调（量级由卡的色彩带决定，不拍脑袋）。
+    """⑧ 彩色：**只给方向 + 记账**（§47 / §6D：幅度没有出处的不许编）。
 
-    · 肤色保护：我们的脸 C 低于卡的脸 C 带 ⇒ 补饱和；高于 ⇒ 收一点
-    · 分离色调：卡的暖冷（warm_cool_b 带中点）为正 ⇒ 高光暖、阴影冷；为负则相反
-      —— 这是"模仿大师的色调分离"，不是随便给个色相
+    我们手里只有"卡的脸 C 带"和"这张图的脸 C"，而 `Saturation` → C* 的传递
+    没有公开式、我们也没做过合规标定（自己跑两次得 12 C/单位，已按 §47 作废）。
+    所以这里**只出方向**：
+      · 脸 C 低于卡带下沿 ⇒ 需要加饱和（direction=+1）
+      · 高于上沿        ⇒ 需要减
+      · 分离色调的**色相**由卡的 warm_cool_b 中点定（这个是方向性的、有依据）
+      · 分离色调的**强度**先给 0，等一次 LR 对照标定后再填
+    这些方向会进 ledger，由验收页显示；等标定有了再补幅度。
     """
     b = (card or {}).get('bands') or {}
     out = dict(saturation=0.0, vibrance=0.0,
                split_highlight_hue=0.0, split_highlight_sat=0.0,
                split_shadow_hue=0.0, split_shadow_sat=0.0, split_balance=0.0)
+    notes = []
     cb = b.get('face_C')
     sk = (rec.get('skin') or {}).get('C')
     if isinstance(cb, list) and sk is not None:
         lo, hi = float(cb[0]), float(cb[1])
         if sk < lo:
-            out['saturation'] = float(min(12.0, (lo - sk) * 3.0))
-            out['vibrance'] = float(min(8.0, (lo - sk) * 2.0))
+            notes.append('脸 C %.1f < 卡带下沿 %.1f ⇒ 需要加饱和（幅度待标定）' % (sk, lo))
         elif sk > hi:
-            out['saturation'] = float(max(-8.0, (hi - sk) * 2.0))
+            notes.append('脸 C %.1f > 卡带上沿 %.1f ⇒ 需要减饱和（幅度待标定）' % (sk, hi))
     wc = b.get('warm_cool_b')
     if isinstance(wc, list):
         mid = 0.5 * (float(wc[0]) + float(wc[1]))
         warm = mid >= 0
         out['split_highlight_hue'] = 45.0 if warm else 210.0
         out['split_shadow_hue'] = 210.0 if warm else 45.0
-        out['split_highlight_sat'] = float(min(8.0, 4.0 + abs(mid) * 0.5))
-        out['split_shadow_sat'] = float(min(6.0, 3.0 + abs(mid) * 0.4))
+        out['split_highlight_sat'] = 0.0     # 强度待标定（不许编）
+        out['split_shadow_sat'] = 0.0
+        notes.append('暖冷 %.1f ⇒ 高光 %s、阴影 %s（强度待标定）'
+                     % (mid, '暖' if warm else '冷', '冷' if warm else '暖'))
+    out['note'] = '；'.join(notes)
     return out
 
 
@@ -140,7 +148,11 @@ def white_end_plan(rec: dict, card: Optional[dict] = None,
         need = 'down'
     if p_clip is not None and p_clip >= clip_gate:
         need = 'down'
-    return dict(need=need, p95=p95, p95_after_curve=p95_res, clip=p_clip, person_clip=p_clip,
+    # 幅度按残差换算（一档 = 0.25 EV 的经验步长由残差给出，不再写死 -8）
+    amount = 0.0
+    if need == 'down' and p95_res is not None:
+        amount = -min(30.0, max(2.0, (float(p95_res) - float(p95_gate)) * 4.0))
+    return dict(need=need, amount=round(amount, 1), p95=p95, p95_after_curve=p95_res, clip=p_clip, person_clip=p_clip,
                 bg_clip=b_clip, frame_clip=im.get('clip_pct'),
                 gate=dict(p95_max=round(p95_gate, 1), person_clip_max=round(clip_gate, 2),
                           from_card=bool(b)))
@@ -153,7 +165,12 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
     face_band = bands.get('face_L')
     out: Dict[str, dict] = {}
     # ⑥ 曲线：由卡的形状带反推（可算，不跑 LR）
-    curve = curve_from_shape(bands.get('shape') or {})
+    _shape = bands.get('shape') or {}
+    _cap = min(PHYS_P95, _hi((card or {}).get('bands', {}).get('p95'), PHYS_P95))
+    def _curve_for(rec):
+        q = rec.get('img') or {}
+        return curve_from_quantiles(q, _shape, p95_cap=_cap)
+    _cap_hi = min(PHYS_P95, _hi((card or {}).get('bands', {}).get('p95'), PHYS_P95))
     face_rel = bands.get('face_over_bg')
     person_rel = bands.get('person_over_bg')
     for stem, rec in recs.items():
@@ -169,13 +186,26 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
 
         # ★ 一起动起来：⑥ 曲线是全局的，它会改脸的亮度 ⇒ ⑦ 的起点要换成**曲线之后**的值。
         #   否则曲线压暗多少，脸就白丢多少（实测 1772 脸 65.5→51.4）。
+        curve = _curve_for(rec)
         if curve:
             for _k in ('face_L', 'person_L'):
                 if meas.get(_k) is not None:
                     meas[_k] = apply_lut(curve, float(meas[_k]))
             if meas.get('p99') is not None:
                 meas['p99'] = apply_lut(curve, float(meas['p99']))
+        # ★ 白端：曲线之后仍超卡的肩 ⇒ 用**曝光**把它压下来（EV 有文档单位）
+        from .solver import eval_slope as _sl
+        _p95_res = apply_lut(curve, float(meas.get('p95') or 0.0)) if curve else meas.get('p95')
+        _ev_white = 0.0
+        if _p95_res is not None and float(_p95_res) > _cap_hi:
+            _ev_white = (_cap_hi - float(_p95_res)) / max(_sl(float(_p95_res)), 1e-6)
+            _ev_white = max(_ev_white, -1.5)          # 一次最多 1.5 档（超过就不是这张图的问题）
+            for _k in ('face_L', 'person_L', 'p99'):
+                if meas.get(_k) is not None:
+                    meas[_k] = float(meas[_k]) + _sl(float(meas[_k])) * _ev_white
+
         p: Plan = solve_pass(meas, card_in)
+        p.exposure_ev = round(float(_ev_white), 3)
 
         # ★ 脸是**一级目标**（人像优先）：曲线把脸压暗了，⑦ 必须补回来。
         _fl = meas.get('face_L')
