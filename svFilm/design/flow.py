@@ -314,6 +314,71 @@ def _lab_of_disp(disp):
     return 116.0 * f[..., 1] - 16.0
 
 
+# ---------------------------------------------------------------- 按暗部锚点定曝光
+
+# ★★★ 为什么要这个（2026-10-29 实测，一条搜索轨迹把两道锁都照出来了）
+#   引擎的 `render_safe` 上有**两道互相抵消的锁**：
+#     ① 黑端搜索：pe 越大越暗，找"黑端刚好 ≤ black_max"的那一档；
+#     ② 暗端回拉：`SAFE_P5_MIN=6.0`，p5 < 6 就把 pe ×0.9 提亮（最多 3 次）。
+#   实测 DSCF1422 的轨迹（pe 越大越暗，因此 p95 越小）：
+#     black_max=3 ⇒ 收敛 pe=0.655（黑1.77% p5=6.23 p95=81.0），②不动
+#     black_max=5 ⇒ 收敛 pe=0.716（黑4.84% p5=5.04 p95=77.4），②再拉回 p95≈81.6
+#   ⇒ **把 black_max 从 3 开到 5，精确等于没改**（成品 p95 81.0 → 81.6，反而亮了一点）。
+#   ⇒ 而且 p5 最终总是 ≈6.0~6.2：**引擎真正钉住的是暗部锚点，不是黑端预算**。
+#
+#   推论（设计层）：引擎现在交的是"正确曝光的底片"，不是"让出余量的底片"。
+#   要让出余量只有一个地方可动 —— 把**暗部锚点整体下移**。
+#   所以这里不再用 black_max 那一套，只留一根锚点：p5 锚到哪，余量就是"比 6.0 低多少"。
+P5_ANCHOR_DEFAULT = 6.0
+
+
+def solve_pe_for_p5(measure, lo: float, hi: float, target: float, iters: int = 8):
+    """二分 pe，使 `measure(pe)` 的 p5 落到 target。
+
+    `measure(pe) -> p5`。**pe 越大越暗 ⇒ p5 随 pe 单调降**（实测轨迹证实）。
+    返回 (pe, p5)。到不了 target 就返回夹到边界的那个 —— 调用方自己判能不能接受。
+    """
+    plo, phi = float(lo), float(hi)
+    best = None
+    for _ in range(int(iters)):
+        mid = 0.5 * (plo + phi)
+        cur = float(measure(mid))
+        best = (mid, cur)
+        if cur > target:            # 还不够暗 ⇒ 再压
+            plo = mid
+        else:                       # 太暗了 ⇒ 回一点
+            phi = mid
+    return best if best else (0.5 * (lo + hi), float(target))
+
+
+def render_p5_anchor(lin, name: str, p5_anchor: float = P5_ANCHOR_DEFAULT,
+                     pe_lo: float = None, pe_hi: float = None,
+                     iters: int = 8, cfg=None, log=print):
+    """按**暗部锚点**出片：把这张的 p5 锚到 `p5_anchor`，上端随之跑。
+
+    `p5_anchor` 就是"引擎让出多少余量"的唯一表达：
+      · 6.0 = 现状（引擎自己的测光，等于正确曝光，余量 0）
+      · 3.5 ≈ 让出 0.5 档（p5 处 dL*/dEV = 0.231×(6+16) = 5.08）
+    """
+    from svFilm import presets
+
+    base = presets.pe_of(name) * float(getattr(cfg or presets.C, 'SPEK_PE_SHIFT', 1.0) or 1.0)
+    lo = base * 0.20 if pe_lo is None else float(pe_lo)
+    hi = base * 3.00 if pe_hi is None else float(pe_hi)
+
+    def _p5(pe):
+        d = presets.render(lin, name, cfg or presets.C, print_exposure=float(pe))
+        return float(__import__('numpy').percentile(_lab_of_disp(d), 5))
+
+    pe, got = solve_pe_for_p5(_p5, lo, hi, float(p5_anchor), iters=iters)
+    disp = presets.render(lin, name, cfg or presets.C, print_exposure=float(pe))
+    if abs(got - float(p5_anchor)) > 0.8:
+        log('  ! 锚点没到：要 p5=%.1f，实到 %.1f（pe=%.4f 已撞边界）'
+            % (float(p5_anchor), got, pe))
+    return disp, dict(pe=round(float(pe), 6), p5_anchor=float(p5_anchor),
+                      p5_got=round(float(got), 2))
+
+
 # ---------------------------------------------------------------- 渲染/交接（注入式）
 
 def render_stage(choice: Choice, stems: List[str],

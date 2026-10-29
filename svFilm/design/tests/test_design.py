@@ -382,6 +382,22 @@ def test_exposure_refuses_invalid_headroom():
     ok('天花' in ex.why, '原因里要带证据：%s' % ex.why)
 
 
+
+def test_solve_pe_for_p5_monotone():
+    """二分 pe：pe 越大越暗 ⇒ p5 单调降。锚点找得到、边界撞得住。"""
+    from design.flow import solve_pe_for_p5
+    # 造一条单调降的 p5(pe)：pe=1 时 p5=10，pe=2 时 p5=2
+    def m(pe):
+        return 18.0 - 8.0 * pe
+    pe, got = solve_pe_for_p5(m, 0.2, 3.0, 6.0, iters=10)
+    ok(abs(got - 6.0) < 0.05, '应找到 p5=6：pe=%s got=%s' % (pe, got))
+    ok(abs(m(pe) - 6.0) < 0.05, 'pe 反代回去也该是 6：%s' % m(pe))
+    # 目标超出边界（要更暗但 hi 到不了）⇒ 夹在 hi 附近，如实报回边界处的 p5
+    pe2, got2 = solve_pe_for_p5(m, 0.2, 1.0, 0.0, iters=10)
+    ok(pe2 > 0.99, '撞边界应贴到 hi：%s' % pe2)
+    ok(abs(got2 - 10.0) < 0.1, '边界处的 p5 应被如实报回（≈10）：%s' % got2)
+
+
 # ---------------------------------------------------------------- runner
 def main():
     import traceback
