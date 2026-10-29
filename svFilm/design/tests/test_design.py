@@ -689,13 +689,15 @@ def test_matchcard_red_lines():
 
 
 def test_matchcard_one_set_per_card():
-    """一张卡 = 一套：目录名不是 NNN_ 开头的（散图汇总）不许算成一套。"""
+    """§63：**一个目录 = 一张卡**（鹿井逐目录；滨田/小红书各一整套）。"""
     from design.matchcard import cards
     cs = cards()
-    ok(len(cs) > 10, '卡太少：%d' % len(cs))
-    bad = [c.name for c in cs if not c.name[:3].isdigit()]
-    ok(not bad, '混进了不是"套"的目录：%s' % bad[:3])
-
+    ok(len(cs) >= 60, '卡太少：%d' % len(cs))
+    names = [c.name for c in cs]
+    ok(len(set(names)) == len(names), '卡名有重复（顶层的散图会撞名）：%s'
+       % [n for n in names if names.count(n) > 1][:3])
+    whole = [c for c in cs if '整套' in c.name]
+    ok(len(whole) >= 2, '滨田/小红书应该各有一张整套卡，实际 %d' % len(whole))
 
 def test_match_sheet_is_a_decision_page():
     """选卡页要能让人做决定：像哪套 / 缺口关不关得掉 / 每张卡的代价，三样缺一不可。"""

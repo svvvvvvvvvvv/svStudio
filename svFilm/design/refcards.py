@@ -110,7 +110,9 @@ def refcards(min_n: int = 3) -> List[RefCard]:
         buckets: Dict[str, List[dict]] = {}
         for r in d.get('per_image') or []:
             f = (r.get('file') or '').replace('\\', '/')
-            key = f.split('/')[0] if '/' in f else '(顶层)'
+            # ★ 顶层的散图也要能认出来是谁：用**来源语料**当名字，
+            #   否则'滨田'与'小红书'两张卡都叫'(顶层)'，撞名、还会被过滤掉
+            key = f.split('/')[0] if '/' in f else '%s（整套）' % corpus
             buckets.setdefault(key, []).append(r)
         for name, rows in sorted(buckets.items()):
             if len(rows) < min_n:

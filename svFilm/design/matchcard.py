@@ -160,10 +160,6 @@ def cards() -> List[MatchCard]:
     med = _medium_by_corpus()
     out: List[MatchCard] = []
     for r in _refs():
-        # ★ 一张卡 = 一套。目录名不是 `NNN_...` 的（如"顶层"那种散图汇总）**不算一套**，
-        #   它把不相干的图混在一起，画像与标签都不代表任何风格。
-        if not re.match(r'^\d{3}_', r.name or ''):
-            continue
         tg = tags.get(r.name) or {}
         st, pp = med.get((tg.get('corpus') or ''), ('kodak_portra_400',
                                                     'kodak_portra_endura'))
