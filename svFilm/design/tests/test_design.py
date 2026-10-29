@@ -613,7 +613,10 @@ def test_point_lum_fills_face_deficit():
     from design.lr import PC_LUM_L_PER_UNIT, PC_LUM_MAX, next_point_lum
     v, why = next_point_lum(0.0, 50.0, 58.5)
     ok(v is not None and 0 < v <= PC_LUM_MAX, '差 8.5 格应给一档：%s %s' % (v, why))
-    ok(abs(v - min(PC_LUM_MAX, 8.5 / PC_LUM_L_PER_UNIT)) < 1e-3, v)
+    # ★ 单步封顶（灵敏度随起点变，单点线性会过冲）
+    from design.lr import PC_LUM_STEP
+    ok(abs(v - min(PC_LUM_MAX, PC_LUM_STEP, 8.5 / PC_LUM_L_PER_UNIT)) < 1e-3, v)
+    ok(v <= PC_LUM_STEP + 1e-9, '第一步不许超过单步上限：%s' % v)
     ok(next_point_lum(0.5, 60.0, 58.5)[0] is None, '到位就不该动')
     v3, why3 = next_point_lum(PC_LUM_MAX, 50.0, 58.5)
     ok(v3 is None and '欠账' in why3, '推满仍差 ⇒ 记欠账：%s %s' % (v3, why3))

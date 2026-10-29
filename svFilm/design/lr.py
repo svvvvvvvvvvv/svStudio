@@ -50,6 +50,10 @@ SLOPE_HIGH_MIN, SLOPE_HIGH_MAX = 8.0, 16.0
 PC_LUM_L_PER_UNIT = 9.1
 # 局部提脸只补"全局曝光补不动的差额"，且不许把脸推过头
 PC_LUM_MAX = 1.0
+# ★ 单步上限（10-29 单张实测）：灵敏度**随起点变**——同一张图 lum 0.44 给出 +10.1 格，
+#   而 lum 1.0 只给 +9.1 格（起点 L 不同）。单点线性外推会过冲 ⇒ 每步封顶 0.25，
+#   不够下一轮再加（阶梯本来就有轮次）。
+PC_LUM_STEP = 0.25
 
 # ★ 点颜色：**每一次推满（±1）能补多少比例**——这是**政策**，不是物理常数。
 #   原因：Point Color 的 SatScale 没有公开传递函数（见 lrmodel.py）。
@@ -533,7 +537,8 @@ def next_point_lum(prev: float, face_after: Optional[float], face_target: float,
     if abs(prev) >= PC_LUM_MAX - 1e-9:
         return None, ('⑥ 肤色亮度已推满 %+.1f 仍差 %.1f L\\* ⇒ 记为欠账'
                       '（这条链到此为止；再加就不是"只动肤色"了）' % (prev, deficit))
-    step = min(PC_LUM_MAX, abs(prev) + deficit / max(sens, 1e-6))
+    step = min(PC_LUM_MAX, abs(prev) + PC_LUM_STEP,
+               abs(prev) + deficit / max(sens, 1e-6))
     if step <= abs(prev) + 1e-9:
         return None, '⑥ 算出来的增量已小于最小步长 ⇒ 不动'
     return round(-step if prev < 0 else step, 3), (
@@ -615,7 +620,10 @@ def solve_one(rec_engine: dict, rec_after_ev: Optional[dict] = None,
     # 点颜色吃 ①' 的肤色（② 的真值算不了，这是最接近的一层）
     rec_pc = rec_final or dict(rec_engine, skin=pred['pred']['skin'])
     pc = solve_point_color(rec_pc, intent=intent)
-    if pc and (abs(pc['scale']) > 1e-6 or abs(pc['shift']) > 1e-6):
+    # ★ 三个分量任一非零都要带上（10-29 真跑：只判 scale/shift ⇒ 只有 lum 时被丢掉，
+    #   ⑥ 的阶梯永远拿不到 point_color，整段是死的）
+    if pc and (abs(pc['scale']) > 1e-6 or abs(pc['shift']) > 1e-6
+               or abs(pc.get('lum') or 0.0) > 1e-6):
         plan.point_color = pc
         rgb = (rec_pc.get('skin') or {}).get('rgb')
         if rgb:

@@ -205,7 +205,7 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
     收白的进退沿用 `lr.next_highlights`：脸被压暗 ⇒ 回退；脸没掉还爆 ⇒ 加大；
     到尽头 ⇒ 接受背景过曝。最多 `rounds` 轮，避免来回打。
     """
-    from .lr import next_highlights, next_point_lum, T4, LAND_TOL_L
+    from .lr import next_highlights, next_point_lum, T4, LAND_TOL_L, PC_LUM_MAX
     from .lrsink import apply_and_export
 
     mf = measure_fn or measure_tif
@@ -234,18 +234,31 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
             plan = plans[st]
             s3 = rec.get('skin') or {}
             s1 = (recs.get(st) or {}).get('skin') or {}
-            nv, why = next_highlights(
-                float(getattr(plan, 'highlights', 0.0) or 0.0),
-                float((rec.get('img') or {}).get('clip_pct') or 0.0),
-                face_after=s3.get('L'), face_before=s1.get('L'))
+            # ★ 仲裁：脸不够亮、且肤色亮度还没推满 ⇒ **这一轮不动收白**，
+            #   先让 ⑥ 去补（它不动背景，不会反过来压脸）。加满才轮到回退收白。
+            _tgt = T4['L_lo'] + LAND_TOL_L
+            _pc = getattr(plan, 'point_color', None) or {}
+            _lum = float(_pc.get('lum', 0.0) or 0.0)
+            _face_short = s3.get('L') is not None and float(s3['L']) < _tgt
+            _lum_can = _lum < PC_LUM_MAX - 1e-9
+            if _face_short and _lum_can:
+                nv, why = None, ''
+            else:
+                nv, why = next_highlights(
+                    float(getattr(plan, 'highlights', 0.0) or 0.0),
+                    float((rec.get('img') or {}).get('clip_pct') or 0.0),
+                    face_after=s3.get('L'), face_before=s1.get('L'))
             if nv is not None and abs(float(nv) - float(getattr(plan, 'highlights', 0.0))) > 1e-9:
                 log('   ↻ %s 收白 %+.0f → %+.0f ｜ %s' % (st, plan.highlights, nv, why))
                 plan.highlights = float(nv)
                 changed += 1
             # ⑥ 肤色亮度：全局曝光 + 收白都定了，脸还差多少就用它补（只动肤色）
-            pc = getattr(plan, 'point_color', None)
-            if pc is not None and s3.get('L') is not None:
-                target = T4['L_lo'] + LAND_TOL_L
+            #   ★ 仲裁规矩（10-29 真跑吃过亏：收白和它互相抢，1665 打了两轮 −25→−12→−56）：
+            #     脸不够亮 ⇒ **先加肤色亮度**（不动背景），加满才轮到回退收白。
+            target = T4['L_lo'] + LAND_TOL_L
+            rgb = ((recs.get(st) or {}).get('skin') or {}).get('rgb')
+            if s3.get('L') is not None and rgb:
+                pc = getattr(plan, 'point_color', None) or dict(scale=0.0, shift=0.0, lum=0.0)
                 cur_lum = float(pc.get('lum', 0.0) or 0.0)
                 lv, lwhy = next_point_lum(cur_lum, s3.get('L'), target)
                 if lv is not None and abs(lv - cur_lum) > 1e-9:
@@ -253,6 +266,7 @@ def run_final(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
                         % (st, cur_lum, lv, lwhy))
                     pc['lum'] = float(lv)
                     plan.point_color = pc
+                    plan.point_color_rgb = list(rgb)
                     changed += 1
         if not changed:
             log('   收白都定了，不再导')
