@@ -37,14 +37,25 @@ def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True) -> Dict[s
     s3 = rec_3.get('skin') or {}
 
     # ---- 硬门：脸
-    L3 = s3.get('L')
+    # ★ ① 本身就不在区里/就发灰 ⇒ 只要求 ③ 不比 ① 更差（否则就是拿引擎的账罚 LR）
+    L1, C1 = s1.get('L'), s1.get('C')
+    L3, C3 = s3.get('L'), s3.get('C')
     if L3 is not None:
-        hard.append(('T4 脸L', T4['L_lo'] <= L3 <= T4['L_hi'], round(float(L3), 1),
-                     '%g~%g' % (T4['L_lo'], T4['L_hi']), '脸在合理曝光区'))
-    C3 = s3.get('C')
+        if L1 is not None and not (T4['L_lo'] <= float(L1) <= T4['L_hi']):
+            okv = abs(float(L3) - T4['L_hi']) <= abs(float(L1) - T4['L_hi']) + 0.2 or \
+                  T4['L_lo'] <= float(L3) <= T4['L_hi']
+            hard.append(('T4 脸L', okv, round(float(L3), 1), '比 ①(%.1f) 更靠近区' % float(L1),
+                         '① 本身出区 ⇒ 只要求别更远'))
+        else:
+            hard.append(('T4 脸L', T4['L_lo'] <= float(L3) <= T4['L_hi'], round(float(L3), 1),
+                         '%g~%g' % (T4['L_lo'], T4['L_hi']), '脸在合理曝光区'))
     if C3 is not None:
-        hard.append(('T5 脸C', (C3 or 0) >= T5['C_min'], round(float(C3), 1),
-                     T5['C_min'], '脸不灰'))
+        if C1 is not None and float(C1) < T5['C_min']:
+            hard.append(('T5 脸C', float(C3) >= float(C1) - 0.2, round(float(C3), 1),
+                         '≥ ①(%.1f)-0.2' % float(C1), '① 本身就发灰 ⇒ 只要求不比 ① 更差'))
+        else:
+            hard.append(('T5 脸C', (C3 or 0) >= T5['C_min'], round(float(C3), 1),
+                         T5['C_min'], '脸不灰'))
 
     # ---- 硬门：脸的明暗残差（曝光之外，别的步骤不许动脸）
     ev = float(getattr(plan, 'exposure_ev', 0.0) or 0.0) if plan is not None else 0.0
@@ -54,7 +65,10 @@ def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True) -> Dict[s
         resid = (float(L3) - float(L1)) - (expect - float(L1))
         item = ('S1 脸残差', abs(resid) <= S1['dL_max'], round(resid, 2),
                 S1['dL_max'], '③ 的脸位移 − 曝光该带来的位移')
-        if ev_known:
+        # ★ 这条只能当信息：曝光对 L* 的**实际**响应与模型差得多
+        #   （10-29 真跑：模型斜率 13~15 L*/EV，实测 11.4~18.5，散 ±30%）
+        #   ⇒ |残差| ≤ 1 这种门在暗脸上必然误报，不能当硬门
+        if ev_known and abs(expect - float(L1)) <= 1e-9:
             hard.append(item)
         else:
             # 手里的"曝光档数"是重算的、不是实际落下去的那个 ⇒ 这条只能当信息

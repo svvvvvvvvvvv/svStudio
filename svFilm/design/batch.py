@@ -117,8 +117,10 @@ def pilot(b: Batch, n: int = 2, card: Optional[str] = None,
     for st, p in tifs.items():
         r = mf(p)
         r['file'] = os.path.basename(p)
-        if r.get('skin'):
-            recs[st] = r
+        # ★ **没脸的图也要留着**（10-29 真跑发现 DSCF1726 整张被漏掉）：
+        #   `pick_lookat` 会给它"整幅 + 弃权 0 档"，照样出片；
+        #   在这里按皮肤过滤 = 这张图干脆没有 LR 计划、也就不出 ③。
+        recs[st] = r
     log('试点完成：%d/%d 张有效' % (len(recs), len(tifs)))
     log('! 试点卡的爆白率会影响 shoulder 需求（试点只渲 %d 张，代表性有限）' % len(stems))
     return recs
@@ -155,8 +157,10 @@ def run_engine(b: Batch, choice: Choice, measure_fn=None, limit: int = 0,
     for st, p in tifs.items():
         r = mf(p)
         r['file'] = os.path.basename(p)
-        if r.get('skin'):
-            recs[st] = r
+        # ★ **没脸的图也要留着**（10-29 真跑发现 DSCF1726 整张被漏掉）：
+        #   `pick_lookat` 会给它"整幅 + 弃权 0 档"，照样出片；
+        #   在这里按皮肤过滤 = 这张图干脆没有 LR 计划、也就不出 ③。
+        recs[st] = r
     dt = time.time() - t0
     log('整批：%d 张渲完，%d 张有效，%.0f 秒（%.0f 秒/张）'
         % (len(tifs), len(recs), dt, dt / max(len(tifs), 1)))
