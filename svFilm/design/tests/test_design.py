@@ -539,6 +539,50 @@ def test_verify_does_not_punish_engine_leftovers():
     ok(any(x[0].startswith('T3') and not x[1] for x in v3['hard']), v3['hard'])
 
 
+def test_match_sheet_is_a_decision_page():
+    """选卡页要能让人做决定：像哪套 / 缺口关不关得掉 / 每张卡的代价，三样缺一不可。"""
+    import os as _os
+    import tempfile
+    import types
+    from design.review import match_sheet
+
+    def _card(name, stock, paper, rms, amount, fmt):
+        return types.SimpleNamespace(
+            name=name, stock=stock, paper=paper,
+            texture=dict(rms_granularity=(rms, rms, rms)),
+            style=dict(amount=amount, film_format_mm=fmt, diffusion='off'),
+            safety=dict(p95_max=96.0), label=lambda: '%s（%s + %s）' % (name, stock, paper))
+
+    def _choice(c, score):
+        hit = types.SimpleNamespace(card=c, score=score, contrib=dict(shoulder=0.1),
+                                   top=lambda k=2: [('shoulder', 0.1)])
+        return types.SimpleNamespace(card=c, hit=hit)
+
+    c1 = _card('卡A', 'gold_200', 'endura', 10.0, 1.2, 36)
+    c2 = _card('卡B', 'portra_400', 'endura', 21.0, 1.3, 35)
+    c3 = _card('卡C', 'portra_400', 'endura', 9.0, 0.65, 70)
+    offer = types.SimpleNamespace(choices=[_choice(c1, 0.14), _choice(c2, 0.0), _choice(c3, 0.0)],
+                                  new_card_candidates=['vision3_250d'])
+    ref = types.SimpleNamespace(label=lambda: '鹿井/001', n=18, diff={'L': 8.0, 'C': -12.4})
+    hit = types.SimpleNamespace(score=2.82, ref=ref, diff=ref.diff)
+
+    d = tempfile.mkdtemp()
+    p = _os.path.join(d, '选卡.html')
+    match_sheet('测批', dict(L=77.3, C=8.5, h=27.9, p50=59.0, p95=96.6), [hit], offer,
+                gap_rows=['C 缺口 +12.4 ⇒ 不可达'], gap_verdict='换卷/换纸', out_html=p,
+                n_img=9, caliber='abc123')
+    html = open(p, encoding='utf-8').read()
+    ok('<table' not in html, '不许用 table')
+    ok('这批画像' in html and '77.3' in html, '要给出这批画像')
+    ok('最像哪一套' in html and '鹿井/001' in html, '要给出最像哪套')
+    ok('缺口' in html, '要给出缺口可达性')
+    ok('卡B' in html and '卡C' in html, '三张卡都要在')
+    ok('同卷同纸' in html, '同卷同纸必须点出来（否则分数会骗人）')
+    ok('rms 21.0→9.0' in html or 'rms 9.0→21.0' in html, '要把真正的差别摆出来：质感档')
+    ok('--card' in html, '要告诉人怎么把它选回去')
+    ok('建议' not in html and '推荐' not in html, '页面上不许替他做决定')
+
+
 def test_contact_sheet_layout():
     """目检页：一图一行、占满宽、不放 <table>。"""
     import os as _os

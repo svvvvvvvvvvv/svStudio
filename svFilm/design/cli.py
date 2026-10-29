@@ -19,6 +19,7 @@ from .invariants import check_T, report
 from .lr import solve_curve, solve_one
 from .lrsink import apply_and_export, summary as xmp_summary, write_jobs
 from .match import need_from_batch, report as match_report
+from .review import match_sheet
 from .stocks import registry
 from .feasibility import gap_table, verdict
 from .refcards import profile_batch, rank_refs, refcards
@@ -27,7 +28,7 @@ from .batch import Batch, pilot, run_engine, run_lr, run_final, build_review, es
 from .cards import cards as all_cards
 from .texture import Style, plan_texture, warn as tex_warn
 from .cards import cards as all_cards
-from .flow import Choice, choose, describe
+from .flow import Choice, Offer, choose, describe
 
 
 def _intent(pairs):
@@ -41,6 +42,35 @@ def _intent(pairs):
             k, v = kv.split('=')
             setattr(it, k, float(v))
     return it.clamp()
+
+
+def _median_headroom(recs):
+    """这批的余量中位（只作参考；余量不是上限，见纪律.md）"""
+    import statistics as st
+    xs = [r.get('headroom_ev') for r in recs.values()
+          if isinstance(r.get('headroom_ev'), (int, float))]
+    return st.median(xs) if xs else None
+
+
+def _match_page(recs, it, out_html, batch_name='', samples=None):
+    """算匹配 + 出选卡页。返回 (html, hits, offer, rows, verdict_text)。
+
+    ★ 页面上"该用哪张卡"**不给结论** —— 那是人定的（SV：匹配出 html 我来挑）。
+    """
+    import statistics as _st
+    from .review import match_sheet
+
+    tb = profile_batch(recs)
+    refs = refcards()
+    hits = rank_refs(tb, refs)
+    offer = choose(recs, it, topn=3)
+    hr = [r.get('headroom_ev') for r in recs.values() if isinstance(r.get('headroom_ev'), (int, float))]
+    rows = gap_table(tb, hits[0].ref.profile, headroom_ev=(_st.median(hr) if hr else None))
+    vd = verdict(rows)
+    html = match_sheet(batch_name or '这批', tb, hits[:5], offer, gap_rows=rows,
+                       gap_verdict=vd, out_html=out_html, samples=samples,
+                       n_img=len(recs), caliber=M.measure_sha())
+    return html, hits, offer, rows, vd
 
 
 def cmd_refs(a):
@@ -160,9 +190,21 @@ def cmd_match(a):
     recs = M.load(a.recs)
     if a.stem:
         recs = M.only(recs, a.stem)
+    else:
+        recs = M.only(recs, r'_engine\.tif$')
     it = _intent(a.intent)
     print('口径 sha = %s ｜ %d 张' % (M.measure_sha(), len(recs)))
     print(match_report(registry(), need_from_batch(recs, it), topn=a.top))
+    if a.out:
+        _, hits, offer, _, _ = _match_page(recs, it, os.path.join(a.out, '选卡.html'),
+                                           batch_name=os.path.basename(os.path.normpath(a.out)))
+        print('\n最像的 3 套：')
+        for h in hits[:3]:
+            print('  ' + str(h))
+        print('\n可选卡（你定）：')
+        for ch in offer.choices:
+            print('  %.2f  %s' % (ch.hit.score, ch.card.label()))
+        print('\n选卡页：%s' % os.path.join(a.out, '选卡.html'))
 
 
 def cmd_run(a):
@@ -175,25 +217,12 @@ def cmd_run(a):
     if it.describe() != '意图：无（只守不变量）':
         print(it.describe())
 
-    print('\n[1/7] 试点（渲 %d 张，用来算需求）' % a.pilot)
-    recs0 = pilot(b, n=a.pilot, log=print)
-    if not recs0:
-        print('试点无一有效 ⇒ 停（查 RAF / 卡）'); return
+    use_card = bool(getattr(a, 'card', ''))
+    recs0 = {}
+    offer = None
 
-    print('\n[2/7] 这批像哪一套（64 张参照卡 = 大师的每一套）')
-    tb = profile_batch(recs0)
-    refs = refcards()
-    hits = rank_refs(tb, refs)
-    print('  本批画像：脸L=%.1f 脸C=%.1f 脸h=%.1f p50=%.1f p95=%.1f（%d 张试点）'
-          % (tb['L'], tb['C'], tb['h'], tb['p50'], tb['p95'], len(recs0)))
-    print('  %d 张参照卡里最像的：' % len(refs))
-    for h in hits[:5]:
-        print('    ' + str(h))
-
-    print('\n[3/7] 现有生产卡（能渲的）+ 选卡')
-    offer = choose(recs0, it, topn=3)
-    if getattr(a, 'card', ''):
-        # 手动指定卡（不靠匹配排序）：验证某张卡的参数时用
+    if use_card:
+        # ★ 卡由人定 ⇒ 不再试点、不再匹配（省掉两遍渲）。选卡页只在没指定卡时才有意义。
         import types
         from .cards import cards as _cards
         from .texture import plan_texture as _plan_tex
@@ -201,24 +230,50 @@ def cmd_run(a):
         if cc is None:
             print('没有这张卡：%s（有：%s）' % (a.card, ' / '.join(sorted(_cards()))))
             return
-        offer.choices.insert(0, Choice(
-            hit=types.SimpleNamespace(card=cc, score=0.0, why='手动指定，不经匹配'),
-            texture=_plan_tex(cc.stock, cc.paper, long_side=1080)))
-        print('  ★ 手动指定：%s（匹配排序已让位）' % cc.label())
-    print(describe(offer))
+        offer = Offer(choices=[Choice(
+            hit=types.SimpleNamespace(card=cc, score=0.0, why='人工指定，不经匹配'),
+            texture=_plan_tex(cc.stock, cc.paper, long_side=1080))])
+        print('\n[1/7] 卡已指定 ⇒ **跳过试点与匹配**（省掉两遍渲）')
+    else:
+        print('\n[1/7] 试点（渲 %d 张，用来算需求）' % a.pilot)
+        recs0 = pilot(b, n=a.pilot, log=print)
+        if not recs0:
+            print('试点无一有效 ⇒ 停（查 RAF / 卡）'); return
 
-    print('\n[3/7-b] 可行性：最近那套参照卡的缺口，关得掉吗？')
-    rows = gap_table(tb, hits[0].ref.profile, headroom_ev=0.15)
-    for r in rows:
-        print(str(r))
-    print('  ' + verdict(rows).replace('\n', '\n  '))
+        print('\n[2/7] 这批像哪一套（64 张参照卡 = 大师的每一套）')
+        tb = profile_batch(recs0)
+        refs = refcards()
+        hits = rank_refs(tb, refs)
+        print('  本批画像：脸L=%.1f 脸C=%.1f 脸h=%.1f p50=%.1f p95=%.1f（%d 张试点）'
+              % (tb['L'], tb['C'], tb['h'], tb['p50'], tb['p95'], len(recs0)))
+        print('  %d 张参照卡里最像的：' % len(refs))
+        for h in hits[:5]:
+            print('    ' + str(h))
+
+        print('\n[3/7] 现有生产卡（能渲的）+ 选卡')
+        offer = choose(recs0, it, topn=3)
+        print(describe(offer))
+
+        print('\n[3/7-b] 可行性：最近那套参照卡的缺口，关得掉吗？')
+        rows = gap_table(tb, hits[0].ref.profile, headroom_ev=_median_headroom(recs0))
+        for r in rows:
+            print(str(r))
+        print('  ' + verdict(rows).replace('\n', '\n  '))
+
+        # ★ 选卡页：**给人挑**（这一步的出口就是"你去页面定"，不给结论）
+        page = os.path.join(b.out_dir, '选卡.html')
+        match_sheet(b.name, tb, hits[:5], offer, gap_rows=rows, gap_verdict=verdict(rows),
+                    out_html=page, n_img=len(recs0), caliber=M.measure_sha())
+        print('  选卡页：%s' % page)
+
     best = offer.best()
     if best is None:
         print('没有可用卡 ⇒ 停'); return
-    # ★ 选卡这一步要**停下来给人看**：权重、理由、可渲性都在上面
-    if not getattr(a, 'yes', False):
-        print('\n以上是匹配结果（权重与理由）。确认要用「%s」继续？' % best.card.label())
-        print('  加 --yes 才继续渲整批；或改 --card 指定另一张卡。')
+    if not use_card and not getattr(a, 'yes', False):
+        print('\n以上是匹配结果（权重与理由）。**用哪张卡你定**，看完页面再回来：')
+        print('  1) 打开 %s' % os.path.join(b.out_dir, '选卡.html'))
+        print('  2) 重跑并指定：--card <卡名>   （会跳过试点，直接整批渲）')
+        print('     或加 --yes 直接用匹配分第一张：%s' % best.card.label())
         return
     print('\n选中：%s' % best.card.label())
 
@@ -423,6 +478,7 @@ def main(argv=None):
     p.add_argument('recs'); p.add_argument('--stem', default='')
     p.add_argument('--top', type=int, default=6)
     p.add_argument('--intent', action='append')
+    p.add_argument('--out', default='', help='出选卡页（选卡.html）到这里')
 
     p = sub.add_parser('run'); p.set_defaults(fn=cmd_run)
     p.add_argument('--raf', required=True, help='RAW 目录')

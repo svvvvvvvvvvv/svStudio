@@ -299,3 +299,141 @@ def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict], plans: Dict[st
     for r in bad:
         log('  ! %s ｜ %s' % (r['stem'], r['verdict']))
     return dict(rows=rows, ok=nok, n=len(rows), html=html)
+
+
+# ---------------------------------------------------------------- 选卡页（人定，不是自动挑）
+
+_MATCH_CSS = _CSS + """
+.sec{font-size:13px;color:#8f8b84;margin:26px 0 10px;letter-spacing:.5px}
+.lead{font-size:14.5px;margin:0 0 10px;color:#dcd9d3}
+.lead b{color:#fff}
+.row{display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid #2e2d2b;font-size:13.5px}
+.row:first-of-type{border-top:0}
+.row .k{flex:0 0 96px;color:#cfcbc4}
+.row .v{flex:1;color:#b9b5ae;font-variant-numeric:tabular-nums}
+.card{border-top:1px solid #2e2d2b;padding:14px 0 4px}
+.card:first-of-type{border-top:0}
+.card h2{font-size:15.5px;margin:0 0 4px;color:#fff;font-weight:600}
+.card .meta{color:#8f8b84;font-size:12.5px;margin:0 0 8px;font-variant-numeric:tabular-nums}
+.mono{color:#7f8b99;font-size:12.5px;line-height:1.6;white-space:pre-wrap}
+.pick{background:#1b241c;border:1px solid #2c3d2e;border-radius:9px;padding:10px 12px;margin:14px 0 0;font-size:13px;color:#b9d3bd}
+"""
+
+
+def _card_diffs(a, b) -> List[str]:
+    """两张同卷同纸的卡，真正不同的档位（这是人做决定要看的东西）。"""
+    def rms(c):
+        v = c.texture.get('rms_granularity') or ()
+        return ('%.1f' % (sum(v) / len(v))) if v else None
+    rows = [('颗粒 rms', rms(a), rms(b)),
+            ('彩度 amount', a.style.get('amount'), b.style.get('amount')),
+            ('柔光', a.style.get('diffusion'), b.style.get('diffusion')),
+            ('画幅', a.style.get('film_format_mm'), b.style.get('film_format_mm')),
+            ('余量 p95≤', a.safety.get('p95_max'), b.safety.get('p95_max'))]
+    return ['%s %s→%s' % (k, x, y) for k, x, y in rows if str(x) != str(y)]
+
+
+def match_sheet(batch_name: str, profile: Dict[str, float], refs: List[object],
+                offer, gap_rows=None, gap_verdict: str = '', out_html: str = '',
+                samples: Optional[Dict[str, str]] = None, n_img: int = 0,
+                caliber: str = '', log=print) -> str:
+    """选卡页：**给人挑**，不给结论。
+
+    页面上必须有三件事，缺一件人就挑不了：
+      ① 这批像哪一套（画像级，不是靶）；② 最近那套的缺口关不关得掉；
+      ③ 现有卡各自的代价（卷/纸/质感档）。有样片就放样片，没有就明说"未渲"。
+    """
+    samples = samples or {}
+    out = ['<!DOCTYPE html>', '<html lang="zh-CN"><head><meta charset="utf-8">',
+           '<meta name="viewport" content="width=device-width, initial-scale=1">',
+           '<title>选卡 · %s</title><style>%s</style></head><body><div class="wrap">'
+           % (batch_name, _MATCH_CSS),
+           '<h1>选卡 · %s</h1>' % batch_name]
+    sub = '%d 张试点 ｜ 口径 %s' % (n_img, caliber or '—')
+    out.append('<p class="sub">%s</p>' % sub)
+
+    out.append('<p class="lead">这批画像：<b>脸 L %.1f ｜ 脸 C %.1f ｜ 脸 h %.1f ｜ '
+               'p50 %.1f ｜ p95 %.1f</b></p>'
+               % (profile.get('L', 0), profile.get('C', 0), profile.get('h', 0),
+                  profile.get('p50', 0), profile.get('p95', 0)))
+    out.append('<p class="cap">匹配只回答"最像哪一套"，不是要求做到那套的数；'
+               '参照卡只有画像、没有配方。这里的数拿的是<b>引擎底片①</b>，'
+               '还没有过 LR，所以差里混着"我们还没调"那一截。</p>')
+
+    out.append('<div class="sec">① 这批最像哪一套</div>')
+    for h in refs:
+        why = ' · '.join('%s%+.1f' % (k, v) for k, v in list(h.diff.items())[:3]) or '很接近'
+        out.append('<div class="row"><span class="k">%.2f</span>'
+                   '<span class="v">%s　<span class="mono">n=%d ｜ %s</span></span></div>'
+                   % (h.score, h.ref.label(), h.ref.n, why))
+
+    if gap_rows:
+        out.append('<div class="sec">② 最近那套的缺口，关得掉吗</div>')
+        for r in gap_rows:
+            out.append('<div class="mono">%s</div>' % str(r))
+        if gap_verdict:
+            out.append('<p class="cap">%s</p>' % gap_verdict.replace('\n', '<br>'))
+
+    out.append('<div class="sec">③ 现有卡（你定用哪张）</div>')
+    choices = list(offer.choices) if offer else []
+    # 候选太少、还有几张卷纸完全相同时，分数**没有分辨力** —— 必须写明，否则等于骗人
+    pairs = [(c.card.stock, c.card.paper) for c in choices]
+    dup = len(pairs) != len(set(pairs))
+    if dup:
+        out.append('<p class="cap">⚠ 下面的卡里有<b>同卷同纸</b>的（只差质感档）⇒ '
+                   '分数在这几张之间几乎没有分辨力，请看"和别的卡差在哪"那几行，'
+                   '或者直接看样片。</p>')
+    for ch in choices:
+        c = ch.card
+        rms = c.texture.get('rms_granularity') or ()
+        rms_s = ('%.1f' % (sum(rms) / len(rms))) if rms else '—'
+        out.append('<div class="card">')
+        out.append('<h2>%s</h2>' % c.label())
+        out.append('<p class="meta">匹配分 %.2f ｜ rms %s ｜ 画幅 %s ｜ 柔光 %s ｜ 彩度 %s'
+                   ' ｜ 余量设定 p95≤%s</p>'
+                   % (ch.hit.score, rms_s, c.style.get('film_format_mid')
+                      or c.style.get('film_format_mm', '—'),
+                      c.style.get('diffusion', 'off'), c.style.get('amount', '—'),
+                      c.safety.get('p95_max', '—')))
+        if getattr(ch.hit, 'contrib', None):
+            top = ch.hit.top(2)
+            out.append('<p class="mono">主要差在：%s</p>'
+                       % ' · '.join('%s%+.2f' % (k, v) for k, v in top))
+        # 同卷同纸的卡：把真正的差别摆出来（分数帮不上忙，质感档才帮得上）
+        for other in choices:
+            if other is ch:
+                continue
+            oc = other.card
+            if (oc.stock, oc.paper) != (c.stock, c.paper):
+                continue
+            diffs = _card_diffs(c, oc)
+            out.append('<p class="mono">和「%s」同卷同纸，差别在：%s</p>'
+                       % (oc.name, ' · '.join(diffs) if diffs else '几乎一样'))
+            break
+        s = samples.get(c.name)
+        if s:
+            out.append('<figure style="margin:10px 0 0"><img src="%s" alt="%s"></figure>'
+                       % (s, c.name))
+        else:
+            out.append('<p class="mono">样片：未渲（要图的话给这张卡渲一张试点）</p>')
+        out.append('</div>')
+
+    if offer and offer.new_card_candidates:
+        out.append('<div class="sec">想换风格的话（要做新卡，不是改一个键）</div>')
+        out.append('<p class="mono">值得做新卡的卷：%s</p>' % '、'.join(offer.new_card_candidates))
+        out.append('<p class="cap">卷/纸在卡构建时就传进 params，overrides 改不了；'
+                   '换卷 = 做一张新卡。</p>')
+
+    out.append('<div class="pick">选好之后这样告诉流程：<br>'
+               '<code>--card &lt;卡名&gt;</code>（卡名就是上面每个小标题括号前的那个，'
+               '如 <code>%s</code>）——不给就会按匹配分自动取第一张。</div>'
+               % (offer.choices[0].card.name if (offer and offer.choices) else '卡名'))
+    out.append('</div></body></html>')
+
+    html = '\n'.join(out)
+    if out_html:
+        os.makedirs(os.path.dirname(out_html) or '.', exist_ok=True)
+        with open(out_html, 'w', encoding='utf-8', newline='\n') as fh:
+            fh.write(html)
+        log('选卡页：%s' % out_html)
+    return html
