@@ -98,6 +98,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--measure', default=r'E:\ds\photo\_run_1030_card004\m_鹿井_v4.json')
     ap.add_argument('--out', default=r'E:\ds\photo\_run_1030_card004\cond_bands_v2.json')
+    ap.add_argument('--table-out', default='', help='另写一份"给求解器吃"的条件表')
+    ap.add_argument('--corpus', default='鹿井')
     a = ap.parse_args(argv)
 
     d = json.load(open(a.measure, encoding='utf-8'))
@@ -153,6 +155,24 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     json.dump(out, open(a.out, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print('\n写出 %s' % a.out)
+
+    # ---- 给求解器吃的条件表：只留"够样本"的格子，带 + n
+    if a.table_out:
+        tbl = dict(_meta=dict(corpus=a.corpus, labeler='dual-v1', measure=os.path.basename(a.measure),
+                              n=len(rows), note='P25-P75；n<30 的格子不给带'),
+                   classes={})
+        for k in ('back', 'mid', 'front'):
+            rs = [r for r in rows if label_dual(r) == k]
+            if len(rs) < 30:
+                tbl['classes'][k] = dict(n=len(rs), usable=False)
+                continue
+            tbl['classes'][k] = dict(
+                n=len(rs), usable=True,
+                face_over_bg=_band([Q['face_over_bg'](r) for r in rs]),
+                face_L=_band([Q['face_L'](r) for r in rs]),
+            )
+        json.dump(tbl, open(a.table_out, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+        print('写出条件表 %s' % a.table_out)
     return 0
 
 
