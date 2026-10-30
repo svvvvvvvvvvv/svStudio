@@ -1,0 +1,1447 @@
+[
+ {
+  "dir": "001_鹿井小渔_n66f7fa31",
+  "corpus": "鹿井",
+  "n": 16,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8060146711808762,
+   "sky_share": 0.05781313587941589,
+   "face_size": 1.2893379024249745,
+   "warm_cool_b": -0.44189393520355225
+  }
+ },
+ {
+  "dir": "002_鹿井小渔_n67ea66c3",
+  "corpus": "鹿井",
+  "n": 14,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8300977366255144,
+   "sky_share": 0.05883873456790124,
+   "face_size": 1.5514642248812822,
+   "warm_cool_b": 0.5596816539764404
+  }
+ },
+ {
+  "dir": "003_鹿井小渔_n6ab32b12",
+  "corpus": "鹿井",
+  "n": 12,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "back"
+  },
+  "raw": {
+   "env_share": 0.6492875514403292,
+   "sky_share": 0.0047691615226337445,
+   "face_size": 5.651923992504804,
+   "warm_cool_b": 6.069307088851929
+  }
+ },
+ {
+  "dir": "004_鹿井小渔_n6ab1e755",
+  "corpus": "鹿井",
+  "n": 9,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7987332818930041,
+   "sky_share": 0.023503086419753086,
+   "face_size": 1.4468055844863557,
+   "warm_cool_b": 3.4401893615722656
+  }
+ },
+ {
+  "dir": "005_鹿井小渔_n6ab1e1b9",
+  "corpus": "鹿井",
+  "n": 11,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7898509060135405,
+   "sky_share": 0.0939976602947033,
+   "face_size": 0.9942928522991525,
+   "warm_cool_b": 0.8694469928741455
+  }
+ },
+ {
+  "dir": "006_鹿井小渔_n6aac9ef7",
+  "corpus": "鹿井",
+  "n": 9,
+  "tags": {
+   "scene.type": "street",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.5781841563786009,
+   "sky_share": 0.002953960905349794,
+   "face_size": 5.294174587330409,
+   "warm_cool_b": 6.18925666809082
+  }
+ },
+ {
+  "dir": "007_鹿井小渔_n6aac9e26",
+  "corpus": "鹿井",
+  "n": 14,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.7001568930041152,
+   "sky_share": 0.010846836419753085,
+   "face_size": 4.25714967093383,
+   "warm_cool_b": 8.506477117538452
+  }
+ },
+ {
+  "dir": "008_鹿井小渔_n6aa9f5ec",
+  "corpus": "鹿井",
+  "n": 7,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7259396156909598,
+   "sky_share": 0.04209976105137395,
+   "face_size": 1.651695257277566,
+   "warm_cool_b": -3.667613983154297
+  }
+ },
+ {
+  "dir": "009_鹿井小渔_n6aa9f55d",
+  "corpus": "鹿井",
+  "n": 10,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7955722736625515,
+   "sky_share": 0.03428305041152263,
+   "face_size": 1.882656738534986,
+   "warm_cool_b": -3.0335114002227783
+  }
+ },
+ {
+  "dir": "010_鹿井小渔_n6aa4aedb",
+  "corpus": "鹿井",
+  "n": 9,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7012793707686181,
+   "sky_share": 0.012924382716049383,
+   "face_size": 2.950761439632059,
+   "warm_cool_b": -1.3548612594604492
+  }
+ },
+ {
+  "dir": "011_鹿井小渔_n6aa4ad8c",
+  "corpus": "鹿井",
+  "n": 8,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7006577932098765,
+   "sky_share": 0.0379443158436214,
+   "face_size": 2.4840718158404584,
+   "warm_cool_b": 0.2508699893951416
+  }
+ },
+ {
+  "dir": "012_鹿井小渔_n6aa4acb9",
+  "corpus": "鹿井",
+  "n": 13,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7879102366255144,
+   "sky_share": 0.013148148148148148,
+   "face_size": 2.6171314624953084,
+   "warm_cool_b": 4.154300689697266
+  }
+ },
+ {
+  "dir": "013_鹿井小渔_n6aa213d4",
+  "corpus": "鹿井",
+  "n": 15,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "back"
+  },
+  "raw": {
+   "env_share": 0.8338014403292181,
+   "sky_share": 0.005625,
+   "face_size": 1.6350055757223474,
+   "warm_cool_b": 1.8951237201690674
+  }
+ },
+ {
+  "dir": "014_鹿井小渔_n6aa205d7",
+  "corpus": "鹿井",
+  "n": 7,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7495532158502589,
+   "sky_share": 0.030485862206292316,
+   "face_size": 3.4867542749182125,
+   "warm_cool_b": 5.3856730461120605
+  }
+ },
+ {
+  "dir": "015_鹿井小渔_n6aa203da",
+  "corpus": "鹿井",
+  "n": 9,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.8317702110712863,
+   "sky_share": 0.0061454599761051375,
+   "face_size": 0.8462943713299953,
+   "warm_cool_b": 9.806373596191406
+  }
+ },
+ {
+  "dir": "016_鹿井小渔_n6a9f7679",
+  "corpus": "鹿井",
+  "n": 8,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.7762821502057613,
+   "sky_share": 0.02269483024691358,
+   "face_size": 2.726642766785734,
+   "warm_cool_b": 1.9276365637779236
+  }
+ },
+ {
+  "dir": "017_鹿井小渔_n6a9e0ca6",
+  "corpus": "鹿井",
+  "n": 12,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7185307355967079,
+   "sky_share": 0.0010243055555555556,
+   "face_size": 2.5064265521881,
+   "warm_cool_b": 10.352428436279297
+  }
+ },
+ {
+  "dir": "018_鹿井小渔_n6a9909ad",
+  "corpus": "鹿井",
+  "n": 17,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7462770061728395,
+   "sky_share": 0.007536008230452675,
+   "face_size": 3.3494696287575287,
+   "warm_cool_b": 2.7943670749664307
+  }
+ },
+ {
+  "dir": "019_鹿井小渔_n6a94cf77",
+  "corpus": "鹿井",
+  "n": 13,
+  "tags": {
+   "scene.type": "studio",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.762521445150873,
+   "sky_share": 0.10161595519224947,
+   "face_size": 1.9052120710714573,
+   "warm_cool_b": -4.783609390258789
+  }
+ },
+ {
+  "dir": "020_鹿井小渔_n6a937cea",
+  "corpus": "鹿井",
+  "n": 14,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7991711676954733,
+   "sky_share": 0.007001671810699588,
+   "face_size": 1.3792945651425819,
+   "warm_cool_b": -0.5592256784439087
+  }
+ },
+ {
+  "dir": "021_鹿井小渔_n6a924c6e",
+  "corpus": "鹿井",
+  "n": 10,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8171103395061728,
+   "sky_share": 0.0032419852648347272,
+   "face_size": 1.51396325592036,
+   "warm_cool_b": -4.287481307983398
+  }
+ },
+ {
+  "dir": "022_鹿井小渔_n6a8f88dd",
+  "corpus": "鹿井",
+  "n": 10,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7544161937475109,
+   "sky_share": 0.05900046924405101,
+   "face_size": 1.7943534654516529,
+   "warm_cool_b": 0.8089348077774048
+  }
+ },
+ {
+  "dir": "023_鹿井小渔_n6a8e41df",
+  "corpus": "鹿井",
+  "n": 10,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7377246365989646,
+   "sky_share": 0.03388590203106332,
+   "face_size": 2.1891490361239185,
+   "warm_cool_b": 0.17867231369018555
+  }
+ },
+ {
+  "dir": "024_鹿井小渔_n6a8cf6df",
+  "corpus": "鹿井",
+  "n": 12,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7071352942653888,
+   "sky_share": 0.021204823775388293,
+   "face_size": 1.642551561012429,
+   "warm_cool_b": -1.2342020869255066
+  }
+ },
+ {
+  "dir": "025_鹿井小渔_n6a8c07ed",
+  "corpus": "鹿井",
+  "n": 5,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "back"
+  },
+  "raw": {
+   "env_share": 0.8811432613168724,
+   "sky_share": 0.027484567901234568,
+   "face_size": 0.8136437141867361,
+   "warm_cool_b": -8.80170726776123
+  }
+ },
+ {
+  "dir": "026_鹿井小渔_n6a88fced",
+  "corpus": "鹿井",
+  "n": 10,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.845420524691358,
+   "sky_share": 0.029715149176954732,
+   "face_size": 1.148344413598962,
+   "warm_cool_b": 0.4747435450553894
+  }
+ },
+ {
+  "dir": "027_鹿井小渔_n6a866296",
+  "corpus": "鹿井",
+  "n": 12,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7847280092592592,
+   "sky_share": 0.015706661522633746,
+   "face_size": 2.0039529036150174,
+   "warm_cool_b": 0.3779903054237366
+  }
+ },
+ {
+  "dir": "028_鹿井小渔_n6a8511c3",
+  "corpus": "鹿井",
+  "n": 6,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7860575965750697,
+   "sky_share": 0.00045736260454002384,
+   "face_size": 2.195141259310458,
+   "warm_cool_b": 3.506311774253845
+  }
+ },
+ {
+  "dir": "029_鹿井小渔_n6a83bdb1",
+  "corpus": "鹿井",
+  "n": 8,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7419603743528475,
+   "sky_share": 0.03946074771007567,
+   "face_size": 1.9492292785302707,
+   "warm_cool_b": -2.757795214653015
+  }
+ },
+ {
+  "dir": "030_鹿井小渔_n6a8272a8",
+  "corpus": "鹿井",
+  "n": 7,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.6971226602947033,
+   "sky_share": 0.021134508164078056,
+   "face_size": 1.6645183760073068,
+   "warm_cool_b": 0.3607630729675293
+  }
+ },
+ {
+  "dir": "031_鹿井小渔_n6a8037df",
+  "corpus": "鹿井",
+  "n": 14,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7080504115226338,
+   "sky_share": 0.002613811728395062,
+   "face_size": 4.351321870339481,
+   "warm_cool_b": 3.309486746788025
+  }
+ },
+ {
+  "dir": "032_鹿井小渔_n6a7e9353",
+  "corpus": "鹿井",
+  "n": 10,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.6336651234567902,
+   "sky_share": 0.000255272633744856,
+   "face_size": 4.83213845916551,
+   "warm_cool_b": -2.0966498851776123
+  }
+ },
+ {
+  "dir": "101_鹿井小渔_n6a7bca1c",
+  "corpus": "鹿井",
+  "n": 13,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8740920781893005,
+   "sky_share": 0.00872170781893004,
+   "face_size": 0.7312467285830482,
+   "warm_cool_b": 2.2229461669921875
+  }
+ },
+ {
+  "dir": "102_鹿井小渔_n6a791275",
+  "corpus": "鹿井",
+  "n": 11,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8259452160493828,
+   "sky_share": 0.02654320987654321,
+   "face_size": 1.2924676090697176,
+   "warm_cool_b": -2.6485233306884766
+  }
+ },
+ {
+  "dir": "103_鹿井小渔_n6a7693b9",
+  "corpus": "鹿井",
+  "n": 8,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.6497548287534847,
+   "sky_share": 0.09527267522899244,
+   "face_size": 3.3749945210521446,
+   "warm_cool_b": 1.457369327545166
+  }
+ },
+ {
+  "dir": "104_鹿井小渔_n6a753ef5",
+  "corpus": "鹿井",
+  "n": 14,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7628247170781893,
+   "sky_share": 0.0672434413580247,
+   "face_size": 1.8147453465938832,
+   "warm_cool_b": -2.5196417570114136
+  }
+ },
+ {
+  "dir": "105_鹿井小渔_n6a729970",
+  "corpus": "鹿井",
+  "n": 8,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.859865736418024,
+   "sky_share": 0.036308409713589174,
+   "face_size": 0.5644498631296107,
+   "warm_cool_b": -0.4941343665122986
+  }
+ },
+ {
+  "dir": "106_鹿井小渔_n6a6ea5d3",
+  "corpus": "鹿井",
+  "n": 9,
+  "tags": {
+   "scene.type": "street",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.5846952160493827,
+   "sky_share": 0.03235210905349794,
+   "face_size": 1.3830078050873622,
+   "warm_cool_b": -2.2954015731811523
+  }
+ },
+ {
+  "dir": "107_鹿井小渔_n6a6aed54",
+  "corpus": "鹿井",
+  "n": 8,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.6928555812757202,
+   "sky_share": 0.011835776748971193,
+   "face_size": 4.2552234504722115,
+   "warm_cool_b": -0.5367562174797058
+  }
+ },
+ {
+  "dir": "108_鹿井小渔_n6a657e88",
+  "corpus": "鹿井",
+  "n": 10,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.726648372162485,
+   "sky_share": 0.007982999800876144,
+   "face_size": 1.735593110714659,
+   "warm_cool_b": 3.531744956970215
+  }
+ },
+ {
+  "dir": "109_鹿井小渔_n6a642594",
+  "corpus": "鹿井",
+  "n": 14,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.6835056999203504,
+   "sky_share": 0.0393835872162485,
+   "face_size": 2.3351427677031196,
+   "warm_cool_b": 0.31076669692993164
+  }
+ },
+ {
+  "dir": "110_鹿井小渔_n6a620c9a",
+  "corpus": "鹿井",
+  "n": 9,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "back"
+  },
+  "raw": {
+   "env_share": 0.7505811927518917,
+   "sky_share": 0.027742931103146157,
+   "face_size": 5.225521517584726,
+   "warm_cool_b": 3.4906177520751953
+  }
+ },
+ {
+  "dir": "111_鹿井小渔_n6a606ed2",
+  "corpus": "鹿井",
+  "n": 8,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.6465545350457984,
+   "sky_share": 0.0340439565909996,
+   "face_size": 4.135690230547569,
+   "warm_cool_b": -2.246679425239563
+  }
+ },
+ {
+  "dir": "112_鹿井小渔_n6a59cde8",
+  "corpus": "鹿井",
+  "n": 13,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.6960185185185185,
+   "sky_share": 0.07601723251028807,
+   "face_size": 4.528058825056293,
+   "warm_cool_b": -0.5769431591033936
+  }
+ },
+ {
+  "dir": "113_鹿井小渔_n6a58435c",
+  "corpus": "鹿井",
+  "n": 11,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7070352947033055,
+   "sky_share": 0.03948999402628435,
+   "face_size": 2.7895900145036214,
+   "warm_cool_b": 0.25341796875
+  }
+ },
+ {
+  "dir": "114_鹿井小渔_n6a56f722",
+  "corpus": "鹿井",
+  "n": 9,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7638826662684189,
+   "sky_share": 0.01704873556352051,
+   "face_size": 1.175930793618631,
+   "warm_cool_b": 0.5546838045120239
+  }
+ },
+ {
+  "dir": "115_鹿井小渔_n6a523a22",
+  "corpus": "鹿井",
+  "n": 12,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.8156410751028806,
+   "sky_share": 0.06220036008230453,
+   "face_size": 1.2964665044499517,
+   "warm_cool_b": -1.8362314105033875
+  }
+ },
+ {
+  "dir": "116_鹿井小渔_n6a50db76",
+  "corpus": "鹿井",
+  "n": 12,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.6565091306584362,
+   "sky_share": 0.03327289094650206,
+   "face_size": 3.426097172625724,
+   "warm_cool_b": -0.7219478487968445
+  }
+ },
+ {
+  "dir": "117_鹿井小渔_n6a4f15e0",
+  "corpus": "鹿井",
+  "n": 14,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8022809430173902,
+   "sky_share": 0.02037350242267357,
+   "face_size": 1.4502402806864836,
+   "warm_cool_b": 1.2821435928344727
+  }
+ },
+ {
+  "dir": "118_鹿井小渔_n6a4db9bc",
+  "corpus": "鹿井",
+  "n": 13,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7191100823045268,
+   "sky_share": 0.007912808641975308,
+   "face_size": 5.494005630892048,
+   "warm_cool_b": 11.329782485961914
+  }
+ },
+ {
+  "dir": "119_鹿井小渔_n6a487f2f",
+  "corpus": "鹿井",
+  "n": 16,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.6756327160493827,
+   "sky_share": 0.007753986625514403,
+   "face_size": 5.041581125864022,
+   "warm_cool_b": 0.22265762090682983
+  }
+ },
+ {
+  "dir": "120_鹿井小渔_n6a472c2b",
+  "corpus": "鹿井",
+  "n": 9,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7179629629629629,
+   "sky_share": 0.008942901234567901,
+   "face_size": 4.14614064651139,
+   "warm_cool_b": 6.8669023513793945
+  }
+ },
+ {
+  "dir": "121_鹿井小渔_n6a464d1f",
+  "corpus": "鹿井",
+  "n": 12,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7646654719235364,
+   "sky_share": 0.08810981680605337,
+   "face_size": 2.0934274829589175,
+   "warm_cool_b": -2.527284622192383
+  }
+ },
+ {
+  "dir": "122_鹿井小渔_n6a4331a5",
+  "corpus": "鹿井",
+  "n": 12,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.6725000000000001,
+   "sky_share": 0.049612911522633744,
+   "face_size": 3.6116220733950177,
+   "warm_cool_b": -0.5240768194198608
+  }
+ },
+ {
+  "dir": "123_鹿井小渔_n6a408475",
+  "corpus": "鹿井",
+  "n": 11,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8030901533253684,
+   "sky_share": 0.0008412982875348467,
+   "face_size": 2.331392940330084,
+   "warm_cool_b": 3.429379940032959
+  }
+ },
+ {
+  "dir": "124_鹿井小渔_n6a3df798",
+  "corpus": "鹿井",
+  "n": 12,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7213348765432099,
+   "sky_share": 0.0053825874485596715,
+   "face_size": 4.372667611478825,
+   "warm_cool_b": 0.7511571049690247
+  }
+ },
+ {
+  "dir": "125_鹿井小渔_n6a3ca43f",
+  "corpus": "鹿井",
+  "n": 12,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8126644535162451,
+   "sky_share": 0.034134664618535586,
+   "face_size": 1.4161065499327912,
+   "warm_cool_b": 0.17301738262176514
+  }
+ },
+ {
+  "dir": "126_鹿井小渔_n6a3753bc",
+  "corpus": "鹿井",
+  "n": 10,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7541853137860082,
+   "sky_share": 0.044440586419753084,
+   "face_size": 2.048430174121894,
+   "warm_cool_b": -0.43123888969421387
+  }
+ },
+ {
+  "dir": "127_鹿井小渔_n6a321d2d",
+  "corpus": "鹿井",
+  "n": 7,
+  "tags": {
+   "scene.type": "street",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.5995074588477366,
+   "sky_share": 0.039324845679012344,
+   "face_size": 4.522422126431828,
+   "warm_cool_b": -3.1070618629455566
+  }
+ },
+ {
+  "dir": "128_鹿井小渔_n6a312aef",
+  "corpus": "鹿井",
+  "n": 12,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7656778922739944,
+   "sky_share": 0.06203768004115226,
+   "face_size": 1.9137331535622635,
+   "warm_cool_b": 1.3207271695137024
+  }
+ },
+ {
+  "dir": "129_鹿井小渔_n6a2d3b5a",
+  "corpus": "鹿井",
+  "n": 11,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "back"
+  },
+  "raw": {
+   "env_share": 0.6840290223018718,
+   "sky_share": 0.03856904619673437,
+   "face_size": 2.4246223677732717,
+   "warm_cool_b": -4.1709303855896
+  }
+ },
+ {
+  "dir": "130_鹿井小渔_n6a2a1c06",
+  "corpus": "鹿井",
+  "n": 11,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.81778420781893,
+   "sky_share": 0.07152520576131688,
+   "face_size": 1.1193368182553938,
+   "warm_cool_b": 1.6307651996612549
+  }
+ },
+ {
+  "dir": "02.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8219104200901698,
+   "sky_share": 0.09163085155690388,
+   "face_size": 1.8866955453367626,
+   "warm_cool_b": 1.4564990997314453
+  }
+ },
+ {
+  "dir": "04.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "studio",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.8441115746007669,
+   "sky_share": 0.4906754308347027,
+   "face_size": 0.7590107892607305,
+   "warm_cool_b": 6.173694610595703
+  }
+ },
+ {
+  "dir": "x102_01.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "street",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.553844696969697,
+   "sky_share": 0.010203072390572391,
+   "face_size": 4.70838534638497,
+   "warm_cool_b": 0.047403573989868164
+  }
+ },
+ {
+  "dir": "x102_06.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "street",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.3937847222222222,
+   "sky_share": 0.0009396043771043772,
+   "face_size": 7.029132810650592,
+   "warm_cool_b": 6.208491325378418
+  }
+ },
+ {
+  "dir": "x102_07.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "street",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.5964870541838134,
+   "sky_share": 0.06196737825788752,
+   "face_size": 3.3393531301305277,
+   "warm_cool_b": 2.260838508605957
+  }
+ },
+ {
+  "dir": "x103_05.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "studio",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8797048208301108,
+   "sky_share": 0.5092023287788949,
+   "face_size": 1.6258434465397094,
+   "warm_cool_b": 8.245563507080078
+  }
+ },
+ {
+  "dir": "x103_08.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "studio",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.8751632643741152,
+   "sky_share": 0.42968671507512446,
+   "face_size": 0.9529325422286279,
+   "warm_cool_b": 26.19580078125
+  }
+ },
+ {
+  "dir": "x103_11.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.71251555727222,
+   "sky_share": 6.54478348568731e-05,
+   "face_size": 4.578295022508777,
+   "warm_cool_b": -11.964213371276855
+  }
+ },
+ {
+  "dir": "x103_12.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "studio",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.6157375368448033,
+   "sky_share": 0.37373339313939086,
+   "face_size": 6.656278018175489,
+   "warm_cool_b": 1.0959978103637695
+  }
+ },
+ {
+  "dir": "x103_13.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "studio",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.6313406030885705,
+   "sky_share": 0.1019325074203123,
+   "face_size": 7.443407010950024,
+   "warm_cool_b": 4.777362823486328
+  }
+ },
+ {
+  "dir": "x104_01.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "studio",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.7820787839862985,
+   "sky_share": 0.1357953329051595,
+   "face_size": 3.273116712333418,
+   "warm_cool_b": 9.236062049865723
+  }
+ },
+ {
+  "dir": "x104_02.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.7831652751016913,
+   "sky_share": 0.006505031042603297,
+   "face_size": 3.8023167483355462,
+   "warm_cool_b": 4.9457550048828125
+  }
+ },
+ {
+  "dir": "x104_05.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "half",
+   "color_env.value": "warm",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.9400171269535431,
+   "sky_share": 0.006098265895953758,
+   "face_size": 0.41613411869127176,
+   "warm_cool_b": 6.200963020324707
+  }
+ },
+ {
+  "dir": "x104_06.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "street",
+   "composition.framing": "closeup",
+   "color_env.value": "warm",
+   "light": "front"
+  },
+  "raw": {
+   "env_share": 0.5471687004924,
+   "sky_share": 6.315564119032328e-05,
+   "face_size": 7.441304305642907,
+   "warm_cool_b": 3.3309459686279297
+  }
+ },
+ {
+  "dir": "x104_07.jpg",
+  "corpus": "滨田",
+  "n": 1,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "half",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.9347034896167844,
+   "sky_share": 0.012361378719760223,
+   "face_size": 0.3680033593295159,
+   "warm_cool_b": 0.3194241523742676
+  }
+ },
+ {
+  "dir": "001_不詹锅_阴天森林的生日碎片🍃_-_不詹锅_小红书_-_你的生活兴趣社区",
+  "corpus": "xhs",
+  "n": 4,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8630633568651525,
+   "sky_share": 0.002302025782688766,
+   "face_size": 0.7892709848463156,
+   "warm_cool_b": -1.408663272857666
+  }
+ },
+ {
+  "dir": "002_不詹锅_是你记忆中的稻田吗_-_不詹锅_小红书_-_你的生活兴趣社区",
+  "corpus": "xhs",
+  "n": 2,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8839068251117225,
+   "sky_share": 0.028661989354472815,
+   "face_size": 0.9585222981539355,
+   "warm_cool_b": -7.021084308624268
+  }
+ },
+ {
+  "dir": "003_不詹锅_生命需要光合作用🌻_-_不詹锅_小红书_-_你的生活兴趣社区",
+  "corpus": "xhs",
+  "n": 1,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "half",
+   "color_env.value": "warm",
+   "light": "back"
+  },
+  "raw": {
+   "env_share": 0.9328886602652035,
+   "sky_share": 0.008006401463191587,
+   "face_size": 0.2021053966865952,
+   "warm_cool_b": 9.769731521606445
+  }
+ },
+ {
+  "dir": "004_不詹锅_🎞️把一整个夏天装进胶片里_-_不詹锅_小红书_-_你的生活兴趣社区",
+  "corpus": "xhs",
+  "n": 4,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "half",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.9137654320987654,
+   "sky_share": 0.06684556470050297,
+   "face_size": 0.25509049276660745,
+   "warm_cool_b": -8.238991022109985
+  }
+ },
+ {
+  "dir": "005_不詹锅_来存一些春日活人感拍照姿势吧！_-_不詹锅_小红书_-_你的生活兴趣社区",
+  "corpus": "xhs",
+  "n": 2,
+  "tags": {
+   "scene.type": "studio",
+   "composition.framing": "half",
+   "color_env.value": "cool",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.9450435916528356,
+   "sky_share": 0.13305356141387958,
+   "face_size": 0.24810147479842534,
+   "warm_cool_b": -2.7871206998825073
+  }
+ },
+ {
+  "dir": "006_不詹锅_🎞️趁着春天去花鸟市场拍照吧_-_不詹锅_小红书_-_你的生活兴趣社区",
+  "corpus": "xhs",
+  "n": 5,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "half",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.9128715134887975,
+   "sky_share": 0.0863496460449369,
+   "face_size": 0.4873337743534419,
+   "warm_cool_b": 1.1920928955078125e-05
+  }
+ },
+ {
+  "dir": "007_不詹锅_天气好，来拍胶片吧！☀️_-_不詹锅_小红书_-_你的生活兴趣社区",
+  "corpus": "xhs",
+  "n": 4,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.78321959304984,
+   "sky_share": 0.07470107453132144,
+   "face_size": 1.3981650088277953,
+   "warm_cool_b": -0.709693193435669
+  }
+ },
+ {
+  "dir": "_单图",
+  "corpus": "xhs",
+  "n": 37,
+  "tags": {
+   "scene.type": "greenery",
+   "composition.framing": "closeup",
+   "color_env.value": "neutral",
+   "light": "mid"
+  },
+  "raw": {
+   "env_share": 0.8970820473251029,
+   "sky_share": 0.03880842911877395,
+   "face_size": 0.5773599230200444,
+   "warm_cool_b": -0.41480064392089844
+  }
+ }
+]
