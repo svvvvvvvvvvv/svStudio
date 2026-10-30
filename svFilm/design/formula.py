@@ -97,3 +97,43 @@ def local_highlights_for(ev: float, p99_before: float, p99_after_pred: float,
 # 语义：让脸来到背景亮部的 85% —— "快追上背景，但不追上"。
 # 改一个数就整体变风格：0.55 ≈ 目录卡逆光片那种"脸明显暗于背景"。
 R_DEFAULT = 0.85
+
+# ---------------------------------------------------------------- ⑦ 的分配律
+
+L_PER_FILL_P99 = 11.2   # 局部曝光 1 档 → 画面 p99（实测，与上面同源）
+
+
+def allocate_fill(face_L: float, target_L: float, p99: Optional[float],
+                  shadow_max_ui: float = 100.0) -> Dict[str, object]:
+    """把"要提多少"拆成 Shadows 与 Exposure 两份 —— **按物理约束拆，不按偏好**。
+
+    规则（2026-10-30 实测得出）：
+      · `LocalShadows` **几乎不推 p99**（实测 +0.1 / 满档），所以**先吃满**，不受白端限制；
+      · 剩余才用 `LocalExposure`，它 1 档把 p99 抬 11.2 格 ⇒ 上限 = (100 − p99) / 11.2；
+      · 上限不够 ⇒ **记账"欠多少格"**，不硬提。
+
+    实测依据（DSCF1307）：
+      只 LocalExposure 0.1525 → 脸 +6.1、clip 5.55%
+      只 LocalShadows  1.0    → 脸 +6.5、clip 0.40%   ← 干净
+      两者叠加               → 脸 +15.6、clip 5.67%
+    """
+    from .calibration import L_PER_LOCAL_SHADOWS, L_PER_FILL as _LPF
+    L_PER_FILL = _LPF
+    need = float(target_L) - float(face_L)
+    if need <= 0:
+        return dict(shadows_ui=0.0, ev=0.0, deficit_L=0.0, why='已达标')
+    sh_xmp = min(1.0, need / L_PER_LOCAL_SHADOWS)
+    sh_ui = sh_xmp * (float(shadow_max_ui) / 1.0)
+    rest = need - sh_xmp * L_PER_LOCAL_SHADOWS
+    ev = 0.0
+    capped = False
+    if rest > 1e-9 and p99 is not None:
+        ev_max = max(0.0, (100.0 - float(p99)) / L_PER_FILL_P99)
+        ev = min(rest / L_PER_FILL, ev_max)
+        capped = ev < rest / L_PER_FILL - 1e-9
+    elif rest > 1e-9:
+        ev = rest / L_PER_FILL
+    got = sh_xmp * L_PER_LOCAL_SHADOWS + ev * L_PER_FILL
+    return dict(shadows_ui=round(sh_ui, 1), ev=round(ev, 4),
+                deficit_L=round(max(0.0, need - got), 2),
+                why=('白端截断' if capped else ('阴影吃满+曝光补齐' if ev > 0 else '阴影足够')))

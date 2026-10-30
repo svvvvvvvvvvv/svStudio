@@ -193,7 +193,11 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
         #      蒙版也建了，但导出时**一个字都不落**（四档脸 L 全一样）⇒ 必须用 MASKPARAM；
         #   ② MASKPARAM 要**回读**：读回来的值不匹配就当这一步没做，不许静默通过。
         _ev = float(getattr(plan, 'fill_ev', 0.0) or 0.0)
-        if _ev > 1e-6:
+        _sh = float(getattr(plan, 'local_shadows', 0.0) or 0.0)
+        _hl = float(getattr(plan, 'local_highlights', 0.0) or 0.0)
+        # ★ 2026-10-30：蒙版不再只由 fill_ev 决定 —— LocalShadows 是"主体∩暗部"的
+        #   原生等效（实测：脸 +7.1 L/单位，画面 p99 只 +0.1），必须能单独用。
+        if max(abs(_ev), abs(_sh), abs(_hl)) > 1e-6:
             rm = LS.run('MASK %s subject' % tmp, timeout=180)
             if 'groups=0->0' in rm:
                 raise RuntimeError('%s 主体蒙版没建出来：%s' % (stem, rm[:120]))
@@ -229,7 +233,7 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
                 except ValueError:
                     _ok2 = False
                 if not _ok2:
-                    log('    ! %s 跳过（桥回读 %s，未验证；§6E 待桥支持）' % (_key, _b))
+                    log('    ! %s 跳过（桥回读 %s，未验证）' % (_key, _b))
                     continue
                 log('    %s %+.0f（XMP %.3f，回读 %s）'
                     % (_key.replace('Local', '').replace('2012', ''), _ui, _x, _b))

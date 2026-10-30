@@ -76,6 +76,11 @@ L_PER_CURVE_DARK = 0.30
 B_PER_SHADOW_GRADE = 0.18
 B_SHADOW_GRADE_LEAK_FACE = 0.13
 
+# ---- 局部 Shadows（主体蒙版内、按亮度选择性提暗部）：2026-10-30 标定（_calib_sh2，DSCF1307）
+#     0.30/0.60/1.00 → 脸 +1.9 / +4.2 / +7.1 L*，**画面 p99 只 +0.1、clip 只 +0.5**
+#     ⇒ 约 7.0 L*/单位；这是"主体 ∩ 亮度范围"的原生等效，不会把人推爆
+L_PER_LOCAL_SHADOWS = 7.0   # 单位 = XMP 值（1.0 满档）；lrsink 传的是 UI 值，需 ×100
+
 L_PER_FILL = 18.7        # 局部 fill 1 档 → 脸 L*
 L_PER_FILL_P99 = 11.2    # 局部 fill 1 档 → 人 p99（未饱和时）
 P99_CEIL = 100.0
