@@ -76,11 +76,26 @@ def _ellipse(shape, cx, cy, rx, ry):
     return (((xx - cx) / max(rx, 1e-6)) ** 2 + ((yy - cy) / max(ry, 1e-6)) ** 2) <= 1.0
 
 
+def _fit_mask(mask, shape):
+    """掩膜对齐到目标图域（分割在 256 域，逐像素统计在 1080 域）。
+
+    2026-10-30 修：不缩放就 `m &= mask` 会 ValueError
+    （(720,1080) vs (256,256)），整个测量直接崩。
+    """
+    if mask is None:
+        return None
+    m = np.asarray(mask, dtype=np.float32)
+    if m.shape == shape:
+        return m
+    import cv2
+    return cv2.resize(m, (shape[1], shape[0]), interpolation=cv2.INTER_LINEAR)
+
+
 def _roi_stats(L, a, b, C, cx, cy, fw, mask=None, min_px=None, exclude=None):
     rx, ry = R_ROI * fw, R_ROI * 0.85 * fw
     m = _ellipse(L.shape, cx, cy, rx, ry)
     if mask is not None:
-        m &= (mask > 0.5)
+        m &= (_fit_mask(mask, L.shape) > 0.5)
     if exclude is not None:
         m &= ~exclude            # ★ 鼻子/鼻翼阴影不许进 ROI                 # ★ ROI 必须先落在脸上（几何外推会跑到背景/衣服上）
     m &= (C >= MIN_C)
@@ -157,7 +172,7 @@ def sample_skin(crop, meta, img_lab=None, mapper=None, fixed_xy=None, skin_mask=
         ax = 0.5 * (le[0] + re[0])
         ay = 0.5 * (le[1] + rm[1])
         anc = _ellipse(L.shape, ax, ay, 0.55 * fw, 0.75 * fw)
-        anc &= (skin_mask > 0.5) & (C >= MIN_C) & ~exclude
+        anc &= (_fit_mask(skin_mask, L.shape) > 0.5) & (C >= MIN_C) & ~exclude
         if int(anc.sum()) < 300:
             return None
         La = float(np.median(L[anc]))
