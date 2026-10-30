@@ -1,0 +1,151 @@
+{
+ "measure": "m_滨田_v4.json",
+ "n": 15,
+ "factors": {
+  "face_L": {
+   "card": null,
+   "light": null,
+   "sky": null,
+   "cell": null
+  },
+  "face_over_bg": {
+   "card": null,
+   "light": null,
+   "sky": null,
+   "cell": null
+  },
+  "face_C": {
+   "card": null,
+   "light": null,
+   "sky": null,
+   "cell": null
+  },
+  "face_h": {
+   "card": null,
+   "light": null,
+   "sky": null,
+   "cell": null
+  },
+  "contrast": {
+   "card": null,
+   "light": null,
+   "sky": null,
+   "cell": null
+  },
+  "p50": {
+   "card": null,
+   "light": null,
+   "sky": null,
+   "cell": null
+  },
+  "toe": {
+   "card": null,
+   "light": null,
+   "sky": null,
+   "cell": null
+  },
+  "shoulder": {
+   "card": null,
+   "light": null,
+   "sky": null,
+   "cell": null
+  },
+  "contrast_win": {
+   "card": null,
+   "light": null,
+   "sky": null,
+   "cell": null
+  },
+  "warm_cool_b": {
+   "card": null,
+   "light": null,
+   "sky": null,
+   "cell": null
+  },
+  "face_p90": {
+   "card": null,
+   "light": null,
+   "sky": null,
+   "cell": null
+  }
+ },
+ "bands": {
+  "face_L": {
+   "global_": [
+    70.34,
+    76.24
+   ],
+   "cell": {}
+  },
+  "face_over_bg": {
+   "global_": [
+    0.8,
+    0.94
+   ],
+   "cell": {}
+  },
+  "face_C": {
+   "global_": [
+    14.15,
+    16.1
+   ],
+   "cell": {}
+  },
+  "face_h": {
+   "global_": [
+    67.64,
+    78.11
+   ],
+   "cell": {}
+  },
+  "contrast": {
+   "global_": [
+    51.32,
+    85.02
+   ],
+   "cell": {}
+  },
+  "p50": {
+   "global_": [
+    61.54,
+    82.63
+   ],
+   "cell": {}
+  },
+  "toe": {
+   "global_": [
+    10.07,
+    35.81
+   ],
+   "cell": {}
+  },
+  "shoulder": {
+   "global_": [
+    4.03,
+    14.8
+   ],
+   "cell": {}
+  },
+  "contrast_win": {
+   "global_": [
+    9.03,
+    36.98
+   ],
+   "cell": {}
+  },
+  "warm_cool_b": {
+   "global_": [
+    1.28,
+    6.2
+   ],
+   "cell": {}
+  },
+  "face_p90": {
+   "global_": [
+    80.22,
+    90.62
+   ],
+   "cell": {}
+  }
+ }
+}
