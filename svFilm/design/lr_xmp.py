@@ -221,7 +221,7 @@ def build_xmp(scalars=None, curve=None, point_colors=None):
         body.append('   <crs:ColorVariance>')
         body.append('    <rdf:Seq>')
         # ★ 2026-10-29：LR 自己写的是 **-50**，我们一直写 0 —— 实测 0 时点颜色完全无效
-        #   （一张图三档 sat/hue/lum 全部无反应；见 design 的对齐审计）
+        #   （一张图三档 sat/hue/lum 全部无反应）
         body.append('     <rdf:li>-50.000000</rdf:li>')
         body.append('    </rdf:Seq>')
         body.append('   </crs:ColorVariance>')

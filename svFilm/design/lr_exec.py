@@ -28,7 +28,10 @@ def to_lrplans(plans: Dict[str, dict]) -> Dict[str, LRPlan]:
         g = p.get('grading') or {}
         plan = LRPlan(
             exposure_ev=float(pl.get('exposure_ev') or 0.0),   # ② 白端（EV，文档单位）
-            whites=0.0,   # ③ 不写白端：白端由 ② 的 EV 承担（§6B.2 最终口径）
+            # ★ 2026-10-31 接线：白端残差由 `white_end_plan` 只给一档（10 UI）
+            #   Whites 值；此前这里写死 0，导致"算出来但没写进去"（复核 4 的典型）。
+            #   `white_end_plan` 已经扣掉了 exposure_ev 的影响，不会与 ② 双算。
+            whites=float(w.get('whites_ui') or 0.0),
             fill_ev=float(pl.get('local_ev') or 0.0),
             # local_highlights 暂不启用：桥对 LocalHighlights2012 的**回读是 nil**，
             #   '报 ok 但读不回来' = 不许信（老账）。改用'算好的上限'来防爆（见 lr_solve）。

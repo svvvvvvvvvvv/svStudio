@@ -177,6 +177,10 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
     import lrstate as LS
 
     os.makedirs(out_dir, exist_ok=True)
+    # ★ 2026-10-31：lrstate.TMP 指向已删的旧语料目录（_corpus/kurai/full/_probe_lr）。
+    #   生产不能依赖语料目录；临时 TIF / 导出都放到本次输出下。
+    LS.TMP = os.path.join(out_dir, '_work')
+    os.makedirs(LS.TMP, exist_ok=True)
     out = {}
     for stem, src, plan in pairs:
         rec = point_color_record(plan)
@@ -201,7 +205,8 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
             rm = LS.run('MASK %s subject' % tmp, timeout=180)
             if 'groups=0->0' in rm:
                 raise RuntimeError('%s 主体蒙版没建出来：%s' % (stem, rm[:120]))
-            _v = _ev / 4.0
+            from .calibration import LOCAL_EXPOSURE_PER_EV
+            _v = _ev * LOCAL_EXPOSURE_PER_EV
             rp = LS.run('MASKPARAM %s LocalExposure2012 %.6f' % (tmp, _v), timeout=180)
             _rb = rp.split('readback=')[-1].split()[0] if 'readback=' in rp else '0'
             try:

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """新设计框架（2026-10-29 起）。
 
-设计文档（唯一真源）：`E:\\ds\\photo\\分工设计_引擎与LR_1029.md`
+设计文档（唯一真源）：`design/设计真源.md`；LR 数值出处：`design/LR数值来源.md`
 
 一句话：
     引擎交一张「带余量、不偏色、有胶片质感的底片」；
@@ -18,9 +18,13 @@ match.py       卷层排序（值得做新卡的参考）+ 需求向量
 texture.py     质感：换算 / 规格（查引擎卷表）/ 档位；禁用项
 flow.py        选卡 → 质感 → 渲一次（引擎自己的测光）→ 量余量 → 交 LR
                ★ 引擎不管脸、不管落点（那是 LR 的事）
+batch_grade.py A 段（批级）：全批中位 → 一条曲线 + 一套颜色（全批同参）
 lr.py          LR 侧七步求解（一次算一次验，不闭环）
-lrmodel.py     LR 的数值模型（只收查得到的；查不到就明说）
+photometry.py  标准色度学：L*↔Y↔EV↔sRGB 码（定义式，唯一真源）
+
+lrmodel.py     LR 的数值口径索引（不参与求解；能查/不能查 + 出处）
 curve.py       曲线：只修不变量 + 预算；PCHIP 插值；采样点含锚点
+color_math.py  Lab↔XYZ↔CCT/HSL（定义式；WB 与 HSL 色相不再靠标定）
 states.py      三态：①→② 用 LUT 自算；②→③ 算不了（点颜色无公开函数）
 intent.py      意图（接口定义，非物理断言）
 measure.py     测量桥：读 measure_all 记录 + 口径 sha
@@ -34,7 +38,7 @@ cli.py         命令行：stocks/cards/check/plan/curve/match/flow/texture/xmp/
     python -m design.cli plan  <recs.json> --stem "_engine\\.tif$" --intent denser=0.2
     python -m design.cli curve <src.json> <dst.json>
 
-★ 重开的两条已关闭决议（AGENTS §五），基础变了 —— 写明原因：
+★ 重开的两条已关闭决议，基础变了 —— 写明原因：
   1. 「曝光层机制 = pe + 动态 PE」→ 现在曝光归 LR。
      依据变了：引擎出片的 T0 实测 9/9 不过（p99≈97、clip 最高 16.7%），
      说明当年 pe 闭环补的是**底片余量**，不是"曝光本身必须在引擎里"。
@@ -49,5 +53,5 @@ cli.py         命令行：stocks/cards/check/plan/curve/match/flow/texture/xmp/
 """
 
 __all__ = ['invariants', 'stocks', 'cards', 'cards_match', 'match', 'texture',
-           'flow', 'lr', 'lrmodel', 'curve', 'states', 'intent', 'measure',
-           'lrsink', 'cli']
+           'flow', 'lr', 'batch_grade', 'photometry', 'lrmodel', 'curve',
+           'color_math', 'states', 'intent', 'measure', 'lrsink', 'cli']

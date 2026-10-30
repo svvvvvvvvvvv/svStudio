@@ -1,56 +1,87 @@
 # -*- coding: utf-8 -*-
-"""LR 的数值模型：**滑杆值 ↔ 效果**，只收能查到出处的那几条。
+"""LR 的数值口径索引：**哪些能算、哪些不能算、出处在哪**。
 
-原则（2026-10-29 SV 定）：
-  · 不做"在 LR 里试出来"的标定 —— 大量数值概念和公式是**可以查到的**；
-  · 查不到就明说"没有公开闭式"，**不给公式、不编斜率**；
-  · 每条都必须能指到来源。
+★ 2026-10-30：本模块**不参与求解链**（没有调用者），只做"查得到/查不到"的
+登记簿。真正算数的实现在：
+    · `photometry.py`   —— L* ↔ 线性光 ↔ EV ↔ sRGB 码（标准定义式）
+    · `analysis/corpus/kurai/_lr_models/` —— 2026-10-31 矩阵得到的分析模型
+      （`lr_response.py` / borrowed `tone_model.py`），**只做分析，不进生产**
+    · `calibration.py`  —— 单位换算 + n<5 台账
+    · `color_math.py`   —— Lab ↔ XYZ ↔ CCT / HSL（标准定义式）
+保留它是因为历史文档和代码注释都指向这里；删掉会让"为什么没有公式"失去索引。
 
-已核的（有出处）
-----------------
-E1 曝光滑杆的单位 = **档（f-stop / EV）**
+能算（有出处，精确）
+--------------------
+E1 曝光滑杆单位 = **档（f-stop / EV）**
    Adobe：「The exposure values are in increments equivalent to f-stop (aperture)
    increments in your camera.」
-   → https://helpx.adobe.com/lightroom-classic/help/image-tone-color.chromeless.html
-   ⇒ 滑杆 +1 ⇒ 线性域 ×2。这是**精确**关系，不是近似。
+   → https://helpx.adobe.com/lightroom-classic/using/image-tone-color.html
+   ⇒ 滑杆 +1 ⇒ 线性域 ×2。精确关系。
+E2 `ToneCurveName2012` = `Linear` / `Custom`；写自定义点必须置 `Custom`。
+E3 `PointColors` 的 19 数字布局 = `SatScale, LumScale, RangeAmount` + 三组窗口。
+E4 `PointColors` 必须配 `ColorVariance`；缺了 LR 把色票归一成 19 个 −1（静默）。
+E5 `SrcHue` 合法范围 **0~6 弧度**；超出静默丢弃（实测夹 5.95）。
+E6 局部族的文件刻度（对真实 LR XMP 实测，见 autoshade `docs/TECH_STACK.md`）：
+   · `LocalExposure2012` 文件值 = **EV/4**（4 档 = 满刻度 1.0）；
+   · 其余局部滑杆（contrast/highlights/shadows/whites/blacks/clarity/dehaze/
+     texture/saturation/temperature/tint/local sharpness/luminance NR）文件值 = **UI/100**；
+   · `LocalHue` 文件值 = **度/180**。
+E7 曲线 LUT 的横轴是**显示伽马码**（0..255），不是 L*。曝光是曲线之前的
+   线性光增益：`E' = sRGB_encode(sRGB_decode(x)·2^EV)`（autoshade `tone_exposure_curve`）。
+   ⇒ L* 与码之间必须走 sRGB 传输函数；`L*=50` 对应码 ≈119，不是 127.5。
 
-E2 色调曲线 `ToneCurveName2012` 的取值：`Linear` / `Custom`（写自定义点曲线时置 Custom）
-   → Adobe Camera Raw 的 XMP 规范（`crs:ToneCurveName2012`）
-   ⇒ 我们写 16 点时必须同时把名字置 Custom，否则 LR 忽略点集。
-
-E3 点颜色的 XMP 数字排布：`SatScale, LumScale, RangeAmount` 然后是
-   `HueRange, SatRange, LumRange` 三组窗口
-   → 社区实现 `autoshade/src/recipe.rs`（`SatScale, LumScale, RangeAmount, then
-     HueRange, SatRange and LumRange as`）
-   ⇒ 与我们实测的 19 数字布局一致（3 标量 + 16 窗口数）。
-
-E4 `crs:PointColors` **必须配 `crs:ColorVariance`**，否则 LR 把色票归一成 19 个 −1
-   → 本机实测（10-28），见 `LR参数手册 §11`。
-
-E5 `SrcHue` 的合法范围是 **0~6 弧度**（不是 0~360 度）；超出会被静默丢弃
-   → 本机实测（10-28）：hue 343.8°~360°（6.0~6.283）越界 ⇒ 夹到 5.95 才生效。
-
-没有公开闭式的（**不许编斜率**）
--------------------------------
-H1 `Highlights` / `Shadows` / `Whites` / `Blacks`
-   Adobe 只说"按亮度范围起作用、会保护其它区域"，**没有公开的传递函数**。
-   ⇒ 我们只把它当**方向**用（压/抬），幅度靠"加到目标为止"的验收，不拿公式算。
+没有公开闭式（**不许编斜率**）
+-----------------------------
+H1 `Highlights` / `Shadows` / `Whites` / `Blacks` / `Contrast`
+   Adobe 只说"按亮度区域自适应、保护其它区域"，没有公开传递函数。
+   → https://helpx.adobe.com/lightroom-classic/desktop/help/tone-control-adjustment.html
+   ⇒ 2026-10-31 的 86 臂矩阵只用于**分析**：borrowed `tone_model` 被否掉
+     （MAE 2.61 / P90 6.42 / max 15.83），k(L) 也只是一阶近似。
+     **生产不用这些模型**：没有公开传递函数 ⇒ 方向 + 一档 + ③ 验。
 H2 `Saturation` / `Vibrance`
-   Adobe 只说 Vibrance 会保护高饱和与肤色；**没有公开公式**。
-   ⇒ 同上：只当方向；本机实测 Vibrance 在肤色上几乎无效（旧账_1028 §A5）。
-H3 HSL / ColorMixer 的 ±100 映射
-   旧账里记的是"hue ±100 = ±30°、sat=100(C_w/C−1)、lum=200(L_w/L−1)"，
-   那是从公开模型推的**约定**，不是 Adobe 文档值 ⇒ 引用时必须写明"约定，非文档"。
+   Adobe 只说 Vibrance 保护高饱和与肤色；没有公开公式。
+   ⇒ Saturation 按**相对刻度**处理（HSL 的 S 是百分比）：`ΔC ≈ C0·S/100`；
+     Vibrance 只当方向。
+H3 HSL 色相滑杆的 ±100 映射
+   社区约定 ±100 ≈ ±30°，不是 Adobe 文档值。肤色色相优先用
+   `color_math.lab_to_hsl` 先算"要转多少度"，再决定用不用这根滑杆。
+H4 点颜色的 SatScale / LumScale
+   无公开传递函数；只有实测台账（`calibration.LEDGER`）。
+
+出处清单
+--------
+· CIELAB：CIE 15:2018 / ISO 11664-4；Bruce Lindbloom, "Lab to XYZ"。
+· sRGB：IEC 61966-2-1:1999。
+· 分位数与单调映射可交换：概率论基本性质（Q_p(g(X))=g(Q_p(X))）。
+· 单调三次插值：Fritsch & Carlson, SIAM J. Numer. Anal. 17(2), 1980。
+· LR 实测刻度 / 色调模型结构：autoshade
+  `docs/TECH_STACK.md` §XMP and Lightroom interoperability、`src/render/tone.rs`。
 """
 from __future__ import annotations
 
 from typing import Dict, Optional
 
-# ---- 常数的唯一出处（改这里就够了） ----
+# ---- 常数的唯一出处（改这里就够了；但实际换算在 photometry / calibration） ----
 EXPOSURE_UNIT = 'stop'          # E1：滑杆单位 = 档
 HW_LIMIT = 100.0                # 高光/阴影那组滑杆的上下限
-HSL_HUE_DEG_PER_100 = 30.0      # H3：约定（非文档），旧账_1028
+HSL_HUE_DEG_PER_100 = 30.0      # H3：约定（非文档）
 SRC_HUE_MAX = 5.95              # E5：实测，0~6 弧度制，夹 5.95
+LOCAL_EXPOSURE_PER_EV = 0.25    # E6：文件值 = EV/4
+LOCAL_UI_SCALE = 0.01           # E6：其余局部滑杆文件值 = UI/100
+
+SOURCES: Dict[str, str] = dict(
+    cielab='https://en.wikipedia.org/wiki/CIELAB_color_space',
+    srgb='https://www.w3.org/TR/css-color-4/#predefined-sRGB',
+    adobe_exposure=('https://helpx.adobe.com/lightroom-classic/using/'
+                    'image-tone-color.html'),
+    adobe_tone=('https://helpx.adobe.com/lightroom-classic/desktop/help/'
+                'tone-control-adjustment.html'),
+    autoshade_tech=('https://github.com/skymanbp/autoshade/blob/main/docs/'
+                    'TECH_STACK.md'),
+    autoshade_tone=('https://github.com/skymanbp/autoshade/blob/main/src/render/'
+                    'tone.rs'),
+    fritsch_carlson='Fritsch & Carlson, SIAM J. Numer. Anal. 17(2), 1980',
+)
 
 
 def linear_gain(ev: float) -> float:
@@ -59,7 +90,11 @@ def linear_gain(ev: float) -> float:
 
 
 def stops_for_delta_L(dL: float, slope_L_per_ev: float) -> float:
-    """把"要改多少 L*"换成档数。slope 必须来自实测（中间调 ~30、高光 8~16）。"""
+    """把 ΔL* 换成档数（**旧接口**）。
+
+    ⚠ 2026-10-30：不要再用它做生产换算 —— 斜率随 L* 变，跨档会错 5~15%。
+    用 `photometry.ev_for_l(L0, L1)`（Y 比精确反解）。
+    """
     if abs(slope_L_per_ev) < 1e-6:
         raise ValueError('slope 不能为 0；中间调与高光端斜率不同，必须分别给')
     return float(dL) / float(slope_L_per_ev)
@@ -85,12 +120,19 @@ def describe_limits() -> str:
     lines = [
         '能算（有出处）：',
         '  曝光      +1 档 = 线性 ×2                [Adobe LR 帮助]',
-        '  曲线      写点集必须置 ToneCurveName2012=Custom',
+        '  亮度      L*↔Y↔EV↔sRGB 码              [CIELAB / IEC 61966-2-1]',
+        '  曲线      横轴是显示伽马码；写点集置 ToneCurveName2012=Custom',
         '  点颜色    19 数字 = 3 标量 + 16 窗口数；必须配 ColorVariance；SrcHue 0~6 弧度',
+        '  局部刻度  LocalExposure2012=EV/4；其余 UI/100；LocalHue=度/180',
         '',
-        '不能算（无公开闭式，只当方向）：',
-        '  Highlights / Shadows / Whites / Blacks   （Adobe 未公开传递函数）',
-        '  Saturation / Vibrance                    （同上；Vibrance 在肤色上实测几乎无效）',
-        '  HSL 的 ±100 映射                          （约定，非 Adobe 文档值）',
+        '不能算（无公开闭式）：',
+        '  Highlights / Shadows / Whites / Blacks / Contrast  ⇒ 方向 + 一档 + ③ 验收',
+        '  Saturation / Vibrance                             ⇒ Saturation 相对刻度；Vibrance 只给方向',
+        '  HSL 的 ±100 映射 / PointColor 幅度                  ⇒ 约定或台账，不进常数表',
     ]
     return '\n'.join(lines)
+
+
+def source_table() -> Optional[str]:
+    """把出处压缩成可贴进报告的表（Markdown）。"""
+    return '\n'.join('- `%s` — %s' % (k, v) for k, v in SOURCES.items())

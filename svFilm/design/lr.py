@@ -45,10 +45,11 @@ from .intent import Intent
 #   `eval_slope` / `ev_for_dL` 在这里保留同名导出，老调用点不用改。
 from .expose import (LAB_SLOPE_K, after_ev, eval_slope, ev_for_dL,
                      headroom_note)
+from .photometry import l_after_ev
 #
 # ★ 高光端斜率：理论值不适用（印相肩部压缩），只能实测。实测 8~16 L*/EV。
-#   见 design 文档「高光端斜率」与 DSCF1289 那组实测（8~16 L*/EV）。
-SLOPE_HIGH_MIN, SLOPE_HIGH_MAX = 8.0, 16.0
+#   2026-10-30：`SLOPE_HIGH_MIN/MAX` 两个常数**没有调用者**，已删（复核 4）；
+#   这段观察留在注释里，供"为什么高光不能拿中间调斜率算"参考。
 #
 # ★ 点颜色的**亮度**：推满（lum=+1）实测能抬多少 L*（2026-10-29 实测，n=1）
 #   DSCF1627：脸 45.7 → 54.8（+9.1），背景 39.8 → 40.3（+0.5）⇒ 只动肤色，不动背景。
@@ -56,29 +57,17 @@ SLOPE_HIGH_MIN, SLOPE_HIGH_MAX = 8.0, 16.0
 PC_LUM_L_PER_UNIT = 9.1
 # 局部提脸只补"全局曝光补不动的差额"，且不许把脸推过头
 PC_LUM_MAX = 1.0
-# ★ 单步上限（10-29 单张实测）：灵敏度**随起点变**——同一张图 lum 0.44 给出 +10.1 格，
-#   而 lum 1.0 只给 +9.1 格（起点 L 不同）。单点线性外推会过冲 ⇒ 每步封顶 0.25，
-#   不够下一轮再加（阶梯本来就有轮次）。
-PC_LUM_STEP = 0.25
-
-# ★★ 局部补光（主体蒙版）——2026-10-29 晚改的**唯一执行者**：
-#   分工改成"全局只对背景负责、脸的亮度只由局部给"之后，这几个数是唯一的传递常数。
-#   出处：`_fill` 四档阶梯（1608/1665）+ `_broute` 十张实测（1231/1422/1608/1627），
-#   传递 18~20 L*/档 ⇒ 取 20 当分母；白裙 p95 在 +1.25 档到 96~98 ⇒ 封顶 1.0。
-FILL_L_PER_EV = 20.0
-FILL_MAX_EV = 1.0
-#   回彩：点颜色饱和 ±1 = 面板 ±100。实测 +0.25 → +3.6 C、+0.50 → +6.0~+7.5 C ⇒ 约 12 C/单位。
-#   ⚠ 色相**不动**：实测我们的皮肤本来就比大师红 8~12°（h 45.6/42.5 vs 53.7/54.6）。
-SAT_C_PER_UNIT = 12.0
-SAT_MAX = 0.5
-#   补光档的地板：逆光/侧逆的脸**至少**提在这里（fill 阶梯目检定下的口味值，不是物理值）。
-#   为什么需要它：区间下界 + 3.5 对逆光只有 48.5，而那正是"无补光档"的样子（目录卡口径）。
-#   补光档要的是"亮、白、有血气" ⇒ 逆光不能还落在 48~50。
-FILL_FLOOR_BACKLIT = 62.0
+# ★★ 2026-10-30 清账：以下"每档 / 每单位多少 L*"的**绝对传递常数已删除** ——
+#   `FILL_L_PER_EV=20` · `FILL_MAX_EV=1.0` · `SAT_C_PER_UNIT=12` · `SAT_MAX=0.5` ·
+#   `FILL_FLOOR_BACKLIT=62` · `PC_LUM_STEP=0.25`。
+#   它们的问题：① 量纲不对（滑杆效率随起点 L* 变）；② 样本 n=1~10，按纪律只该进台账；
+#   ③ 有的根本没调用者（复核 4）。现在补光走 `photometry` 精确式；没公开传递函数的
+#   旋钮只给方向 + 一档，
+#   点颜色饱和走 `calibration.sat_for_dc`（相对刻度）。证据见 `LR数值来源.md`。
 
 # ★ 2026-10-30 废：逆光的肤色彩度补偿（原 +0.15）。
 #   两处错：① 触发器挂在错判据上（旧光位判据）；② "提亮稀释彩度"该用 HSL 橙色补，
-#   不是用点颜色（点颜色只动肤色 ⇒ 边缘割裂）。见 设计沿革_1030 §B4。
+#   不是用点颜色（点颜色只动肤色 ⇒ 边缘割裂）。（已废，git 可追）
 
 # ★ 点颜色：**每一次推满（±1）能补多少比例**——这是**政策**，不是物理常数。
 #   原因：Point Color 的 SatScale 没有公开传递函数（见 lrmodel.py）。
@@ -113,9 +102,11 @@ def zone_for(light: Optional[str]):
 LAND_CAP_L = 70.0
 #
 # ★★ 逆光下的"分寸"（有出处，不是自定）：实操资料一致说
-#   「脸提到比天空暗半档就停手」——半档 = 0.5 EV ≈ 7~9 L*（按当前亮度段斜率）。
+#   「脸提到比天空暗半档就停手」——半档 = 0.5 EV。
+#   ★ 2026-10-30：原来存的是 `LAND_BELOW_SKY_L=8.0`（半档在某个亮度段的近似），
+#   换成 EV 后由 `l_after_ev` 精确换算；天空越亮，同样的半档对应的 L* 差越大。
 #   天空用**背景亮部** `bg.L_p90` 近似（比 img.p95 干净：不含脸）。
-LAND_BELOW_SKY_L = 8.0
+LAND_BELOW_SKY_EV = 0.5
 #
 # ★ 脸的"够大"判据（H2 降级链用）：face_w_native ≥ 40 px 才算能当锚。
 #   出处：手掩膜守卫 [0.005, 0.70] 与旧链实测（脸太小则颊读数不可靠）。
@@ -286,13 +277,15 @@ def _cap_white(rec_engine: dict) -> Optional[float]:
 
     为什么用 p95 而不是 p99：p99 已经贴死在 99.9（本批实测），拿它算上限永远是 0，
     等于不许提亮；p95 是"5% 到顶"的位置，用它当白端预算才有分辨力。
-    ⚠ 这是**近似**：真实肩部会压缩，所以它偏保守（真能提的比它多一点）。
+
+    2026-10-30：`(100−p95)/斜率` 是线性近似 ⇒ 改成 `ev_to_white(p95)` 精确反解。
+    ⚠ 真实肩部会压缩，所以这个预算仍偏保守（真能提的比它多一点）。
     """
     p95 = (rec_engine.get('img') or {}).get('p95')
     if p95 is None:
         return None
-    s = eval_slope(p95)
-    return (100.0 - float(p95)) / s if s > 1e-9 else None
+    from .photometry import ev_to_white
+    return ev_to_white(float(p95))
 
 
 def solve_exposure(rec_engine: dict, target_L: float = 72.0,
@@ -338,7 +331,7 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
         target = min(lo + margin, LAND_CAP_L)
         # ★ 逆光：按"比天空暗半档"定分寸（有出处的分寸，取代自定的 58.5）
         if la.light == 'backlit' and sky_L:
-            target = min(target, float(sky_L) - LAND_BELOW_SKY_L)
+            target = min(target, l_after_ev(float(sky_L), -LAND_BELOW_SKY_EV))
             target = max(target, lo + LAND_TOL_L)
         want_dL, side = target - cur, '暗于下界'
     elif cur > hi:
@@ -350,7 +343,7 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
     # ---- 意图：只改方向与幅度，不许把脸推出人样（S4）
     if intent is not None:
         ex.want_ev += getattr(intent, 'brighter', 0.0) * INTENT_EV_PER_UNIT
-        newL = cur + ex.want_ev * eval_slope(cur)
+        newL = l_after_ev(cur, ex.want_ev)
         if newL > hi - EDGE_MARGIN_L:
             ex.want_ev -= ev_for_dL(newL - (hi - EDGE_MARGIN_L), cur)
         elif newL < lo + LAND_TOL_L:

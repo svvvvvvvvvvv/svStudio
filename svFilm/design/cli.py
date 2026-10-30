@@ -43,7 +43,7 @@ def _intent(pairs):
 
 
 def _median_headroom(recs):
-    """这批的余量中位（只作参考；余量不是上限，见纪律.md）"""
+    """这批的余量中位（只作参考；余量不是上限，见 设计真源 第一部分）"""
     import statistics as st
     xs = [r.get('headroom_ev') for r in recs.values()
           if isinstance(r.get('headroom_ev'), (int, float))]
@@ -211,12 +211,12 @@ def cmd_run(a):
     use_card = bool(getattr(a, 'card', ''))
     recs0 = {}
     offer = None
+    _tb = {c.name: c for c in match_cards()}
+    from .texture import plan_texture as _plan_tex
+    import types
 
     if use_card:
         # ★ 卡由人定 ⇒ 不再试点、不再匹配（省掉两遍渲）。选卡页只在没指定卡时才有意义。
-        import types
-        from .texture import plan_texture as _plan_tex
-        _tb = {c.name: c for c in match_cards()}
         cc = _tb.get(a.card)
         if cc is None:
             print('没有这张卡：%s（有 %d 张，例如：%s）'
@@ -232,7 +232,7 @@ def cmd_run(a):
         print('\n[1/7] 整批渲（用基线卡），再拿全批测量去匹配')
         _base = sorted(c.name for c in match_cards())[0]
         _bch = Choice(hit=types.SimpleNamespace(card=_tb[_base], score=0.0),
-                      texture=None)
+                      texture=_plan_tex(_tb[_base].stock, _tb[_base].paper))
         recs0 = run_engine(b, _bch, limit=a.render_limit, log=print)
 
         print('\n[2/7] 用全批 %d 张的测量算匹配' % len(recs0))
@@ -247,9 +247,13 @@ def cmd_run(a):
         page = make_match_page(recs0, b.out_dir,
                                title='%s · 匹配五选一' % b.name)
         print('  匹配页：%s' % page)
-        print('\n[4/7] **停在这里等你拍板**（不自动往下走）')
-        print('  看完回我：--card <名字>')
-        return
+        if not getattr(a, 'yes', False):
+            print('\n[4/7] **停在这里等你拍板**（不自动往下走）')
+            print('  看完回我：--card <名字>')
+            return
+        print('\n[4/7] --yes ⇒ 自动用匹配分第一张，继续')
+        _b = offer.best()
+        print('  自动选：%s' % ('（无候选）' if _b is None else _b.card.label()))
 
     best = offer.best()
     if best is None:
@@ -263,8 +267,11 @@ def cmd_run(a):
     print('\n选中：%s' % best.card.label())
 
     print('\n[4/7] 整批渲 + 量（①）')
-    recs = run_engine(b, best, limit=a.render_limit, log=print,
-                      skip=list(recs0.keys()))
+    # ★ 2026-10-31：试点用的是基线卡。只有 best 也是基线卡时才能 skip；
+    #   否则跳过的那几张永远不会用 best 渲，recs 里直接缺图。
+    _base_name = sorted(c.name for c in match_cards())[0]
+    _skip = list(recs0.keys()) if best.card.name == _base_name else []
+    recs = run_engine(b, best, limit=a.render_limit, log=print, skip=_skip)
     # 试点那两张如果用的就是选中的卡，直接把旧测量并回来（避免漏）
     if best.card.name == sorted(c.name for c in match_cards())[0]:
         for k, v in recs0.items():
@@ -273,7 +280,18 @@ def cmd_run(a):
         print('整批无一有效 ⇒ 停'); return
 
     print('\n[5/7] LR 计划（§6B 七步全开，照卡求解）')
-    plans = plan_batch(recs, card)
+    # ★ 2026-10-30：`plan_batch` 要的是**原样卡字典**（带 lo/hi），不是
+    #   `MatchCard`（只有中点 + spread）。这里按名字回查 cards_v5。
+    from .matchcard import raw_card
+    card = raw_card(best.card.name)
+    if card is None:
+        print('找不到卡的原样数据（cards_v5）：%s' % best.card.name); return
+    # ★ A 段必须批级一次：先算全批中位 → 一条曲线 + 一套颜色，再逐图 B。
+    from .batch_grade import build as build_batch_grade
+    bg = build_batch_grade(recs, card)
+    for line in bg.get('ledger') or []:
+        print('  ' + line)
+    plans = plan_batch(recs, card, batch=bg)
     print(lr_summary(plans, card['name']))
 
     reviewed = None
@@ -282,7 +300,18 @@ def cmd_run(a):
         try:
             got = lr_run(plans, b.sub('engine'), b.out_dir, log=print)
             print(' ③ 成片 %d 张（一次算，一轮）' % len(got))
-            reviewed = build_review(b, recs, plans, got,
+            # ★ 2026-10-31：`lr_run` 返回的是**路径**，验收要的是**测量记录**；
+            #   旧代码把路径直接塞给 make_review，b.get('skin') 必崩。
+            from .batch import measure_tif as _measure_tif
+            recs3 = {}
+            for _st, _p in got.items():
+                _r = _measure_tif(_p)
+                _r['file'] = os.path.basename(_p)
+                recs3[_st] = _r
+            # ★ 2026-10-31：review 要 LRPlan（对象），不是 plan_batch 的 dict；
+            #   传 dict 会让 getattr(...,0) 全变 0，S1 脸残差误判。
+            from .lr_exec import to_lrplans as _to_lrplans
+            reviewed = build_review(b, recs, _to_lrplans(plans), recs3,
                                     light=getattr(a, 'light', None), log=print)
             print(' 验收：硬门（脸）过 %d/%d 张' % (reviewed['ok'], reviewed['n']))
             print(' 目检：%s' % reviewed['html'])
@@ -292,7 +321,10 @@ def cmd_run(a):
 
     print('\n[7/7] ①→② 曲线回归（不用 LR 的便宜检查）')
     nok = 0
-    for st, plan in out['plans'].items():
+    # ★ 2026-10-30：这里原先遍历 `out['plans']`，而 `out` 在这个函数里根本没定义
+    #   （`plan.curve` 也不存在于 dict）⇒ 全链走到第 7 步必崩。改成 `plan_batch`
+    #   的实际输出：curve 是 16 点 LUT（`p['curve']`）。
+    for st, p in plans.items():
         import os as _os
         import numpy as _np
         from PIL import Image as _I
@@ -300,16 +332,17 @@ def cmd_run(a):
         if not _os.path.isfile(pth):
             continue
         disp = _np.asarray(_I.open(pth).convert('RGB'), _np.float64) / 255.0
+        plan_curve = p.get('curve')
         deltas = None
-        if plan.curve:
+        if plan_curve:
             from .curve import displacement
             img = (recs.get(st) or {}).get('img') or {}
             Ls = [img.get('p%d' % k) for k in (5, 25, 50, 75, 95)]
-            ds = displacement(plan.curve, [v for v in Ls if isinstance(v, (int, float))])
+            ds = displacement(plan_curve, [v for v in Ls if isinstance(v, (int, float))])
             deltas = {'%d' % k: v for k, v in zip((5, 25, 50, 75, 95), ds)}
-        r = regression_curve(disp, plan.curve, curve_deltas=deltas)
+        r = regression_curve(disp, plan_curve, curve_deltas=deltas)
         nok += 1 if r.ok else 0
-    print('①→② 回归：%d/%d 通过' % (nok, len(out['plans'])))
+    print('①→② 回归：%d/%d 通过' % (nok, len(plans)))
     print(limit_note())
     print('\n产物：%s（engine/ 与 xmp/）' % b.out_dir)
 

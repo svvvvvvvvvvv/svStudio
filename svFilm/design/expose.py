@@ -29,24 +29,29 @@ from __future__ import annotations
 
 from typing import Dict, Optional
 
-# ---------------------------------------------------------------- 可推的斜率
+# ---------------------------------------------------------------- 精确换算
 #
-# CIELAB: L* = 116·(Y/Yn)^(1/3) − 16 ；曝光是线性光倍数 Y ∝ 2^EV
-# ⇒ dL*/dEV = (116/3)·ln2·(Y/Yn)^(1/3) = 0.2310·(L*+16)
-# 验证：L*=50 → 15.2 ｜ 70 → 19.9 ｜ 90 → 24.5
-# （旧值 30 与 L* 无关，偏高 1.5 倍 —— 已替换）
-LAB_SLOPE_K = 0.2310
+# ★ 2026-10-30：这里过去是"局部斜率 × 档数"（0.231·(L+16)）。斜率是**导数**，
+#   只对无穷小步长成立；一步 1 EV 在 L*=50 处实际抬 17.2，线性式给 15.25。
+#   现在统一到 `photometry`：跨档用精确闭式，斜率只当局部灵敏度/界值。
+from .photometry import (SLOPE_K, ev_for_l, l_after_ev, over_white_L,
+                         slope_l_per_ev)
+
+LAB_SLOPE_K = SLOPE_K          # 兼容旧名；值是 ln2/3 = 0.231049…
 
 
 def eval_slope(L: float) -> float:
-    """中间调 dL*/dEV（CIELAB 立方根律，L 依赖）。"""
-    return LAB_SLOPE_K * (max(0.0, float(L)) + 16.0)
+    """dL*/dEV 的**导数**（CIELAB 立方根律，随 L 变）。
+
+    ⚠ 只用于小步长、局部灵敏度、和"离白端还有几档"的一阶估计；
+    跨档换算一律用 `l_after_ev` / `ev_for_l`（精确式）。
+    """
+    return slope_l_per_ev(float(L))
 
 
 def ev_for_dL(dL: float, L: float) -> float:
-    """要改 dL* 需要几档曝光（在 L 处的局部斜率）。"""
-    s = eval_slope(L)
-    return float(dL) / s if s > 1e-9 else 0.0
+    """从 L* 挪 `dL` 需要几档曝光（**精确反解**，不是 dL/slope）。"""
+    return ev_for_l(float(L), float(L) + float(dL))
 
 
 # ---------------------------------------------------------------- 曝光后的态
@@ -55,10 +60,14 @@ QUANTILES = (1, 5, 25, 50, 75, 95, 99)
 
 
 def _shift_L(L: Optional[float], ev: float) -> Optional[float]:
-    """线性光增益 2^ev 对某个 L* 的影响（局部斜率，一次算不迭代）。"""
+    """线性光增益 2^ev 对某个 L* 的影响（**精确**闭式，一次算不迭代）。
+
+    分位数与单调映射可交换：Q_p(g(X)) = g(Q_p(X)) ⇒ 提亮后的 p95/p99
+    就是原分位的精确映射（到白端为止），不需要"每档 p95 抬 11.2"这种系数。
+    """
     if L is None:
         return None
-    return float(min(100.0, L + ev * eval_slope(L)))
+    return float(l_after_ev(float(L), ev, clamp=True))
 
 
 def after_ev(rec: dict, ev: float, headroom: Optional[float] = None) -> Dict:
@@ -103,7 +112,7 @@ def after_ev(rec: dict, ev: float, headroom: Optional[float] = None) -> Dict:
         L0 = img.get('p%d' % q)
         if L0 is None:
             continue
-        over_L = max(over_L, float(L0) + ev * eval_slope(L0) - 100.0)
+        over_L = max(over_L, over_white_L(float(L0), ev))
     over_L = max(0.0, over_L)
 
     # 预算：引擎已经给了"还能抬几档"

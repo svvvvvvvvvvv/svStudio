@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 
@@ -38,13 +39,21 @@ def ok(cond, msg):
 # ---------------------------------------------------------------- CIELAB 斜率
 
 def test_lab_slope():
-    """dL*/dEV = 0.2310·(L+16)，由 CIELAB 定义推出。"""
-    eq(eval_slope(50), 0.2310 * 66, 0.01)
-    eq(eval_slope(70), 0.2310 * 86, 0.01)
-    # 提 10 L* 在 L=70 处要 ~0.50 档
-    eq(ev_for_dL(10, 70), 10 / (0.2310 * 86), 1e-6)
-    ok(abs(ev_for_dL(10, 70) - 0.50) < 0.02, 'L70 提 10 L* 应约 0.50 档，实得 %.3f'
+    """导数 = ln2/3·(L+16)（CIELAB 定义）；**跨档必须用精确反解**。
+
+    2026-10-30：旧断言要求 `ev_for_dL = ΔL/斜率`。那是把导数当割线：
+    L*=70→80 实际 0.476 档，线性式给 0.503（高 5.7%）。现在两者分开钉：
+    导数用公式、跨档用 `photometry.ev_for_l` 的 Y 比反解。
+    """
+    from design.photometry import l_after_ev
+    eq(eval_slope(50), 0.23104906018664842 * 66, 1e-9)
+    eq(eval_slope(70), 0.23104906018664842 * 86, 1e-9)
+    # 提 10 L* 在 L=70 处：精确 0.476 档（不是 0.503）
+    ok(abs(ev_for_dL(10, 70) - 0.4761) < 0.002, 'L70 提 10 L* 应约 0.476 档，实得 %.4f'
        % ev_for_dL(10, 70))
+    eq(l_after_ev(70.0, ev_for_dL(10, 70)), 80.0, 1e-9)
+    ok(ev_for_dL(10, 70) < 10 / (0.2310 * 86) - 0.02,
+       '精确式应明显小于线性式：%.4f vs %.4f' % (ev_for_dL(10, 70), 10 / (0.2310 * 86)))
 
 
 # ---------------------------------------------------------------- PCHIP
@@ -190,10 +199,11 @@ def test_exposure_face_in_zone_does_nothing():
 def test_exposure_low_face_targets_zone_not_72():
     """脸低于下界 ⇒ 推到「下界 + 落点容差」，**不是推到 72**，也不是贴边。"""
     from design.lr import LAND_TOL_L, solve_exposure
+    from design.photometry import l_after_ev
     ex = solve_exposure(_lr_rec(skin=dict(L=45.0, C=18.0, h=55.0),
                                 headroom_ev=5.0))
     ok(ex.want_ev > 0.2, 'L45 应要提亮：%s' % ex.want_ev)
-    newL = 45.0 + ex.want_ev * eval_slope(45.0)
+    newL = l_after_ev(45.0, ex.want_ev)
     ok(abs(newL - (55.0 + LAND_TOL_L)) < 0.6,
        '应推到 %.1f（下界+容差），实际 %.1f' % (55.0 + LAND_TOL_L, newL))
     ok(newL < 65.0, '不该往 72 追')
@@ -221,8 +231,9 @@ def test_exposure_backlit_uses_its_own_zone():
     ex = solve_exposure(_lr_rec(skin=dict(L=46.8, C=18.0, h=55.0)), light='backlit')
     eq(ex.want_ev, 0.0, 1e-9)
     # 逆光：脸 43.7 低于 45 ⇒ 只推到 45+容差
+    from design.photometry import l_after_ev
     ex2 = solve_exposure(_lr_rec(skin=dict(L=43.7, C=18.0, h=55.0)), light='backlit')
-    L2 = 43.7 + ex2.want_ev * eval_slope(43.7)
+    L2 = l_after_ev(43.7, ex2.want_ev)
     ok(abs(L2 - (T4_BACKLIT['L_lo'] + LAND_TOL_L)) < 0.6, '逆光目标 %.1f' % L2)
     # 同一张脸按顺光判，就要提到 58.5 —— 两套区间真的不同
     ex3 = solve_exposure(_lr_rec(skin=dict(L=43.7, C=18.0, h=55.0)), light='frontlit')
@@ -237,12 +248,14 @@ def test_exposure_headroom_is_not_a_cap():
     **写明交给 ③ Highlights 收白**，不在这里砍。
     """
     from design.lr import solve_exposure
+    from design.photometry import ev_to_white
     rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.2,
                   img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
                            p95=97.5, p99=99.9, clip_pct=0.2, contrast=90.0))
     ex = solve_exposure(rec)
-    cap_w = (100.0 - 97.5) / eval_slope(97.5)
-    ok(abs(ex.cap_white - cap_w) < 1e-6, 'p95 到白平台的距离算错：%s' % ex.cap_white)
+    # 2026-10-30：白端距离改用精确反解（原来拿斜率乘，97.5 处差 1% 量级）
+    cap_w = ev_to_white(97.5)
+    ok(abs(ex.cap_white - cap_w) < 1e-9, 'p95 到白平台的距离算错：%s' % ex.cap_white)
     eq(ex.cap_headroom, 0.2)                       # 只记录
     eq(ex.ev, ex.want_ev)                          # 给满，不被两道预算砍
     ok(ex.ev > 0.5, '脸 L45 至少要 +0.5 档：%.3f' % ex.ev)
@@ -304,12 +317,16 @@ def test_backlit_note():
 
 
 def test_after_ev_hue_invariant():
-    """曝光是线性增益 ⇒ 色相不动、L 按局部斜率走（可推，不是拟合）。"""
+    """曝光是线性增益 ⇒ 色相不动、L 按 CIELAB **精确闭式**走。"""
     from design.expose import after_ev
+    from design.photometry import l_after_ev
     rec = _lr_rec(skin=dict(L=50.0, C=18.0, h=55.0))
     p = after_ev(rec, 0.5)
     eq(p['pred']['skin']['h'], 55.0, 1e-9)
-    eq(p['pred']['skin']['L'], 50.0 + 0.5 * eval_slope(50.0), 1e-6)
+    eq(p['pred']['skin']['L'], l_after_ev(50.0, 0.5), 1e-6)
+    ok(abs(p['pred']['skin']['L'] - (50.0 + 0.5 * eval_slope(50.0))) > 0.3,
+       '半步就该和线性式分开（精确 %.2f vs 线性 %.2f）'
+       % (l_after_ev(50.0, 0.5), 50.0 + 0.5 * eval_slope(50.0)))
 
 
 def test_after_ev_clip_lower_bound():
@@ -546,9 +563,10 @@ def test_verify_face_first():
 def test_verify_exposure_move_is_not_a_violation():
     """曝光本来就该改脸的亮度：位移等于曝光该带来的量 ⇒ 不算违规。"""
     from design.review import verify
+    from design.photometry import l_after_ev
     r1 = dict(img=dict(p1=5.0, clip_pct=0.2), skin=dict(L=50.0, C=14.0))
     ev = 0.8
-    L3 = 50.0 + ev * eval_slope(50.0)
+    L3 = l_after_ev(50.0, ev)
     v = verify(r1, dict(img=dict(p1=5.0, clip_pct=0.3), skin=dict(L=L3, C=14.0)), _p3(ev))
     ok(all(x[1] for x in v['hard']), '曝光带来的位移不该破门：%s' % v['hard'])
 
@@ -930,6 +948,140 @@ def test_neutral_anchor_needs_enough_neutral_area():
        '20% 中性面应可用')
     bad = neutral_anchor(dict(neutral=dict(share=0.01)))
     ok(bad['ok'] is False and bad['b'] is None, '1% 中性面不该给出 b* 目标')
+
+
+# ---------------------------------------------------------------- 2026-10-30 晚：精确色度学 / 色调模型
+
+def test_photometry_roundtrip():
+    """L*→Y→L*、L*→码→L* 必须闭合（标准定义，不是拟合）。"""
+    from design.photometry import code_to_l, l_to_code, l_to_y, y_to_l
+    for L in (0.0, 5.0, 8.0, 20.0, 50.0, 80.0, 100.0):
+        eq(y_to_l(l_to_y(L)), L, 1e-9)
+        eq(code_to_l(l_to_code(L)), L, 1e-6)
+    # 单调：L 增 ⇒ 码增
+    codes = [l_to_code(v) for v in (0, 10, 30, 50, 70, 90, 100)]
+    for a, b in zip(codes, codes[1:]):
+        ok(b > a, 'L*→码不单调：%s' % codes)
+
+
+def test_photometry_ev_exact_closed_form():
+    """跨档用闭式 L'=2^(EV/3)(L+16)−16；反解必须回到原值。"""
+    from design.photometry import (ev_for_l, l_after_ev,
+                                   l_after_ev_closed)
+    eq(l_after_ev(50.0, 1.0), 67.15478929306163, 1e-9)
+    ok(abs(l_after_ev(50.0, 1.0) - (50.0 + 15.25)) > 1.8,
+       '1 档在 L50 应比"斜率×档"多约 1.9（实际 %.2f）' % l_after_ev(50.0, 1.0))
+    for L in (20.0, 50.0, 70.0):
+        eq(l_after_ev(L, 1.0), l_after_ev_closed(L, 1.0), 1e-9)
+        eq(ev_for_l(L, l_after_ev(L, 0.7)), 0.7, 1e-9)
+    eq(l_after_ev(50.0, -1.0), 36.38423471495059, 1e-9)
+
+
+def test_photometry_code_is_not_linear_in_lstar():
+    """L* 与显示码不是线性：L*=50 的码 ≈119，不是 127.5。"""
+    from design.curve import code_to_lstar, lstar_to_code
+    from design.photometry import l_to_code
+    ok(abs(l_to_code(50.0) - 118.9) < 1.0, 'L50 的码应约 119，实得 %.2f'
+       % l_to_code(50.0))
+    ok(abs(l_to_code(50.0) - 127.5) > 5.0, 'L50 不许再用 127.5 这个线性映射')
+    # 16 点曲线写的是整数码 ⇒ 往返误差上限约半码（≈0.15 L*），不是零
+    for L in (5.0, 25.0, 50.0, 75.0, 95.0):
+        eq(code_to_lstar(lstar_to_code(L)), L, 0.2)
+
+
+def test_after_ev_quantile_is_exact_map():
+    """分位数与单调映射可交换：提亮后的 p95 = p95 的精确映射。"""
+    from design.expose import after_ev
+    from design.photometry import l_after_ev
+    rec = _lr_rec(img=dict(p5=10.0, p25=30.0, p50=50.0, p75=70.0, p95=85.0,
+                           p99=92.0, clip_pct=0.0, contrast=75.0))
+    p = after_ev(rec, 0.8)
+    eq(p['pred']['img']['p95'], l_after_ev(85.0, 0.8), 1e-9)
+    eq(p['pred']['img']['p99'], l_after_ev(92.0, 0.8), 1e-9)
+
+
+def test_curve_p95_cap_is_not_dead():
+    """卡的 p95 上沿是**硬上限**：旧式 min(cand, max(cap, cand, …)) 恒等 ⇒ 死参数。"""
+    from design.curve_design import apply_lut, curve_from_quantiles
+    q = dict(p5=5.0, p25=20.0, p50=50.0, p75=80.0, p95=99.0)
+    shape = dict(toe=(10.0, 20.0), contrast_win=(50.0, 60.0),
+                 shoulder=(10.0, 20.0), skew=(0.4, 0.6))
+    capped = curve_from_quantiles(q, shape, p95_cap=96.0)
+    ok(capped is not None, '曲线没造出来')
+    got = apply_lut(capped, 99.0)
+    ok(got <= 96.6, 'p95 没被卡的肩上沿夹住：%.1f' % got)
+    free = curve_from_quantiles(q, shape, p95_cap=100.0)
+    ok(apply_lut(free, 99.0) > 98.0, '没有上限时不该硬压：%.1f' % apply_lut(free, 99.0))
+
+
+def test_whites_plan_is_wired_to_lrplan():
+    """`white_end_plan.whites_ui` 必须真的进 LRPlan（旧版写 0 = 算出来没落地）。"""
+    from design.lr_exec import to_lrplans
+    plans = {'a': dict(plan=dict(exposure_ev=0.2, local_ev=0.0, curve={}),
+                       white=dict(need='down', whites_ui=-18.5, amount=-18.5),
+                       grading={}, curve=None)}
+    lr = to_lrplans(plans)['a']
+    eq(lr.whites, -18.5)
+    eq(lr.exposure_ev, 0.2)
+
+
+def test_no_model_knobs_are_one_step():
+    """没有公开传递函数的旋钮：只给方向 + 一档（10 UI），不许模型反解。"""
+    from design.lr_solve import ONE_STEP_UI, white_end_plan
+    card = dict(name='t', bands=dict(p95=[85.0, 90.0], clip=[0.0, 1.0]))
+    rec = dict(img=dict(p5=10.0, p50=50.0, p95=99.0, p99=100.0, clip_pct=5.0),
+               skin=dict(L=60.0, C=20.0, h=50.0))
+    w = white_end_plan(rec, card, curve=None)
+    eq(w['whites_ui'], -ONE_STEP_UI)
+    same(w['amount_basis'], 'one_step')
+
+
+def test_batch_grade_is_one_curve_and_one_grading():
+    """A 段必须**全批同参**：同一批所有图拿到同一条曲线、同一套颜色。"""
+    from design.batch_grade import build
+    from design.lr_solve import plan_batch
+    card = dict(name='t', bands=dict(
+        p95=[90.0, 95.0], face_C=[18.0, 26.0], face_h=[40.0, 50.0],
+        warm_cool_b=[0.0, 3.0], toe=[5.0, 10.0], contrast_win=[40.0, 60.0],
+        shoulder=[5.0, 10.0], face_over_bg=[0.7, 0.8], p5=[2.0, 8.0]))
+    a = _lr_rec(img=dict(p5=5.0, p25=18.0, p50=50.0, p75=78.0, p95=94.0,
+                         p99=99.9, clip_pct=0.1, contrast=89.0))
+    b = _lr_rec(img=dict(p5=12.0, p25=30.0, p50=58.0, p75=80.0, p95=92.0,
+                         p99=99.0, clip_pct=0.2, contrast=80.0))
+    recs = {'a': a, 'b': b}
+    bg = build(recs, card)
+    ok(bg['curve'] is not None and len(bg['curve']) == 16, '批级曲线没造出来')
+    plans = plan_batch(recs, card, batch=bg)
+    c0 = plans['a']['curve']
+    ok(all(p['curve'] == c0 for p in plans.values()), '同一批的曲线不一致')
+    g0 = json.dumps(plans['a']['grading'], sort_keys=True)
+    ok(all(json.dumps(p['grading'], sort_keys=True) == g0 for p in plans.values()),
+       '同一批的颜色参数不一致')
+
+
+def test_measure_adapter_reads_v7_rows():
+    """v7 的扁平字段（face_L/person_p99/bg_L_p90）也要能进 B 段。"""
+    from design.lr_solve import _meas_of
+    r = dict(file='x', face_L=52.0, face_C=20.0, face_h=48.0,
+             person_L=50.0, person_p99=96.0, bg_L=40.0, bg_L_p90=70.0,
+             img=dict(p5=2.0, p25=20.0, p50=45.0, p75=70.0, p95=88.0,
+                      p99=95.0, clip_pct=0.1, contrast=86.0))
+    m = _meas_of(r)
+    eq(m['face_L'], 52.0)
+    eq(m['p99'], 96.0)
+    eq(m['bg_hi'], 70.0)
+    ok(m['shape']['toe'] is not None and m['shape']['contrast_win'] is not None,
+       'v7 没 shape 时要能从 img 分位算出来')
+
+
+def test_saturation_dose_is_relative_to_chroma():
+    """Saturation 是相对刻度：同样的 ΔC，在 C*=10 上要两倍于 C*=20 的点数。"""
+    from design.calibration import sat_for_dc
+    a = sat_for_dc(2.0, 20.0)
+    b = sat_for_dc(2.0, 10.0)
+    ok(abs(b - 2.0 * a) < 1e-9, '剂量没跟着 C* 缩放：%s vs %s' % (a, b))
+    ok(abs(sat_for_dc(6.0, 20.0) - 30.0) < 1e-9, 'C20 提 6 C* 应 30 点')
+    ok(abs(sat_for_dc(100.0, 20.0) - 30.0) < 1e-9, '超上限要夹到 30')
 
 
 if __name__ == '__main__':

@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """完整流程的收尾三件事：**量 ③ · 验收 · 目检页**。
 
-为什么单独一个文件（对齐审计 G1/G2/G3）：流程原来断在"导出成片"之后 ——
+为什么单独一个文件：流程原来断在"导出成片"之后 ——
 没有人量它、没有东西判它、也没有一页能看的图。这三件事都只做"读"和"排版"，
 不改任何参数（参数在 lr.py 里算，这里只判结果）。
 
-三条规矩（纪律.md）：
+三条规矩（设计真源 第一部分）：
   · **脸优先**：硬门只看脸和"有没有把脸改坏"；背景爆是软门，只报不拦。
   · 量 ③ 是为了**定位**问题，不是宣布做对。
   · 目检页一图一行、占满宽、竖排；**不拼图、不用 <table>**。
@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 from typing import Dict, List, Optional
 
-from .expose import eval_slope
+
 from .invariants import T1, T2, T3, T4, T4_BACKLIT, T5, S1, S3
 
 # ---------------------------------------------------------------- 验收
@@ -70,8 +70,10 @@ def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True,
     fill = float(getattr(plan, 'fill_ev', 0.0) or 0.0) if plan is not None else 0.0
     L1 = s1.get('L')
     if L1 is not None and L3 is not None:
-        from .lr import FILL_L_PER_EV
-        expect = L1 + ev * eval_slope(L1) + fill * FILL_L_PER_EV
+        # 2026-10-30：原来 `L1 + ev·slope + fill·18.7` 是两个线性近似叠加；
+        # 改成 CIELAB 精确式：先全局曝光，再局部补光。
+        from .photometry import l_after_ev
+        expect = l_after_ev(l_after_ev(float(L1), ev), fill)
         resid = (float(L3) - float(L1)) - (expect - float(L1))
         item = ('S1 脸残差', abs(resid) <= S1['dL_max'], round(resid, 2),
                 S1['dL_max'], '③ 的脸位移 − 曝光/补光该带来的位移')
@@ -152,7 +154,7 @@ def verify_line(v: Dict[str, object]) -> str:
     if bad_h:
         parts.append('硬门破 %d：%s' % (len(bad_h), '、'.join(x[0] for x in bad_h)))
     if bad_s:
-        parts.append('软门 %d（背景，可接受）：%s' % (len(bad_s), '、'.join(x[0] for x in bad_s)))
+        parts.append('软门 %d（只报不拦）：%s' % (len(bad_s), '、'.join(x[0] for x in bad_s)))
     return ' ｜ '.join(parts)
 
 
@@ -306,7 +308,7 @@ def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict], plans: Dict[st
         c3 = (b.get('img') or {}).get('clip_pct')
         vals = '曝光 %+.2f ｜ 收白 %+.0f ｜ 饱和 %+.0f' % (
             float(getattr(plan, 'exposure_ev', 0.0) or 0.0),
-            float(getattr(plan, 'highlights', 0.0) or 0.0),
+            float(getattr(plan, 'whites', 0.0) or 0.0),
             float(getattr(plan, 'saturation', 0.0) or 0.0))
         if getattr(plan, 'point_color', None):
             vals += ' ｜ 点颜色 %+.2f' % float(plan.point_color.get('scale', 0.0))

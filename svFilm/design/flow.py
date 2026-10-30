@@ -264,7 +264,7 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
             % (white_level, _code_to_L(white_level)))
     out = {}
     # ★ 质感这层要**真的进渲染**：`render_safe` 原来一个参数都不传，于是
-    #   `plan_texture()` 算完就扔（对齐审计那类"算值不落地"）。现在整份 overrides 传下去。
+    #   `plan_texture()` 算完就扔（"算值不落地"）。现在整份 overrides 传下去。
     from .texture import to_overrides
     tex = choice.texture
     long_side = 2048
@@ -343,8 +343,9 @@ def _render_one(args):
     msgs.append('  余量：当前 clip=%.2f%% ｜ +%.1fEV 后 clip=%.2f%%（限 0.5%%）'
                 % (c0, ev_plan, c1))
     if c1 > 0.5:
-        msgs.append('  ! 余量不足：抬 %.1f EV 就剪 %.2f%% ⇒ 引擎该再暗一点（调卡的 safety）'
-                    % (ev_plan, c1))
+        msgs.append('  · 余量 %.1f 档（产物，不是目标）；+%.1fEV clip=%.2f%%'
+                    ' ⇒ 只报告，不改曝光/safety（设计：让引擎多留余量 = 越界）'
+                    % (hr['headroom_ev'], ev_plan, c1))
     return stem, dst, hr, c0, c1, msgs
 
 

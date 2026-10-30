@@ -64,8 +64,23 @@ def measure_one(path: str) -> dict:
         out['face_over_bg'] = round(out['face_L'] / out['bg_L'], 3)
     if out['person_L'] and out['bg_L']:
         out['person_over_bg'] = round(out['person_L'] / out['bg_L'], 3)
-    q = np.percentile(L, [5, 95])
-    out['contrast'] = round(float(q[1] - q[0]), 2)
+    q = np.percentile(L, [1, 5, 25, 50, 75, 95, 99])
+    out['img'] = {'p%d' % k: round(float(v), 2)
+                  for k, v in zip((1, 5, 25, 50, 75, 95, 99), q)}
+    out['img']['clip_pct'] = round(float((L > 99).mean() * 100.0), 3)
+    out['contrast'] = round(float(q[5] - q[1]), 2)
+    # ★ 2026-10-30 补：脸/人的分位（尤其 p99）—— 局部补光的白端预算要**人 p99**，
+    #   不是整幅 p99（整幅会被天空/窗光顶死；见 LR数值来源 §2.1 #17）。
+    if int(fs.sum()) >= 300:
+        out['face_p95'] = round(float(np.percentile(L[fs], 95)), 2)
+        out['face_p99'] = round(float(np.percentile(L[fs], 99)), 2)
+        out['face_p5'] = round(float(np.percentile(L[fs], 5)), 2)
+    if int(ps.sum()) >= 300:
+        out['person_p95'] = round(float(np.percentile(L[ps], 95)), 2)
+        out['person_p99'] = round(float(np.percentile(L[ps], 99)), 2)
+    if int(bgm.sum()) >= 300:
+        out['bg_L_p90'] = round(float(np.percentile(L[bgm], 90)), 2)
+        out['bg_L_p95'] = round(float(np.percentile(L[bgm], 95)), 2)
     hi, lo = L > 80, L < 20
     if hi.sum() > 300 and lo.sum() > 300:
         out['warm_cool_b'] = round(float(np.median(b[hi]) - np.median(b[lo])), 2)

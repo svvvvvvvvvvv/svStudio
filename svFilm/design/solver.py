@@ -22,25 +22,23 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 Band = Tuple[float, float]
 
-# CIELAB 的立方根段：L* + 16 = 116 · Y^(1/3)
-#   ⇒ dL*/dlog2Y = 0.231·(L*+16)          （对 Y 求导再乘 ln2·Y 得到，见 test）
-#   ⇒ 精确反解： E = 3·log2( (Lt+16) / (L0+16) )
-# 注意这只是**线性域**的关系；真实链路上 LR 的曝光在 tone curve 之前，
-# 所以落地后仍有残差 —— 那部分只记进账，不回头重算（§61.3）。
+# ★ 2026-10-30：换算统一到 `photometry`（CIELAB 定义 + sRGB 定义）。
+#   这里保留同名导出，老调用点不用改；实现与 `design.expose` 同一份。
+from .photometry import ev_for_l, slope_l_per_ev
+
 _CUBE = 1.0 / 3.0
 
 
 def eval_slope(L: float) -> float:
-    """每档抬多少 L*（§49.6）：`0.231·(L+16)`。随起点变，**不许当常数用**。"""
-    return 0.231 * (float(L) + 16.0)
+    """dL*/dEV 的导数（随起点变，**不许当常数用**）。跨档请用精确式。"""
+    return slope_l_per_ev(float(L))
 
 
 def ev_to_reach(cur: float, band: Band) -> float:
     """把 L* 从 `cur` 推到 `band` 里最近的那个边（已经在带内 → 0）。
 
-    用 CIELAB 的精确式（立方根段），不是线性近似：
-        E = 3 · log2( (Lt+16) / (L0+16) )
-    线性式 `ΔL / eval_slope(L)` 只在 ΔL 很小时才够（单测里对拍过）。
+    精确反解（Cube-root 段等价于 `3·log2((Lt+16)/(L0+16))`；线性段也覆盖）：
+    旧注释里那条 3·log2 只在立方根段成立，L*<8 时要用 κ 段。
     """
     lo, hi = float(band[0]), float(band[1])
     if lo > hi:
@@ -51,9 +49,9 @@ def ev_to_reach(cur: float, band: Band) -> float:
         target = hi
     else:
         return 0.0
-    if cur + 16.0 <= 0 or target + 16.0 <= 0:
-        return 0.0
-    return 3.0 * math.log2((target + 16.0) / (cur + 16.0))
+    if target <= 0.0:
+        return -math.inf
+    return ev_for_l(float(cur), float(target))
 
 
 def ev_to_reach_linear(cur: float, band: Band) -> float:
@@ -64,8 +62,17 @@ def ev_to_reach_linear(cur: float, band: Band) -> float:
 
 
 def local_exposure_for(ev: float) -> float:
-    """EV → LR 的 `LocalExposure2012`（§61.1 ③：写进去的值 = EV/4，已验三档）。"""
-    return float(ev) / 4.0
+    """EV → LR 的 `LocalExposure2012`（**文件值 = EV/4**）。
+
+    2026-10-30 把这个 /4 的出处补齐（原来只写"查不到、待定"）：
+    · LR 局部「曝光」滑杆的量程是 ±4 档（UI），XMP 的局部族按 UI/100 存；
+    · 外部实测（autoshade `docs/TECH_STACK.md`「XMP and Lightroom
+      interoperability」）明确：`LocalExposure2012` 文件值 = EV/4，导入端 ×4；
+    · 我们自己的 `_calib_fill` 两图三档也吻合：文件 0.25 的实际效果约 1.06~1.16 EV。
+    ⇒ 4.0 是**单位换算**（4 档 = 满刻度 1.0），不是拟合系数。
+    """
+    from .calibration import LOCAL_EXPOSURE_PER_EV
+    return float(ev) * LOCAL_EXPOSURE_PER_EV
 
 
 def local_ev_to_reach(cur: float, band: Band) -> float:

@@ -84,8 +84,22 @@ def measure_tif(path: str, with_bg: bool = True, fixed_xy=None) -> dict:
     P = r'E:\svStudio\svFilm\analysis\corpus\kurai'
     if P not in sys.path:
         sys.path.insert(0, P)
-    import measure_all as MA
-    rec = MA.measure_one(path, with_bg=with_bg, fixed_xy=fixed_xy)
+    # ★ 2026-10-31：measure_all 依赖已删的 skin_v2/person_masks，生产改用自包含的
+    #   measure_v7（design.skin + mediapipe）。这里把 v7 的扁平字段补成旧接口
+    #   同时保留的嵌套形状，plan_batch 和 review 都能吃。
+    import measure_v7 as MA
+    rec = MA.measure_one(path)
+    rec.setdefault('skin', dict(
+        L=rec.get('face_L'), C=rec.get('face_C'), h=rec.get('face_h'),
+        b=rec.get('face_b'), p5=rec.get('face_p5'), p95=rec.get('face_p95'),
+        p99=rec.get('face_p99'), px=rec.get('face_px')))
+    rec.setdefault('person', dict(
+        L=rec.get('person_L'), p95=rec.get('person_p95'),
+        p99=rec.get('person_p99'), px=rec.get('person_px'),
+        clip_pct=None))
+    rec.setdefault('bg', dict(
+        L=rec.get('bg_L'), L_p90=rec.get('bg_L_p90'),
+        L_p95=rec.get('bg_L_p95'), px=rec.get('bg_px')))
     # 引擎渲完会写一张 sidecar：这张底片还能抬几档
     import json
     side = path.replace('_engine.tif', '_headroom.json')

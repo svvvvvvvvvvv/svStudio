@@ -230,6 +230,28 @@ def cards() -> List[MatchCard]:
     return out
 
 
+def raw_cards() -> List[dict]:
+    """**原样**的卡字典（带宽 / cond_table / light / samples 全在）。
+
+    为什么需要：`MatchCard` 是给"匹配/渲染"用的瘦身对象（只有带中点 + spread），
+    而 `lr_solve.plan_batch` 要的是**带**（lo/hi）。两者不能互相替代。
+    """
+    _path = (_CARDS_V5 if os.path.isfile(_CARDS_V5)
+             else (_CARDS_V4 if os.path.isfile(_CARDS_V4) else _CARDS_V3))
+    if not os.path.isfile(_path):
+        return []
+    d = json.load(open(_path, encoding='utf-8'))
+    return list(d.get('cards') or [])
+
+
+def raw_card(name: str) -> Optional[dict]:
+    """按名字取原样卡字典（`plan_batch` 的入参）。"""
+    for c in raw_cards():
+        if c.get('name') == name:
+            return c
+    return None
+
+
 # ---------------------------------------------------------------- 我方这批的画像与粗分标签
 
 def batch_profile(recs: Dict[str, dict]) -> Dict[str, float]:

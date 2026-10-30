@@ -6,7 +6,8 @@
   就永远查不出"是哪一层不对"。预算 = 诊断边界。
 
 口径：
-  · 锚点用 L*（0..100），曲线内部是 0..255 码值
+  · 锚点用 L*（0..100），曲线内部是 0..255 **sRGB 显示码**；
+    L*↔码必须走 sRGB 传输函数（`photometry`），不是 ×2.55
   · p50 不允许动（曝光归 LR 的曝光滑杆，不归曲线）
   · 每锚点 |Δ| ≤ budget（默认 3 L*）
 
@@ -18,16 +19,24 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional, Tuple
 
+from .photometry import code_to_l, l_to_code
+
 ANCHOR_Q = (5, 25, 50, 75, 95)
 
 
 def lstar_to_code(L: float) -> int:
-    """朴素映射：L* → 0..255（与引擎/暗房链路一致的单调近似，够用于锚点）。"""
-    return max(0, min(255, int(round(L * 255.0 / 100.0))))
+    """L* → sRGB 8-bit 码（**精确**：L*→Y→sRGB 传输函数）。
+
+    2026-10-30 修：原来写 `L*255/100`，等于把 L* 当线性码。L*=50 的码是 119，
+    不是 127.5 —— 按旧映射，曲线的每个锚点在显示域里都往右偏了 7~8 码，
+    暗部锚点偏差最大（L*=5 → 码 17 而不是 12.75）。
+    """
+    return max(0, min(255, int(round(l_to_code(L)))))
 
 
 def code_to_lstar(c: int) -> float:
-    return max(0.0, min(100.0, c * 100.0 / 255.0))
+    """sRGB 8-bit 码 → L*（与 `lstar_to_code` 互逆，同一套 sRGB 定义）。"""
+    return max(0.0, min(100.0, code_to_l(c)))
 
 
 def _pchip(xs, ys, xq):
@@ -68,6 +77,27 @@ def _pchip(xs, ys, xq):
     return out
 
 
+def grid16(anchor_codes) -> List[float]:
+    """16 点采样网格：**锚点优先占位**，剩余名额用均匀网格里离已有点最远的补。
+
+    2026-10-30 提取成公共函数（`curve_design` 也要用同一套）：
+    均匀 16 点（0,17,34…255）会漏掉 code 250/254 这种高光锚点，
+    修正在 LUT 里被抹掉（2026-10-29 实测发现）。
+    """
+    grid = [0.0, 255.0] + [float(x) for x in anchor_codes if 0.0 < float(x) < 255.0]
+    cand = [i * 255.0 / 15.0 for i in range(1, 15)]
+    while len(grid) < 16 and cand:
+        best = max(cand, key=lambda c: min(abs(c - g) for g in grid))
+        grid.append(best)
+        cand.remove(best)
+    grid = sorted(set(round(x, 6) for x in grid))[:16]
+    if grid[0] != 0.0:
+        grid = [0.0] + grid
+    if grid[-1] != 255.0:
+        grid = grid + [255.0]
+    return grid
+
+
 def _fit_points(pairs: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
     """把 (code_in, code_out) 锚点用**单调三次**插成 16 点（端点锁死、单调）。"""
     xs = [float(p[0]) for p in pairs]
@@ -84,21 +114,7 @@ def _fit_points(pairs: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
             x = ux[-1] + 1e-6
         ux.append(x)
         uy.append(y)
-    # ★ 采样点**必须包含锚点位置**：均匀 16 点（0,17,34…255）会漏掉
-    #   code 250/254 这种高光锚点，修正在 LUT 里被抹掉（2026-10-29 实测发现）。
-    #   做法：锚点优先占位，剩余名额用均匀网格里离已有点最远的补。
-    need = [x for x in ux if 0 < x < 255]
-    grid = [0.0, 255.0] + need
-    cand = [i * 255.0 / 15.0 for i in range(1, 15)]
-    while len(grid) < 16 and cand:
-        best = max(cand, key=lambda c: min(abs(c - g) for g in grid))
-        grid.append(best)
-        cand.remove(best)
-    grid = sorted(set(round(x, 6) for x in grid))[:16]
-    if grid[0] != 0.0:
-        grid = [0.0] + grid
-    if grid[-1] != 255.0:
-        grid = grid + [255.0]
+    grid = grid16([x for x in ux if 0 < x < 255])
     q = _pchip(ux, uy, grid)
     pts = [(int(round(g)), int(round(max(0.0, min(255.0, v)))))
            for g, v in zip(grid, q)]
