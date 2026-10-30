@@ -242,7 +242,10 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
                                 'p50': (card or {}).get('bands', {}).get('p50'),
                                 'face_L': card_in.get('face_L'),
                                 'face_C': (card or {}).get('bands', {}).get('face_C')},
-                    curve_base=True, fill_grid=(0.0, 0.5, 1.0, 1.5))
+                    # ★ 曝光**不进拟合**：它是白端的安全阀，由 §6B 的残差规则单独定。
+                #   放进来就会和 fill 互相抵消（先压 0.6 EV 再提 1.0 档 fill），
+                #   那是退化解，不是求解。
+                curve_base=True, ev_grid=(0.0,), fill_grid=(0.0, 0.5, 1.0, 1.5))
         p: Plan = solve_pass(meas, card_in)
         if _best:
             p.exposure_ev = round(float(_best['ev']), 3)

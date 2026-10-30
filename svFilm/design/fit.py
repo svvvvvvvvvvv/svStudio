@@ -57,33 +57,48 @@ def forward(meas: Dict[str, object], curve, ev: float, shadows: float,
 
     f50 = _apply(p50) + eval_slope(p50) * 0.0
     f95 = _apply(p95)
-    ff = _apply(face) + shadows * L_PER_SHADOW + eval_slope(face) * fill
+    from .calibration import L_PER_FILL
+    ff = _apply(face) + shadows * L_PER_SHADOW + L_PER_FILL * fill
     # ★ 蒙版 fill 对 p99 的响应比中位弱得多（羽化/选区边缘）⇒ 取 0.3 倍斜率。
     #   这是**模型假设**，等标定（局部 fill 0 / 1.0 两点量 p99）出来后替换。
-    f99 = _apply(p99) + shadows * L_PER_SHADOW + 0.3 * eval_slope(p99) * fill
+    from .calibration import L_PER_FILL_P99, P99_CEIL
+    f99 = min(P99_CEIL, _apply(p99) + shadows * L_PER_SHADOW + L_PER_FILL_P99 * fill)
     fC = C + sat * C_PER_SAT
     return dict(p50=f50, p95=f95, face=ff, C=fC, p99=f99, p99_in=p99)
 
 
+def _outside(v: float, band, half: float) -> float:
+    """越界量（带内 = 0）。区间是**边界**，不是靶。"""
+    if not isinstance(band, (list, tuple)) or len(band) != 2:
+        return 0.0
+    lo, hi = float(band[0]), float(band[1])
+    if v < lo:
+        return (lo - v) / max(half, 1e-6)
+    if v > hi:
+        return (v - hi) / max(half, 1e-6)
+    return 0.0
+
+
 def distance(pred: Dict[str, float], bands: Dict[str, object]) -> float:
+    """**只罚越界**（纪律：区间是边界与线索，不是靶）。
+
+    · 脸 L 落在卡的脸带内 ⇒ 0 分；越界多少罚多少
+    · 脸 C 同理
+    · 生理下沿 55 也是边界（低于才罚）
+    · 人 p99：只罚"本方案额外加上去"的那部分（相对）
+    · p50 / p95 **不进目标**（场景量，不是风格）
+    """
     b = bands or {}
     d = 0.0
-    # ★ 人像优先：p95 只是**线索**（大师 27% 的成片都 >93），权重压低；脸是主目标
-    # p95 不计入距离：它只是线索（大师 27% 成片 >93），计进去会把 EV 一路压到网格端点
-    # d += ... p95 ...
-    # p50 也不计入：整幅落点是**场景**不是风格（§63.4）。v10 就是因为这一项
-    # 把整批压暗 0.3 EV（1231 脸 52.9 原地、1665 43.5→38.0），已撤销。
-    d += 2.0 * abs(pred['face'] - _mid(b.get('face_L'), 65.0)) / _half(b.get('face_L'), 6.0)
-    d += 0.8 * abs(pred['C'] - _mid(b.get('face_C'), 24.0)) / _half(b.get('face_C'), 4.0)
-    # 罚项（物理/生理）
-    # ★ 相对罚：只罚"本方案往上加的"，不罚 ① 本来就超的（那归引擎，LR 改不了）
+    d += 1.0 * _outside(pred['face'], b.get('face_L'), 6.0)
+    d += 0.5 * _outside(pred['C'], b.get('face_C'), 4.0)
+    if pred['face'] < 55.0:
+        d += 1.0 * (55.0 - pred['face']) / 3.0
     cap = float((b.get('p95') or [0, 93])[1])
     base99 = float(pred.get('p99_in') or 0.0)
     cap_eff = max(cap, base99)
     if pred['p99'] > cap_eff:
-        d += 2.0 * (pred['p99'] - cap_eff) / 2.0
-    if pred['face'] < 55.0:
-        d += 1.0 * (55.0 - pred['face']) / 3.0
+        d += 1.0 * (pred['p99'] - cap_eff) / 2.0
     return float(d)
 
 

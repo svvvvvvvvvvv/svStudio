@@ -44,3 +44,16 @@ def shadows_for_dl(dl: float) -> float:
         return 0.0
     v = float(dl) / L_PER_SHADOW_UNIT
     return max(0.0, min(SHADOW_LIMIT, v))
+
+
+# ---- 局部 fill（LocalExposure2012）的传递：2026-10-30 标定（_calib_fill/calib_fill.json）
+#   两张图、三档（0 / 1.0 / 1.5 档），同一测量口径：
+#     DSCF1231  脸 52.94 → 72.94 → 81.57  ⇒ 19.1 L*/档
+#     DSCF1665  脸 43.53 → 62.35 → 70.98  ⇒ 18.3 L*/档   （取均值 18.7）
+#   p99 的响应取决于是否已经饱和：
+#     DSCF1231  81.57 → 94.51 → 98.43 ⇒ 11.2 L*/档
+#     DSCF1665  98.04 → 99.61 → 100.0 ⇒ 1.3 L*/档（已撞 100）
+#   ⇒ 用"斜率 + 100 天花板"两层描述，比单一斜率准。
+L_PER_FILL = 18.7        # 局部 fill 1 档 → 脸 L*
+L_PER_FILL_P99 = 11.2    # 局部 fill 1 档 → 人 p99（未饱和时）
+P99_CEIL = 100.0
