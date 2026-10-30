@@ -310,8 +310,11 @@ def _label_distance(batch: Dict[str, str], card: MatchCard,
     """
     tot = w = 0.0
     hit, miss = [], []
+    # 10-30：kappa 缺失时用**固定权重**（场景/构图/色彩/光位），不再让标签整段失效
+    _W = {'scene.type': 1.0, 'composition.framing': 0.8,
+          'color_env.value': 0.6, 'light': 1.2}
     for facet in LABEL_FACETS:
-        k = kap.get(facet)
+        k = kap.get(facet) or _W.get(facet)
         if not k:
             continue
         bv, cv = batch.get(facet), card.tags.get(facet)
