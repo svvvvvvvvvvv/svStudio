@@ -112,7 +112,8 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
             _dh = hi - hk
         if abs(_dh) > 2.0:
             # 色相用**局部染色**修（LocalToningHue/Saturation），只动人
-            out['local_toning_hue'] = round(45.0 if _dh > 0 else 20.0, 1)
+            # 染色色相**直接取卡带的目标色相**（不再用 45/20 这种编出来的数）
+            out['local_toning_hue'] = round(float(lo if _dh > 0 else hi), 1)
             out['local_toning_sat'] = round(min(25.0, abs(_dh) * 2.5), 1)
             notes.append('脸 h %.1f 对卡带 [%.1f, %.1f] ⇒ Δh%+.1f ⇒ 局部染色 %s'
                          % (hk, lo, hi, _dh, out['local_toning_hue']))
