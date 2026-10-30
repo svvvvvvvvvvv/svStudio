@@ -127,7 +127,7 @@ def _tags_by_dir() -> Dict[str, dict]:
     return out
 
 
-def _samples_by_dir(limit: int = 3) -> Dict[str, List[str]]:
+def _samples_by_dir(limit: Optional[int] = None) -> Dict[str, List[str]]:
     out: Dict[str, List[str]] = {}
     try:
         with open(_IMAGES, encoding='utf-8') as f:
@@ -135,7 +135,7 @@ def _samples_by_dir(limit: int = 3) -> Dict[str, List[str]]:
                 d = json.loads(line)
                 k = d.get('dir')
                 p = d.get('path')
-                if k and p and os.path.isfile(p) and len(out.get(k, [])) < limit:
+                if k and p and os.path.isfile(p) and (limit is None or len(out.get(k, [])) < limit):
                     out.setdefault(k, []).append(p)
     except Exception:                                      # noqa: BLE001
         pass

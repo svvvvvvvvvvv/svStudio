@@ -123,7 +123,8 @@ def build() -> List[dict]:
             if (r.get('face') or {}).get('n'):
                 lb = light_label(r)
                 labels[lb] = labels.get(lb, 0) + 1
-        samples = [r['file'] for r in rows][:3]
+        # ★ 全部作品都带上（候选页要摆满整目录；只给前 3 张不是代表）
+        samples = [r['file'] for r in rows]
         out.append(dict(
             name=k, corpus=c['corpus'], n=len(rows), n_face=len(wit),
             n_skin=n_skin, n_strict=n_strict,
