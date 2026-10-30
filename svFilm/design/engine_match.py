@@ -25,6 +25,23 @@ from .texture import Style, plan_texture, to_overrides, warn
 
 CARDS = r'E:\ds\photo\_corpus\kurai\full\cards_v3.json'
 
+# 候选介质：现实里**成对**出现的（卷 + 纸），不是笛卡尔积。
+# 理由：纸也动肤色（各纸 Y 中性点差 ~7），单换纸等于换一套脸色 ⇒ 必须成对匹配。
+MEDIA_CANDIDATES = [
+    dict(stock='kodak_ultramax_400', paper='fujifilm_crystal_archive_typeii', format_mm=35.0,
+         why='鹿井的习惯卷=全能400、扫描=富士 SP-3000 ⇒ 富士水晶纸（既有研究的事实）'),
+    dict(stock='kodak_portra_400', paper='kodak_portra_endura', format_mm=35.0,
+         why='暖红润路线的经典配对（现预设用的就是这套）'),
+    dict(stock='fujifilm_pro_400h', paper='fujifilm_crystal_archive_typeii', format_mm=35.0,
+         why='日系：Pro 400H + 水晶纸（相纸 Gamma 偏低）'),
+    dict(stock='kodak_gold_200', paper='kodak_portra_endura', format_mm=35.0,
+         why='消费卷暖调，日光人像'),
+    dict(stock='kodak_portra_160', paper='kodak_endura_premier', format_mm=35.0,
+         why='细颗粒棚拍路线；Endura Premier 的 Y 中性点偏冷 ≈ −2'),
+    dict(stock='kodak_ektar_100', paper='kodak_supra_endura', format_mm=35.0,
+         why='高饱和"远候选"，用来验证匹配会不会把它错选进来'),
+]
+
 # 质感：不能从卡算，只能用引擎默认档（并记账）
 TEXTURE_DEFAULT = dict(diffusion='off', grain_gain=1.0, dye_clouds_um=3.0, halation_gain=1.0)
 
@@ -109,9 +126,19 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap.add_argument('--fmt', type=float, default=35.0, help='画幅长边 mm')
     ap.add_argument('--table', default='', help='候选介质签名表 JSON（nearest_medium 用）')
     ap.add_argument('--audit', action='store_true')
+    ap.add_argument('--list', action='store_true', help='列出候选介质（卷+纸成对）')
     ap.add_argument('--long', type=int, default=1080)
     ap.add_argument('--json', default='')
     a = ap.parse_args(argv)
+
+    if a.list:
+        print('候选介质 %d 个（卷 + 纸成对）：' % len(MEDIA_CANDIDATES))
+        for c in MEDIA_CANDIDATES:
+            print('  %-20s + %-38s %2dmm  %s'
+                  % (c['stock'], c['paper'], int(c['format_mm']), c['why']))
+        print('匹配 = 每个候选在本批 1–2 张代表图上渲一遍 → 量 %s → 与卡的带比距离'
+              % '/'.join(MATCH_KEYS))
+        return 0
 
     if a.audit or not a.card:
         return audit()
