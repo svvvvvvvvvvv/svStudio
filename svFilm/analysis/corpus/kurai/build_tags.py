@@ -80,7 +80,8 @@ def main() -> int:
         scene = ('studio' if (r['sky'] or 0) >= 0.10
                  else _tag(r['env'], e_lo, e_hi, ['interior', 'street', 'nature']))
         framing = _tag(r['fs'], f_lo, f_hi, ['environment', 'half', 'closeup'])
-        cenv = ('warm' if (r['wc'] or 0) > 3 else 'cool' if (r['wc'] or 0) < -2 else 'neutral')
+        # ★ 与 matchcard._COLOR_RULES 对齐（±6），否则批/卡同一批数据会翻面
+        cenv = ('warm' if (r['wc'] or 0) > 6 else 'cool' if (r['wc'] or 0) < -6 else 'neutral')
         pal = 'green' if scene == 'nature' else ('warm' if cenv == 'warm' else 'neutral')
         facets = {'background.type': scene, 'background.palette': pal,
                   'color_env.value': cenv, 'composition.framing': framing,

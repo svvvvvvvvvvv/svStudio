@@ -246,8 +246,9 @@ def batch_profile(recs: Dict[str, dict]) -> Dict[str, float]:
         'contrast': med('contrast', lambda r: img(r).get('contrast')),
         'clip': med('clip', lambda r: img(r).get('clip_pct')),
         'sky': med('sky', lambda r: r.get('sky_share_frac')),
-        'span': med('span', lambda r: (bg(r).get('L_p90') - bg(r).get('p10', bg(r).get('L_p10')))
-                    if bg(r).get('L_p90') is not None else None),
+        # ★ span 与卡**同一个定义**：p95 − p5（10-30 修：以前批侧用 bg.p90−p10，卡侧用 p95−p5，两边不同源）
+        'span': med('span', lambda r: (img(r).get('p95') - img(r).get('p5'))
+                    if img(r).get('p95') is not None and img(r).get('p5') is not None else None),
     }
     return {k: v for k, v in f.items() if np.isfinite(v)}
 

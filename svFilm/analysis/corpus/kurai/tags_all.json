@@ -115,11 +115,11 @@
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -259,7 +259,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -294,7 +294,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -395,11 +395,11 @@
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -465,11 +465,11 @@
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -644,7 +644,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -714,7 +714,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -955,11 +955,11 @@
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -994,7 +994,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -1060,11 +1060,11 @@
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -1099,7 +1099,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -1169,7 +1169,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -1239,7 +1239,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -1309,7 +1309,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -1375,11 +1375,11 @@
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -1445,11 +1445,11 @@
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -1484,7 +1484,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -1834,7 +1834,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -1904,7 +1904,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -2044,7 +2044,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -2114,7 +2114,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -2495,11 +2495,11 @@
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -2565,11 +2565,11 @@
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -2635,11 +2635,11 @@
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "warm",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -2849,7 +2849,7 @@
      "confidence": 1.0
     },
     "color_env.value": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "composition.framing": {
@@ -2857,7 +2857,7 @@
      "confidence": 1.0
     },
     "light.direction": {
-     "dominant": "back",
+     "dominant": "mid",
      "confidence": 1.0
     }
    }
