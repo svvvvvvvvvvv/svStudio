@@ -1,0 +1,41 @@
+{
+ "_meta": {
+  "dir": "_probe_medium",
+  "n": 7,
+  "ok": 0,
+  "bad": 7,
+  "jobs": 16,
+  "generated": "2026-10-30 22:35:15"
+ },
+ "per_image": [],
+ "bad": [
+  [
+   "0_ultramax_caii.png",
+   "ERR OpenCV(5.0.0) D:\\a\\opencv-python\\opencv-python\\opencv_contrib\\modules\\"
+  ],
+  [
+   "1_kodak_ultramax_400_fujifilm_crystal_archive_typeii.png",
+   "ERR OpenCV(5.0.0) D:\\a\\opencv-python\\opencv-python\\opencv_contrib\\modules\\"
+  ],
+  [
+   "2_kodak_portra_400_kodak_portra_endura.png",
+   "ERR OpenCV(5.0.0) D:\\a\\opencv-python\\opencv-python\\opencv_contrib\\modules\\"
+  ],
+  [
+   "3_fujifilm_pro_400h_fujifilm_crystal_archive_typeii.png",
+   "ERR OpenCV(5.0.0) D:\\a\\opencv-python\\opencv-python\\opencv_contrib\\modules\\"
+  ],
+  [
+   "4_kodak_gold_200_kodak_portra_endura.png",
+   "ERR OpenCV(5.0.0) D:\\a\\opencv-python\\opencv-python\\opencv_contrib\\modules\\"
+  ],
+  [
+   "5_kodak_portra_160_kodak_endura_premier.png",
+   "ERR OpenCV(5.0.0) D:\\a\\opencv-python\\opencv-python\\opencv_contrib\\modules\\"
+  ],
+  [
+   "6_kodak_ektar_100_kodak_supra_endura.png",
+   "ERR OpenCV(5.0.0) D:\\a\\opencv-python\\opencv-python\\opencv_contrib\\modules\\"
+  ]
+ ]
+}
