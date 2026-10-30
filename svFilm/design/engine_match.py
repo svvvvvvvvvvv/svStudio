@@ -25,22 +25,29 @@ from .texture import Style, plan_texture, to_overrides, warn
 
 CARDS = r'E:\ds\photo\_corpus\kurai\full\cards_v3.json'
 
-# 候选介质：现实里**成对**出现的（卷 + 纸），不是笛卡尔积。
-# 理由：纸也动肤色（各纸 Y 中性点差 ~7），单换纸等于换一套脸色 ⇒ 必须成对匹配。
-MEDIA_CANDIDATES = [
-    dict(stock='kodak_ultramax_400', paper='fujifilm_crystal_archive_typeii', format_mm=35.0,
-         why='鹿井的习惯卷=全能400、扫描=富士 SP-3000 ⇒ 富士水晶纸（既有研究的事实）'),
-    dict(stock='kodak_portra_400', paper='kodak_portra_endura', format_mm=35.0,
-         why='暖红润路线的经典配对（现预设用的就是这套）'),
-    dict(stock='fujifilm_pro_400h', paper='fujifilm_crystal_archive_typeii', format_mm=35.0,
-         why='日系：Pro 400H + 水晶纸（相纸 Gamma 偏低）'),
-    dict(stock='kodak_gold_200', paper='kodak_portra_endura', format_mm=35.0,
-         why='消费卷暖调，日光人像'),
-    dict(stock='kodak_portra_160', paper='kodak_endura_premier', format_mm=35.0,
-         why='细颗粒棚拍路线；Endura Premier 的 Y 中性点偏冷 ≈ −2'),
-    dict(stock='kodak_ektar_100', paper='kodak_supra_endura', format_mm=35.0,
-         why='高饱和"远候选"，用来验证匹配会不会把它错选进来'),
-]
+# 候选介质：**从作者的 profile 推出来**，不是手写清单。
+#   · 配对 = 每个卷的 `info.target_print`（作者自己配的纸）
+#   · 纸的反差 = 纸 profile 的 γ（Portra Endura 2.61 最软 … Ultra Endura 3.72 最硬）
+#   · 冷暖倾向 = neutral_print_filters 的 (C, M, Y)
+#   · 光晕 = (use, antihalation) → 作者内置的 σ/strength 档
+def candidates() -> List[dict]:
+    from .profile_table import table
+    t = table()
+    seen, out = set(), []
+    for f in t['films']:
+        tp = f.get('target_print')
+        if not tp or f.get('type') != 'negative':
+            continue
+        key = (f['stock'], tp)
+        if key in seen:
+            continue
+        seen.add(key)
+        combos = [c for c in t['combos'] if c['film'] == f['stock'] and c['paper'] == tp]
+        out.append(dict(stock=f['stock'], paper=tp, format_mm=35.0,
+                        paper_gamma=(combos[0]['paper_gamma'] if combos else None),
+                        neutral=(combos[0]['neutral'] if combos else None),
+                        antihalation=f.get('ah')))
+    return out
 
 # 质感：不能从卡算，只能用引擎默认档（并记账）
 TEXTURE_DEFAULT = dict(diffusion='off', grain_gain=1.0, dye_clouds_um=3.0, halation_gain=1.0)
@@ -132,12 +139,11 @@ def main(argv: Optional[List[str]] = None) -> int:
     a = ap.parse_args(argv)
 
     if a.list:
-        print('候选介质 %d 个（卷 + 纸成对）：' % len(MEDIA_CANDIDATES))
-        for c in MEDIA_CANDIDATES:
-            print('  %-20s + %-38s %2dmm  %s'
-                  % (c['stock'], c['paper'], int(c['format_mm']), c['why']))
-        print('匹配 = 每个候选在本批 1–2 张代表图上渲一遍 → 量 %s → 与卡的带比距离'
-              % '/'.join(MATCH_KEYS))
+        cs = candidates()
+        print('候选介质 %d 个（作者 target_print 配对 + 纸 γ + 中性滤片 + AH）：' % len(cs))
+        for c in cs:
+            print('  %-22s + %-34s γ纸 %-5s 中性 %-18s AH %s'
+                  % (c['stock'], c['paper'], c['paper_gamma'], c['neutral'], c['antihalation']))
         return 0
 
     if a.audit or not a.card:
