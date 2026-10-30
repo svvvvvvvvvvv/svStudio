@@ -43,7 +43,7 @@ def _intent(pairs):
 
 
 def _median_headroom(recs):
-    """这批的余量中位（只作参考；余量不是上限，见 设计真源 第一部分）"""
+    """这批的余量中位（只作参考；余量不是上限，见 `纪律.md` 第 6 条）"""
     import statistics as st
     xs = [r.get('headroom_ev') for r in recs.values()
           if isinstance(r.get('headroom_ev'), (int, float))]
