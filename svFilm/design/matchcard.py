@@ -154,14 +154,16 @@ def _medium_by_corpus() -> Dict[str, Tuple[str, str]]:
 
 
 
+_CARDS_V4 = r'E:\ds\photo\_corpus\kurai\full\cards_v4.json'
 _CARDS_V3 = r'E:\ds\photo\_corpus\kurai\full\cards_v3.json'
 
 
 def _from_v3() -> List['MatchCard']:
-    """从 cards_v3.json（§65 聚合产物）装卡：带的**中点**当画像，半宽当 spread。"""
-    if not os.path.isfile(_CARDS_V3):
+    """从 cards_v4.json（没有就退回 v3）装卡：带的**中点**当画像，半宽当 spread。"""
+    _path = _CARDS_V4 if os.path.isfile(_CARDS_V4) else _CARDS_V3
+    if not os.path.isfile(_path):
         return []
-    d = json.load(open(_CARDS_V3, encoding='utf-8'))
+    d = json.load(open(_path, encoding='utf-8'))
     tags = _tags_by_dir()
     med = _medium_by_corpus()
     out: List[MatchCard] = []
@@ -185,7 +187,8 @@ def _from_v3() -> List['MatchCard']:
         if prof.get('p95') is not None and prof.get('p5') is not None:
             prof['span'] = prof['p95'] - prof['p5']
         tg = tags.get(c['name']) or {}
-        st_, pp = med.get(c.get('corpus') or '', ('kodak_portra_400', 'kodak_portra_endura'))
+        # 介质不由卡定（批级预演算）；这里只放**基线**，别当答案
+        st_, pp = ('kodak_portra_400', 'kodak_portra_endura')
         out.append(MatchCard(name=c['name'], n=int(c.get('n') or 0), stock=st_, paper=pp,
                              profile=prof, spread=spread,
                              tags=dict(tg.get('tags') or {}),

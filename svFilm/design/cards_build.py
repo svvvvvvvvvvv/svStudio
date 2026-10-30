@@ -74,7 +74,9 @@ def set_key(r: dict, corpus: str) -> str:
 def build() -> List[dict]:
     cards: Dict[str, dict] = {}
     for corpus in CORPORA:
-        p = os.path.join(CORPUS_DIR, 'm_%s_v3.json' % corpus)
+        p = os.path.join(CORPUS_DIR, 'm_%s_v4.json' % corpus)
+        if not os.path.isfile(p):
+            p = os.path.join(CORPUS_DIR, 'm_%s_v3.json' % corpus)
         if not os.path.isfile(p):
             continue
         d = json.load(open(p, encoding='utf-8'))
@@ -86,11 +88,22 @@ def build() -> List[dict]:
     out: List[dict] = []
     for k, c in sorted(cards.items()):
         rows = c['rows']
+        # v4 起 neutral_axis / hue_bands 改成 dict（按带名/色相名）；这里归一成 list
+        for r in rows:
+            _na = r.get('neutral_axis')
+            if isinstance(_na, dict):
+                r['neutral_axis'] = [_na[x] for x in sorted(_na, key=lambda s: float(s.split('_')[0]))]
+            _hb = r.get('hue_bands')
+            if isinstance(_hb, dict):
+                _order = ['red', 'orange', 'yellow', 'green', 'cyan', 'blue']
+                r['hue_bands'] = [_hb[x] for x in _order if x in _hb]
         sk = [r['skin'] for r in rows if r.get('skin')]
         n_skin = len(sk)
         n_strict = sum(1 for s in sk if s.get('src') == 'strict')
         # ---- 分布带（只用有脸的行）
-        wit = [r for r in rows if (r.get('face') or {}).get('n')]
+        # v4 起没有 face 子字典：用「有肤色点」当有脸的判据（v3 兼容）
+        wit = [r for r in rows
+               if (r.get('face') or {}).get('n') or (r.get('skin') or {}).get('L') is not None]
         img = lambda f, key: [f(r) for r in wit if f(r) is not None]
         get_img = lambda key: img(lambda r: (r.get('img') or {}).get(key), key)
         shape = lambda key: img(lambda r: (r.get('shape') or {}).get(key), key)
@@ -126,7 +139,7 @@ def build() -> List[dict]:
         # ★ 全部作品都带上（候选页要摆满整目录；只给前 3 张不是代表）
         samples = [r['file'] for r in rows]
         out.append(dict(
-            name=k, corpus=c['corpus'], n=len(rows), n_face=len(wit),
+            name=k, corpus=c['corpus'], cond_table=c['corpus'], n=len(rows), n_face=len(wit),
             n_skin=n_skin, n_strict=n_strict,
             thin=bool(n_skin < 8),      # §65.4：样本 <8 的卡不进匹配，只留档
             bands=dict(
@@ -148,12 +161,12 @@ def build() -> List[dict]:
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument('--out', default=os.path.join(CORPUS_DIR, 'cards_v3.json'))
+    ap.add_argument('--out', default=os.path.join(CORPUS_DIR, 'cards_v4.json'))
     a = ap.parse_args(argv)
     cards = build()
     with open(a.out, 'w', encoding='utf-8') as fh:
         json.dump(dict(_meta=dict(n_cards=len(cards),
-                                  source=['m_%s_v3.json' % c for c in CORPORA]),
+                                  source=['m_%s_v4.json' % c for c in CORPORA]),
                        cards=cards), fh, ensure_ascii=False, indent=1)
     print('写出 %s ｜ 卡 %d 张' % (a.out, len(cards)))
     # ---- 摘要
