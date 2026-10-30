@@ -248,7 +248,8 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
                 curve_base=True, ev_grid=(0.0,), fill_grid=(0.0, 0.5, 1.0, 1.5))
         p: Plan = solve_pass(meas, card_in)
         if _best:
-            p.exposure_ev = round(float(_best['ev']), 3)
+            # 曝光 = 白端安全阀（_ev_white）+ 拟合项（现在固定 0，见 ev_grid）
+            p.exposure_ev = round(float(_ev_white) + float(_best['ev']), 3)
             p.local_ev = round(float(_best['fill']), 3)
             p.local_exposure = round(p.local_ev / 4.0, 5)
             p.local_shadows = round(float(_best['shadows']), 1)
