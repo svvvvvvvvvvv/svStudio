@@ -69,18 +69,19 @@ def main() -> int:
                        'half' if (fs or 0) >= q_fs[0] else 'environment')
             cenv = ('warm' if (wc or 0) > 3 else 'cool' if (wc or 0) < -2 else 'neutral')
             out.append(dict(dir=d, corpus=corpus, n=len(rs),
-                            tags={'background.type': ('nature' if scene == 'greenery' else scene),
-                                  'background.palette': ('green' if scene == 'greenery' else cenv),
-                                  'color_env.value': cenv,
-                                  'composition.framing': framing,
-                                  'light.direction': light},
+                            tags={'light': {
+                                'background.type': {'dominant': ('nature' if scene == 'greenery' else scene), 'confidence': 1.0},
+                                'background.palette': {'dominant': ('green' if scene == 'greenery' else cenv), 'confidence': 1.0},
+                                'color_env.value': {'dominant': cenv, 'confidence': 1.0},
+                                'composition.framing': {'dominant': framing, 'confidence': 1.0},
+                                'light.direction': {'dominant': light, 'confidence': 1.0}}},
                             raw=dict(env_share=env, sky_share=sky, face_size=fs,
                                      warm_cool_b=wc)))
     dst = os.path.join(BASE, 'tags_all.json')
     json.dump(out, open(dst, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     from collections import Counter
     for facet in ('background.type', 'background.palette', 'color_env.value', 'composition.framing', 'light.direction'):
-        c = Counter(e['tags'][facet] for e in out)
+        c = Counter(e['tags']['light'][facet]['dominant'] for e in out)
         print('%-24s %s' % (facet, dict(c)))
     print('写出 %s（%d 个目录）' % (dst, len(out)))
     return 0
