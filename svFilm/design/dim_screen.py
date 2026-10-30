@@ -18,7 +18,7 @@ from typing import Callable, Dict, List, Optional
 
 import numpy as np
 
-MEASURE = r'E:\ds\photo\_run_1030_card004\m_鹿井_v4.json'
+MEASURE = r'E:\svStudio\svFilm\analysis\corpus\kurai\m_鹿井_v4.json'
 
 Q = {
     'face_L':       lambda r: (r.get('skin') or {}).get('L'),

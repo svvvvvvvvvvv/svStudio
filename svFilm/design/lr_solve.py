@@ -296,7 +296,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument('--recs', required=True)
     ap.add_argument('--card', default='004_鹿井小渔_n6ab1e755')
-    ap.add_argument('--cards', default=r'E:\ds\photo\_corpus\kurai\full\cards_v3.json')
+    ap.add_argument('--cards', default=r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v4.json')
     a = ap.parse_args(argv)
     d = json.load(open(a.cards, encoding='utf-8'))
     card = next((c for c in d['cards'] if c['name'] == a.card), None)

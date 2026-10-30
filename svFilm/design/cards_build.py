@@ -28,7 +28,7 @@ _SV = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SV not in sys.path:
     sys.path.insert(0, _SV)
 
-CORPUS_DIR = r'E:\ds\photo\_corpus\kurai\full'
+CORPUS_DIR = r'E:\svStudio\svFilm\analysis\corpus\kurai'
 CORPORA = ('鹿井', '滨田', 'xhs')
 
 

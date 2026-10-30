@@ -28,7 +28,7 @@ from typing import Dict, List, Optional
 from .lr import LRPlan
 
 # 底层实现（已经验证过的那份 XMP 构造），单一真源
-_PHOTO = r'E:\ds\photo\_corpus\kurai\full'
+_PHOTO = r'E:\svStudio\svFilm\analysis\corpus\kurai'
 if _PHOTO not in sys.path:
     sys.path.insert(0, _PHOTO)
 
@@ -169,7 +169,7 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
     import shutil
     import time
 
-    PHOTO = r'E:\ds\photo\_corpus\kurai\full'
+    PHOTO = r'E:\svStudio\svFilm\analysis\corpus\kurai'
     import sys
     if PHOTO not in sys.path:
         sys.path.insert(0, PHOTO)

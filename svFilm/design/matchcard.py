@@ -26,7 +26,7 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 
 
-_CORPUS = r'E:\ds\photo\_corpus\kurai\full'
+_CORPUS = r'E:\svStudio\svFilm\analysis\corpus\kurai'
 _TAGS = os.path.join(_CORPUS, 'tags_all.json')
 _VALID = os.path.join(_CORPUS, 'validation.json')
 _IMAGES = os.path.join(_CORPUS, 'images.jsonl')
@@ -154,8 +154,8 @@ def _medium_by_corpus() -> Dict[str, Tuple[str, str]]:
 
 
 
-_CARDS_V4 = r'E:\ds\photo\_corpus\kurai\full\cards_v4.json'
-_CARDS_V3 = r'E:\ds\photo\_corpus\kurai\full\cards_v3.json'
+_CARDS_V4 = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v4.json'
+_CARDS_V3 = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v3.json'
 
 
 def _from_v3() -> List['MatchCard']:

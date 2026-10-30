@@ -81,7 +81,7 @@ def measure_tif(path: str, with_bg: bool = True, fixed_xy=None) -> dict:
     代价很小（9 张量背景约 1 秒/张）。
     """
     import sys
-    P = r'E:\ds\photo\_corpus\kurai\full'
+    P = r'E:\svStudio\svFilm\analysis\corpus\kurai'
     if P not in sys.path:
         sys.path.insert(0, P)
     import measure_all as MA

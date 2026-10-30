@@ -32,7 +32,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 
-CORPUS_DIR = r'E:\ds\photo\_corpus\kurai\full'
+CORPUS_DIR = r'E:\svStudio\svFilm\analysis\corpus\kurai'
 CORPORA = ('鹿井', 'xhs', '滨田')
 
 # 画像里用到的量（都能从中位/IQR 比，不用绝对靶）

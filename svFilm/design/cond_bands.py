@@ -96,8 +96,8 @@ def eta2(rows: List[dict], key: str, factor) -> Optional[float]:
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument('--measure', default=r'E:\ds\photo\_run_1030_card004\m_鹿井_v4.json')
-    ap.add_argument('--out', default=r'E:\ds\photo\_run_1030_card004\cond_bands_v2.json')
+    ap.add_argument('--measure', default=r'E:\svStudio\svFilm\analysis\corpus\kurai\m_鹿井_v4.json')
+    ap.add_argument('--out', default=r'E:\svStudio\svFilm\analysis\data\cond_bands_v2.json')
     ap.add_argument('--table-out', default='', help='另写一份"给求解器吃"的条件表')
     ap.add_argument('--corpus', default='鹿井')
     a = ap.parse_args(argv)

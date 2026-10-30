@@ -24,7 +24,7 @@ from typing import Dict, List, Optional
 
 from .texture import Style, plan_texture, to_overrides, warn
 
-CARDS = r'E:\ds\photo\_corpus\kurai\full\cards_v3.json'
+CARDS = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v4.json'
 
 # 候选介质：**从作者的 profile 推出来**，不是手写清单。
 #   · 配对 = 每个卷的 `info.target_print`（作者自己配的纸）
