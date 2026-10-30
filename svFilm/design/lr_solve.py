@@ -80,6 +80,7 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
     b = (card or {}).get('bands') or {}
     out = dict(saturation=0.0, vibrance=0.0,
                local_saturation=0.0, local_vibrance=0.0,
+               local_toning_hue=0.0, local_toning_sat=0.0,
                split_highlight_hue=0.0, split_highlight_sat=0.0,
                split_shadow_hue=0.0, split_shadow_sat=0.0, split_balance=0.0)
     notes = []
@@ -100,14 +101,31 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
             out['local_vibrance'] = round(sat_for_dc(_dc) * 0.4, 1)
             notes.append('脸 C %.1f 对卡带 [%.1f, %.1f] ⇒ ΔC%+.1f ⇒ Saturation %+.0f（实测 0.221 C*/单位）'
                          % (sk, lo, hi, _dc, out['saturation']))
+    hb = b.get('face_h')
+    hk = (rec.get('skin') or {}).get('h')
+    if isinstance(hb, list) and hk is not None:
+        lo, hi = float(hb[0]), float(hb[1])
+        _dh = 0.0
+        if hk < lo:
+            _dh = lo - hk
+        elif hk > hi:
+            _dh = hi - hk
+        if abs(_dh) > 2.0:
+            # 色相用**局部染色**修（LocalToningHue/Saturation），只动人
+            out['local_toning_hue'] = round(45.0 if _dh > 0 else 20.0, 1)
+            out['local_toning_sat'] = round(min(25.0, abs(_dh) * 2.5), 1)
+            notes.append('脸 h %.1f 对卡带 [%.1f, %.1f] ⇒ Δh%+.1f ⇒ 局部染色 %s'
+                         % (hk, lo, hi, _dh, out['local_toning_hue']))
     wc = b.get('warm_cool_b')
     if isinstance(wc, list):
         mid = 0.5 * (float(wc[0]) + float(wc[1]))
         warm = mid >= 0
         out['split_highlight_hue'] = 45.0 if warm else 210.0
         out['split_shadow_hue'] = 210.0 if warm else 45.0
-        out['split_highlight_sat'] = 0.0     # 强度待标定（不许编）
-        out['split_shadow_sat'] = 0.0
+        # 强度 = 卡带宽度的一半（宽度是卡自己的量，不是我编的系数），上限 20
+        _w = abs(float(wc[1]) - float(wc[0])) if isinstance(wc, list) else 0.0
+        out['split_highlight_sat'] = round(min(20.0, _w * 2.5), 1)
+        out['split_shadow_sat'] = round(min(15.0, _w * 1.5), 1)
         notes.append('暖冷 %.1f ⇒ 高光 %s、阴影 %s（强度待标定）'
                      % (mid, '暖' if warm else '冷', '冷' if warm else '暖'))
     out['note'] = '；'.join(notes)
@@ -215,23 +233,42 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
                 if meas.get(_k) is not None:
                     meas[_k] = float(meas[_k]) + _sl(float(meas[_k])) * _ev_white
 
-        # ★ ⑦ 的量交给预测合成器（先用 Shadows 提人身上的暗部，不够再用局部曝光）
-        from .compose import compose
-        _tf = None
-        if card_in.get('face_L'):
-            _tf = max(float(card_in['face_L'][0]), 55.0)
-        _c = compose(meas, curve, _ev_white, _tf, _cap_hi)
+        # ★§6H 拟合式求解：把 ⑤ 个量对着卡带做距离最小化（纯 CPU）
+        from .fit import fit
+        _meas_fit = dict(meas)
+        _imq = rec.get('img') or {}
+        _meas_fit['quantiles'] = {k: _imq.get(k) for k in ('p5', 'p25', 'p50', 'p75', 'p95')}
+        _best = fit(_meas_fit, {'shape': _shape, 'p95': (card or {}).get('bands', {}).get('p95'),
+                                'p50': (card or {}).get('bands', {}).get('p50'),
+                                'face_L': card_in.get('face_L'),
+                                'face_C': (card or {}).get('bands', {}).get('face_C')},
+                    curve_base=True, fill_grid=(0.0, 0.5, 1.0, 1.5))
         p: Plan = solve_pass(meas, card_in)
-        p.exposure_ev = round(float(_ev_white), 3)
-        p.local_ev = float(_c['fill_ev'])
-        p.local_exposure = round(p.local_ev / 4.0, 5)
-        p.local_shadows = float(_c['local_shadows'])
-        p.pred_face = _c.get('predicted_face')
-        p.pred_p99 = _c.get('predicted_p99')
+        if _best:
+            p.exposure_ev = round(float(_best['ev']), 3)
+            p.local_ev = round(float(_best['fill']), 3)
+            p.local_exposure = round(p.local_ev / 4.0, 5)
+            p.local_shadows = round(float(_best['shadows']), 1)
+            curve = _best.get('curve') or curve
+            p.pred_face = (_best.get('pred') or {}).get('face')
+            p.pred_p99 = (_best.get('pred') or {}).get('p99')
+            p.fit_dist = _best.get('dist')
+        else:
+            p.exposure_ev = round(float(_ev_white), 3)
         # §6E：人的亮部贴近卡的肩 ⇒ Highlights 压一手（方向量 −30；强度待标定）
         _p99m = meas.get('p99')
         _need_lift = float(p.local_ev or 0.0) > 0.05 or float(p.local_shadows or 0.0) > 0.5
         _near_cap = (_p99m is not None and float(_p99m) > _cap_hi - 6.0)
+        # ★ 光向量参与：逆光（人暗于背景）⇒ 补光权重高；顺光 ⇒ 几乎不补
+        _lr_val = meas.get('light_ratio')
+        _lr_band = (card or {}).get('bands', {}).get('light_ratio') or [0.9, 1.3]
+        _light_w = 1.0
+        if _lr_val is not None:
+            _mid_b = 0.5 * (float(_lr_band[0]) + float(_lr_band[1]))
+            _light_w = max(0.0, min(1.5, _mid_b / max(float(_lr_val), 1e-6)))
+            p.local_ev = round(float(p.local_ev) * _light_w, 3)
+            p.local_exposure = round(p.local_ev / 4.0, 5)
+        p.light_weight = round(float(_light_w), 2)
         p.local_highlights = -30.0 if (_need_lift or _near_cap) else 0.0
         out[stem] = dict(plan=p.as_dict(), white=white_end_plan(rec, card, curve),
                          meas=meas, ledger=[str(e) for e in p.ledger],

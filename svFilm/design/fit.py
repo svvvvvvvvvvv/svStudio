@@ -57,8 +57,8 @@ def forward(meas: Dict[str, object], curve, ev: float, shadows: float,
 
     f50 = _apply(p50) + eval_slope(p50) * 0.0
     f95 = _apply(p95)
-    ff = _apply(face) + shadows * L_PER_SHADOW
-    f99 = _apply(p99) + shadows * L_PER_SHADOW
+    ff = _apply(face) + shadows * L_PER_SHADOW + eval_slope(face) * fill
+    f99 = _apply(p99) + shadows * L_PER_SHADOW + eval_slope(p99) * fill
     fC = C + sat * C_PER_SAT
     return dict(p50=f50, p95=f95, face=ff, C=fC, p99=f99)
 
@@ -66,9 +66,10 @@ def forward(meas: Dict[str, object], curve, ev: float, shadows: float,
 def distance(pred: Dict[str, float], bands: Dict[str, object]) -> float:
     b = bands or {}
     d = 0.0
-    d += abs(pred['p95'] - _mid(b.get('p95'), 91.0)) / _half(b.get('p95'), 3.0)      # 白端主导
+    # ★ 人像优先：p95 只是**线索**（大师 27% 的成片都 >93），权重压低；脸是主目标
+    d += 0.4 * abs(pred['p95'] - _mid(b.get('p95'), 91.0)) / _half(b.get('p95'), 3.0)
     d += 0.5 * abs(pred['p50'] - _mid(b.get('p50'), 45.0)) / _half(b.get('p50'), 10.0)
-    d += 1.5 * abs(pred['face'] - _mid(b.get('face_L'), 65.0)) / _half(b.get('face_L'), 6.0)
+    d += 2.0 * abs(pred['face'] - _mid(b.get('face_L'), 65.0)) / _half(b.get('face_L'), 6.0)
     d += 0.8 * abs(pred['C'] - _mid(b.get('face_C'), 24.0)) / _half(b.get('face_C'), 4.0)
     # 罚项（物理/生理）
     cap = float((b.get('p95') or [0, 93])[1])
@@ -82,7 +83,8 @@ def distance(pred: Dict[str, float], bands: Dict[str, object]) -> float:
 def fit(meas: Dict[str, object], bands: Dict[str, object],
         curve_base=None, tone_grid: Tuple[float, ...] = (1.0, 0.75, 0.5, 0.25),
         ev_grid=(-0.6, -0.3, 0.0), sh_grid=(0, 20, 40, 60),
-        sat_grid=(-10, 0, 10, 20)) -> Dict[str, object]:
+        sat_grid=(-10, 0, 10, 20),
+        fill_grid=(0.0, 0.5, 1.0, 1.5)) -> Dict[str, object]:
     """在卡带附近搜索四个量，返回最优解与预测值。"""
     from .curve_design import curve_from_quantiles
 
@@ -100,9 +102,11 @@ def fit(meas: Dict[str, object], bands: Dict[str, object],
         for ev in ev_grid:
             for sh in sh_grid:
                 for sat in sat_grid:
-                    pred = forward(meas, cur, ev, sh, sat)
-                    d = distance(pred, bands)
-                    if best is None or d < best['dist']:
-                        best = dict(dist=round(d, 3), tone=tone, ev=ev, shadows=sh, sat=sat,
-                                    curve=cur, pred={k: round(v, 1) for k, v in pred.items()})
+                    for fl in fill_grid:
+                        pred = forward(meas, cur, ev, sh, sat, fl)
+                        d = distance(pred, bands)
+                        if best is None or d < best['dist']:
+                            best = dict(dist=round(d, 3), tone=tone, ev=ev, shadows=sh,
+                                        sat=sat, fill=fl, curve=cur,
+                                        pred={k: round(v, 1) for k, v in pred.items()})
     return best or {}
