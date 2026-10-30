@@ -4,10 +4,11 @@
   "corpus": "鹿井",
   "n": 16,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.8060146711808762,
@@ -21,10 +22,11 @@
   "corpus": "鹿井",
   "n": 14,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.8300977366255144,
@@ -38,10 +40,11 @@
   "corpus": "鹿井",
   "n": 12,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "back"
+   "composition.framing": "closeup",
+   "light.direction": "back"
   },
   "raw": {
    "env_share": 0.6492875514403292,
@@ -55,10 +58,11 @@
   "corpus": "鹿井",
   "n": 9,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7987332818930041,
@@ -72,10 +76,11 @@
   "corpus": "鹿井",
   "n": 11,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7898509060135405,
@@ -89,10 +94,11 @@
   "corpus": "鹿井",
   "n": 9,
   "tags": {
-   "scene.type": "street",
-   "composition.framing": "closeup",
+   "background.type": "street",
+   "background.palette": "warm",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.5781841563786009,
@@ -106,10 +112,11 @@
   "corpus": "鹿井",
   "n": 14,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.7001568930041152,
@@ -123,10 +130,11 @@
   "corpus": "鹿井",
   "n": 7,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7259396156909598,
@@ -140,10 +148,11 @@
   "corpus": "鹿井",
   "n": 10,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7955722736625515,
@@ -157,10 +166,11 @@
   "corpus": "鹿井",
   "n": 9,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7012793707686181,
@@ -174,10 +184,11 @@
   "corpus": "鹿井",
   "n": 8,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7006577932098765,
@@ -191,10 +202,11 @@
   "corpus": "鹿井",
   "n": 13,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7879102366255144,
@@ -208,10 +220,11 @@
   "corpus": "鹿井",
   "n": 15,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "back"
+   "composition.framing": "closeup",
+   "light.direction": "back"
   },
   "raw": {
    "env_share": 0.8338014403292181,
@@ -225,10 +238,11 @@
   "corpus": "鹿井",
   "n": 7,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7495532158502589,
@@ -242,10 +256,11 @@
   "corpus": "鹿井",
   "n": 9,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.8317702110712863,
@@ -259,10 +274,11 @@
   "corpus": "鹿井",
   "n": 8,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.7762821502057613,
@@ -276,10 +292,11 @@
   "corpus": "鹿井",
   "n": 12,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7185307355967079,
@@ -293,10 +310,11 @@
   "corpus": "鹿井",
   "n": 17,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7462770061728395,
@@ -310,10 +328,11 @@
   "corpus": "鹿井",
   "n": 13,
   "tags": {
-   "scene.type": "studio",
-   "composition.framing": "closeup",
+   "background.type": "studio",
+   "background.palette": "cool",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.762521445150873,
@@ -327,10 +346,11 @@
   "corpus": "鹿井",
   "n": 14,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7991711676954733,
@@ -344,10 +364,11 @@
   "corpus": "鹿井",
   "n": 10,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.8171103395061728,
@@ -361,10 +382,11 @@
   "corpus": "鹿井",
   "n": 10,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7544161937475109,
@@ -378,10 +400,11 @@
   "corpus": "鹿井",
   "n": 10,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7377246365989646,
@@ -395,10 +418,11 @@
   "corpus": "鹿井",
   "n": 12,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7071352942653888,
@@ -412,10 +436,11 @@
   "corpus": "鹿井",
   "n": 5,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "back"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.8811432613168724,
@@ -429,10 +454,11 @@
   "corpus": "鹿井",
   "n": 10,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.845420524691358,
@@ -446,10 +472,11 @@
   "corpus": "鹿井",
   "n": 12,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.7847280092592592,
@@ -463,10 +490,11 @@
   "corpus": "鹿井",
   "n": 6,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7860575965750697,
@@ -480,10 +508,11 @@
   "corpus": "鹿井",
   "n": 8,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7419603743528475,
@@ -497,10 +526,11 @@
   "corpus": "鹿井",
   "n": 7,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.6971226602947033,
@@ -514,10 +544,11 @@
   "corpus": "鹿井",
   "n": 14,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7080504115226338,
@@ -531,10 +562,11 @@
   "corpus": "鹿井",
   "n": 10,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.6336651234567902,
@@ -548,10 +580,11 @@
   "corpus": "鹿井",
   "n": 13,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.8740920781893005,
@@ -565,10 +598,11 @@
   "corpus": "鹿井",
   "n": 11,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.8259452160493828,
@@ -582,10 +616,11 @@
   "corpus": "鹿井",
   "n": 8,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.6497548287534847,
@@ -599,10 +634,11 @@
   "corpus": "鹿井",
   "n": 14,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7628247170781893,
@@ -616,10 +652,11 @@
   "corpus": "鹿井",
   "n": 8,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.859865736418024,
@@ -633,10 +670,11 @@
   "corpus": "鹿井",
   "n": 9,
   "tags": {
-   "scene.type": "street",
-   "composition.framing": "closeup",
+   "background.type": "street",
+   "background.palette": "cool",
    "color_env.value": "cool",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.5846952160493827,
@@ -650,10 +688,11 @@
   "corpus": "鹿井",
   "n": 8,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.6928555812757202,
@@ -667,10 +706,11 @@
   "corpus": "鹿井",
   "n": 10,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.726648372162485,
@@ -684,10 +724,11 @@
   "corpus": "鹿井",
   "n": 14,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.6835056999203504,
@@ -701,10 +742,11 @@
   "corpus": "鹿井",
   "n": 9,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "back"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7505811927518917,
@@ -718,10 +760,11 @@
   "corpus": "鹿井",
   "n": 8,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.6465545350457984,
@@ -735,10 +778,11 @@
   "corpus": "鹿井",
   "n": 13,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.6960185185185185,
@@ -752,10 +796,11 @@
   "corpus": "鹿井",
   "n": 11,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7070352947033055,
@@ -769,10 +814,11 @@
   "corpus": "鹿井",
   "n": 9,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7638826662684189,
@@ -786,10 +832,11 @@
   "corpus": "鹿井",
   "n": 12,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.8156410751028806,
@@ -803,10 +850,11 @@
   "corpus": "鹿井",
   "n": 12,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.6565091306584362,
@@ -820,10 +868,11 @@
   "corpus": "鹿井",
   "n": 14,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.8022809430173902,
@@ -837,10 +886,11 @@
   "corpus": "鹿井",
   "n": 13,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7191100823045268,
@@ -854,10 +904,11 @@
   "corpus": "鹿井",
   "n": 16,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.6756327160493827,
@@ -871,10 +922,11 @@
   "corpus": "鹿井",
   "n": 9,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7179629629629629,
@@ -888,10 +940,11 @@
   "corpus": "鹿井",
   "n": 12,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7646654719235364,
@@ -905,10 +958,11 @@
   "corpus": "鹿井",
   "n": 12,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.6725000000000001,
@@ -922,10 +976,11 @@
   "corpus": "鹿井",
   "n": 11,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.8030901533253684,
@@ -939,10 +994,11 @@
   "corpus": "鹿井",
   "n": 12,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7213348765432099,
@@ -956,10 +1012,11 @@
   "corpus": "鹿井",
   "n": 12,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.8126644535162451,
@@ -973,10 +1030,11 @@
   "corpus": "鹿井",
   "n": 10,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7541853137860082,
@@ -990,10 +1048,11 @@
   "corpus": "鹿井",
   "n": 7,
   "tags": {
-   "scene.type": "street",
-   "composition.framing": "closeup",
+   "background.type": "street",
+   "background.palette": "cool",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.5995074588477366,
@@ -1007,10 +1066,11 @@
   "corpus": "鹿井",
   "n": 12,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7656778922739944,
@@ -1024,10 +1084,11 @@
   "corpus": "鹿井",
   "n": 11,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "back"
+   "composition.framing": "closeup",
+   "light.direction": "back"
   },
   "raw": {
    "env_share": 0.6840290223018718,
@@ -1041,10 +1102,11 @@
   "corpus": "鹿井",
   "n": 11,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.81778420781893,
@@ -1058,10 +1120,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.8219104200901698,
@@ -1075,10 +1138,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "studio",
-   "composition.framing": "closeup",
+   "background.type": "studio",
+   "background.palette": "warm",
    "color_env.value": "warm",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.8441115746007669,
@@ -1092,10 +1156,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "street",
-   "composition.framing": "closeup",
+   "background.type": "street",
+   "background.palette": "neutral",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.553844696969697,
@@ -1109,10 +1174,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "street",
-   "composition.framing": "closeup",
+   "background.type": "street",
+   "background.palette": "warm",
    "color_env.value": "warm",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.3937847222222222,
@@ -1126,10 +1192,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "street",
-   "composition.framing": "closeup",
+   "background.type": "street",
+   "background.palette": "neutral",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.5964870541838134,
@@ -1143,10 +1210,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "studio",
-   "composition.framing": "closeup",
+   "background.type": "studio",
+   "background.palette": "warm",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.8797048208301108,
@@ -1160,10 +1228,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "studio",
-   "composition.framing": "closeup",
+   "background.type": "studio",
+   "background.palette": "warm",
    "color_env.value": "warm",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.8751632643741152,
@@ -1177,10 +1246,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.71251555727222,
@@ -1194,10 +1264,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "studio",
-   "composition.framing": "closeup",
+   "background.type": "studio",
+   "background.palette": "neutral",
    "color_env.value": "neutral",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.6157375368448033,
@@ -1211,10 +1282,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "studio",
-   "composition.framing": "closeup",
+   "background.type": "studio",
+   "background.palette": "warm",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.6313406030885705,
@@ -1228,10 +1300,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "studio",
-   "composition.framing": "closeup",
+   "background.type": "studio",
+   "background.palette": "warm",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.7820787839862985,
@@ -1245,10 +1318,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.7831652751016913,
@@ -1262,10 +1336,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "half",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "mid"
+   "composition.framing": "half",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.9400171269535431,
@@ -1279,10 +1354,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "street",
-   "composition.framing": "closeup",
+   "background.type": "street",
+   "background.palette": "warm",
    "color_env.value": "warm",
-   "light": "front"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.5471687004924,
@@ -1296,10 +1372,11 @@
   "corpus": "滨田",
   "n": 1,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "half",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "half",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.9347034896167844,
@@ -1313,10 +1390,11 @@
   "corpus": "xhs",
   "n": 4,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "front"
   },
   "raw": {
    "env_share": 0.8630633568651525,
@@ -1330,10 +1408,11 @@
   "corpus": "xhs",
   "n": 2,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.8839068251117225,
@@ -1347,10 +1426,11 @@
   "corpus": "xhs",
   "n": 1,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "half",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "warm",
-   "light": "back"
+   "composition.framing": "half",
+   "light.direction": "back"
   },
   "raw": {
    "env_share": 0.9328886602652035,
@@ -1364,10 +1444,11 @@
   "corpus": "xhs",
   "n": 4,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "half",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "half",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.9137654320987654,
@@ -1381,10 +1462,11 @@
   "corpus": "xhs",
   "n": 2,
   "tags": {
-   "scene.type": "studio",
-   "composition.framing": "half",
+   "background.type": "studio",
+   "background.palette": "cool",
    "color_env.value": "cool",
-   "light": "mid"
+   "composition.framing": "half",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.9450435916528356,
@@ -1398,10 +1480,11 @@
   "corpus": "xhs",
   "n": 5,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "half",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "half",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.9128715134887975,
@@ -1415,10 +1498,11 @@
   "corpus": "xhs",
   "n": 4,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.78321959304984,
@@ -1432,10 +1516,11 @@
   "corpus": "xhs",
   "n": 37,
   "tags": {
-   "scene.type": "greenery",
-   "composition.framing": "closeup",
+   "background.type": "nature",
+   "background.palette": "green",
    "color_env.value": "neutral",
-   "light": "mid"
+   "composition.framing": "closeup",
+   "light.direction": "mid"
   },
   "raw": {
    "env_share": 0.8970820473251029,
