@@ -67,7 +67,8 @@ def distance(pred: Dict[str, float], bands: Dict[str, object]) -> float:
     b = bands or {}
     d = 0.0
     # ★ 人像优先：p95 只是**线索**（大师 27% 的成片都 >93），权重压低；脸是主目标
-    d += 0.4 * abs(pred['p95'] - _mid(b.get('p95'), 91.0)) / _half(b.get('p95'), 3.0)
+    # p95 不计入距离：它只是线索（大师 27% 成片 >93），计进去会把 EV 一路压到网格端点
+    # d += ... p95 ...
     d += 0.5 * abs(pred['p50'] - _mid(b.get('p50'), 45.0)) / _half(b.get('p50'), 10.0)
     d += 2.0 * abs(pred['face'] - _mid(b.get('face_L'), 65.0)) / _half(b.get('face_L'), 6.0)
     d += 0.8 * abs(pred['C'] - _mid(b.get('face_C'), 24.0)) / _half(b.get('face_C'), 4.0)

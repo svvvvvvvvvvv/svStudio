@@ -270,7 +270,9 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
             p.local_exposure = round(p.local_ev / 4.0, 5)
         p.light_weight = round(float(_light_w), 2)
         p.local_highlights = -30.0 if (_need_lift or _near_cap) else 0.0
-        out[stem] = dict(plan=p.as_dict(), white=white_end_plan(rec, card, curve),
+        _plan_d = dict(p.as_dict(), light_weight=round(float(getattr(p, 'light_weight', 1.0)), 2),
+                      fit_dist=getattr(p, 'fit_dist', None), pred_face=getattr(p, 'pred_face', None))
+        out[stem] = dict(plan=_plan_d, white=white_end_plan(rec, card, curve),
                          meas=meas, ledger=[str(e) for e in p.ledger],
                          curve=curve, grading=grading_of(card, rec))
     return out

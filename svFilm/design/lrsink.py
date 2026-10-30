@@ -216,6 +216,8 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
             #     等把这两个键加进桥的回读列表、在 LR 里重载插件之后再启用。
             for _key, _ui in (('LocalShadows2012', float(getattr(plan, 'local_shadows', 0.0) or 0.0)),
                               ('LocalSaturation', float(getattr(plan, 'local_saturation', 0.0) or 0.0)),
+                              ('LocalToningHue', float(getattr(plan, 'local_toning_hue', 0.0) or 0.0)),
+                              ('LocalToningSaturation', float(getattr(plan, 'local_toning_sat', 0.0) or 0.0)),
                               ('LocalHighlights2012', float(getattr(plan, 'local_highlights', 0.0) or 0.0))):
                 if abs(_ui) < 1e-6:
                     continue

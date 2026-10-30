@@ -172,6 +172,9 @@ class LRPlan:
     local_shadows: float = 0.0
     # ★ 主体内的饱和度（⑧ 人像优先：背景不动）
     local_saturation: float = 0.0
+    # ★ 肤色色相修正（§6H-4）：局部染色，只动人
+    local_toning_hue: float = 0.0
+    local_toning_sat: float = 0.0
     # ★ 分级（⑧）：分离色调 + 色相/饱和（人像要保住肤色）
     split_shadow_hue: float = 0.0
     split_shadow_sat: float = 0.0
