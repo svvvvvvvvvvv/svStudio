@@ -1,0 +1,47 @@
+{
+ "_meta": {
+  "corpus": "鹿井",
+  "labeler": "dual-v1",
+  "measure": "m_鹿井_v4.json",
+  "n": 672,
+  "note": "P25-P75；n<30 的格子不给带"
+ },
+ "classes": {
+  "back": {
+   "n": 84,
+   "usable": true,
+   "face_over_bg": [
+    0.53,
+    0.6
+   ],
+   "face_L": [
+    47.14,
+    54.53
+   ]
+  },
+  "mid": {
+   "n": 406,
+   "usable": true,
+   "face_over_bg": [
+    0.68,
+    0.78
+   ],
+   "face_L": [
+    58.98,
+    66.71
+   ]
+  },
+  "front": {
+   "n": 152,
+   "usable": true,
+   "face_over_bg": [
+    0.89,
+    1.08
+   ],
+   "face_L": [
+    65.75,
+    73.04
+   ]
+  }
+ }
+}

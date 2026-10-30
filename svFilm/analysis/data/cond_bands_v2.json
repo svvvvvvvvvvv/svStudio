@@ -1,0 +1,334 @@
+{
+ "measure": "m_鹿井_v4.json",
+ "n": 672,
+ "factors": {
+  "face_L": {
+   "card": 0.347,
+   "light": 0.414,
+   "sky": 0.009,
+   "cell": 0.41
+  },
+  "face_over_bg": {
+   "card": 0.235,
+   "light": 0.298,
+   "sky": 0.007,
+   "cell": 0.298
+  },
+  "face_C": {
+   "card": 0.328,
+   "light": 0.035,
+   "sky": 0.004,
+   "cell": 0.046
+  },
+  "face_h": {
+   "card": 0.287,
+   "light": 0.003,
+   "sky": 0.004,
+   "cell": 0.013
+  },
+  "contrast": {
+   "card": 0.412,
+   "light": 0.075,
+   "sky": 0.0,
+   "cell": 0.085
+  },
+  "p50": {
+   "card": 0.359,
+   "light": 0.175,
+   "sky": 0.023,
+   "cell": 0.189
+  },
+  "toe": {
+   "card": 0.375,
+   "light": 0.106,
+   "sky": 0.034,
+   "cell": 0.129
+  },
+  "shoulder": {
+   "card": 0.287,
+   "light": 0.153,
+   "sky": 0.01,
+   "cell": 0.16
+  },
+  "contrast_win": {
+   "card": 0.239,
+   "light": 0.023,
+   "sky": 0.01,
+   "cell": 0.041
+  },
+  "warm_cool_b": {
+   "card": 0.418,
+   "light": 0.018,
+   "sky": 0.005,
+   "cell": 0.023
+  },
+  "face_p90": {
+   "card": 0.276,
+   "light": 0.059,
+   "sky": 0.002,
+   "cell": 0.065
+  }
+ },
+ "bands": {
+  "face_L": {
+   "global_": [
+    57.93,
+    68.32
+   ],
+   "cell": {
+    "back/nosky": [
+     47.12,
+     54.48
+    ],
+    "front/nosky": [
+     65.72,
+     72.98
+    ],
+    "mid/nosky": [
+     58.98,
+     66.74
+    ],
+    "unknown/nosky": [
+     57.11,
+     68.31
+    ]
+   }
+  },
+  "face_over_bg": {
+   "global_": [
+    0.67,
+    0.86
+   ],
+   "cell": {
+    "back/nosky": [
+     0.53,
+     0.6
+    ],
+    "front/nosky": [
+     0.89,
+     1.08
+    ],
+    "mid/nosky": [
+     0.68,
+     0.78
+    ],
+    "unknown/nosky": [
+     0.67,
+     0.83
+    ]
+   }
+  },
+  "face_C": {
+   "global_": [
+    20.02,
+    27.04
+   ],
+   "cell": {
+    "back/nosky": [
+     20.41,
+     28.95
+    ],
+    "front/nosky": [
+     18.44,
+     25.25
+    ],
+    "mid/nosky": [
+     20.68,
+     27.4
+    ],
+    "unknown/nosky": [
+     18.87,
+     23.95
+    ]
+   }
+  },
+  "face_h": {
+   "global_": [
+    50.74,
+    61.7
+   ],
+   "cell": {
+    "back/nosky": [
+     48.62,
+     59.95
+    ],
+    "front/nosky": [
+     51.99,
+     61.97
+    ],
+    "mid/nosky": [
+     50.86,
+     61.7
+    ],
+    "unknown/nosky": [
+     53.41,
+     67.65
+    ]
+   }
+  },
+  "contrast": {
+   "global_": [
+    78.22,
+    84.43
+   ],
+   "cell": {
+    "back/nosky": [
+     81.3,
+     86.34
+    ],
+    "front/nosky": [
+     75.84,
+     81.68
+    ],
+    "mid/nosky": [
+     78.91,
+     84.92
+    ],
+    "unknown/nosky": [
+     78.63,
+     86.23
+    ]
+   }
+  },
+  "p50": {
+   "global_": [
+    37.43,
+    62.89
+   ],
+   "cell": {
+    "back/nosky": [
+     47.15,
+     65.3
+    ],
+    "front/nosky": [
+     27.19,
+     45.79
+    ],
+    "mid/nosky": [
+     41.18,
+     64.88
+    ],
+    "unknown/nosky": [
+     30.7,
+     55.75
+    ]
+   }
+  },
+  "toe": {
+   "global_": [
+    5.75,
+    21.76
+   ],
+   "cell": {
+    "back/nosky": [
+     9.04,
+     28.85
+    ],
+    "front/nosky": [
+     3.61,
+     11.15
+    ],
+    "mid/nosky": [
+     6.75,
+     24.03
+    ],
+    "unknown/nosky": [
+     5.64,
+     20.86
+    ]
+   }
+  },
+  "shoulder": {
+   "global_": [
+    10.18,
+    22.08
+   ],
+   "cell": {
+    "back/nosky": [
+     8.61,
+     17.63
+    ],
+    "front/nosky": [
+     16.32,
+     28.8
+    ],
+    "mid/nosky": [
+     9.31,
+     18.63
+    ],
+    "unknown/nosky": [
+     12.59,
+     25.15
+    ]
+   }
+  },
+  "contrast_win": {
+   "global_": [
+    41.94,
+    57.58
+   ],
+   "cell": {
+    "back/nosky": [
+     41.77,
+     58.12
+    ],
+    "front/nosky": [
+     41.12,
+     55.73
+    ],
+    "mid/nosky": [
+     43.32,
+     58.35
+    ],
+    "unknown/nosky": [
+     40.22,
+     57.09
+    ]
+   }
+  },
+  "warm_cool_b": {
+   "global_": [
+    -2.4,
+    3.51
+   ],
+   "cell": {
+    "back/nosky": [
+     -2.84,
+     2.76
+    ],
+    "front/nosky": [
+     -2.09,
+     6.69
+    ],
+    "mid/nosky": [
+     -2.43,
+     3.2
+    ],
+    "unknown/nosky": [
+     -0.06,
+     3.24
+    ]
+   }
+  },
+  "face_p90": {
+   "global_": [
+    76.43,
+    85.3
+   ],
+   "cell": {
+    "back/nosky": [
+     71.51,
+     83.12
+    ],
+    "front/nosky": [
+     79.99,
+     85.88
+    ],
+    "mid/nosky": [
+     75.92,
+     85.1
+    ]
+   }
+  }
+ }
+}

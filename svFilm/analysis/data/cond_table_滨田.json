@@ -1,0 +1,23 @@
+{
+ "_meta": {
+  "corpus": "鹿井",
+  "labeler": "dual-v1",
+  "measure": "m_滨田_v4.json",
+  "n": 15,
+  "note": "P25-P75；n<30 的格子不给带"
+ },
+ "classes": {
+  "back": {
+   "n": 0,
+   "usable": false
+  },
+  "mid": {
+   "n": 8,
+   "usable": false
+  },
+  "front": {
+   "n": 7,
+   "usable": false
+  }
+ }
+}
