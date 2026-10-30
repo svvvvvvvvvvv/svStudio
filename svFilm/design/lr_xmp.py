@@ -72,7 +72,7 @@ def sample_cheek(path, long=1080):
     """
     import os as _os
     import sys as _sys
-    _sys.path.insert(0, r'E:\ds\photo\_corpus\kurai\skin_v2')
+    _sys.path.insert(0, r'E:\svStudio\svFilm\analysis\corpus\kurai')
     import skin_v2
     im = skin_v2.load_side(path, long)
     if im is None:

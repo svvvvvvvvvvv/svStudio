@@ -19,9 +19,9 @@ import statistics as st
 import sys
 from typing import Dict, List, Optional
 
-FILES = [r'E:\ds\photo\_corpus\kurai\full\m_鹿井_v2.json',
-         r'E:\ds\photo\_corpus\kurai\full\m_滨田_v2.json',
-         r'E:\ds\photo\_corpus\kurai\full\m_xhs_v2.json']
+FILES = [r'E:\svStudio\svFilm\analysis\corpus\kurai\m_鹿井_v4.json',
+         r'E:\svStudio\svFilm\analysis\corpus\kurai\m_滨田_v4.json',
+         r'E:\svStudio\svFilm\analysis\corpus\kurai\m_xhs_v4.json']
 
 
 def _rows(d):

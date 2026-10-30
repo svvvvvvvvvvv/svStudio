@@ -32,9 +32,9 @@ import cv2
 import numpy as np
 from PIL import Image
 
-BASE = r'E:\ds\photo\_corpus\kurai\full'
+BASE = r'E:\svStudio\svFilm\analysis\corpus\kurai'
 sys.path.insert(0, BASE)
-sys.path.insert(0, r'E:\ds\photo\_corpus\kurai\skin_v2')
+sys.path.insert(0, r'E:\svStudio\svFilm\analysis\corpus\kurai')
 import skin_v2                                            # noqa: E402
 import skin_point as SP                                   # noqa: E402
 
