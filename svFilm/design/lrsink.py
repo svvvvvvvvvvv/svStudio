@@ -187,7 +187,7 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
         r = LS.run('ADD ' + tmp, timeout=180)
         if 'ADD' not in r.upper() and 'EXIST' not in r.upper():
             raise RuntimeError('ADD 失败 %s: %s' % (stem, r[:120]))
-        # ★★ 补光：主体蒙版 + `LocalExposure2012 = EV/4`
+        # ★★ 补光：主体蒙版 + 局部曝光（⚠ EV/4 无出处，10-30 停用；暂按方向 + 一档）
         #   两个坑（都真踩过）：
         #   ① `MASK ... LocalExposure2012=` 走 LrDevelopController.setValue，命令报 ok、
         #      蒙版也建了，但导出时**一个字都不落**（四档脸 L 全一样）⇒ 必须用 MASKPARAM；

@@ -8,7 +8,7 @@
      不再用卡里写死的 96 / 3
 
 ★ 区间怎么取（写清楚，免得以后当靶）：
-  卡只有**中位 + IQR**（P25~P75）。这里用 `中位 ± 1.5×IQR` 近似 P10~P90（正态下 1.5·IQR ≈ ±1.28σ ≈ P10/P90）。
+  卡只有**中位 + IQR**（P25~P75）。这里用 `中位 ± 0.95×IQR` 近似 P10~P90（正态：IQR=1.349σ，P10/P90=±1.2816σ=±0.95·IQR）。
   这是**近似**，写在这里就是为了让人知道它不是定义；拿到逐卡的 P10/P90 就换成真的。
 """
 from __future__ import annotations
@@ -60,7 +60,7 @@ def preset_for(card) -> str:
                                 for k, v in _preset_media().items())))
 
 
-def _band(card, key: str, k: float = 1.5) -> Optional[Tuple[float, float]]:
+def _band(card, key: str, k: float = 0.95) -> Optional[Tuple[float, float]]:
     """卡的某一维 → (下, 上)。中位 ± k×IQR 近似 P10~P90（见文件头）。**只当参考用。**"""
     prof = getattr(card, 'profile', {}) or {}
     sp = getattr(card, 'spread', {}) or {}

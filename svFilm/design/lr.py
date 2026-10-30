@@ -162,7 +162,7 @@ class LRPlan:
     point_color: Optional[Dict[str, float]] = None
     point_color_rgb: Optional[list] = None      # ②处取样色（过完曲线后），造 19 数字要用它
     # ★ 补光（2026-10-29 晚，分工改口）：**脸的亮度从此只由局部给**，全局曝光不再为脸动。
-    #   写进 LR 的值 = `LocalExposure2012 = fill_ev / 4`（实测公式，三档已验）。
+    #   ⚠ 2026-10-30：`LocalExposure2012 = fill_ev / 4` 的 1/4 **查不到出处**（Adobe/社区均无），按纪律停用；
     #   它作用在**主体蒙版**上，背景不动 —— 这是"背景定曝光 + 补光档"的实现。
     fill_ev: float = 0.0
     # ★ 局部高光：补光时按住人的亮部（§43「局部是一整套旋钮」）
