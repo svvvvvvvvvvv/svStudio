@@ -154,13 +154,14 @@ def _medium_by_corpus() -> Dict[str, Tuple[str, str]]:
 
 
 
+_CARDS_V5 = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v5.json'
 _CARDS_V4 = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v4.json'
 _CARDS_V3 = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v3.json'
 
 
 def _from_v3() -> List['MatchCard']:
     """从 cards_v4.json（没有就退回 v3）装卡：带的**中点**当画像，半宽当 spread。"""
-    _path = _CARDS_V4 if os.path.isfile(_CARDS_V4) else _CARDS_V3
+    _path = _CARDS_V5 if os.path.isfile(_CARDS_V5) else (_CARDS_V4 if os.path.isfile(_CARDS_V4) else _CARDS_V3)
     if not os.path.isfile(_path):
         return []
     d = json.load(open(_path, encoding='utf-8'))
