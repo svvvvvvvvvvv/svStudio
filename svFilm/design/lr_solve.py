@@ -233,30 +233,25 @@ def plan_batch(recs: Dict[str, dict], card: dict) -> Dict[str, dict]:
                 if meas.get(_k) is not None:
                     meas[_k] = float(meas[_k]) + _sl(float(meas[_k])) * _ev_white
 
-        # ★§6H 拟合式求解：把 ⑤ 个量对着卡带做距离最小化（纯 CPU）
-        from .fit import fit
-        _meas_fit = dict(meas)
-        _imq = rec.get('img') or {}
-        _meas_fit['quantiles'] = {k: _imq.get(k) for k in ('p5', 'p25', 'p50', 'p75', 'p95')}
-        _best = fit(_meas_fit, {'shape': _shape, 'p95': (card or {}).get('bands', {}).get('p95'),
-                                'p50': (card or {}).get('bands', {}).get('p50'),
-                                'face_L': card_in.get('face_L'),
-                                'face_C': (card or {}).get('bands', {}).get('face_C')},
-                    # ★ 曝光**不进拟合**：它是白端的安全阀，由 §6B 的残差规则单独定。
-                #   放进来就会和 fill 互相抵消（先压 0.6 EV 再提 1.0 档 fill），
-                #   那是退化解，不是求解。
-                curve_base=True, ev_grid=(0.0,), fill_grid=(0.0, 0.5, 1.0, 1.5))
+        # ★★ 2026-10-30 废掉"拟合式求解"（网格 + 罚项 = 区间靶，见 设计沿革 §B9）。
+        #    改为**残差闭式**：目标来自卡的关系带，幅度由 CIELAB 的 Y 比反解，
+        #    上限由白端物理量（主体 p99 → 100）给出。不搜索、不迭代。
+        from .formula import ev_for_face, R_DEFAULT
         p: Plan = solve_pass(meas, card_in)
-        if _best:
-            # 曝光 = 白端安全阀（_ev_white）+ 拟合项（现在固定 0，见 ev_grid）
-            p.exposure_ev = round(float(_ev_white) + float(_best['ev']), 3)
-            p.local_ev = round(float(_best['fill']), 3)
-            p.local_exposure = round(p.local_ev / 4.0, 5)
-            p.local_shadows = round(float(_best['shadows']), 1)
-            curve = _best.get('curve') or curve
-            p.pred_face = (_best.get('pred') or {}).get('face')
-            p.pred_p99 = (_best.get('pred') or {}).get('p99')
-            p.fit_dist = _best.get('dist')
+        _face = meas.get('face_L')
+        _bghi = (rec.get('bg') or {}).get('L_p90')
+        _p99 = (rec.get('img') or {}).get('p99')
+        if _face is not None and _bghi:
+            _res = ev_for_face(_face, _bghi, R_DEFAULT, p99=_p99)
+            p.exposure_ev = round(float(_ev_white), 3)
+            p.local_ev = _res['ev']
+            p.local_exposure = round(_res['ev'] / 4.0, 5)
+            p.pred_face = round(float(_face) + _res['ev'] * 18.7 * 0.84, 2)
+            p.fit_dist = None
+            p.ledger = list(getattr(p, 'ledger', []) or []) + [
+                'face_L %.1f ｜ 目标 %.1f（R=%.2f×bg_hi %.1f）｜ EV %+.3f%s'
+                % (_face, _res['target'], R_DEFAULT, _bghi, _res['ev'],
+                   '（白端截断）' if _res.get('capped_by') else '')]
         else:
             p.exposure_ev = round(float(_ev_white), 3)
         # §6E：人的亮部贴近卡的肩 ⇒ Highlights 压一手（方向量 −30；强度待标定）

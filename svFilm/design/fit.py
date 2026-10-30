@@ -1,23 +1,13 @@
 # -*- coding: utf-8 -*-
-"""§6H 拟合式求解：不再"按规则给量"，而是**对着卡做最小二乘/网格搜索**。
+"""⚠⚠ 2026-10-30 废弃：网格搜索 + 罚项 = 「区间靶」，违反铁律 1。
 
-思路（来自 GitHub 上的同类做法）
---------------------------------
-· [autoshade `src/fit.rs`](https://github.com/skymanbp/autoshade/blob/v1.2.5/src/fit.rs)
-  把 develop 参数**拟合**到参考图，而不是手推公式；
-· [ComfyUI-OCIO `grade_nodes.py`](https://github.com/SlavaSexton/ComfyUI-OCIO/blob/main/grade_nodes.py)
-  的 `_compute_match_grade(image, reference, match_strength)`：匹配 + **强度**（blend）；
-· [frameandfocal](https://frameandfocal.com/post-processing/clever-technique-copying-color-grading-one-photo-another-343194)
-  强调用 **ΔE 验证**而不是眼估。
+现在生产路径不再调用本模块（`lr_solve.plan_batch` 已改成残差闭式，
+见 `formula.ev_for_face`）。保留此文件只为留档与对照，**不要接回生产**。
 
-我们缺的正是这三样：**匹配目标（卡）· 强度（blend）· 距离（ΔE/E）**。
-本模块把 ③ 的四个量（曲线混合度、曝光、局部 Shadows、局部饱和）在卡的带附近做搜索，
-目标函数 = 与卡的加权距离；然后取最小者。**纯 CPU，不跑 LR。**
-
-距离（每项都归一到"卡的带宽度"）
-   D = w1·|p50 − 卡p50带|   + w2·|p95 − 卡p95带|
-     + w3·|脸L − 卡脸L带|    + w4·|脸C − 卡脸C带|
-     + 罚项：人 p99 超卡肩、脸低于生理下界 55
+废弃理由（设计沿革 §B9）：
+  · `ev_grid / fill_grid` 是在离散网格里挑"离带最近"的——本质是把点靶换成带靶；
+  · 罚项（只罚越界）虽比距离好，但仍需要"带"，而带内怎么选是任意的；
+  · 真正的闭式：目标 = R × 背景亮部，幅度 = log2(Y比)，上限 = 白端物理量。
 """
 from __future__ import annotations
 

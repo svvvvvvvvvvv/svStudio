@@ -743,14 +743,18 @@ def test_match_sheet_is_a_decision_page():
     ok('建议' not in html and '推荐' not in html, '页面上不许替他做决定')
 
 
-def test_point_color_backlit_adds_chroma():
-    """逆光肤色发闷 ⇒ 点颜色给一点彩度（风格剂量，不是靶）。"""
-    from design.lr import PC_BACKLIT_SAT, solve_point_color
+def test_point_color_no_longer_compensates_backlit():
+    """★ 2026-10-30 改为反向断言：逆光**不再**用点颜色补彩度。
+
+    为什么改（设计沿革 §B4）：① 那个补偿挂在错的光位判据上；
+    ② "提亮稀释彩度"该用 HSL 橙色补；点颜色只动肤色 ⇒ 边缘割裂。
+    所以现在：逆光与顺光的点颜色彩度必须**完全一致**。
+    """
+    from design.lr import solve_point_color
     rec = dict(skin=dict(C=20.0, L=60.0, h=55.0))
     a = solve_point_color(rec, backlit=False)
     b = solve_point_color(rec, backlit=True)
-    ok(abs((b['scale'] - a['scale']) - PC_BACKLIT_SAT) < 1e-6,
-       '逆光应多加 %.2f：%s vs %s' % (PC_BACKLIT_SAT, a, b))
+    eq(b['scale'], a['scale'])
     ok(abs(a['lum']) < 1e-9 and abs(b['lum']) < 1e-9, '没有脸差额就不动亮度')
 
 

@@ -44,12 +44,15 @@ L_PER_FILL_P99 = 11.2      # 同一档 → 人 p99（未饱和时；已撞 100 �
 # ---------------------------------------------------------------- ⑦ 局部
 
 def ev_for_face(face_L: float, bg_hi: float, R: float,
-                p99: Optional[float] = None, p99_cap: float = 95.0) -> Dict[str, float]:
+                p99: Optional[float] = None) -> Dict[str, float]:
     """⑦ 局部补光：**连续函数**，不是网格。
 
         target = R × bg_hi                      ← R 是显式风格参数（见下方 R_DEFAULT）
         EV(L)  = max(0, (target − L) / slope(L))  ← 只提"低于目标"的那部分，天然收敛到 0
-        上限   = (p99_cap − p99) / L_PER_FILL_P99 ← p99 预算（替代常数 −30）
+        上限   = (100 − p99) / L_PER_FILL_P99    ← 白端物理上限（不是自定 95）
+
+    ★ 2026-10-30 修正：原来用 `p99_cap=95` 这个自定阈值，属"阈值无来源"（铁律 1）。
+      L* 的白端是 100（物理），所以上限只该是 "到白端还剩多少"。
 
     返回 dict(ev, ev_raw, target, capped_by, ...)，全部可复算。
 
@@ -61,7 +64,7 @@ def ev_for_face(face_L: float, bg_hi: float, R: float,
     cap = None
     ev = ev_raw
     if p99 is not None:
-        cap = max(0.0, (float(p99_cap) - float(p99)) / L_PER_FILL_P99)
+        cap = max(0.0, (100.0 - float(p99)) / L_PER_FILL_P99)
         if ev > cap:
             ev = cap
     return dict(ev=round(ev, 4), ev_raw=round(ev_raw, 4), target=round(target, 2),

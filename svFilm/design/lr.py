@@ -76,10 +76,9 @@ SAT_MAX = 0.5
 #   补光档要的是"亮、白、有血气" ⇒ 逆光不能还落在 48~50。
 FILL_FLOOR_BACKLIT = 62.0
 
-# ★ 逆光的肤色彩度补偿（2026-10-29 SV 目检：「逆光下的肤色有点沉闷」）。
-#   逆光时脸大部分在阴影里，提亮 + 收白之后暗部被抬、彩度看着更灰。
-#   这是**风格剂量**（不是靶）：起点给 +0.15，靠目检定够不够。
-PC_BACKLIT_SAT = 0.15
+# ★ 2026-10-30 废：逆光的肤色彩度补偿（原 +0.15）。
+#   两处错：① 触发器挂在错判据上（旧光位判据）；② "提亮稀释彩度"该用 HSL 橙色补，
+#   不是用点颜色（点颜色只动肤色 ⇒ 边缘割裂）。见 设计沿革_1030 §B4。
 
 # ★ 点颜色：**每一次推满（±1）能补多少比例**——这是**政策**，不是物理常数。
 #   原因：Point Color 的 SatScale 没有公开传递函数（见 lrmodel.py）。
@@ -334,7 +333,7 @@ def solve_exposure(rec_engine: dict, target_L: float = 72.0,
 
     # ---- ① 约束式：只在出区时动。目标 = 下界 + 落点容差（+逆光补偿）
     #   ★ 不再"刚进区 + 1.5"贴边：实测落点误差最大 2.88，贴边必然掉出去
-    margin = LAND_TOL_L + (BACKLIT_EXTRA_L if la.light == 'backlit' else 0.0)
+    margin = LAND_TOL_L
     if cur < lo:
         target = min(lo + margin, LAND_CAP_L)
         # ★ 逆光：按"比天空暗半档"定分寸（有出处的分寸，取代自定的 58.5）
@@ -621,7 +620,7 @@ def solve_point_color(rec: dict, intent: Optional[Intent] = None,
         lum = min(PC_LUM_MAX, face_deficit_L / PC_LUM_L_PER_UNIT)
     # 逆光：肤色补一点彩度（阴影侧被抬平之后发灰）
     if backlit:
-        scale += PC_BACKLIT_SAT
+        pass  # 2026-10-30：逆光彩度补偿已废（见 §B4），改由 HSL 橙色承担
     return dict(scale=max(-1.0, min(1.0, scale)), shift=0.0, lum=round(float(lum), 3))
 
 
