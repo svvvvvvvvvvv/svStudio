@@ -57,6 +57,7 @@ C_UP_MAX_UI = 100.0
 C_BAND_TOL = 1.0
 H_BAND_TOL = 2.0           # 色相死区（Lab 度）
 L_BAND_TOL = 1.5           # 明度死区（L*）
+HUE_STEP_UI = 5.0          # 肤色色相半档（一档 10 UI ≈ 15~20°，太大）
 
 
 def _hi(band, default):
@@ -118,7 +119,7 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
     # ---- 肤色 H/S/L **三根**（教程：肤色 = 橙、低饱和、高明度；三根都要管）
     #   目标不是"卡带的边"，是**带中点**；容差只是死区（人：原来"整条带都不动"太宽）。
     #   剂量按纪律：没有公开传递函数的滑块 ⇒ 方向 + 一档（10 UI），③ 验。
-    def _skin_axis(val, band, tol, key, label, nd=1):
+    def _skin_axis(val, band, tol, key, label, step=None, nd=1):
         if not (isinstance(band, (list, tuple)) and len(band) == 2) or val is None:
             return
         lo, hi = float(band[0]), float(band[1])
@@ -127,14 +128,31 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
         if abs(d) <= tol:
             notes.append('%s %.1f ≈ 带中点 %.1f（±%g 内）⇒ 不动' % (label, float(val), mid, tol))
             return
-        out[key] = one if d > 0 else -one
+        s = one if step is None else float(step)
+        out[key] = s if d > 0 else -s
         notes.append('%s %.1f → 带中点 %.1f（差 %+.1f）⇒ %s %+.0f UI'
                      % (label, float(val), mid, -d, label, out[key]))
 
-    _skin_axis((rec.get('skin') or {}).get('C', rec.get('face_C')),
-               b.get('face_C'), C_BAND_TOL, 'sat_orange', '脸 C')
+    # ★ 2026-10-31：**人物降饱和走主体蒙版**（人：整片有点艳，别动背景）。
+    #   不用 HSL 橙（那是全局，会连背景的橙红一起改）——蒙版只压人。
+    #   只降不升：比带中点低的本来就不艳，再压只会更灰（记账不动）。
+    #   剂量用实测斜率（LocalSaturation −10 UI ⇒ 脸 C −3.4，n=1 图，台账级）。
+    cv = (rec.get('skin') or {}).get('C', rec.get('face_C'))
+    cb = b.get('face_C')
+    if isinstance(cb, list) and cv is not None:
+        mid = 0.5 * (float(cb[0]) + float(cb[1]))
+        d = mid - float(cv)
+        if d < -C_BAND_TOL:
+            ui = max(-100.0, d / C_DOWN_PER_UI)
+            out['local_saturation'] = round(ui, 1)
+            notes.append('脸 C %.1f 高于带中点 %.1f ⇒ 主体蒙版降饱和 %+.0f UI（只压人）'
+                         % (float(cv), mid, out['local_saturation']))
+        else:
+            notes.append('脸 C %.1f ≤ 带中点 %.1f ⇒ 不降饱和（再压会更灰）' % (float(cv), mid))
+    # ★ 色相单独用半档（5 UI）：实测一档 10 UI 能挪 15~20°（1231 60°→43°），
+    #   太大 ⇒ 脸从黄褐直接被推成粉，"艳"就是这么来的。
     _skin_axis((rec.get('skin') or {}).get('h', rec.get('face_h')),
-               b.get('face_h'), H_BAND_TOL, 'hue_orange', '脸 h')
+               b.get('face_h'), H_BAND_TOL, 'hue_orange', '脸 h', step=HUE_STEP_UI)
     _skin_axis((rec.get('skin') or {}).get('L', rec.get('face_L')),
                b.get('face_L'), L_BAND_TOL, 'lum_orange', '脸 L')
     # ---- 分色：**跟着卡来**。卡的暗部/高光色偏由 `design.card_tone` 从它自己的成片测出
