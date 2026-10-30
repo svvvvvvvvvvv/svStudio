@@ -74,9 +74,9 @@ def set_key(r: dict, corpus: str) -> str:
 def build() -> List[dict]:
     cards: Dict[str, dict] = {}
     for corpus in CORPORA:
-        p = os.path.join(CORPUS_DIR, 'm_%s_v4.json' % corpus)
+        p = os.path.join(CORPUS_DIR, 'm_%s_v7.json' % corpus)
         if not os.path.isfile(p):
-            p = os.path.join(CORPUS_DIR, 'm_%s_v3.json' % corpus)
+            p = os.path.join(CORPUS_DIR, 'm_%s_v4.json' % corpus)
         if not os.path.isfile(p):
             continue
         d = json.load(open(p, encoding='utf-8'))
@@ -111,10 +111,10 @@ def build() -> List[dict]:
         # ★ 关系量：分母太小（暗背景）会把比值炸掉 ⇒ 只在 bg 够亮时参与
         rel_fb = [(s['L'] / r['bg']['L_p90']) for r, s in
                   ((r, r.get('skin')) for r in rows)
-                  if s and (r.get('bg') or {}).get('L_p90')
+                  if s and s.get('L') is not None and (r.get('bg') or {}).get('L_p90')
                   and r['bg']['L_p90'] >= 20.0]
-        rel_pb = [((r['person'] or {}).get('L') / (r['bg'] or {}).get('L'))
-                  for r in rows if (r.get('person') or {}).get('L')
+        rel_pb = [((r.get('person') or {}).get('L') or r.get('person_L')) / (r.get('bg') or {}).get('L')
+                  for r in rows if ((r.get('person') or {}).get('L') or r.get('person_L'))
                   and (r.get('bg') or {}).get('L') and r['bg']['L'] >= 20.0]
         # ---- 色彩：中性轴五段 / 色相六段（逐图取中位再在套内取中位）
         na = []
@@ -163,12 +163,12 @@ def build() -> List[dict]:
 
 def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument('--out', default=os.path.join(CORPUS_DIR, 'cards_v4.json'))
+    ap.add_argument('--out', default=os.path.join(CORPUS_DIR, 'cards_v5.json'))
     a = ap.parse_args(argv)
     cards = build()
     with open(a.out, 'w', encoding='utf-8') as fh:
         json.dump(dict(_meta=dict(n_cards=len(cards),
-                                  source=['m_%s_v4.json' % c for c in CORPORA]),
+                                  source=['m_%s_v7.json' % c for c in CORPORA]),
                        cards=cards), fh, ensure_ascii=False, indent=1)
     print('写出 %s ｜ 卡 %d 张' % (a.out, len(cards)))
     # ---- 摘要

@@ -1,0 +1,8947 @@
+{
+ "_meta": {
+  "n_cards": 64,
+  "source": [
+   "m_鹿井_v7.json",
+   "m_滨田_v7.json",
+   "m_xhs_v7.json"
+  ]
+ },
+ "cards": [
+  {
+   "name": "001_鹿井小渔_n66f7fa31",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 16,
+   "n_face": 16,
+   "n_skin": 16,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     42.03,
+     71.75
+    ],
+    "p95": [
+     92.12,
+     96.93
+    ],
+    "p5": [
+     0.0,
+     3.7
+    ],
+    "contrast": [
+     88.1,
+     96.56
+    ],
+    "clip": [
+     0.04,
+     1.11
+    ],
+    "sky": [
+     0.04,
+     0.22
+    ],
+    "face_L": [
+     60.63,
+     73.73
+    ],
+    "face_C": [
+     18.27,
+     26.1
+    ],
+    "face_h": [
+     37.96,
+     49.54
+    ],
+    "toe": [
+     13.42,
+     39.96
+    ],
+    "shoulder": [
+     7.25,
+     19.14
+    ],
+    "contrast_win": [
+     44.96,
+     80.49
+    ],
+    "skew": [
+     33.39,
+     66.29
+    ],
+    "face_over_bg": [
+     0.7,
+     0.79
+    ],
+    "person_over_bg": [
+     1.02,
+     1.65
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -2.51,
+     1.38
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "001_鹿井小渔_n66f7fa31/01_t1.jpg",
+    "001_鹿井小渔_n66f7fa31/01_t2.jpg",
+    "001_鹿井小渔_n66f7fa31/02_t1.jpg",
+    "001_鹿井小渔_n66f7fa31/04_t1.jpg",
+    "001_鹿井小渔_n66f7fa31/04_t2.jpg",
+    "001_鹿井小渔_n66f7fa31/05_t1.jpg",
+    "001_鹿井小渔_n66f7fa31/05_t2.jpg",
+    "001_鹿井小渔_n66f7fa31/06_t1.jpg",
+    "001_鹿井小渔_n66f7fa31/07_t1.jpg",
+    "001_鹿井小渔_n66f7fa31/09_t1.jpg",
+    "001_鹿井小渔_n66f7fa31/10_t1.jpg",
+    "001_鹿井小渔_n66f7fa31/11_t1.jpg",
+    "001_鹿井小渔_n66f7fa31/12_t1.jpg",
+    "001_鹿井小渔_n66f7fa31/13_t1.jpg",
+    "001_鹿井小渔_n66f7fa31/13_t2.jpg",
+    "001_鹿井小渔_n66f7fa31/14_t1.jpg"
+   ]
+  },
+  {
+   "name": "002_鹿井小渔_n67ea66c3",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 14,
+   "n_face": 14,
+   "n_skin": 14,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     38.89,
+     81.48
+    ],
+    "p95": [
+     91.78,
+     97.85
+    ],
+    "p5": [
+     2.03,
+     32.54
+    ],
+    "contrast": [
+     65.97,
+     92.66
+    ],
+    "clip": [
+     0.08,
+     0.69
+    ],
+    "sky": [
+     0.01,
+     0.15
+    ],
+    "face_L": [
+     67.68,
+     78.74
+    ],
+    "face_C": [
+     16.29,
+     21.39
+    ],
+    "face_h": [
+     57.12,
+     66.67
+    ],
+    "toe": [
+     14.88,
+     45.67
+    ],
+    "shoulder": [
+     4.04,
+     31.33
+    ],
+    "contrast_win": [
+     37.61,
+     77.31
+    ],
+    "skew": [
+     26.48,
+     47.29
+    ],
+    "face_over_bg": [
+     0.79,
+     0.9
+    ],
+    "person_over_bg": [
+     1.0,
+     1.23
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -5.04,
+     -1.12
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "002_鹿井小渔_n67ea66c3/01_t1.jpg",
+    "002_鹿井小渔_n67ea66c3/01_t2.jpg",
+    "002_鹿井小渔_n67ea66c3/02_t1.jpg",
+    "002_鹿井小渔_n67ea66c3/03_t1.jpg",
+    "002_鹿井小渔_n67ea66c3/03_t2.jpg",
+    "002_鹿井小渔_n67ea66c3/04_t1.jpg",
+    "002_鹿井小渔_n67ea66c3/04_t2.jpg",
+    "002_鹿井小渔_n67ea66c3/05_t2.jpg",
+    "002_鹿井小渔_n67ea66c3/06_t1.jpg",
+    "002_鹿井小渔_n67ea66c3/06_t2.jpg",
+    "002_鹿井小渔_n67ea66c3/07_t1.jpg",
+    "002_鹿井小渔_n67ea66c3/07_t2.jpg",
+    "002_鹿井小渔_n67ea66c3/08_t1.jpg",
+    "002_鹿井小渔_n67ea66c3/08_t2.jpg"
+   ]
+  },
+  {
+   "name": "003_鹿井小渔_n6ab32b12",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 12,
+   "n_face": 12,
+   "n_skin": 12,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     28.75,
+     59.68
+    ],
+    "p95": [
+     77.81,
+     98.34
+    ],
+    "p5": [
+     1.25,
+     11.37
+    ],
+    "contrast": [
+     69.97,
+     90.52
+    ],
+    "clip": [
+     0.05,
+     0.14
+    ],
+    "sky": [
+     0.0,
+     0.03
+    ],
+    "face_L": [
+     44.94,
+     62.94
+    ],
+    "face_C": [
+     17.51,
+     30.11
+    ],
+    "face_h": [
+     48.75,
+     62.74
+    ],
+    "toe": [
+     3.33,
+     14.15
+    ],
+    "shoulder": [
+     16.56,
+     31.75
+    ],
+    "contrast_win": [
+     64.4,
+     88.49
+    ],
+    "skew": [
+     43.55,
+     57.82
+    ],
+    "face_over_bg": [
+     0.59,
+     0.76
+    ],
+    "person_over_bg": [
+     0.17,
+     0.25
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     1.93,
+     16.49
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "003_鹿井小渔_n6ab32b12/01_t1.jpg",
+    "003_鹿井小渔_n6ab32b12/01_t2.jpg",
+    "003_鹿井小渔_n6ab32b12/02_t1.jpg",
+    "003_鹿井小渔_n6ab32b12/03_t1.jpg",
+    "003_鹿井小渔_n6ab32b12/03_t2.jpg",
+    "003_鹿井小渔_n6ab32b12/04_t1.jpg",
+    "003_鹿井小渔_n6ab32b12/04_t2.jpg",
+    "003_鹿井小渔_n6ab32b12/05_t1.jpg",
+    "003_鹿井小渔_n6ab32b12/06_t1.jpg",
+    "003_鹿井小渔_n6ab32b12/06_t2.jpg",
+    "003_鹿井小渔_n6ab32b12/07_t1.jpg",
+    "003_鹿井小渔_n6ab32b12/07_t2.jpg"
+   ]
+  },
+  {
+   "name": "004_鹿井小渔_n6ab1e755",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 9,
+   "n_face": 9,
+   "n_skin": 9,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     28.27,
+     63.16
+    ],
+    "p95": [
+     85.4,
+     91.25
+    ],
+    "p5": [
+     11.19,
+     14.05
+    ],
+    "contrast": [
+     73.77,
+     78.53
+    ],
+    "clip": [
+     0.04,
+     0.08
+    ],
+    "sky": [
+     0.0,
+     0.07
+    ],
+    "face_L": [
+     62.16,
+     77.14
+    ],
+    "face_C": [
+     21.12,
+     31.18
+    ],
+    "face_h": [
+     51.64,
+     61.88
+    ],
+    "toe": [
+     4.61,
+     25.13
+    ],
+    "shoulder": [
+     13.07,
+     32.89
+    ],
+    "contrast_win": [
+     53.72,
+     73.06
+    ],
+    "skew": [
+     33.8,
+     51.92
+    ],
+    "face_over_bg": [
+     0.73,
+     1.03
+    ],
+    "person_over_bg": [
+     1.3,
+     2.33
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -0.08,
+     5.52
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "004_鹿井小渔_n6ab1e755/01_t1.jpg",
+    "004_鹿井小渔_n6ab1e755/01_t2.jpg",
+    "004_鹿井小渔_n6ab1e755/02_t2.jpg",
+    "004_鹿井小渔_n6ab1e755/03_t1.jpg",
+    "004_鹿井小渔_n6ab1e755/03_t2.jpg",
+    "004_鹿井小渔_n6ab1e755/04_t1.jpg",
+    "004_鹿井小渔_n6ab1e755/04_t2.jpg",
+    "004_鹿井小渔_n6ab1e755/05_t1.jpg",
+    "004_鹿井小渔_n6ab1e755/05_t2.jpg"
+   ]
+  },
+  {
+   "name": "005_鹿井小渔_n6ab1e1b9",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 11,
+   "n_face": 11,
+   "n_skin": 11,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     49.57,
+     75.14
+    ],
+    "p95": [
+     89.64,
+     95.49
+    ],
+    "p5": [
+     11.05,
+     14.55
+    ],
+    "contrast": [
+     76.47,
+     81.0
+    ],
+    "clip": [
+     0.04,
+     0.05
+    ],
+    "sky": [
+     0.03,
+     0.14
+    ],
+    "face_L": [
+     59.44,
+     79.01
+    ],
+    "face_C": [
+     18.52,
+     27.67
+    ],
+    "face_h": [
+     46.93,
+     59.15
+    ],
+    "toe": [
+     13.64,
+     30.9
+    ],
+    "shoulder": [
+     8.3,
+     19.34
+    ],
+    "contrast_win": [
+     46.21,
+     63.91
+    ],
+    "skew": [
+     35.57,
+     43.48
+    ],
+    "face_over_bg": [
+     0.75,
+     0.92
+    ],
+    "person_over_bg": [
+     1.22,
+     1.53
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     0.24,
+     2.83
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "005_鹿井小渔_n6ab1e1b9/01_t1.jpg",
+    "005_鹿井小渔_n6ab1e1b9/03_t1.jpg",
+    "005_鹿井小渔_n6ab1e1b9/04_t1.jpg",
+    "005_鹿井小渔_n6ab1e1b9/05_t1.jpg",
+    "005_鹿井小渔_n6ab1e1b9/06_t1.jpg",
+    "005_鹿井小渔_n6ab1e1b9/07_t1.jpg",
+    "005_鹿井小渔_n6ab1e1b9/08_t1.jpg",
+    "005_鹿井小渔_n6ab1e1b9/09_t1.jpg",
+    "005_鹿井小渔_n6ab1e1b9/10_t1.jpg",
+    "005_鹿井小渔_n6ab1e1b9/11_t1.jpg",
+    "005_鹿井小渔_n6ab1e1b9/12_t1.jpg"
+   ]
+  },
+  {
+   "name": "006_鹿井小渔_n6aac9ef7",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 9,
+   "n_face": 9,
+   "n_skin": 9,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     38.99,
+     75.14
+    ],
+    "p95": [
+     88.01,
+     95.78
+    ],
+    "p5": [
+     4.58,
+     7.02
+    ],
+    "contrast": [
+     81.43,
+     91.31
+    ],
+    "clip": [
+     0.04,
+     2.24
+    ],
+    "sky": [
+     0.0,
+     0.02
+    ],
+    "face_L": [
+     69.7,
+     78.88
+    ],
+    "face_C": [
+     15.85,
+     20.79
+    ],
+    "face_h": [
+     48.1,
+     54.48
+    ],
+    "toe": [
+     7.07,
+     27.1
+    ],
+    "shoulder": [
+     9.35,
+     20.72
+    ],
+    "contrast_win": [
+     64.22,
+     75.88
+    ],
+    "skew": [
+     49.46,
+     64.64
+    ],
+    "face_over_bg": [
+     0.8,
+     0.98
+    ],
+    "person_over_bg": [
+     0.95,
+     1.92
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     5.25,
+     9.24
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "006_鹿井小渔_n6aac9ef7/01_t1.jpg",
+    "006_鹿井小渔_n6aac9ef7/02_t1.jpg",
+    "006_鹿井小渔_n6aac9ef7/03_t1.jpg",
+    "006_鹿井小渔_n6aac9ef7/04_t1.jpg",
+    "006_鹿井小渔_n6aac9ef7/05_t1.jpg",
+    "006_鹿井小渔_n6aac9ef7/06_t1.jpg",
+    "006_鹿井小渔_n6aac9ef7/07_t1.jpg",
+    "006_鹿井小渔_n6aac9ef7/08_t1.jpg",
+    "006_鹿井小渔_n6aac9ef7/09_t1.jpg"
+   ]
+  },
+  {
+   "name": "007_鹿井小渔_n6aac9e26",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 14,
+   "n_face": 14,
+   "n_skin": 14,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     24.5,
+     63.64
+    ],
+    "p95": [
+     85.42,
+     95.98
+    ],
+    "p5": [
+     5.02,
+     7.31
+    ],
+    "contrast": [
+     79.18,
+     91.18
+    ],
+    "clip": [
+     0.04,
+     0.09
+    ],
+    "sky": [
+     0.0,
+     0.03
+    ],
+    "face_L": [
+     67.55,
+     76.27
+    ],
+    "face_C": [
+     18.58,
+     25.53
+    ],
+    "face_h": [
+     45.72,
+     54.53
+    ],
+    "toe": [
+     6.03,
+     18.6
+    ],
+    "shoulder": [
+     11.29,
+     28.75
+    ],
+    "contrast_win": [
+     66.39,
+     78.49
+    ],
+    "skew": [
+     43.98,
+     63.56
+    ],
+    "face_over_bg": [
+     0.81,
+     1.06
+    ],
+    "person_over_bg": [
+     1.07,
+     2.08
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     5.05,
+     7.67
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "007_鹿井小渔_n6aac9e26/01_t1.jpg",
+    "007_鹿井小渔_n6aac9e26/01_t2.jpg",
+    "007_鹿井小渔_n6aac9e26/02_t1.jpg",
+    "007_鹿井小渔_n6aac9e26/02_t2.jpg",
+    "007_鹿井小渔_n6aac9e26/03_t1.jpg",
+    "007_鹿井小渔_n6aac9e26/03_t2.jpg",
+    "007_鹿井小渔_n6aac9e26/04_t1.jpg",
+    "007_鹿井小渔_n6aac9e26/04_t2.jpg",
+    "007_鹿井小渔_n6aac9e26/05_t1.jpg",
+    "007_鹿井小渔_n6aac9e26/05_t2.jpg",
+    "007_鹿井小渔_n6aac9e26/06_t1.jpg",
+    "007_鹿井小渔_n6aac9e26/06_t2.jpg",
+    "007_鹿井小渔_n6aac9e26/07_t1.jpg",
+    "007_鹿井小渔_n6aac9e26/07_t2.jpg"
+   ]
+  },
+  {
+   "name": "008_鹿井小渔_n6aa9f5ec",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 7,
+   "n_face": 7,
+   "n_skin": 7,
+   "n_strict": 0,
+   "thin": true,
+   "bands": {
+    "p50": [
+     23.27,
+     62.04
+    ],
+    "p95": [
+     87.42,
+     92.9
+    ],
+    "p5": [
+     11.44,
+     16.37
+    ],
+    "contrast": [
+     73.46,
+     79.72
+    ],
+    "clip": [
+     0.04,
+     0.05
+    ],
+    "sky": [
+     0.05,
+     0.15
+    ],
+    "face_L": [
+     66.53,
+     76.2
+    ],
+    "face_C": [
+     19.14,
+     26.16
+    ],
+    "face_h": [
+     42.43,
+     56.67
+    ],
+    "toe": [
+     1.81,
+     21.96
+    ],
+    "shoulder": [
+     11.65,
+     30.52
+    ],
+    "contrast_win": [
+     51.8,
+     75.31
+    ],
+    "skew": [
+     36.42,
+     53.27
+    ],
+    "face_over_bg": [
+     0.79,
+     1.01
+    ],
+    "person_over_bg": [
+     1.42,
+     2.06
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -4.57,
+     -2.34
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "008_鹿井小渔_n6aa9f5ec/01_t1.jpg",
+    "008_鹿井小渔_n6aa9f5ec/02_t1.jpg",
+    "008_鹿井小渔_n6aa9f5ec/03_t1.jpg",
+    "008_鹿井小渔_n6aa9f5ec/04_t1.jpg",
+    "008_鹿井小渔_n6aa9f5ec/05_t1.jpg",
+    "008_鹿井小渔_n6aa9f5ec/06_t1.jpg",
+    "008_鹿井小渔_n6aa9f5ec/07_t1.jpg"
+   ]
+  },
+  {
+   "name": "009_鹿井小渔_n6aa9f55d",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 10,
+   "n_face": 10,
+   "n_skin": 10,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     28.87,
+     69.1
+    ],
+    "p95": [
+     85.71,
+     93.49
+    ],
+    "p5": [
+     12.91,
+     16.89
+    ],
+    "contrast": [
+     69.49,
+     77.82
+    ],
+    "clip": [
+     0.05,
+     0.08
+    ],
+    "sky": [
+     0.04,
+     0.11
+    ],
+    "face_L": [
+     65.49,
+     72.03
+    ],
+    "face_C": [
+     19.63,
+     27.7
+    ],
+    "face_h": [
+     49.46,
+     60.85
+    ],
+    "toe": [
+     3.82,
+     17.72
+    ],
+    "shoulder": [
+     7.72,
+     30.72
+    ],
+    "contrast_win": [
+     58.53,
+     70.47
+    ],
+    "skew": [
+     34.34,
+     60.11
+    ],
+    "face_over_bg": [
+     0.77,
+     0.87
+    ],
+    "person_over_bg": [
+     1.23,
+     2.06
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -6.54,
+     -0.95
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "009_鹿井小渔_n6aa9f55d/01_t1.jpg",
+    "009_鹿井小渔_n6aa9f55d/01_t2.jpg",
+    "009_鹿井小渔_n6aa9f55d/02_t1.jpg",
+    "009_鹿井小渔_n6aa9f55d/02_t2.jpg",
+    "009_鹿井小渔_n6aa9f55d/03_t1.jpg",
+    "009_鹿井小渔_n6aa9f55d/03_t2.jpg",
+    "009_鹿井小渔_n6aa9f55d/04_t1.jpg",
+    "009_鹿井小渔_n6aa9f55d/04_t2.jpg",
+    "009_鹿井小渔_n6aa9f55d/05_t1.jpg",
+    "009_鹿井小渔_n6aa9f55d/05_t2.jpg"
+   ]
+  },
+  {
+   "name": "010_鹿井小渔_n6aa4aedb",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 9,
+   "n_face": 9,
+   "n_skin": 9,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     41.56,
+     68.15
+    ],
+    "p95": [
+     89.21,
+     93.54
+    ],
+    "p5": [
+     7.23,
+     15.02
+    ],
+    "contrast": [
+     76.08,
+     83.67
+    ],
+    "clip": [
+     0.04,
+     0.05
+    ],
+    "sky": [
+     0.02,
+     0.14
+    ],
+    "face_L": [
+     59.78,
+     71.88
+    ],
+    "face_C": [
+     19.59,
+     29.41
+    ],
+    "face_h": [
+     55.91,
+     68.76
+    ],
+    "toe": [
+     5.33,
+     25.51
+    ],
+    "shoulder": [
+     9.1,
+     24.27
+    ],
+    "contrast_win": [
+     47.73,
+     78.6
+    ],
+    "skew": [
+     40.9,
+     55.81
+    ],
+    "face_over_bg": [
+     0.74,
+     0.82
+    ],
+    "person_over_bg": [
+     0.62,
+     1.14
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -3.68,
+     5.52
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "010_鹿井小渔_n6aa4aedb/01_t1.jpg",
+    "010_鹿井小渔_n6aa4aedb/02_t1.jpg",
+    "010_鹿井小渔_n6aa4aedb/03_t1.jpg",
+    "010_鹿井小渔_n6aa4aedb/04_t1.jpg",
+    "010_鹿井小渔_n6aa4aedb/05_t1.jpg",
+    "010_鹿井小渔_n6aa4aedb/06_t1.jpg",
+    "010_鹿井小渔_n6aa4aedb/07_t1.jpg",
+    "010_鹿井小渔_n6aa4aedb/08_t1.jpg",
+    "010_鹿井小渔_n6aa4aedb/10_t1.jpg"
+   ]
+  },
+  {
+   "name": "011_鹿井小渔_n6aa4ad8c",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 8,
+   "n_face": 8,
+   "n_skin": 8,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     28.94,
+     59.48
+    ],
+    "p95": [
+     86.76,
+     92.51
+    ],
+    "p5": [
+     8.58,
+     12.75
+    ],
+    "contrast": [
+     75.49,
+     81.06
+    ],
+    "clip": [
+     0.06,
+     0.07
+    ],
+    "sky": [
+     0.03,
+     0.15
+    ],
+    "face_L": [
+     45.99,
+     70.13
+    ],
+    "face_C": [
+     14.67,
+     29.67
+    ],
+    "face_h": [
+     50.89,
+     66.52
+    ],
+    "toe": [
+     7.85,
+     22.03
+    ],
+    "shoulder": [
+     10.89,
+     29.08
+    ],
+    "contrast_win": [
+     53.41,
+     71.76
+    ],
+    "skew": [
+     39.18,
+     51.1
+    ],
+    "face_over_bg": [
+     0.66,
+     0.76
+    ],
+    "person_over_bg": [
+     0.77,
+     1.28
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -5.48,
+     4.91
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "011_鹿井小渔_n6aa4ad8c/01_t1.jpg",
+    "011_鹿井小渔_n6aa4ad8c/01_t2.jpg",
+    "011_鹿井小渔_n6aa4ad8c/02_t1.jpg",
+    "011_鹿井小渔_n6aa4ad8c/02_t2.jpg",
+    "011_鹿井小渔_n6aa4ad8c/03_t2.jpg",
+    "011_鹿井小渔_n6aa4ad8c/04_t2.jpg",
+    "011_鹿井小渔_n6aa4ad8c/05_t1.jpg",
+    "011_鹿井小渔_n6aa4ad8c/05_t2.jpg"
+   ]
+  },
+  {
+   "name": "012_鹿井小渔_n6aa4acb9",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 13,
+   "n_face": 13,
+   "n_skin": 13,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     28.04,
+     63.63
+    ],
+    "p95": [
+     87.58,
+     97.89
+    ],
+    "p5": [
+     7.59,
+     10.88
+    ],
+    "contrast": [
+     78.57,
+     88.73
+    ],
+    "clip": [
+     0.07,
+     0.2
+    ],
+    "sky": [
+     0.01,
+     0.06
+    ],
+    "face_L": [
+     67.27,
+     72.31
+    ],
+    "face_C": [
+     17.67,
+     26.14
+    ],
+    "face_h": [
+     53.78,
+     61.07
+    ],
+    "toe": [
+     3.92,
+     17.92
+    ],
+    "shoulder": [
+     10.5,
+     23.87
+    ],
+    "contrast_win": [
+     66.9,
+     84.03
+    ],
+    "skew": [
+     44.3,
+     65.18
+    ],
+    "face_over_bg": [
+     0.75,
+     0.99
+    ],
+    "person_over_bg": [
+     1.72,
+     2.89
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     2.54,
+     6.1
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "012_鹿井小渔_n6aa4acb9/01_t1.jpg",
+    "012_鹿井小渔_n6aa4acb9/02_t1.jpg",
+    "012_鹿井小渔_n6aa4acb9/02_t2.jpg",
+    "012_鹿井小渔_n6aa4acb9/03_t1.jpg",
+    "012_鹿井小渔_n6aa4acb9/04_t2.jpg",
+    "012_鹿井小渔_n6aa4acb9/05_t2.jpg",
+    "012_鹿井小渔_n6aa4acb9/06_t1.jpg",
+    "012_鹿井小渔_n6aa4acb9/07_t1.jpg",
+    "012_鹿井小渔_n6aa4acb9/07_t2.jpg",
+    "012_鹿井小渔_n6aa4acb9/08_t1.jpg",
+    "012_鹿井小渔_n6aa4acb9/08_t2.jpg",
+    "012_鹿井小渔_n6aa4acb9/09_t1.jpg",
+    "012_鹿井小渔_n6aa4acb9/09_t2.jpg"
+   ]
+  },
+  {
+   "name": "013_鹿井小渔_n6aa213d4",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 15,
+   "n_face": 15,
+   "n_skin": 15,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     35.93,
+     59.51
+    ],
+    "p95": [
+     90.08,
+     95.03
+    ],
+    "p5": [
+     10.37,
+     13.14
+    ],
+    "contrast": [
+     79.2,
+     83.79
+    ],
+    "clip": [
+     0.04,
+     0.08
+    ],
+    "sky": [
+     0.0,
+     0.04
+    ],
+    "face_L": [
+     53.39,
+     65.13
+    ],
+    "face_C": [
+     26.37,
+     49.01
+    ],
+    "face_h": [
+     40.42,
+     53.95
+    ],
+    "toe": [
+     5.09,
+     23.2
+    ],
+    "shoulder": [
+     11.96,
+     33.87
+    ],
+    "contrast_win": [
+     53.52,
+     76.81
+    ],
+    "skew": [
+     35.6,
+     57.34
+    ],
+    "face_over_bg": [
+     0.63,
+     0.69
+    ],
+    "person_over_bg": [
+     0.41,
+     0.74
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -1.95,
+     2.9
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "013_鹿井小渔_n6aa213d4/01_t1.jpg",
+    "013_鹿井小渔_n6aa213d4/01_t2.jpg",
+    "013_鹿井小渔_n6aa213d4/02_t1.jpg",
+    "013_鹿井小渔_n6aa213d4/03_t1.jpg",
+    "013_鹿井小渔_n6aa213d4/03_t2.jpg",
+    "013_鹿井小渔_n6aa213d4/04_t1.jpg",
+    "013_鹿井小渔_n6aa213d4/05_t1.jpg",
+    "013_鹿井小渔_n6aa213d4/05_t2.jpg",
+    "013_鹿井小渔_n6aa213d4/06_t1.jpg",
+    "013_鹿井小渔_n6aa213d4/06_t2.jpg",
+    "013_鹿井小渔_n6aa213d4/07_t1.jpg",
+    "013_鹿井小渔_n6aa213d4/08_t1.jpg",
+    "013_鹿井小渔_n6aa213d4/09_t1.jpg",
+    "013_鹿井小渔_n6aa213d4/09_t2.jpg",
+    "013_鹿井小渔_n6aa213d4/10_t1.jpg"
+   ]
+  },
+  {
+   "name": "014_鹿井小渔_n6aa205d7",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 7,
+   "n_face": 7,
+   "n_skin": 7,
+   "n_strict": 0,
+   "thin": true,
+   "bands": {
+    "p50": [
+     43.86,
+     65.83
+    ],
+    "p95": [
+     92.68,
+     95.42
+    ],
+    "p5": [
+     7.1,
+     15.48
+    ],
+    "contrast": [
+     79.17,
+     85.95
+    ],
+    "clip": [
+     0.04,
+     0.08
+    ],
+    "sky": [
+     0.0,
+     0.21
+    ],
+    "face_L": [
+     58.2,
+     67.93
+    ],
+    "face_C": [
+     14.22,
+     33.96
+    ],
+    "face_h": [
+     45.27,
+     68.89
+    ],
+    "toe": [
+     9.39,
+     38.36
+    ],
+    "shoulder": [
+     12.58,
+     25.94
+    ],
+    "contrast_win": [
+     40.7,
+     76.6
+    ],
+    "skew": [
+     26.45,
+     51.16
+    ],
+    "face_over_bg": [
+     0.66,
+     0.75
+    ],
+    "person_over_bg": [
+     1.14,
+     1.32
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -1.87,
+     12.94
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "014_鹿井小渔_n6aa205d7/01_t1.jpg",
+    "014_鹿井小渔_n6aa205d7/02_t1.jpg",
+    "014_鹿井小渔_n6aa205d7/04_t1.jpg",
+    "014_鹿井小渔_n6aa205d7/05_t1.jpg",
+    "014_鹿井小渔_n6aa205d7/06_t1.jpg",
+    "014_鹿井小渔_n6aa205d7/08_t1.jpg",
+    "014_鹿井小渔_n6aa205d7/09_t1.jpg"
+   ]
+  },
+  {
+   "name": "015_鹿井小渔_n6aa203da",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 9,
+   "n_face": 9,
+   "n_skin": 9,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     15.01,
+     52.82
+    ],
+    "p95": [
+     81.04,
+     91.09
+    ],
+    "p5": [
+     9.4,
+     11.01
+    ],
+    "contrast": [
+     70.49,
+     81.29
+    ],
+    "clip": [
+     0.04,
+     0.04
+    ],
+    "sky": [
+     0.0,
+     0.05
+    ],
+    "face_L": [
+     69.73,
+     80.15
+    ],
+    "face_C": [
+     12.21,
+     37.28
+    ],
+    "face_h": [
+     40.14,
+     70.31
+    ],
+    "toe": [
+     1.35,
+     9.96
+    ],
+    "shoulder": [
+     14.95,
+     46.13
+    ],
+    "contrast_win": [
+     66.14,
+     77.49
+    ],
+    "skew": [
+     30.26,
+     56.01
+    ],
+    "face_over_bg": [
+     0.9,
+     1.04
+    ],
+    "person_over_bg": [
+     0.97,
+     1.56
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     0.57,
+     15.44
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "015_鹿井小渔_n6aa203da/01_t1.jpg",
+    "015_鹿井小渔_n6aa203da/02_t1.jpg",
+    "015_鹿井小渔_n6aa203da/03_t1.jpg",
+    "015_鹿井小渔_n6aa203da/05_t1.jpg",
+    "015_鹿井小渔_n6aa203da/06_t1.jpg",
+    "015_鹿井小渔_n6aa203da/07_t1.jpg",
+    "015_鹿井小渔_n6aa203da/08_t1.jpg",
+    "015_鹿井小渔_n6aa203da/09_t1.jpg",
+    "015_鹿井小渔_n6aa203da/10_t1.jpg"
+   ]
+  },
+  {
+   "name": "016_鹿井小渔_n6a9f7679",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 8,
+   "n_face": 8,
+   "n_skin": 8,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     11.4,
+     36.09
+    ],
+    "p95": [
+     81.78,
+     93.08
+    ],
+    "p5": [
+     9.75,
+     12.09
+    ],
+    "contrast": [
+     71.86,
+     81.94
+    ],
+    "clip": [
+     0.03,
+     0.07
+    ],
+    "sky": [
+     0.01,
+     0.11
+    ],
+    "face_L": [
+     66.55,
+     81.44
+    ],
+    "face_C": [
+     12.99,
+     37.08
+    ],
+    "face_h": [
+     40.68,
+     76.58
+    ],
+    "toe": [
+     0.8,
+     8.0
+    ],
+    "shoulder": [
+     16.81,
+     66.28
+    ],
+    "contrast_win": [
+     65.47,
+     78.74
+    ],
+    "skew": [
+     9.26,
+     60.18
+    ],
+    "face_over_bg": [
+     0.94,
+     1.32
+    ],
+    "person_over_bg": null,
+    "light_ratio": null,
+    "warm_cool_b": [
+     0.5,
+     9.69
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "016_鹿井小渔_n6a9f7679/01_t1.jpg",
+    "016_鹿井小渔_n6a9f7679/02_t1.jpg",
+    "016_鹿井小渔_n6a9f7679/03_t1.jpg",
+    "016_鹿井小渔_n6a9f7679/03_t2.jpg",
+    "016_鹿井小渔_n6a9f7679/04_t1.jpg",
+    "016_鹿井小渔_n6a9f7679/04_t2.jpg",
+    "016_鹿井小渔_n6a9f7679/05_t1.jpg",
+    "016_鹿井小渔_n6a9f7679/05_t2.jpg"
+   ]
+  },
+  {
+   "name": "017_鹿井小渔_n6a9e0ca6",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 12,
+   "n_face": 12,
+   "n_skin": 12,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     14.27,
+     69.47
+    ],
+    "p95": [
+     88.51,
+     94.29
+    ],
+    "p5": [
+     4.42,
+     13.48
+    ],
+    "contrast": [
+     80.6,
+     84.98
+    ],
+    "clip": [
+     0.05,
+     0.07
+    ],
+    "sky": [
+     0.0,
+     0.15
+    ],
+    "face_L": [
+     53.48,
+     65.85
+    ],
+    "face_C": [
+     13.66,
+     41.91
+    ],
+    "face_h": [
+     49.67,
+     67.13
+    ],
+    "toe": [
+     3.2,
+     35.45
+    ],
+    "shoulder": [
+     12.03,
+     42.03
+    ],
+    "contrast_win": [
+     44.76,
+     81.0
+    ],
+    "skew": [
+     34.29,
+     57.49
+    ],
+    "face_over_bg": [
+     0.68,
+     0.97
+    ],
+    "person_over_bg": [
+     1.05,
+     2.16
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -0.71,
+     27.35
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "017_鹿井小渔_n6a9e0ca6/01_t1.jpg",
+    "017_鹿井小渔_n6a9e0ca6/01_t2.jpg",
+    "017_鹿井小渔_n6a9e0ca6/02_t2.jpg",
+    "017_鹿井小渔_n6a9e0ca6/03_t1.jpg",
+    "017_鹿井小渔_n6a9e0ca6/03_t2.jpg",
+    "017_鹿井小渔_n6a9e0ca6/04_t1.jpg",
+    "017_鹿井小渔_n6a9e0ca6/05_t1.jpg",
+    "017_鹿井小渔_n6a9e0ca6/05_t2.jpg",
+    "017_鹿井小渔_n6a9e0ca6/06_t1.jpg",
+    "017_鹿井小渔_n6a9e0ca6/06_t2.jpg",
+    "017_鹿井小渔_n6a9e0ca6/07_t1.jpg",
+    "017_鹿井小渔_n6a9e0ca6/07_t2.jpg"
+   ]
+  },
+  {
+   "name": "018_鹿井小渔_n6a9909ad",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 17,
+   "n_face": 17,
+   "n_skin": 17,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     41.15,
+     74.54
+    ],
+    "p95": [
+     85.09,
+     98.78
+    ],
+    "p5": [
+     7.61,
+     9.95
+    ],
+    "contrast": [
+     77.05,
+     89.64
+    ],
+    "clip": [
+     0.06,
+     2.9
+    ],
+    "sky": [
+     0.0,
+     0.03
+    ],
+    "face_L": [
+     57.46,
+     65.96
+    ],
+    "face_C": [
+     20.98,
+     31.11
+    ],
+    "face_h": [
+     52.23,
+     60.85
+    ],
+    "toe": [
+     8.77,
+     40.21
+    ],
+    "shoulder": [
+     9.21,
+     21.07
+    ],
+    "contrast_win": [
+     47.35,
+     72.95
+    ],
+    "skew": [
+     33.59,
+     57.93
+    ],
+    "face_over_bg": [
+     0.63,
+     0.78
+    ],
+    "person_over_bg": [
+     0.64,
+     0.99
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     0.9,
+     7.34
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "018_鹿井小渔_n6a9909ad/01_t1.jpg",
+    "018_鹿井小渔_n6a9909ad/01_t2.jpg",
+    "018_鹿井小渔_n6a9909ad/02_t1.jpg",
+    "018_鹿井小渔_n6a9909ad/03_t1.jpg",
+    "018_鹿井小渔_n6a9909ad/03_t2.jpg",
+    "018_鹿井小渔_n6a9909ad/04_t1.jpg",
+    "018_鹿井小渔_n6a9909ad/04_t2.jpg",
+    "018_鹿井小渔_n6a9909ad/05_t1.jpg",
+    "018_鹿井小渔_n6a9909ad/05_t2.jpg",
+    "018_鹿井小渔_n6a9909ad/06_t1.jpg",
+    "018_鹿井小渔_n6a9909ad/07_t1.jpg",
+    "018_鹿井小渔_n6a9909ad/07_t2.jpg",
+    "018_鹿井小渔_n6a9909ad/08_t1.jpg",
+    "018_鹿井小渔_n6a9909ad/09_t1.jpg",
+    "018_鹿井小渔_n6a9909ad/09_t2.jpg",
+    "018_鹿井小渔_n6a9909ad/10_t1.jpg",
+    "018_鹿井小渔_n6a9909ad/10_t2.jpg"
+   ]
+  },
+  {
+   "name": "019_鹿井小渔_n6a94cf77",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 13,
+   "n_face": 13,
+   "n_skin": 13,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     22.23,
+     54.0
+    ],
+    "p95": [
+     86.61,
+     95.59
+    ],
+    "p5": [
+     4.86,
+     9.46
+    ],
+    "contrast": [
+     78.75,
+     90.18
+    ],
+    "clip": [
+     0.05,
+     0.07
+    ],
+    "sky": [
+     0.09,
+     0.19
+    ],
+    "face_L": [
+     65.93,
+     72.77
+    ],
+    "face_C": [
+     16.33,
+     28.34
+    ],
+    "face_h": [
+     51.65,
+     60.54
+    ],
+    "toe": [
+     3.33,
+     17.0
+    ],
+    "shoulder": [
+     11.1,
+     34.24
+    ],
+    "contrast_win": [
+     66.59,
+     82.07
+    ],
+    "skew": [
+     39.77,
+     67.04
+    ],
+    "face_over_bg": [
+     0.74,
+     0.82
+    ],
+    "person_over_bg": [
+     1.65,
+     2.36
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -6.5,
+     -3.81
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "019_鹿井小渔_n6a94cf77/01_t1.jpg",
+    "019_鹿井小渔_n6a94cf77/01_t2.jpg",
+    "019_鹿井小渔_n6a94cf77/02_t1.jpg",
+    "019_鹿井小渔_n6a94cf77/03_t1.jpg",
+    "019_鹿井小渔_n6a94cf77/04_t1.jpg",
+    "019_鹿井小渔_n6a94cf77/04_t2.jpg",
+    "019_鹿井小渔_n6a94cf77/05_t1.jpg",
+    "019_鹿井小渔_n6a94cf77/06_t1.jpg",
+    "019_鹿井小渔_n6a94cf77/07_t1.jpg",
+    "019_鹿井小渔_n6a94cf77/07_t2.jpg",
+    "019_鹿井小渔_n6a94cf77/08_t1.jpg",
+    "019_鹿井小渔_n6a94cf77/09_t1.jpg",
+    "019_鹿井小渔_n6a94cf77/10_t1.jpg"
+   ]
+  },
+  {
+   "name": "020_鹿井小渔_n6a937cea",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 14,
+   "n_face": 14,
+   "n_skin": 14,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     34.42,
+     66.19
+    ],
+    "p95": [
+     85.87,
+     93.25
+    ],
+    "p5": [
+     8.28,
+     15.22
+    ],
+    "contrast": [
+     74.92,
+     83.71
+    ],
+    "clip": [
+     0.05,
+     0.07
+    ],
+    "sky": [
+     0.0,
+     0.02
+    ],
+    "face_L": [
+     53.45,
+     75.33
+    ],
+    "face_C": [
+     15.77,
+     27.9
+    ],
+    "face_h": [
+     49.17,
+     67.5
+    ],
+    "toe": [
+     3.98,
+     33.0
+    ],
+    "shoulder": [
+     9.69,
+     28.32
+    ],
+    "contrast_win": [
+     48.64,
+     76.3
+    ],
+    "skew": [
+     31.59,
+     61.74
+    ],
+    "face_over_bg": [
+     0.67,
+     0.93
+    ],
+    "person_over_bg": [
+     0.86,
+     1.24
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -2.85,
+     5.08
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "020_鹿井小渔_n6a937cea/01_t1.jpg",
+    "020_鹿井小渔_n6a937cea/01_t2.jpg",
+    "020_鹿井小渔_n6a937cea/02_t1.jpg",
+    "020_鹿井小渔_n6a937cea/02_t2.jpg",
+    "020_鹿井小渔_n6a937cea/03_t1.jpg",
+    "020_鹿井小渔_n6a937cea/03_t2.jpg",
+    "020_鹿井小渔_n6a937cea/04_t1.jpg",
+    "020_鹿井小渔_n6a937cea/04_t2.jpg",
+    "020_鹿井小渔_n6a937cea/05_t1.jpg",
+    "020_鹿井小渔_n6a937cea/05_t2.jpg",
+    "020_鹿井小渔_n6a937cea/06_t1.jpg",
+    "020_鹿井小渔_n6a937cea/06_t2.jpg",
+    "020_鹿井小渔_n6a937cea/07_t1.jpg",
+    "020_鹿井小渔_n6a937cea/07_t2.jpg"
+   ]
+  },
+  {
+   "name": "021_鹿井小渔_n6a924c6e",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 10,
+   "n_face": 10,
+   "n_skin": 10,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     41.04,
+     79.87
+    ],
+    "p95": [
+     87.01,
+     92.16
+    ],
+    "p5": [
+     9.13,
+     20.66
+    ],
+    "contrast": [
+     70.1,
+     82.35
+    ],
+    "clip": [
+     0.05,
+     0.06
+    ],
+    "sky": [
+     0.0,
+     0.03
+    ],
+    "face_L": [
+     57.39,
+     77.25
+    ],
+    "face_C": [
+     13.97,
+     26.36
+    ],
+    "face_h": [
+     55.1,
+     68.43
+    ],
+    "toe": [
+     8.69,
+     41.99
+    ],
+    "shoulder": [
+     5.16,
+     24.37
+    ],
+    "contrast_win": [
+     28.92,
+     72.86
+    ],
+    "skew": [
+     23.76,
+     53.23
+    ],
+    "face_over_bg": [
+     0.71,
+     0.9
+    ],
+    "person_over_bg": [
+     0.9,
+     1.27
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -4.55,
+     2.91
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "021_鹿井小渔_n6a924c6e/02_t1.jpg",
+    "021_鹿井小渔_n6a924c6e/03_t1.jpg",
+    "021_鹿井小渔_n6a924c6e/04_t1.jpg",
+    "021_鹿井小渔_n6a924c6e/05_t1.jpg",
+    "021_鹿井小渔_n6a924c6e/06_t1.jpg",
+    "021_鹿井小渔_n6a924c6e/07_t1.jpg",
+    "021_鹿井小渔_n6a924c6e/08_t1.jpg",
+    "021_鹿井小渔_n6a924c6e/09_t1.jpg",
+    "021_鹿井小渔_n6a924c6e/10_t1.jpg",
+    "021_鹿井小渔_n6a924c6e/11_t1.jpg"
+   ]
+  },
+  {
+   "name": "022_鹿井小渔_n6a8f88dd",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 10,
+   "n_face": 10,
+   "n_skin": 10,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     27.5,
+     62.63
+    ],
+    "p95": [
+     87.22,
+     94.42
+    ],
+    "p5": [
+     4.75,
+     13.17
+    ],
+    "contrast": [
+     77.75,
+     88.3
+    ],
+    "clip": [
+     0.05,
+     0.09
+    ],
+    "sky": [
+     0.02,
+     0.08
+    ],
+    "face_L": [
+     59.18,
+     73.86
+    ],
+    "face_C": [
+     20.52,
+     32.46
+    ],
+    "face_h": [
+     47.01,
+     67.27
+    ],
+    "toe": [
+     2.6,
+     18.12
+    ],
+    "shoulder": [
+     13.17,
+     26.74
+    ],
+    "contrast_win": [
+     59.63,
+     79.04
+    ],
+    "skew": [
+     43.65,
+     63.46
+    ],
+    "face_over_bg": [
+     0.71,
+     0.93
+    ],
+    "person_over_bg": [
+     0.58,
+     0.99
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -1.29,
+     3.65
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "022_鹿井小渔_n6a8f88dd/01_t1.jpg",
+    "022_鹿井小渔_n6a8f88dd/03_t1.jpg",
+    "022_鹿井小渔_n6a8f88dd/04_t1.jpg",
+    "022_鹿井小渔_n6a8f88dd/05_t1.jpg",
+    "022_鹿井小渔_n6a8f88dd/06_t1.jpg",
+    "022_鹿井小渔_n6a8f88dd/07_t1.jpg",
+    "022_鹿井小渔_n6a8f88dd/08_t1.jpg",
+    "022_鹿井小渔_n6a8f88dd/09_t1.jpg",
+    "022_鹿井小渔_n6a8f88dd/10_t1.jpg",
+    "022_鹿井小渔_n6a8f88dd/11_t1.jpg"
+   ]
+  },
+  {
+   "name": "023_鹿井小渔_n6a8e41df",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 10,
+   "n_face": 10,
+   "n_skin": 10,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     39.56,
+     63.18
+    ],
+    "p95": [
+     86.51,
+     93.07
+    ],
+    "p5": [
+     7.16,
+     12.36
+    ],
+    "contrast": [
+     77.78,
+     82.93
+    ],
+    "clip": [
+     0.04,
+     0.05
+    ],
+    "sky": [
+     0.01,
+     0.1
+    ],
+    "face_L": [
+     56.78,
+     72.75
+    ],
+    "face_C": [
+     19.48,
+     32.88
+    ],
+    "face_h": [
+     41.07,
+     52.83
+    ],
+    "toe": [
+     7.61,
+     26.8
+    ],
+    "shoulder": [
+     9.71,
+     29.83
+    ],
+    "contrast_win": [
+     53.06,
+     71.99
+    ],
+    "skew": [
+     37.14,
+     53.97
+    ],
+    "face_over_bg": [
+     0.71,
+     0.85
+    ],
+    "person_over_bg": [
+     0.71,
+     1.68
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -3.08,
+     2.18
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "023_鹿井小渔_n6a8e41df/01_t1.jpg",
+    "023_鹿井小渔_n6a8e41df/02_t1.jpg",
+    "023_鹿井小渔_n6a8e41df/03_t1.jpg",
+    "023_鹿井小渔_n6a8e41df/04_t1.jpg",
+    "023_鹿井小渔_n6a8e41df/05_t1.jpg",
+    "023_鹿井小渔_n6a8e41df/06_t1.jpg",
+    "023_鹿井小渔_n6a8e41df/07_t1.jpg",
+    "023_鹿井小渔_n6a8e41df/08_t1.jpg",
+    "023_鹿井小渔_n6a8e41df/09_t1.jpg",
+    "023_鹿井小渔_n6a8e41df/10_t1.jpg"
+   ]
+  },
+  {
+   "name": "024_鹿井小渔_n6a8cf6df",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 12,
+   "n_face": 12,
+   "n_skin": 12,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     50.56,
+     69.83
+    ],
+    "p95": [
+     87.62,
+     94.74
+    ],
+    "p5": [
+     4.51,
+     9.36
+    ],
+    "contrast": [
+     80.18,
+     87.68
+    ],
+    "clip": [
+     0.05,
+     0.07
+    ],
+    "sky": [
+     0.03,
+     0.13
+    ],
+    "face_L": [
+     58.17,
+     72.51
+    ],
+    "face_C": [
+     16.29,
+     21.78
+    ],
+    "face_h": [
+     42.43,
+     59.27
+    ],
+    "toe": [
+     5.61,
+     38.52
+    ],
+    "shoulder": [
+     5.39,
+     13.71
+    ],
+    "contrast_win": [
+     42.82,
+     81.95
+    ],
+    "skew": [
+     34.93,
+     70.66
+    ],
+    "face_over_bg": [
+     0.65,
+     0.85
+    ],
+    "person_over_bg": [
+     1.15,
+     2.43
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -2.97,
+     -0.31
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "024_鹿井小渔_n6a8cf6df/02_t1.jpg",
+    "024_鹿井小渔_n6a8cf6df/03_t1.jpg",
+    "024_鹿井小渔_n6a8cf6df/03_t2.jpg",
+    "024_鹿井小渔_n6a8cf6df/04_t1.jpg",
+    "024_鹿井小渔_n6a8cf6df/04_t2.jpg",
+    "024_鹿井小渔_n6a8cf6df/05_t1.jpg",
+    "024_鹿井小渔_n6a8cf6df/06_t1.jpg",
+    "024_鹿井小渔_n6a8cf6df/07_t1.jpg",
+    "024_鹿井小渔_n6a8cf6df/07_t2.jpg",
+    "024_鹿井小渔_n6a8cf6df/08_t1.jpg",
+    "024_鹿井小渔_n6a8cf6df/09_t2.jpg",
+    "024_鹿井小渔_n6a8cf6df/10_t1.jpg"
+   ]
+  },
+  {
+   "name": "025_鹿井小渔_n6a8c07ed",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 5,
+   "n_face": 5,
+   "n_skin": 5,
+   "n_strict": 0,
+   "thin": true,
+   "bands": {
+    "p50": [
+     28.19,
+     45.68
+    ],
+    "p95": [
+     76.61,
+     99.79
+    ],
+    "p5": [
+     5.86,
+     14.14
+    ],
+    "contrast": [
+     65.55,
+     93.89
+    ],
+    "clip": [
+     0.07,
+     7.27
+    ],
+    "sky": [
+     0.03,
+     0.04
+    ],
+    "face_L": [
+     38.53,
+     59.64
+    ],
+    "face_C": [
+     17.02,
+     24.75
+    ],
+    "face_h": [
+     34.24,
+     51.79
+    ],
+    "toe": [
+     5.88,
+     20.05
+    ],
+    "shoulder": [
+     17.75,
+     41.82
+    ],
+    "contrast_win": [
+     48.01,
+     88.01
+    ],
+    "skew": [
+     24.96,
+     51.62
+    ],
+    "face_over_bg": [
+     0.43,
+     0.94
+    ],
+    "person_over_bg": [
+     0.92,
+     1.66
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -10.44,
+     -7.65
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "025_鹿井小渔_n6a8c07ed/01_t1.jpg",
+    "025_鹿井小渔_n6a8c07ed/01_t2.jpg",
+    "025_鹿井小渔_n6a8c07ed/02_t2.jpg",
+    "025_鹿井小渔_n6a8c07ed/03_t2.jpg",
+    "025_鹿井小渔_n6a8c07ed/04_t2.jpg"
+   ]
+  },
+  {
+   "name": "026_鹿井小渔_n6a88fced",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 10,
+   "n_face": 10,
+   "n_skin": 10,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     13.53,
+     52.35
+    ],
+    "p95": [
+     84.31,
+     93.48
+    ],
+    "p5": [
+     4.98,
+     8.91
+    ],
+    "contrast": [
+     79.72,
+     86.77
+    ],
+    "clip": [
+     0.05,
+     0.07
+    ],
+    "sky": [
+     0.02,
+     0.06
+    ],
+    "face_L": [
+     60.05,
+     73.63
+    ],
+    "face_C": [
+     18.27,
+     34.86
+    ],
+    "face_h": [
+     52.49,
+     69.06
+    ],
+    "toe": [
+     3.16,
+     19.22
+    ],
+    "shoulder": [
+     13.86,
+     40.84
+    ],
+    "contrast_win": [
+     65.35,
+     81.12
+    ],
+    "skew": [
+     36.03,
+     57.69
+    ],
+    "face_over_bg": [
+     0.73,
+     0.99
+    ],
+    "person_over_bg": [
+     0.24,
+     1.04
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -2.6,
+     3.35
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "026_鹿井小渔_n6a88fced/01_t1.jpg",
+    "026_鹿井小渔_n6a88fced/01_t2.jpg",
+    "026_鹿井小渔_n6a88fced/02_t1.jpg",
+    "026_鹿井小渔_n6a88fced/02_t2.jpg",
+    "026_鹿井小渔_n6a88fced/03_t1.jpg",
+    "026_鹿井小渔_n6a88fced/03_t2.jpg",
+    "026_鹿井小渔_n6a88fced/04_t1.jpg",
+    "026_鹿井小渔_n6a88fced/04_t2.jpg",
+    "026_鹿井小渔_n6a88fced/05_t1.jpg",
+    "026_鹿井小渔_n6a88fced/05_t2.jpg"
+   ]
+  },
+  {
+   "name": "027_鹿井小渔_n6a866296",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 12,
+   "n_face": 12,
+   "n_skin": 12,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     14.77,
+     65.02
+    ],
+    "p95": [
+     82.22,
+     93.01
+    ],
+    "p5": [
+     10.7,
+     12.5
+    ],
+    "contrast": [
+     70.33,
+     81.38
+    ],
+    "clip": [
+     0.05,
+     0.06
+    ],
+    "sky": [
+     0.01,
+     0.1
+    ],
+    "face_L": [
+     58.59,
+     74.55
+    ],
+    "face_C": [
+     21.8,
+     29.62
+    ],
+    "face_h": [
+     52.44,
+     62.65
+    ],
+    "toe": [
+     0.8,
+     17.33
+    ],
+    "shoulder": [
+     3.67,
+     55.21
+    ],
+    "contrast_win": [
+     60.92,
+     77.67
+    ],
+    "skew": [
+     18.15,
+     67.38
+    ],
+    "face_over_bg": [
+     0.81,
+     1.13
+    ],
+    "person_over_bg": [
+     1.12,
+     1.97
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -2.63,
+     3.79
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "027_鹿井小渔_n6a866296/01_t1.jpg",
+    "027_鹿井小渔_n6a866296/01_t2.jpg",
+    "027_鹿井小渔_n6a866296/02_t1.jpg",
+    "027_鹿井小渔_n6a866296/02_t2.jpg",
+    "027_鹿井小渔_n6a866296/03_t1.jpg",
+    "027_鹿井小渔_n6a866296/03_t2.jpg",
+    "027_鹿井小渔_n6a866296/04_t1.jpg",
+    "027_鹿井小渔_n6a866296/04_t2.jpg",
+    "027_鹿井小渔_n6a866296/05_t1.jpg",
+    "027_鹿井小渔_n6a866296/05_t2.jpg",
+    "027_鹿井小渔_n6a866296/06_t1.jpg",
+    "027_鹿井小渔_n6a866296/06_t2.jpg"
+   ]
+  },
+  {
+   "name": "028_鹿井小渔_n6a8511c3",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 6,
+   "n_face": 6,
+   "n_skin": 6,
+   "n_strict": 0,
+   "thin": true,
+   "bands": {
+    "p50": [
+     45.7,
+     74.5
+    ],
+    "p95": [
+     92.48,
+     94.35
+    ],
+    "p5": [
+     7.78,
+     13.31
+    ],
+    "contrast": [
+     80.31,
+     84.81
+    ],
+    "clip": [
+     0.04,
+     0.05
+    ],
+    "sky": [
+     0.0,
+     0.0
+    ],
+    "face_L": [
+     69.61,
+     76.44
+    ],
+    "face_C": [
+     25.73,
+     35.96
+    ],
+    "face_h": [
+     65.16,
+     71.24
+    ],
+    "toe": [
+     7.3,
+     22.57
+    ],
+    "shoulder": [
+     2.99,
+     8.54
+    ],
+    "contrast_win": [
+     60.42,
+     74.46
+    ],
+    "skew": [
+     57.21,
+     67.49
+    ],
+    "face_over_bg": [
+     0.76,
+     0.8
+    ],
+    "person_over_bg": [
+     0.32,
+     0.55
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     1.5,
+     10.36
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "028_鹿井小渔_n6a8511c3/01_t1.jpg",
+    "028_鹿井小渔_n6a8511c3/02_t1.jpg",
+    "028_鹿井小渔_n6a8511c3/03_t1.jpg",
+    "028_鹿井小渔_n6a8511c3/04_t1.jpg",
+    "028_鹿井小渔_n6a8511c3/05_t1.jpg",
+    "028_鹿井小渔_n6a8511c3/06_t1.jpg"
+   ]
+  },
+  {
+   "name": "029_鹿井小渔_n6a83bdb1",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 8,
+   "n_face": 8,
+   "n_skin": 8,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     43.45,
+     78.15
+    ],
+    "p95": [
+     89.11,
+     94.37
+    ],
+    "p5": [
+     5.38,
+     14.04
+    ],
+    "contrast": [
+     79.54,
+     86.38
+    ],
+    "clip": [
+     0.04,
+     0.05
+    ],
+    "sky": [
+     0.04,
+     0.12
+    ],
+    "face_L": [
+     67.61,
+     75.84
+    ],
+    "face_C": [
+     18.6,
+     30.92
+    ],
+    "face_h": [
+     48.85,
+     60.0
+    ],
+    "toe": [
+     11.44,
+     42.43
+    ],
+    "shoulder": [
+     7.32,
+     20.48
+    ],
+    "contrast_win": [
+     38.13,
+     74.94
+    ],
+    "skew": [
+     30.97,
+     55.41
+    ],
+    "face_over_bg": [
+     0.75,
+     0.87
+    ],
+    "person_over_bg": [
+     0.92,
+     1.66
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -4.34,
+     -1.97
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "029_鹿井小渔_n6a83bdb1/01_t1.jpg",
+    "029_鹿井小渔_n6a83bdb1/02_t1.jpg",
+    "029_鹿井小渔_n6a83bdb1/03_t1.jpg",
+    "029_鹿井小渔_n6a83bdb1/04_t1.jpg",
+    "029_鹿井小渔_n6a83bdb1/05_t1.jpg",
+    "029_鹿井小渔_n6a83bdb1/06_t1.jpg",
+    "029_鹿井小渔_n6a83bdb1/07_t1.jpg",
+    "029_鹿井小渔_n6a83bdb1/08_t1.jpg"
+   ]
+  },
+  {
+   "name": "030_鹿井小渔_n6a8272a8",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 7,
+   "n_face": 7,
+   "n_skin": 7,
+   "n_strict": 0,
+   "thin": true,
+   "bands": {
+    "p50": [
+     14.96,
+     51.36
+    ],
+    "p95": [
+     85.79,
+     93.83
+    ],
+    "p5": [
+     10.13,
+     11.67
+    ],
+    "contrast": [
+     75.08,
+     82.42
+    ],
+    "clip": [
+     0.04,
+     0.05
+    ],
+    "sky": [
+     0.03,
+     0.12
+    ],
+    "face_L": [
+     62.85,
+     77.89
+    ],
+    "face_C": [
+     18.7,
+     26.85
+    ],
+    "face_h": [
+     51.62,
+     58.82
+    ],
+    "toe": [
+     0.99,
+     11.66
+    ],
+    "shoulder": [
+     11.72,
+     41.9
+    ],
+    "contrast_win": [
+     67.23,
+     76.22
+    ],
+    "skew": [
+     33.63,
+     60.28
+    ],
+    "face_over_bg": [
+     0.8,
+     1.2
+    ],
+    "person_over_bg": [
+     1.43,
+     1.84
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -4.54,
+     0.9
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "030_鹿井小渔_n6a8272a8/01_t1.jpg",
+    "030_鹿井小渔_n6a8272a8/02_t1.jpg",
+    "030_鹿井小渔_n6a8272a8/03_t1.jpg",
+    "030_鹿井小渔_n6a8272a8/04_t1.jpg",
+    "030_鹿井小渔_n6a8272a8/05_t1.jpg",
+    "030_鹿井小渔_n6a8272a8/06_t1.jpg",
+    "030_鹿井小渔_n6a8272a8/07_t1.jpg"
+   ]
+  },
+  {
+   "name": "031_鹿井小渔_n6a8037df",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 14,
+   "n_face": 14,
+   "n_skin": 14,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     27.35,
+     52.9
+    ],
+    "p95": [
+     86.81,
+     92.22
+    ],
+    "p5": [
+     6.25,
+     13.77
+    ],
+    "contrast": [
+     73.25,
+     84.3
+    ],
+    "clip": [
+     0.05,
+     0.08
+    ],
+    "sky": [
+     0.0,
+     0.04
+    ],
+    "face_L": [
+     61.99,
+     80.75
+    ],
+    "face_C": [
+     16.73,
+     31.54
+    ],
+    "face_h": [
+     58.94,
+     77.32
+    ],
+    "toe": [
+     5.41,
+     15.96
+    ],
+    "shoulder": [
+     8.38,
+     35.13
+    ],
+    "contrast_win": [
+     64.28,
+     76.23
+    ],
+    "skew": [
+     34.22,
+     59.26
+    ],
+    "face_over_bg": [
+     0.77,
+     0.91
+    ],
+    "person_over_bg": [
+     0.48,
+     0.77
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -5.26,
+     6.33
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "031_鹿井小渔_n6a8037df/01_t1.jpg",
+    "031_鹿井小渔_n6a8037df/01_t2.jpg",
+    "031_鹿井小渔_n6a8037df/02_t1.jpg",
+    "031_鹿井小渔_n6a8037df/02_t2.jpg",
+    "031_鹿井小渔_n6a8037df/03_t1.jpg",
+    "031_鹿井小渔_n6a8037df/03_t2.jpg",
+    "031_鹿井小渔_n6a8037df/04_t1.jpg",
+    "031_鹿井小渔_n6a8037df/04_t2.jpg",
+    "031_鹿井小渔_n6a8037df/05_t1.jpg",
+    "031_鹿井小渔_n6a8037df/05_t2.jpg",
+    "031_鹿井小渔_n6a8037df/06_t1.jpg",
+    "031_鹿井小渔_n6a8037df/06_t2.jpg",
+    "031_鹿井小渔_n6a8037df/07_t1.jpg",
+    "031_鹿井小渔_n6a8037df/07_t2.jpg"
+   ]
+  },
+  {
+   "name": "032_鹿井小渔_n6a7e9353",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 10,
+   "n_face": 10,
+   "n_skin": 10,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     47.9,
+     72.74
+    ],
+    "p95": [
+     92.34,
+     99.0
+    ],
+    "p5": [
+     5.75,
+     18.31
+    ],
+    "contrast": [
+     78.24,
+     88.53
+    ],
+    "clip": [
+     0.07,
+     0.22
+    ],
+    "sky": [
+     0.0,
+     0.0
+    ],
+    "face_L": [
+     68.56,
+     75.12
+    ],
+    "face_C": [
+     15.5,
+     21.83
+    ],
+    "face_h": [
+     59.66,
+     68.16
+    ],
+    "toe": [
+     14.79,
+     36.82
+    ],
+    "shoulder": [
+     9.0,
+     15.04
+    ],
+    "contrast_win": [
+     45.56,
+     73.44
+    ],
+    "skew": [
+     34.82,
+     62.94
+    ],
+    "face_over_bg": [
+     0.72,
+     0.78
+    ],
+    "person_over_bg": [
+     1.22,
+     1.6
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -1.14,
+     1.02
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "032_鹿井小渔_n6a7e9353/01_t1.jpg",
+    "032_鹿井小渔_n6a7e9353/02_t1.jpg",
+    "032_鹿井小渔_n6a7e9353/03_t1.jpg",
+    "032_鹿井小渔_n6a7e9353/04_t1.jpg",
+    "032_鹿井小渔_n6a7e9353/05_t1.jpg",
+    "032_鹿井小渔_n6a7e9353/06_t1.jpg",
+    "032_鹿井小渔_n6a7e9353/07_t1.jpg",
+    "032_鹿井小渔_n6a7e9353/08_t1.jpg",
+    "032_鹿井小渔_n6a7e9353/09_t1.jpg",
+    "032_鹿井小渔_n6a7e9353/10_t1.jpg"
+   ]
+  },
+  {
+   "name": "101_鹿井小渔_n6a7bca1c",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 13,
+   "n_face": 12,
+   "n_skin": 13,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     24.18,
+     73.86
+    ],
+    "p95": [
+     89.35,
+     92.97
+    ],
+    "p5": [
+     4.87,
+     8.18
+    ],
+    "contrast": [
+     82.96,
+     87.66
+    ],
+    "clip": [
+     0.05,
+     0.08
+    ],
+    "sky": [
+     0.01,
+     0.04
+    ],
+    "face_L": [
+     60.99,
+     70.64
+    ],
+    "face_C": [
+     21.24,
+     26.48
+    ],
+    "face_h": [
+     47.87,
+     56.38
+    ],
+    "toe": [
+     3.38,
+     37.8
+    ],
+    "shoulder": [
+     6.16,
+     24.3
+    ],
+    "contrast_win": [
+     46.16,
+     82.84
+    ],
+    "skew": [
+     35.28,
+     64.66
+    ],
+    "face_over_bg": [
+     0.7,
+     0.86
+    ],
+    "person_over_bg": [
+     1.27,
+     2.98
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     0.84,
+     3.57
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "101_鹿井小渔_n6a7bca1c/01_t1.jpg",
+    "101_鹿井小渔_n6a7bca1c/01_t2.jpg",
+    "101_鹿井小渔_n6a7bca1c/02_t1.jpg",
+    "101_鹿井小渔_n6a7bca1c/03_t1.jpg",
+    "101_鹿井小渔_n6a7bca1c/05_t1.jpg",
+    "101_鹿井小渔_n6a7bca1c/06_t1.jpg",
+    "101_鹿井小渔_n6a7bca1c/07_t1.jpg",
+    "101_鹿井小渔_n6a7bca1c/08_t1.jpg",
+    "101_鹿井小渔_n6a7bca1c/09_t1.jpg",
+    "101_鹿井小渔_n6a7bca1c/09_t2.jpg",
+    "101_鹿井小渔_n6a7bca1c/10_t1.jpg",
+    "101_鹿井小渔_n6a7bca1c/11_t1.jpg",
+    "101_鹿井小渔_n6a7bca1c/11_t2.jpg"
+   ]
+  },
+  {
+   "name": "102_鹿井小渔_n6a791275",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 11,
+   "n_face": 11,
+   "n_skin": 11,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     44.44,
+     65.62
+    ],
+    "p95": [
+     84.86,
+     91.47
+    ],
+    "p5": [
+     4.1,
+     7.43
+    ],
+    "contrast": [
+     77.8,
+     84.31
+    ],
+    "clip": [
+     0.04,
+     0.06
+    ],
+    "sky": [
+     0.04,
+     0.11
+    ],
+    "face_L": [
+     66.59,
+     73.34
+    ],
+    "face_C": [
+     19.95,
+     27.69
+    ],
+    "face_h": [
+     49.1,
+     60.75
+    ],
+    "toe": [
+     7.24,
+     31.22
+    ],
+    "shoulder": [
+     7.47,
+     26.4
+    ],
+    "contrast_win": [
+     52.11,
+     76.68
+    ],
+    "skew": [
+     29.33,
+     63.38
+    ],
+    "face_over_bg": [
+     0.79,
+     0.92
+    ],
+    "person_over_bg": [
+     1.25,
+     1.64
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -4.92,
+     -0.78
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "102_鹿井小渔_n6a791275/01_t2.jpg",
+    "102_鹿井小渔_n6a791275/02_t1.jpg",
+    "102_鹿井小渔_n6a791275/02_t2.jpg",
+    "102_鹿井小渔_n6a791275/03_t1.jpg",
+    "102_鹿井小渔_n6a791275/03_t2.jpg",
+    "102_鹿井小渔_n6a791275/04_t1.jpg",
+    "102_鹿井小渔_n6a791275/04_t2.jpg",
+    "102_鹿井小渔_n6a791275/05_t1.jpg",
+    "102_鹿井小渔_n6a791275/05_t2.jpg",
+    "102_鹿井小渔_n6a791275/06_t1.jpg",
+    "102_鹿井小渔_n6a791275/06_t2.jpg"
+   ]
+  },
+  {
+   "name": "103_鹿井小渔_n6a7693b9",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 8,
+   "n_face": 8,
+   "n_skin": 8,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     30.16,
+     59.98
+    ],
+    "p95": [
+     87.47,
+     93.4
+    ],
+    "p5": [
+     5.5,
+     11.01
+    ],
+    "contrast": [
+     79.27,
+     86.68
+    ],
+    "clip": [
+     0.04,
+     0.11
+    ],
+    "sky": [
+     0.06,
+     0.15
+    ],
+    "face_L": [
+     66.05,
+     75.12
+    ],
+    "face_C": [
+     20.73,
+     31.08
+    ],
+    "face_h": [
+     29.3,
+     54.31
+    ],
+    "toe": [
+     5.29,
+     17.25
+    ],
+    "shoulder": [
+     10.73,
+     23.13
+    ],
+    "contrast_win": [
+     63.78,
+     79.91
+    ],
+    "skew": [
+     48.85,
+     59.91
+    ],
+    "face_over_bg": [
+     0.83,
+     1.09
+    ],
+    "person_over_bg": [
+     1.78,
+     3.3
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -6.23,
+     4.08
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "103_鹿井小渔_n6a7693b9/01_t1.jpg",
+    "103_鹿井小渔_n6a7693b9/02_t1.jpg",
+    "103_鹿井小渔_n6a7693b9/03_t1.jpg",
+    "103_鹿井小渔_n6a7693b9/04_t1.jpg",
+    "103_鹿井小渔_n6a7693b9/05_t1.jpg",
+    "103_鹿井小渔_n6a7693b9/06_t1.jpg",
+    "103_鹿井小渔_n6a7693b9/07_t1.jpg",
+    "103_鹿井小渔_n6a7693b9/08_t1.jpg"
+   ]
+  },
+  {
+   "name": "104_鹿井小渔_n6a753ef5",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 14,
+   "n_face": 14,
+   "n_skin": 14,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     44.15,
+     64.75
+    ],
+    "p95": [
+     86.78,
+     91.78
+    ],
+    "p5": [
+     3.52,
+     9.2
+    ],
+    "contrast": [
+     79.46,
+     85.47
+    ],
+    "clip": [
+     0.04,
+     0.07
+    ],
+    "sky": [
+     0.06,
+     0.28
+    ],
+    "face_L": [
+     63.95,
+     74.7
+    ],
+    "face_C": [
+     16.9,
+     29.49
+    ],
+    "face_h": [
+     42.58,
+     56.92
+    ],
+    "toe": [
+     5.07,
+     28.54
+    ],
+    "shoulder": [
+     8.23,
+     16.23
+    ],
+    "contrast_win": [
+     54.7,
+     75.32
+    ],
+    "skew": [
+     45.19,
+     65.26
+    ],
+    "face_over_bg": [
+     0.83,
+     0.9
+    ],
+    "person_over_bg": [
+     1.31,
+     1.87
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -7.6,
+     1.55
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "104_鹿井小渔_n6a753ef5/01_t2.jpg",
+    "104_鹿井小渔_n6a753ef5/02_t2.jpg",
+    "104_鹿井小渔_n6a753ef5/03_t1.jpg",
+    "104_鹿井小渔_n6a753ef5/03_t2.jpg",
+    "104_鹿井小渔_n6a753ef5/04_t1.jpg",
+    "104_鹿井小渔_n6a753ef5/04_t2.jpg",
+    "104_鹿井小渔_n6a753ef5/05_t1.jpg",
+    "104_鹿井小渔_n6a753ef5/05_t2.jpg",
+    "104_鹿井小渔_n6a753ef5/06_t1.jpg",
+    "104_鹿井小渔_n6a753ef5/06_t2.jpg",
+    "104_鹿井小渔_n6a753ef5/07_t1.jpg",
+    "104_鹿井小渔_n6a753ef5/07_t2.jpg",
+    "104_鹿井小渔_n6a753ef5/08_t1.jpg",
+    "104_鹿井小渔_n6a753ef5/08_t2.jpg"
+   ]
+  },
+  {
+   "name": "105_鹿井小渔_n6a729970",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 8,
+   "n_face": 8,
+   "n_skin": 8,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     26.61,
+     57.46
+    ],
+    "p95": [
+     89.33,
+     95.96
+    ],
+    "p5": [
+     3.21,
+     10.45
+    ],
+    "contrast": [
+     81.68,
+     90.48
+    ],
+    "clip": [
+     0.04,
+     0.16
+    ],
+    "sky": [
+     0.03,
+     0.15
+    ],
+    "face_L": [
+     62.41,
+     72.01
+    ],
+    "face_C": [
+     17.3,
+     33.14
+    ],
+    "face_h": [
+     48.99,
+     60.46
+    ],
+    "toe": [
+     4.29,
+     15.34
+    ],
+    "shoulder": [
+     13.06,
+     26.08
+    ],
+    "contrast_win": [
+     70.43,
+     81.87
+    ],
+    "skew": [
+     50.77,
+     64.41
+    ],
+    "face_over_bg": [
+     0.73,
+     0.86
+    ],
+    "person_over_bg": [
+     1.48,
+     3.16
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -4.17,
+     1.88
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "105_鹿井小渔_n6a729970/01_t1.jpg",
+    "105_鹿井小渔_n6a729970/02_t1.jpg",
+    "105_鹿井小渔_n6a729970/03_t1.jpg",
+    "105_鹿井小渔_n6a729970/04_t1.jpg",
+    "105_鹿井小渔_n6a729970/04_t2.jpg",
+    "105_鹿井小渔_n6a729970/05_t1.jpg",
+    "105_鹿井小渔_n6a729970/06_t1.jpg",
+    "105_鹿井小渔_n6a729970/08_t1.jpg"
+   ]
+  },
+  {
+   "name": "106_鹿井小渔_n6a6ea5d3",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 9,
+   "n_face": 9,
+   "n_skin": 9,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     43.58,
+     59.32
+    ],
+    "p95": [
+     88.09,
+     92.92
+    ],
+    "p5": [
+     4.57,
+     11.69
+    ],
+    "contrast": [
+     77.9,
+     86.84
+    ],
+    "clip": [
+     0.04,
+     0.06
+    ],
+    "sky": [
+     0.07,
+     0.16
+    ],
+    "face_L": [
+     57.66,
+     72.79
+    ],
+    "face_C": [
+     13.3,
+     29.19
+    ],
+    "face_h": [
+     47.93,
+     55.02
+    ],
+    "toe": [
+     3.21,
+     22.39
+    ],
+    "shoulder": [
+     10.02,
+     21.97
+    ],
+    "contrast_win": [
+     61.99,
+     83.09
+    ],
+    "skew": [
+     46.62,
+     65.17
+    ],
+    "face_over_bg": [
+     0.73,
+     0.92
+    ],
+    "person_over_bg": [
+     1.29,
+     2.34
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -9.34,
+     1.49
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "106_鹿井小渔_n6a6ea5d3/01_t2.jpg",
+    "106_鹿井小渔_n6a6ea5d3/02_t1.jpg",
+    "106_鹿井小渔_n6a6ea5d3/03_t1.jpg",
+    "106_鹿井小渔_n6a6ea5d3/04_t2.jpg",
+    "106_鹿井小渔_n6a6ea5d3/05_t2.jpg",
+    "106_鹿井小渔_n6a6ea5d3/06_t1.jpg",
+    "106_鹿井小渔_n6a6ea5d3/06_t2.jpg",
+    "106_鹿井小渔_n6a6ea5d3/07_t1.jpg",
+    "106_鹿井小渔_n6a6ea5d3/08_t1.jpg"
+   ]
+  },
+  {
+   "name": "107_鹿井小渔_n6a6aed54",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 8,
+   "n_face": 8,
+   "n_skin": 8,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     26.89,
+     58.78
+    ],
+    "p95": [
+     86.83,
+     91.47
+    ],
+    "p5": [
+     7.97,
+     12.31
+    ],
+    "contrast": [
+     76.64,
+     82.15
+    ],
+    "clip": [
+     0.05,
+     0.07
+    ],
+    "sky": [
+     0.03,
+     0.11
+    ],
+    "face_L": [
+     55.08,
+     71.06
+    ],
+    "face_C": [
+     13.85,
+     40.52
+    ],
+    "face_h": [
+     35.75,
+     50.24
+    ],
+    "toe": [
+     3.02,
+     16.79
+    ],
+    "shoulder": [
+     9.95,
+     25.11
+    ],
+    "contrast_win": [
+     63.18,
+     75.95
+    ],
+    "skew": [
+     42.87,
+     64.33
+    ],
+    "face_over_bg": [
+     0.79,
+     0.93
+    ],
+    "person_over_bg": [
+     1.35,
+     2.38
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -2.42,
+     1.95
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "107_鹿井小渔_n6a6aed54/01_t1.jpg",
+    "107_鹿井小渔_n6a6aed54/01_t2.jpg",
+    "107_鹿井小渔_n6a6aed54/02_t1.jpg",
+    "107_鹿井小渔_n6a6aed54/02_t2.jpg",
+    "107_鹿井小渔_n6a6aed54/03_t1.jpg",
+    "107_鹿井小渔_n6a6aed54/03_t2.jpg",
+    "107_鹿井小渔_n6a6aed54/04_t1.jpg",
+    "107_鹿井小渔_n6a6aed54/04_t2.jpg"
+   ]
+  },
+  {
+   "name": "108_鹿井小渔_n6a657e88",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 10,
+   "n_face": 10,
+   "n_skin": 10,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     27.22,
+     41.16
+    ],
+    "p95": [
+     91.02,
+     94.74
+    ],
+    "p5": [
+     4.8,
+     8.05
+    ],
+    "contrast": [
+     83.42,
+     88.84
+    ],
+    "clip": [
+     0.05,
+     0.08
+    ],
+    "sky": [
+     0.03,
+     0.07
+    ],
+    "face_L": [
+     60.67,
+     71.67
+    ],
+    "face_C": [
+     18.89,
+     25.0
+    ],
+    "face_h": [
+     54.62,
+     65.09
+    ],
+    "toe": [
+     5.49,
+     12.3
+    ],
+    "shoulder": [
+     15.36,
+     23.79
+    ],
+    "contrast_win": [
+     72.6,
+     82.0
+    ],
+    "skew": [
+     52.02,
+     61.87
+    ],
+    "face_over_bg": [
+     0.74,
+     0.78
+    ],
+    "person_over_bg": [
+     2.29,
+     3.1
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -4.49,
+     4.54
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "108_鹿井小渔_n6a657e88/01_t1.jpg",
+    "108_鹿井小渔_n6a657e88/02_t1.jpg",
+    "108_鹿井小渔_n6a657e88/03_t1.jpg",
+    "108_鹿井小渔_n6a657e88/04_t1.jpg",
+    "108_鹿井小渔_n6a657e88/05_t1.jpg",
+    "108_鹿井小渔_n6a657e88/06_t1.jpg",
+    "108_鹿井小渔_n6a657e88/07_t1.jpg",
+    "108_鹿井小渔_n6a657e88/08_t1.jpg",
+    "108_鹿井小渔_n6a657e88/09_t1.jpg",
+    "108_鹿井小渔_n6a657e88/10_t1.jpg"
+   ]
+  },
+  {
+   "name": "109_鹿井小渔_n6a642594",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 14,
+   "n_face": 14,
+   "n_skin": 14,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     38.78,
+     68.84
+    ],
+    "p95": [
+     85.38,
+     93.82
+    ],
+    "p5": [
+     9.56,
+     17.22
+    ],
+    "contrast": [
+     73.75,
+     81.6
+    ],
+    "clip": [
+     0.05,
+     0.06
+    ],
+    "sky": [
+     0.03,
+     0.19
+    ],
+    "face_L": [
+     58.1,
+     71.86
+    ],
+    "face_C": [
+     21.75,
+     31.93
+    ],
+    "face_h": [
+     43.49,
+     49.23
+    ],
+    "toe": [
+     2.36,
+     26.66
+    ],
+    "shoulder": [
+     8.88,
+     27.18
+    ],
+    "contrast_win": [
+     51.56,
+     75.5
+    ],
+    "skew": [
+     35.39,
+     59.4
+    ],
+    "face_over_bg": [
+     0.71,
+     0.86
+    ],
+    "person_over_bg": [
+     1.21,
+     2.01
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -1.59,
+     3.39
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "109_鹿井小渔_n6a642594/01_t1.jpg",
+    "109_鹿井小渔_n6a642594/02_t1.jpg",
+    "109_鹿井小渔_n6a642594/03_t1.jpg",
+    "109_鹿井小渔_n6a642594/04_t1.jpg",
+    "109_鹿井小渔_n6a642594/05_t1.jpg",
+    "109_鹿井小渔_n6a642594/06_t1.jpg",
+    "109_鹿井小渔_n6a642594/07_t1.jpg",
+    "109_鹿井小渔_n6a642594/08_t1.jpg",
+    "109_鹿井小渔_n6a642594/09_t1.jpg",
+    "109_鹿井小渔_n6a642594/10_t1.jpg",
+    "109_鹿井小渔_n6a642594/11_t1.jpg",
+    "109_鹿井小渔_n6a642594/12_t1.jpg",
+    "109_鹿井小渔_n6a642594/13_t1.jpg",
+    "109_鹿井小渔_n6a642594/14_t1.jpg"
+   ]
+  },
+  {
+   "name": "110_鹿井小渔_n6a620c9a",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 9,
+   "n_face": 9,
+   "n_skin": 9,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     48.85,
+     78.19
+    ],
+    "p95": [
+     83.74,
+     92.21
+    ],
+    "p5": [
+     7.28,
+     11.27
+    ],
+    "contrast": [
+     75.98,
+     82.67
+    ],
+    "clip": [
+     0.04,
+     0.12
+    ],
+    "sky": [
+     0.01,
+     0.1
+    ],
+    "face_L": [
+     74.3,
+     78.13
+    ],
+    "face_C": [
+     17.33,
+     21.03
+    ],
+    "face_h": [
+     45.57,
+     52.39
+    ],
+    "toe": [
+     3.79,
+     44.95
+    ],
+    "shoulder": [
+     6.2,
+     16.49
+    ],
+    "contrast_win": [
+     35.61,
+     74.55
+    ],
+    "skew": [
+     25.97,
+     60.3
+    ],
+    "face_over_bg": [
+     0.86,
+     0.91
+    ],
+    "person_over_bg": [
+     0.22,
+     0.32
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     1.22,
+     7.04
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "110_鹿井小渔_n6a620c9a/01_t1.jpg",
+    "110_鹿井小渔_n6a620c9a/03_t1.jpg",
+    "110_鹿井小渔_n6a620c9a/04_t1.jpg",
+    "110_鹿井小渔_n6a620c9a/05_t1.jpg",
+    "110_鹿井小渔_n6a620c9a/06_t1.jpg",
+    "110_鹿井小渔_n6a620c9a/07_t1.jpg",
+    "110_鹿井小渔_n6a620c9a/08_t1.jpg",
+    "110_鹿井小渔_n6a620c9a/09_t1.jpg",
+    "110_鹿井小渔_n6a620c9a/10_t1.jpg"
+   ]
+  },
+  {
+   "name": "111_鹿井小渔_n6a606ed2",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 8,
+   "n_face": 8,
+   "n_skin": 8,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     34.44,
+     71.6
+    ],
+    "p95": [
+     86.66,
+     92.34
+    ],
+    "p5": [
+     6.0,
+     10.23
+    ],
+    "contrast": [
+     77.81,
+     84.85
+    ],
+    "clip": [
+     0.04,
+     0.06
+    ],
+    "sky": [
+     0.04,
+     0.22
+    ],
+    "face_L": [
+     64.81,
+     73.22
+    ],
+    "face_C": [
+     19.62,
+     30.36
+    ],
+    "face_h": [
+     45.59,
+     56.85
+    ],
+    "toe": [
+     4.95,
+     25.51
+    ],
+    "shoulder": [
+     6.02,
+     24.18
+    ],
+    "contrast_win": [
+     55.77,
+     76.92
+    ],
+    "skew": [
+     44.92,
+     65.89
+    ],
+    "face_over_bg": [
+     0.81,
+     0.95
+    ],
+    "person_over_bg": [
+     1.59,
+     2.27
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -3.75,
+     -0.46
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "111_鹿井小渔_n6a606ed2/01_t1.jpg",
+    "111_鹿井小渔_n6a606ed2/02_t1.jpg",
+    "111_鹿井小渔_n6a606ed2/03_t1.jpg",
+    "111_鹿井小渔_n6a606ed2/04_t1.jpg",
+    "111_鹿井小渔_n6a606ed2/05_t1.jpg",
+    "111_鹿井小渔_n6a606ed2/06_t1.jpg",
+    "111_鹿井小渔_n6a606ed2/07_t1.jpg",
+    "111_鹿井小渔_n6a606ed2/08_t1.jpg"
+   ]
+  },
+  {
+   "name": "112_鹿井小渔_n6a59cde8",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 13,
+   "n_face": 13,
+   "n_skin": 13,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     37.9,
+     72.53
+    ],
+    "p95": [
+     87.08,
+     92.08
+    ],
+    "p5": [
+     6.68,
+     11.99
+    ],
+    "contrast": [
+     76.17,
+     82.4
+    ],
+    "clip": [
+     0.05,
+     0.07
+    ],
+    "sky": [
+     0.02,
+     0.23
+    ],
+    "face_L": [
+     57.23,
+     67.74
+    ],
+    "face_C": [
+     20.25,
+     33.0
+    ],
+    "face_h": [
+     44.62,
+     55.67
+    ],
+    "toe": [
+     5.06,
+     32.26
+    ],
+    "shoulder": [
+     6.31,
+     22.81
+    ],
+    "contrast_win": [
+     45.53,
+     76.71
+    ],
+    "skew": [
+     32.22,
+     59.7
+    ],
+    "face_over_bg": [
+     0.74,
+     0.89
+    ],
+    "person_over_bg": [
+     1.14,
+     2.31
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -4.09,
+     0.82
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "112_鹿井小渔_n6a59cde8/01_t1.jpg",
+    "112_鹿井小渔_n6a59cde8/01_t2.jpg",
+    "112_鹿井小渔_n6a59cde8/02_t1.jpg",
+    "112_鹿井小渔_n6a59cde8/02_t2.jpg",
+    "112_鹿井小渔_n6a59cde8/03_t1.jpg",
+    "112_鹿井小渔_n6a59cde8/03_t2.jpg",
+    "112_鹿井小渔_n6a59cde8/04_t1.jpg",
+    "112_鹿井小渔_n6a59cde8/04_t2.jpg",
+    "112_鹿井小渔_n6a59cde8/05_t1.jpg",
+    "112_鹿井小渔_n6a59cde8/05_t2.jpg",
+    "112_鹿井小渔_n6a59cde8/06_t1.jpg",
+    "112_鹿井小渔_n6a59cde8/07_t1.jpg",
+    "112_鹿井小渔_n6a59cde8/07_t2.jpg"
+   ]
+  },
+  {
+   "name": "113_鹿井小渔_n6a58435c",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 11,
+   "n_face": 11,
+   "n_skin": 11,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     59.14,
+     70.31
+    ],
+    "p95": [
+     87.03,
+     90.61
+    ],
+    "p5": [
+     5.09,
+     10.3
+    ],
+    "contrast": [
+     76.57,
+     85.42
+    ],
+    "clip": [
+     0.04,
+     0.05
+    ],
+    "sky": [
+     0.06,
+     0.16
+    ],
+    "face_L": [
+     58.51,
+     68.51
+    ],
+    "face_C": [
+     17.21,
+     24.43
+    ],
+    "face_h": [
+     46.36,
+     54.43
+    ],
+    "toe": [
+     16.88,
+     32.88
+    ],
+    "shoulder": [
+     8.47,
+     11.76
+    ],
+    "contrast_win": [
+     43.99,
+     67.13
+    ],
+    "skew": [
+     35.37,
+     54.13
+    ],
+    "face_over_bg": [
+     0.68,
+     0.78
+    ],
+    "person_over_bg": [
+     1.04,
+     1.27
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -6.1,
+     3.61
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "113_鹿井小渔_n6a58435c/01_t1.jpg",
+    "113_鹿井小渔_n6a58435c/02_t1.jpg",
+    "113_鹿井小渔_n6a58435c/03_t1.jpg",
+    "113_鹿井小渔_n6a58435c/04_t1.jpg",
+    "113_鹿井小渔_n6a58435c/05_t1.jpg",
+    "113_鹿井小渔_n6a58435c/06_t1.jpg",
+    "113_鹿井小渔_n6a58435c/07_t1.jpg",
+    "113_鹿井小渔_n6a58435c/08_t1.jpg",
+    "113_鹿井小渔_n6a58435c/09_t1.jpg",
+    "113_鹿井小渔_n6a58435c/10_t1.jpg",
+    "113_鹿井小渔_n6a58435c/11_t1.jpg"
+   ]
+  },
+  {
+   "name": "114_鹿井小渔_n6a56f722",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 9,
+   "n_face": 9,
+   "n_skin": 9,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     48.96,
+     67.31
+    ],
+    "p95": [
+     88.75,
+     93.11
+    ],
+    "p5": [
+     10.77,
+     13.4
+    ],
+    "contrast": [
+     76.42,
+     81.93
+    ],
+    "clip": [
+     0.04,
+     0.05
+    ],
+    "sky": [
+     0.01,
+     0.04
+    ],
+    "face_L": [
+     59.32,
+     71.91
+    ],
+    "face_C": [
+     17.06,
+     24.39
+    ],
+    "face_h": [
+     48.06,
+     56.49
+    ],
+    "toe": [
+     10.08,
+     25.6
+    ],
+    "shoulder": [
+     7.68,
+     14.25
+    ],
+    "contrast_win": [
+     51.54,
+     70.66
+    ],
+    "skew": [
+     42.92,
+     60.45
+    ],
+    "face_over_bg": [
+     0.71,
+     0.8
+    ],
+    "person_over_bg": [
+     1.33,
+     1.81
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     0.26,
+     2.55
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "114_鹿井小渔_n6a56f722/01_t1.jpg",
+    "114_鹿井小渔_n6a56f722/02_t1.jpg",
+    "114_鹿井小渔_n6a56f722/03_t1.jpg",
+    "114_鹿井小渔_n6a56f722/04_t1.jpg",
+    "114_鹿井小渔_n6a56f722/05_t1.jpg",
+    "114_鹿井小渔_n6a56f722/06_t1.jpg",
+    "114_鹿井小渔_n6a56f722/07_t1.jpg",
+    "114_鹿井小渔_n6a56f722/08_t1.jpg",
+    "114_鹿井小渔_n6a56f722/09_t1.jpg"
+   ]
+  },
+  {
+   "name": "115_鹿井小渔_n6a523a22",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 12,
+   "n_face": 12,
+   "n_skin": 12,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     28.1,
+     62.68
+    ],
+    "p95": [
+     84.52,
+     89.68
+    ],
+    "p5": [
+     7.67,
+     10.29
+    ],
+    "contrast": [
+     75.45,
+     79.69
+    ],
+    "clip": [
+     0.05,
+     0.07
+    ],
+    "sky": [
+     0.03,
+     0.18
+    ],
+    "face_L": [
+     60.21,
+     79.27
+    ],
+    "face_C": [
+     12.24,
+     20.25
+    ],
+    "face_h": [
+     48.45,
+     60.58
+    ],
+    "toe": [
+     2.28,
+     19.15
+    ],
+    "shoulder": [
+     9.22,
+     28.49
+    ],
+    "contrast_win": [
+     56.43,
+     77.09
+    ],
+    "skew": [
+     42.99,
+     60.93
+    ],
+    "face_over_bg": [
+     0.85,
+     1.04
+    ],
+    "person_over_bg": [
+     1.25,
+     2.78
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -2.63,
+     1.55
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "115_鹿井小渔_n6a523a22/01_t2.jpg",
+    "115_鹿井小渔_n6a523a22/02_t1.jpg",
+    "115_鹿井小渔_n6a523a22/02_t2.jpg",
+    "115_鹿井小渔_n6a523a22/03_t1.jpg",
+    "115_鹿井小渔_n6a523a22/03_t2.jpg",
+    "115_鹿井小渔_n6a523a22/04_t1.jpg",
+    "115_鹿井小渔_n6a523a22/04_t2.jpg",
+    "115_鹿井小渔_n6a523a22/05_t1.jpg",
+    "115_鹿井小渔_n6a523a22/05_t2.jpg",
+    "115_鹿井小渔_n6a523a22/06_t2.jpg",
+    "115_鹿井小渔_n6a523a22/07_t1.jpg",
+    "115_鹿井小渔_n6a523a22/07_t2.jpg"
+   ]
+  },
+  {
+   "name": "116_鹿井小渔_n6a50db76",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 12,
+   "n_face": 12,
+   "n_skin": 12,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     52.8,
+     74.04
+    ],
+    "p95": [
+     83.59,
+     91.39
+    ],
+    "p5": [
+     4.68,
+     14.12
+    ],
+    "contrast": [
+     75.45,
+     84.58
+    ],
+    "clip": [
+     0.04,
+     0.07
+    ],
+    "sky": [
+     0.04,
+     0.19
+    ],
+    "face_L": [
+     55.75,
+     67.36
+    ],
+    "face_C": [
+     18.19,
+     25.74
+    ],
+    "face_h": [
+     46.47,
+     58.67
+    ],
+    "toe": [
+     19.24,
+     37.85
+    ],
+    "shoulder": [
+     4.99,
+     13.54
+    ],
+    "contrast_win": [
+     34.41,
+     63.76
+    ],
+    "skew": [
+     29.49,
+     51.44
+    ],
+    "face_over_bg": [
+     0.67,
+     0.79
+    ],
+    "person_over_bg": [
+     1.0,
+     1.29
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -6.85,
+     6.06
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "116_鹿井小渔_n6a50db76/01_t1.jpg",
+    "116_鹿井小渔_n6a50db76/01_t2.jpg",
+    "116_鹿井小渔_n6a50db76/02_t1.jpg",
+    "116_鹿井小渔_n6a50db76/02_t2.jpg",
+    "116_鹿井小渔_n6a50db76/03_t1.jpg",
+    "116_鹿井小渔_n6a50db76/03_t2.jpg",
+    "116_鹿井小渔_n6a50db76/04_t1.jpg",
+    "116_鹿井小渔_n6a50db76/04_t2.jpg",
+    "116_鹿井小渔_n6a50db76/05_t1.jpg",
+    "116_鹿井小渔_n6a50db76/05_t2.jpg",
+    "116_鹿井小渔_n6a50db76/06_t1.jpg",
+    "116_鹿井小渔_n6a50db76/06_t2.jpg"
+   ]
+  },
+  {
+   "name": "117_鹿井小渔_n6a4f15e0",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 14,
+   "n_face": 14,
+   "n_skin": 14,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     24.82,
+     62.24
+    ],
+    "p95": [
+     87.46,
+     93.29
+    ],
+    "p5": [
+     7.46,
+     11.74
+    ],
+    "contrast": [
+     79.31,
+     84.84
+    ],
+    "clip": [
+     0.04,
+     0.08
+    ],
+    "sky": [
+     0.01,
+     0.07
+    ],
+    "face_L": [
+     55.99,
+     73.2
+    ],
+    "face_C": [
+     23.16,
+     32.5
+    ],
+    "face_h": [
+     54.84,
+     65.3
+    ],
+    "toe": [
+     2.6,
+     14.41
+    ],
+    "shoulder": [
+     9.51,
+     34.08
+    ],
+    "contrast_win": [
+     65.69,
+     80.87
+    ],
+    "skew": [
+     42.04,
+     61.43
+    ],
+    "face_over_bg": [
+     0.68,
+     0.82
+    ],
+    "person_over_bg": [
+     1.35,
+     1.87
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -1.69,
+     3.06
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "117_鹿井小渔_n6a4f15e0/01_t1.jpg",
+    "117_鹿井小渔_n6a4f15e0/01_t2.jpg",
+    "117_鹿井小渔_n6a4f15e0/02_t1.jpg",
+    "117_鹿井小渔_n6a4f15e0/03_t1.jpg",
+    "117_鹿井小渔_n6a4f15e0/03_t2.jpg",
+    "117_鹿井小渔_n6a4f15e0/04_t1.jpg",
+    "117_鹿井小渔_n6a4f15e0/05_t1.jpg",
+    "117_鹿井小渔_n6a4f15e0/05_t2.jpg",
+    "117_鹿井小渔_n6a4f15e0/06_t1.jpg",
+    "117_鹿井小渔_n6a4f15e0/06_t2.jpg",
+    "117_鹿井小渔_n6a4f15e0/07_t1.jpg",
+    "117_鹿井小渔_n6a4f15e0/08_t1.jpg",
+    "117_鹿井小渔_n6a4f15e0/09_t1.jpg",
+    "117_鹿井小渔_n6a4f15e0/10_t1.jpg"
+   ]
+  },
+  {
+   "name": "118_鹿井小渔_n6a4db9bc",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 13,
+   "n_face": 13,
+   "n_skin": 13,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     38.16,
+     74.09
+    ],
+    "p95": [
+     84.55,
+     90.78
+    ],
+    "p5": [
+     6.82,
+     9.99
+    ],
+    "contrast": [
+     75.51,
+     83.31
+    ],
+    "clip": [
+     0.03,
+     0.07
+    ],
+    "sky": [
+     0.01,
+     0.1
+    ],
+    "face_L": [
+     59.09,
+     76.88
+    ],
+    "face_C": [
+     15.49,
+     46.06
+    ],
+    "face_h": [
+     38.78,
+     58.01
+    ],
+    "toe": [
+     4.0,
+     32.46
+    ],
+    "shoulder": [
+     6.76,
+     18.58
+    ],
+    "contrast_win": [
+     47.81,
+     74.01
+    ],
+    "skew": [
+     38.18,
+     63.2
+    ],
+    "face_over_bg": [
+     0.72,
+     0.86
+    ],
+    "person_over_bg": [
+     0.37,
+     0.76
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     0.64,
+     14.73
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "118_鹿井小渔_n6a4db9bc/01_t1.jpg",
+    "118_鹿井小渔_n6a4db9bc/01_t2.jpg",
+    "118_鹿井小渔_n6a4db9bc/02_t1.jpg",
+    "118_鹿井小渔_n6a4db9bc/02_t2.jpg",
+    "118_鹿井小渔_n6a4db9bc/03_t1.jpg",
+    "118_鹿井小渔_n6a4db9bc/03_t2.jpg",
+    "118_鹿井小渔_n6a4db9bc/04_t1.jpg",
+    "118_鹿井小渔_n6a4db9bc/05_t1.jpg",
+    "118_鹿井小渔_n6a4db9bc/05_t2.jpg",
+    "118_鹿井小渔_n6a4db9bc/06_t1.jpg",
+    "118_鹿井小渔_n6a4db9bc/06_t2.jpg",
+    "118_鹿井小渔_n6a4db9bc/07_t1.jpg",
+    "118_鹿井小渔_n6a4db9bc/08_t1.jpg"
+   ]
+  },
+  {
+   "name": "119_鹿井小渔_n6a487f2f",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 16,
+   "n_face": 16,
+   "n_skin": 16,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     33.45,
+     65.93
+    ],
+    "p95": [
+     85.49,
+     90.48
+    ],
+    "p5": [
+     8.67,
+     17.4
+    ],
+    "contrast": [
+     70.72,
+     80.73
+    ],
+    "clip": [
+     0.04,
+     0.07
+    ],
+    "sky": [
+     0.01,
+     0.1
+    ],
+    "face_L": [
+     58.55,
+     71.06
+    ],
+    "face_C": [
+     21.73,
+     32.1
+    ],
+    "face_h": [
+     55.05,
+     63.8
+    ],
+    "toe": [
+     1.64,
+     24.8
+    ],
+    "shoulder": [
+     7.81,
+     26.13
+    ],
+    "contrast_win": [
+     46.9,
+     77.43
+    ],
+    "skew": [
+     34.08,
+     57.61
+    ],
+    "face_over_bg": [
+     0.75,
+     0.88
+    ],
+    "person_over_bg": [
+     1.47,
+     2.15
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -3.43,
+     1.36
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "119_鹿井小渔_n6a487f2f/01_t1.jpg",
+    "119_鹿井小渔_n6a487f2f/01_t2.jpg",
+    "119_鹿井小渔_n6a487f2f/02_t1.jpg",
+    "119_鹿井小渔_n6a487f2f/02_t2.jpg",
+    "119_鹿井小渔_n6a487f2f/03_t1.jpg",
+    "119_鹿井小渔_n6a487f2f/03_t2.jpg",
+    "119_鹿井小渔_n6a487f2f/04_t1.jpg",
+    "119_鹿井小渔_n6a487f2f/04_t2.jpg",
+    "119_鹿井小渔_n6a487f2f/05_t1.jpg",
+    "119_鹿井小渔_n6a487f2f/05_t2.jpg",
+    "119_鹿井小渔_n6a487f2f/06_t1.jpg",
+    "119_鹿井小渔_n6a487f2f/06_t2.jpg",
+    "119_鹿井小渔_n6a487f2f/07_t1.jpg",
+    "119_鹿井小渔_n6a487f2f/07_t2.jpg",
+    "119_鹿井小渔_n6a487f2f/08_t1.jpg",
+    "119_鹿井小渔_n6a487f2f/08_t2.jpg"
+   ]
+  },
+  {
+   "name": "120_鹿井小渔_n6a472c2b",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 9,
+   "n_face": 9,
+   "n_skin": 9,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     52.33,
+     67.67
+    ],
+    "p95": [
+     85.84,
+     93.6
+    ],
+    "p5": [
+     11.22,
+     16.96
+    ],
+    "contrast": [
+     70.56,
+     79.31
+    ],
+    "clip": [
+     0.04,
+     0.07
+    ],
+    "sky": [
+     0.01,
+     0.08
+    ],
+    "face_L": [
+     45.54,
+     70.46
+    ],
+    "face_C": [
+     14.91,
+     27.58
+    ],
+    "face_h": [
+     44.7,
+     58.1
+    ],
+    "toe": [
+     12.81,
+     31.84
+    ],
+    "shoulder": [
+     9.04,
+     16.8
+    ],
+    "contrast_win": [
+     41.7,
+     64.28
+    ],
+    "skew": [
+     34.18,
+     48.15
+    ],
+    "face_over_bg": [
+     0.6,
+     0.88
+    ],
+    "person_over_bg": [
+     0.81,
+     1.13
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     2.52,
+     12.94
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "120_鹿井小渔_n6a472c2b/01_t1.jpg",
+    "120_鹿井小渔_n6a472c2b/02_t1.jpg",
+    "120_鹿井小渔_n6a472c2b/02_t2.jpg",
+    "120_鹿井小渔_n6a472c2b/03_t1.jpg",
+    "120_鹿井小渔_n6a472c2b/03_t2.jpg",
+    "120_鹿井小渔_n6a472c2b/04_t1.jpg",
+    "120_鹿井小渔_n6a472c2b/04_t2.jpg",
+    "120_鹿井小渔_n6a472c2b/05_t1.jpg",
+    "120_鹿井小渔_n6a472c2b/05_t2.jpg"
+   ]
+  },
+  {
+   "name": "121_鹿井小渔_n6a464d1f",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 12,
+   "n_face": 12,
+   "n_skin": 12,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     35.2,
+     65.35
+    ],
+    "p95": [
+     86.31,
+     92.01
+    ],
+    "p5": [
+     3.99,
+     8.99
+    ],
+    "contrast": [
+     79.95,
+     85.66
+    ],
+    "clip": [
+     0.04,
+     0.11
+    ],
+    "sky": [
+     0.01,
+     0.14
+    ],
+    "face_L": [
+     65.55,
+     78.32
+    ],
+    "face_C": [
+     17.43,
+     24.94
+    ],
+    "face_h": [
+     49.1,
+     65.8
+    ],
+    "toe": [
+     5.94,
+     21.39
+    ],
+    "shoulder": [
+     6.61,
+     22.33
+    ],
+    "contrast_win": [
+     62.32,
+     75.65
+    ],
+    "skew": [
+     50.94,
+     61.75
+    ],
+    "face_over_bg": [
+     0.79,
+     0.89
+    ],
+    "person_over_bg": [
+     0.4,
+     1.29
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -3.55,
+     0.48
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "121_鹿井小渔_n6a464d1f/02_t1.jpg",
+    "121_鹿井小渔_n6a464d1f/03_t1.jpg",
+    "121_鹿井小渔_n6a464d1f/04_t1.jpg",
+    "121_鹿井小渔_n6a464d1f/05_t1.jpg",
+    "121_鹿井小渔_n6a464d1f/06_t1.jpg",
+    "121_鹿井小渔_n6a464d1f/07_t1.jpg",
+    "121_鹿井小渔_n6a464d1f/08_t1.jpg",
+    "121_鹿井小渔_n6a464d1f/09_t1.jpg",
+    "121_鹿井小渔_n6a464d1f/10_t1.jpg",
+    "121_鹿井小渔_n6a464d1f/11_t1.jpg",
+    "121_鹿井小渔_n6a464d1f/12_t1.jpg",
+    "121_鹿井小渔_n6a464d1f/13_t1.jpg"
+   ]
+  },
+  {
+   "name": "122_鹿井小渔_n6a4331a5",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 12,
+   "n_face": 12,
+   "n_skin": 12,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     33.35,
+     54.57
+    ],
+    "p95": [
+     85.26,
+     91.06
+    ],
+    "p5": [
+     5.22,
+     7.44
+    ],
+    "contrast": [
+     79.39,
+     85.28
+    ],
+    "clip": [
+     0.05,
+     0.07
+    ],
+    "sky": [
+     0.01,
+     0.08
+    ],
+    "face_L": [
+     63.45,
+     75.46
+    ],
+    "face_C": [
+     15.94,
+     23.72
+    ],
+    "face_h": [
+     50.17,
+     64.14
+    ],
+    "toe": [
+     4.5,
+     13.53
+    ],
+    "shoulder": [
+     8.89,
+     22.61
+    ],
+    "contrast_win": [
+     66.03,
+     78.7
+    ],
+    "skew": [
+     52.52,
+     64.2
+    ],
+    "face_over_bg": [
+     0.82,
+     0.87
+    ],
+    "person_over_bg": [
+     0.57,
+     0.99
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -4.39,
+     1.15
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "122_鹿井小渔_n6a4331a5/01_t1.jpg",
+    "122_鹿井小渔_n6a4331a5/01_t2.jpg",
+    "122_鹿井小渔_n6a4331a5/02_t1.jpg",
+    "122_鹿井小渔_n6a4331a5/02_t2.jpg",
+    "122_鹿井小渔_n6a4331a5/03_t1.jpg",
+    "122_鹿井小渔_n6a4331a5/03_t2.jpg",
+    "122_鹿井小渔_n6a4331a5/04_t1.jpg",
+    "122_鹿井小渔_n6a4331a5/04_t2.jpg",
+    "122_鹿井小渔_n6a4331a5/05_t1.jpg",
+    "122_鹿井小渔_n6a4331a5/05_t2.jpg",
+    "122_鹿井小渔_n6a4331a5/06_t1.jpg",
+    "122_鹿井小渔_n6a4331a5/06_t2.jpg"
+   ]
+  },
+  {
+   "name": "123_鹿井小渔_n6a408475",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 11,
+   "n_face": 11,
+   "n_skin": 11,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     24.13,
+     42.08
+    ],
+    "p95": [
+     82.34,
+     89.86
+    ],
+    "p5": [
+     4.41,
+     6.98
+    ],
+    "contrast": [
+     77.02,
+     82.91
+    ],
+    "clip": [
+     0.04,
+     0.05
+    ],
+    "sky": [
+     0.0,
+     0.1
+    ],
+    "face_L": [
+     60.98,
+     77.29
+    ],
+    "face_C": [
+     16.44,
+     36.07
+    ],
+    "face_h": [
+     52.41,
+     61.23
+    ],
+    "toe": [
+     1.28,
+     11.32
+    ],
+    "shoulder": [
+     13.13,
+     28.12
+    ],
+    "contrast_win": [
+     68.5,
+     79.86
+    ],
+    "skew": [
+     42.57,
+     63.02
+    ],
+    "face_over_bg": [
+     0.8,
+     1.07
+    ],
+    "person_over_bg": [
+     1.55,
+     2.52
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -5.61,
+     4.93
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "123_鹿井小渔_n6a408475/01_t1.jpg",
+    "123_鹿井小渔_n6a408475/02_t1.jpg",
+    "123_鹿井小渔_n6a408475/03_t1.jpg",
+    "123_鹿井小渔_n6a408475/04_t1.jpg",
+    "123_鹿井小渔_n6a408475/05_t1.jpg",
+    "123_鹿井小渔_n6a408475/06_t1.jpg",
+    "123_鹿井小渔_n6a408475/07_t1.jpg",
+    "123_鹿井小渔_n6a408475/08_t1.jpg",
+    "123_鹿井小渔_n6a408475/09_t1.jpg",
+    "123_鹿井小渔_n6a408475/10_t1.jpg",
+    "123_鹿井小渔_n6a408475/11_t1.jpg"
+   ]
+  },
+  {
+   "name": "124_鹿井小渔_n6a3df798",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 12,
+   "n_face": 12,
+   "n_skin": 12,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     22.56,
+     58.06
+    ],
+    "p95": [
+     84.45,
+     90.75
+    ],
+    "p5": [
+     3.75,
+     6.25
+    ],
+    "contrast": [
+     78.62,
+     83.96
+    ],
+    "clip": [
+     0.04,
+     0.07
+    ],
+    "sky": [
+     0.01,
+     0.06
+    ],
+    "face_L": [
+     62.02,
+     74.93
+    ],
+    "face_C": [
+     17.46,
+     26.82
+    ],
+    "face_h": [
+     49.52,
+     61.29
+    ],
+    "toe": [
+     1.39,
+     20.03
+    ],
+    "shoulder": [
+     11.3,
+     28.48
+    ],
+    "contrast_win": [
+     63.51,
+     78.57
+    ],
+    "skew": [
+     48.07,
+     60.57
+    ],
+    "face_over_bg": [
+     0.82,
+     1.04
+    ],
+    "person_over_bg": [
+     1.82,
+     2.78
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -5.08,
+     -0.17
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "124_鹿井小渔_n6a3df798/01_t1.jpg",
+    "124_鹿井小渔_n6a3df798/01_t2.jpg",
+    "124_鹿井小渔_n6a3df798/02_t1.jpg",
+    "124_鹿井小渔_n6a3df798/02_t2.jpg",
+    "124_鹿井小渔_n6a3df798/03_t1.jpg",
+    "124_鹿井小渔_n6a3df798/03_t2.jpg",
+    "124_鹿井小渔_n6a3df798/04_t1.jpg",
+    "124_鹿井小渔_n6a3df798/04_t2.jpg",
+    "124_鹿井小渔_n6a3df798/05_t1.jpg",
+    "124_鹿井小渔_n6a3df798/05_t2.jpg",
+    "124_鹿井小渔_n6a3df798/06_t1.jpg",
+    "124_鹿井小渔_n6a3df798/06_t2.jpg"
+   ]
+  },
+  {
+   "name": "125_鹿井小渔_n6a3ca43f",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 12,
+   "n_face": 12,
+   "n_skin": 12,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     27.16,
+     38.31
+    ],
+    "p95": [
+     88.38,
+     93.15
+    ],
+    "p5": [
+     5.9,
+     11.23
+    ],
+    "contrast": [
+     81.17,
+     84.97
+    ],
+    "clip": [
+     0.05,
+     0.06
+    ],
+    "sky": [
+     0.03,
+     0.08
+    ],
+    "face_L": [
+     61.96,
+     70.98
+    ],
+    "face_C": [
+     19.51,
+     24.11
+    ],
+    "face_h": [
+     60.25,
+     72.13
+    ],
+    "toe": [
+     3.53,
+     10.64
+    ],
+    "shoulder": [
+     17.54,
+     26.84
+    ],
+    "contrast_win": [
+     71.62,
+     80.71
+    ],
+    "skew": [
+     48.59,
+     60.9
+    ],
+    "face_over_bg": [
+     0.76,
+     0.84
+    ],
+    "person_over_bg": [
+     0.62,
+     2.34
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -2.06,
+     0.47
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "125_鹿井小渔_n6a3ca43f/01_t1.jpg",
+    "125_鹿井小渔_n6a3ca43f/02_t1.jpg",
+    "125_鹿井小渔_n6a3ca43f/03_t1.jpg",
+    "125_鹿井小渔_n6a3ca43f/04_t1.jpg",
+    "125_鹿井小渔_n6a3ca43f/05_t1.jpg",
+    "125_鹿井小渔_n6a3ca43f/06_t1.jpg",
+    "125_鹿井小渔_n6a3ca43f/07_t1.jpg",
+    "125_鹿井小渔_n6a3ca43f/08_t1.jpg",
+    "125_鹿井小渔_n6a3ca43f/10_t1.jpg",
+    "125_鹿井小渔_n6a3ca43f/11_t1.jpg",
+    "125_鹿井小渔_n6a3ca43f/12_t1.jpg",
+    "125_鹿井小渔_n6a3ca43f/13_t1.jpg"
+   ]
+  },
+  {
+   "name": "126_鹿井小渔_n6a3753bc",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 10,
+   "n_face": 10,
+   "n_skin": 10,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     22.76,
+     63.9
+    ],
+    "p95": [
+     85.09,
+     91.24
+    ],
+    "p5": [
+     5.75,
+     9.49
+    ],
+    "contrast": [
+     78.62,
+     84.12
+    ],
+    "clip": [
+     0.05,
+     0.08
+    ],
+    "sky": [
+     0.02,
+     0.26
+    ],
+    "face_L": [
+     58.31,
+     69.01
+    ],
+    "face_C": [
+     14.24,
+     24.73
+    ],
+    "face_h": [
+     56.27,
+     66.56
+    ],
+    "toe": [
+     2.88,
+     22.25
+    ],
+    "shoulder": [
+     8.2,
+     29.43
+    ],
+    "contrast_win": [
+     60.11,
+     81.66
+    ],
+    "skew": [
+     44.39,
+     61.47
+    ],
+    "face_over_bg": [
+     0.7,
+     0.86
+    ],
+    "person_over_bg": [
+     0.77,
+     1.54
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -7.93,
+     2.64
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "126_鹿井小渔_n6a3753bc/01_t1.jpg",
+    "126_鹿井小渔_n6a3753bc/01_t2.jpg",
+    "126_鹿井小渔_n6a3753bc/02_t1.jpg",
+    "126_鹿井小渔_n6a3753bc/02_t2.jpg",
+    "126_鹿井小渔_n6a3753bc/03_t1.jpg",
+    "126_鹿井小渔_n6a3753bc/03_t2.jpg",
+    "126_鹿井小渔_n6a3753bc/04_t1.jpg",
+    "126_鹿井小渔_n6a3753bc/04_t2.jpg",
+    "126_鹿井小渔_n6a3753bc/05_t1.jpg",
+    "126_鹿井小渔_n6a3753bc/05_t2.jpg"
+   ]
+  },
+  {
+   "name": "127_鹿井小渔_n6a321d2d",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 7,
+   "n_face": 7,
+   "n_skin": 7,
+   "n_strict": 0,
+   "thin": true,
+   "bands": {
+    "p50": [
+     55.49,
+     73.38
+    ],
+    "p95": [
+     89.7,
+     90.95
+    ],
+    "p5": [
+     3.47,
+     7.28
+    ],
+    "contrast": [
+     82.98,
+     86.36
+    ],
+    "clip": [
+     0.05,
+     0.07
+    ],
+    "sky": [
+     0.07,
+     0.14
+    ],
+    "face_L": [
+     57.29,
+     69.77
+    ],
+    "face_C": [
+     18.93,
+     24.1
+    ],
+    "face_h": [
+     41.54,
+     55.11
+    ],
+    "toe": [
+     10.95,
+     38.62
+    ],
+    "shoulder": [
+     5.69,
+     13.27
+    ],
+    "contrast_win": [
+     45.06,
+     75.92
+    ],
+    "skew": [
+     38.6,
+     64.45
+    ],
+    "face_over_bg": [
+     0.67,
+     0.81
+    ],
+    "person_over_bg": [
+     0.86,
+     1.36
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -4.78,
+     -2.21
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "127_鹿井小渔_n6a321d2d/01_t2.jpg",
+    "127_鹿井小渔_n6a321d2d/02_t1.jpg",
+    "127_鹿井小渔_n6a321d2d/02_t2.jpg",
+    "127_鹿井小渔_n6a321d2d/03_t1.jpg",
+    "127_鹿井小渔_n6a321d2d/03_t2.jpg",
+    "127_鹿井小渔_n6a321d2d/04_t1.jpg",
+    "127_鹿井小渔_n6a321d2d/04_t2.jpg"
+   ]
+  },
+  {
+   "name": "128_鹿井小渔_n6a312aef",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 12,
+   "n_face": 12,
+   "n_skin": 12,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     34.67,
+     80.83
+    ],
+    "p95": [
+     92.43,
+     94.52
+    ],
+    "p5": [
+     6.84,
+     9.08
+    ],
+    "contrast": [
+     84.79,
+     86.53
+    ],
+    "clip": [
+     0.04,
+     0.07
+    ],
+    "sky": [
+     0.04,
+     0.15
+    ],
+    "face_L": [
+     54.7,
+     74.98
+    ],
+    "face_C": [
+     16.34,
+     26.97
+    ],
+    "face_h": [
+     39.33,
+     66.89
+    ],
+    "toe": [
+     7.33,
+     41.15
+    ],
+    "shoulder": [
+     3.67,
+     22.11
+    ],
+    "contrast_win": [
+     45.28,
+     74.89
+    ],
+    "skew": [
+     41.4,
+     61.5
+    ],
+    "face_over_bg": [
+     0.67,
+     0.75
+    ],
+    "person_over_bg": [
+     0.52,
+     0.84
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -3.58,
+     2.2
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "128_鹿井小渔_n6a312aef/01_t1.jpg",
+    "128_鹿井小渔_n6a312aef/02_t1.jpg",
+    "128_鹿井小渔_n6a312aef/02_t2.jpg",
+    "128_鹿井小渔_n6a312aef/03_t1.jpg",
+    "128_鹿井小渔_n6a312aef/03_t2.jpg",
+    "128_鹿井小渔_n6a312aef/04_t1.jpg",
+    "128_鹿井小渔_n6a312aef/05_t1.jpg",
+    "128_鹿井小渔_n6a312aef/05_t2.jpg",
+    "128_鹿井小渔_n6a312aef/06_t1.jpg",
+    "128_鹿井小渔_n6a312aef/06_t2.jpg",
+    "128_鹿井小渔_n6a312aef/07_t1.jpg",
+    "128_鹿井小渔_n6a312aef/08_t1.jpg"
+   ]
+  },
+  {
+   "name": "129_鹿井小渔_n6a2d3b5a",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 11,
+   "n_face": 11,
+   "n_skin": 11,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     50.76,
+     80.07
+    ],
+    "p95": [
+     90.88,
+     94.51
+    ],
+    "p5": [
+     4.12,
+     9.03
+    ],
+    "contrast": [
+     83.59,
+     87.28
+    ],
+    "clip": [
+     0.04,
+     0.06
+    ],
+    "sky": [
+     0.06,
+     0.3
+    ],
+    "face_L": [
+     55.51,
+     68.84
+    ],
+    "face_C": [
+     18.79,
+     31.99
+    ],
+    "face_h": [
+     42.0,
+     48.12
+    ],
+    "toe": [
+     5.72,
+     42.7
+    ],
+    "shoulder": [
+     4.57,
+     16.62
+    ],
+    "contrast_win": [
+     41.79,
+     79.8
+    ],
+    "skew": [
+     36.83,
+     60.16
+    ],
+    "face_over_bg": [
+     0.63,
+     0.76
+    ],
+    "person_over_bg": [
+     0.9,
+     1.06
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -5.59,
+     -3.49
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "129_鹿井小渔_n6a2d3b5a/01_t1.jpg",
+    "129_鹿井小渔_n6a2d3b5a/03_t1.jpg",
+    "129_鹿井小渔_n6a2d3b5a/04_t1.jpg",
+    "129_鹿井小渔_n6a2d3b5a/05_t1.jpg",
+    "129_鹿井小渔_n6a2d3b5a/06_t1.jpg",
+    "129_鹿井小渔_n6a2d3b5a/07_t1.jpg",
+    "129_鹿井小渔_n6a2d3b5a/08_t1.jpg",
+    "129_鹿井小渔_n6a2d3b5a/09_t1.jpg",
+    "129_鹿井小渔_n6a2d3b5a/10_t1.jpg",
+    "129_鹿井小渔_n6a2d3b5a/11_t1.jpg",
+    "129_鹿井小渔_n6a2d3b5a/13_t1.jpg"
+   ]
+  },
+  {
+   "name": "130_鹿井小渔_n6a2a1c06",
+   "corpus": "鹿井",
+   "cond_table": "鹿井",
+   "n": 11,
+   "n_face": 11,
+   "n_skin": 11,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     30.74,
+     58.02
+    ],
+    "p95": [
+     89.62,
+     93.8
+    ],
+    "p5": [
+     5.18,
+     7.93
+    ],
+    "contrast": [
+     80.76,
+     87.05
+    ],
+    "clip": [
+     0.03,
+     0.07
+    ],
+    "sky": [
+     0.03,
+     0.21
+    ],
+    "face_L": [
+     60.59,
+     80.33
+    ],
+    "face_C": [
+     21.39,
+     27.74
+    ],
+    "face_h": [
+     42.05,
+     70.48
+    ],
+    "toe": [
+     4.34,
+     25.07
+    ],
+    "shoulder": [
+     3.8,
+     22.88
+    ],
+    "contrast_win": [
+     59.18,
+     82.92
+    ],
+    "skew": [
+     41.65,
+     62.94
+    ],
+    "face_over_bg": [
+     0.68,
+     0.9
+    ],
+    "person_over_bg": [
+     0.63,
+     1.08
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -2.29,
+     7.06
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "130_鹿井小渔_n6a2a1c06/01_t1.jpg",
+    "130_鹿井小渔_n6a2a1c06/02_t1.jpg",
+    "130_鹿井小渔_n6a2a1c06/02_t2.jpg",
+    "130_鹿井小渔_n6a2a1c06/03_t2.jpg",
+    "130_鹿井小渔_n6a2a1c06/04_t1.jpg",
+    "130_鹿井小渔_n6a2a1c06/04_t2.jpg",
+    "130_鹿井小渔_n6a2a1c06/05_t1.jpg",
+    "130_鹿井小渔_n6a2a1c06/06_t1.jpg",
+    "130_鹿井小渔_n6a2a1c06/06_t2.jpg",
+    "130_鹿井小渔_n6a2a1c06/07_t1.jpg",
+    "130_鹿井小渔_n6a2a1c06/07_t2.jpg"
+   ]
+  },
+  {
+   "name": "xhs（整套）",
+   "corpus": "xhs",
+   "cond_table": "xhs",
+   "n": 59,
+   "n_face": 56,
+   "n_skin": 59,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     39.33,
+     72.63
+    ],
+    "p95": [
+     87.6,
+     99.06
+    ],
+    "p5": [
+     0.28,
+     18.15
+    ],
+    "contrast": [
+     75.99,
+     97.38
+    ],
+    "clip": [
+     0.05,
+     3.8
+    ],
+    "sky": [
+     0.0,
+     0.16
+    ],
+    "face_L": [
+     63.77,
+     82.74
+    ],
+    "face_C": [
+     14.43,
+     29.82
+    ],
+    "face_h": [
+     46.54,
+     68.66
+    ],
+    "toe": [
+     9.72,
+     32.69
+    ],
+    "shoulder": [
+     8.59,
+     25.14
+    ],
+    "contrast_win": [
+     47.05,
+     78.32
+    ],
+    "skew": [
+     36.04,
+     62.84
+    ],
+    "face_over_bg": [
+     0.74,
+     0.95
+    ],
+    "person_over_bg": [
+     0.99,
+     1.88
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -6.29,
+     5.88
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "001_不詹锅_阴天森林的生日碎片🍃_-_不詹锅_小红书_-_你的生活兴趣社区/01.jpg",
+    "001_不詹锅_阴天森林的生日碎片🍃_-_不詹锅_小红书_-_你的生活兴趣社区/02.jpg",
+    "001_不詹锅_阴天森林的生日碎片🍃_-_不詹锅_小红书_-_你的生活兴趣社区/04.jpg",
+    "001_不詹锅_阴天森林的生日碎片🍃_-_不詹锅_小红书_-_你的生活兴趣社区/05.jpg",
+    "002_不詹锅_是你记忆中的稻田吗_-_不詹锅_小红书_-_你的生活兴趣社区/02.jpg",
+    "002_不詹锅_是你记忆中的稻田吗_-_不詹锅_小红书_-_你的生活兴趣社区/04.jpg",
+    "003_不詹锅_生命需要光合作用🌻_-_不詹锅_小红书_-_你的生活兴趣社区/03.jpg",
+    "004_不詹锅_🎞️把一整个夏天装进胶片里_-_不詹锅_小红书_-_你的生活兴趣社区/02.jpg",
+    "004_不詹锅_🎞️把一整个夏天装进胶片里_-_不詹锅_小红书_-_你的生活兴趣社区/03.jpg",
+    "004_不詹锅_🎞️把一整个夏天装进胶片里_-_不詹锅_小红书_-_你的生活兴趣社区/04.jpg",
+    "004_不詹锅_🎞️把一整个夏天装进胶片里_-_不詹锅_小红书_-_你的生活兴趣社区/05.jpg",
+    "005_不詹锅_来存一些春日活人感拍照姿势吧！_-_不詹锅_小红书_-_你的生活兴趣社区/01.jpg",
+    "005_不詹锅_来存一些春日活人感拍照姿势吧！_-_不詹锅_小红书_-_你的生活兴趣社区/03.jpg",
+    "006_不詹锅_🎞️趁着春天去花鸟市场拍照吧_-_不詹锅_小红书_-_你的生活兴趣社区/01.jpg",
+    "006_不詹锅_🎞️趁着春天去花鸟市场拍照吧_-_不詹锅_小红书_-_你的生活兴趣社区/02.jpg",
+    "006_不詹锅_🎞️趁着春天去花鸟市场拍照吧_-_不詹锅_小红书_-_你的生活兴趣社区/03.jpg",
+    "006_不詹锅_🎞️趁着春天去花鸟市场拍照吧_-_不詹锅_小红书_-_你的生活兴趣社区/04.jpg",
+    "006_不詹锅_🎞️趁着春天去花鸟市场拍照吧_-_不詹锅_小红书_-_你的生活兴趣社区/05.jpg",
+    "007_不詹锅_天气好，来拍胶片吧！☀️_-_不詹锅_小红书_-_你的生活兴趣社区/01.jpg",
+    "007_不詹锅_天气好，来拍胶片吧！☀️_-_不詹锅_小红书_-_你的生活兴趣社区/02.jpg",
+    "007_不詹锅_天气好，来拍胶片吧！☀️_-_不詹锅_小红书_-_你的生活兴趣社区/03.jpg",
+    "007_不詹锅_天气好，来拍胶片吧！☀️_-_不詹锅_小红书_-_你的生活兴趣社区/05.jpg",
+    "_单图/001_01_c00.jpg",
+    "_单图/001_02_c00.jpg",
+    "_单图/001_04_c00.jpg",
+    "_单图/001_05_c00.jpg",
+    "_单图/002_01_c02.jpg",
+    "_单图/002_02_c01.jpg",
+    "_单图/002_02_c02.jpg",
+    "_单图/002_04_c00.jpg",
+    "_单图/003_01_c02.jpg",
+    "_单图/003_03_c01.jpg",
+    "_单图/003_03_c02.jpg",
+    "_单图/004_01_c01.jpg",
+    "_单图/004_02_c02.jpg",
+    "_单图/004_03_c01.jpg",
+    "_单图/004_03_c02.jpg",
+    "_单图/004_04_c01.jpg",
+    "_单图/004_04_c02.jpg",
+    "_单图/004_05_c01.jpg",
+    "_单图/004_05_c02.jpg",
+    "_单图/005_01_c01.jpg",
+    "_单图/005_01_c02.jpg",
+    "_单图/005_02_c01.jpg",
+    "_单图/005_03_c00.jpg",
+    "_单图/005_04_c01.jpg",
+    "_单图/005_04_c02.jpg",
+    "_单图/005_05_c01.jpg",
+    "_单图/006_01_c02.jpg",
+    "_单图/006_02_c02.jpg",
+    "_单图/006_03_c00.jpg",
+    "_单图/006_04_c00.jpg",
+    "_单图/006_05_c00.jpg",
+    "_单图/007_01_c01.jpg",
+    "_单图/007_01_c02.jpg",
+    "_单图/007_02_c01.jpg",
+    "_单图/007_02_c02.jpg",
+    "_单图/007_03_c00.jpg",
+    "_单图/007_05_c00.jpg"
+   ]
+  },
+  {
+   "name": "滨田（整套）",
+   "corpus": "滨田",
+   "cond_table": "滨田",
+   "n": 15,
+   "n_face": 15,
+   "n_skin": 15,
+   "n_strict": 0,
+   "thin": false,
+   "bands": {
+    "p50": [
+     41.79,
+     87.46
+    ],
+    "p95": [
+     82.43,
+     97.33
+    ],
+    "p5": [
+     3.62,
+     51.75
+    ],
+    "contrast": [
+     37.04,
+     88.08
+    ],
+    "clip": [
+     0.04,
+     0.89
+    ],
+    "sky": [
+     0.02,
+     0.78
+    ],
+    "face_L": [
+     66.38,
+     83.54
+    ],
+    "face_C": [
+     8.05,
+     18.72
+    ],
+    "face_h": [
+     59.85,
+     81.05
+    ],
+    "toe": [
+     6.83,
+     49.67
+    ],
+    "shoulder": [
+     2.33,
+     21.98
+    ],
+    "contrast_win": [
+     10.29,
+     70.3
+    ],
+    "skew": [
+     5.88,
+     49.46
+    ],
+    "face_over_bg": [
+     0.8,
+     0.97
+    ],
+    "person_over_bg": [
+     0.72,
+     1.01
+    ],
+    "light_ratio": null,
+    "warm_cool_b": [
+     -5.35,
+     6.05
+    ]
+   },
+   "neutral_axis": [
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    },
+    {
+     "a": null,
+     "b": null
+    }
+   ],
+   "hue_bands": [
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    },
+    {
+     "share": null,
+     "C": null
+    }
+   ],
+   "light": {},
+   "samples": [
+    "02.jpg",
+    "04.jpg",
+    "x102_01.jpg",
+    "x102_06.jpg",
+    "x102_07.jpg",
+    "x103_05.jpg",
+    "x103_08.jpg",
+    "x103_11.jpg",
+    "x103_12.jpg",
+    "x103_13.jpg",
+    "x104_01.jpg",
+    "x104_02.jpg",
+    "x104_05.jpg",
+    "x104_06.jpg",
+    "x104_07.jpg"
+   ]
+  }
+ ]
+}
