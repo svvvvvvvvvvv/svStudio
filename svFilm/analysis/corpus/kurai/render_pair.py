@@ -42,6 +42,9 @@ def render_pair(raf: str, film: str, paper: str, side: int = SIDE,
     p.enlarger.diffusion_filter.strength = 0.125       # BPM 1/8
     p.print_render.glare.active = True
     p.print_render.glare.percent = 0.03
+    p.camera.auto_exposure = False
+    p.enlarger.normalize_print_exposure = False
+    p.enlarger.print_exposure_compensation = False
     p.io.output_color_space = 'sRGB'
     p.io.output_cctf_encoding = True
     for k, v in (overrides or {}).items():
