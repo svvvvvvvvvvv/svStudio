@@ -52,6 +52,33 @@ def _curve_stats(d: dict) -> dict:
                 dmax=[round(v, 2) for v in dmax])
 
 
+def _window(d: dict, lo: float = 0.20, hi: float = 1.20) -> Optional[float]:
+    """固定密度窗：D 从 lo 走到 hi 需要多少 logE（越大越软）。"""
+    le = np.asarray(d['data']['log_exposure'], dtype=float)
+    dc = np.asarray(d['data']['density_curves'], dtype=float)
+    if dc.ndim != 2 or dc.shape[1] != 3:
+        return None
+    y = dc[:, 0]
+    try:
+        e_lo = float(np.interp(lo, y, le))
+        e_hi = float(np.interp(hi, y, le))
+    except Exception:
+        return None
+    return round(abs(e_hi - e_lo), 3)
+
+
+def _peaks(d: dict) -> Dict[str, float]:
+    """感光峰 R/G/B 波长（nm）。"""
+    wl = np.asarray(d['data']['wavelengths'], dtype=float)
+    ls = np.asarray(d['data']['log_sensitivity'], dtype=float)
+    if ls.ndim != 2 or ls.shape[1] != 3:
+        return {}
+    out = {}
+    for i, ch in enumerate('RGB'):
+        out[ch] = float(wl[int(np.argmax(ls[:, i]))])
+    return out
+
+
 def table() -> dict:
     from spektrafilm.runtime.params_builder import _HALATION_PRESETS
     from spektrafilm.utils.io import read_neutral_print_filters
@@ -64,11 +91,15 @@ def table() -> dict:
         row = dict(stock=name, type=i.get('type'), use=i.get('use'),
                    ah=i.get('antihalation'), target_print=i.get('target_print'))
         row.update(_curve_stats(d))
+        row['window'] = _window(d)
+        row['peaks'] = _peaks(d)
         row['halation'] = _HALATION_PRESETS.get((i.get('use'), i.get('antihalation')))
-        films.append(row)
         if i.get('support') == 'paper':
             papers.append(dict(stock=name, gamma_med=row.get('gamma_med'),
+                               window=row.get('window'),
                                dmax=(row.get('dmax') or [None])[0]))
+        else:
+            films.append(row)
 
     # 中性滤片：{纸: {光源: {卷: [C,M,Y]}}}
     illum = None
@@ -108,9 +139,20 @@ def main(argv: Optional[List[str]] = None) -> int:
               % (f['stock'], f['type'], f['ah'], f['gamma_med'], f['target_print'],
                  (h.get('sigma_h'), h.get('strength')) if h else '—'))
 
-    print('\n印相纸：')
-    for p in t['papers']:
-        print('  %-36s γ %-6s Dmax %s' % (p['stock'], p['gamma_med'], p['dmax']))
+    print('\n印相纸（按"固定密度窗"从软到硬；窗 = D 0.2→1.2 要多少 logE）：')
+    for p in sorted([x for x in t['papers'] if x.get('window')], key=lambda x: -x['window']):
+        tag = '最软' if p['window'] == max(x['window'] for x in t['papers'] if x.get('window')) else (
+            '最硬' if p['window'] == min(x['window'] for x in t['papers'] if x.get('window')) else '')
+        print('  %-36s 窗 %-5s γ %-6s Dmax %-5s %s' % (p['stock'], p['window'], p['gamma_med'], p['dmax'], tag))
+
+    print('\n卷（still 负片）：')
+    for f in t['films']:
+        if f['type'] != 'negative' or f.get('use') != 'still' or not f.get('peaks'):
+            continue
+        pk = f['peaks']
+        print('  %-24s AH %-6s 官配 %-32s DmaxR %-5s 窗 %-5s 峰 %s'
+              % (f['stock'], f['ah'], f['target_print'], (f['dmax'] or [None])[0], f['window'],
+                 'R%.0f/G%.0f/B%.0f' % (pk.get('R', 0), pk.get('G', 0), pk.get('B', 0))))
 
     print('\n官方配对（target_print）的中性滤片 C/M/Y：')
     for c in t['combos']:
