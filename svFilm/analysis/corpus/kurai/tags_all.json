@@ -932,7 +932,7 @@
      "confidence": 1.0
     },
     "light.direction": {
-     "dominant": "mid",
+     "dominant": "front",
      "confidence": 1.0
     }
    }
@@ -1457,7 +1457,7 @@
      "confidence": 1.0
     },
     "light.direction": {
-     "dominant": "mid",
+     "dominant": "back",
      "confidence": 1.0
     }
    }
@@ -1791,7 +1791,7 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "street",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
@@ -1912,7 +1912,7 @@
      "confidence": 1.0
     },
     "light.direction": {
-     "dominant": "mid",
+     "dominant": "front",
      "confidence": 1.0
     }
    }
@@ -2167,6 +2167,41 @@
    "sky_share": 0.07152520576131688,
    "face_size": 1.1193368182553938,
    "warm_cool_b": 1.6307651996612549
+  }
+ },
+ {
+  "dir": "鹿井（整套）",
+  "corpus": "鹿井",
+  "n": 672,
+  "tags": {
+   "light": {
+    "background.type": {
+     "dominant": "street",
+     "confidence": 1.0
+    },
+    "background.palette": {
+     "dominant": "neutral",
+     "confidence": 1.0
+    },
+    "color_env.value": {
+     "dominant": "neutral",
+     "confidence": 1.0
+    },
+    "composition.framing": {
+     "dominant": "half",
+     "confidence": 1.0
+    },
+    "light.direction": {
+     "dominant": "mid",
+     "confidence": 1.0
+    }
+   }
+  },
+  "raw": {
+   "env_share": 0.7461889146090535,
+   "sky_share": 0.023887706590999605,
+   "face_size": 2.222379050437592,
+   "warm_cool_b": 0.4605621099472046
   }
  },
  {
@@ -2695,6 +2730,41 @@
   }
  },
  {
+  "dir": "滨田（整套）",
+  "corpus": "滨田",
+  "n": 15,
+  "tags": {
+   "light": {
+    "background.type": {
+     "dominant": "street",
+     "confidence": 1.0
+    },
+    "background.palette": {
+     "dominant": "neutral",
+     "confidence": 1.0
+    },
+    "color_env.value": {
+     "dominant": "neutral",
+     "confidence": 1.0
+    },
+    "composition.framing": {
+     "dominant": "closeup",
+     "confidence": 1.0
+    },
+    "light.direction": {
+     "dominant": "mid",
+     "confidence": 1.0
+    }
+   }
+  },
+  "raw": {
+   "env_share": 0.7820787839862985,
+   "sky_share": 0.06196737825788752,
+   "face_size": 3.3393531301305277,
+   "warm_cool_b": 4.777362823486328
+  }
+ },
+ {
   "dir": "001_不詹锅_阴天森林的生日碎片🍃_-_不詹锅_小红书_-_你的生活兴趣社区",
   "corpus": "xhs",
   "n": 4,
@@ -2717,7 +2787,7 @@
      "confidence": 1.0
     },
     "light.direction": {
-     "dominant": "mid",
+     "dominant": "front",
      "confidence": 1.0
     }
    }
@@ -2857,7 +2927,7 @@
      "confidence": 1.0
     },
     "light.direction": {
-     "dominant": "mid",
+     "dominant": "back",
      "confidence": 1.0
     }
    }
@@ -2972,6 +3042,41 @@
    "sky_share": 0.03880842911877395,
    "face_size": 0.5773599230200444,
    "warm_cool_b": -0.41480064392089844
+  }
+ },
+ {
+  "dir": "xhs（整套）",
+  "corpus": "xhs",
+  "n": 59,
+  "tags": {
+   "light": {
+    "background.type": {
+     "dominant": "nature",
+     "confidence": 1.0
+    },
+    "background.palette": {
+     "dominant": "green",
+     "confidence": 1.0
+    },
+    "color_env.value": {
+     "dominant": "neutral",
+     "confidence": 1.0
+    },
+    "composition.framing": {
+     "dominant": "environment",
+     "confidence": 1.0
+    },
+    "light.direction": {
+     "dominant": "mid",
+     "confidence": 1.0
+    }
+   }
+  },
+  "raw": {
+   "env_share": 0.8970820473251029,
+   "sky_share": 0.04598894032921811,
+   "face_size": 0.5773599230200444,
+   "warm_cool_b": -0.45209527015686035
   }
  }
 ]

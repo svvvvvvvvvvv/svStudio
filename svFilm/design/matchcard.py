@@ -172,7 +172,7 @@ def _from_v3() -> List['MatchCard']:
         prof: Dict[str, float] = {}
         spread: Dict[str, float] = {}
         for key, bname in (('p5', 'p5'), ('p50', 'p50'), ('p95', 'p95'),
-                           ('contrast', 'contrast'), ('clip', 'clip')):
+                           ('contrast', 'contrast'), ('clip', 'clip'), ('sky', 'sky')):
             band = b.get(bname)
             if isinstance(band, list) and len(band) == 2:
                 prof[key] = 0.5 * (band[0] + band[1])

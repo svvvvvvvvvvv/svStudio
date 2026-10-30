@@ -145,6 +145,8 @@ def build() -> List[dict]:
             bands=dict(
                 p50=_band(get_img('p50')), p95=_band(get_img('p95')), p5=_band(get_img('p5')),
                 contrast=_band(get_img('contrast')), clip=_band(get_img('clip_pct')),
+                sky=_band([r.get('sky_share_frac') for r in wit
+                           if r.get('sky_share_frac') is not None]),
                 face_L=_band([s['L'] for s in sk]), face_C=_band([s['C'] for s in sk]),
                 face_h=_band([s['h'] for s in sk]),
                 toe=_band(shape('toe')), shoulder=_band(shape('shoulder')),

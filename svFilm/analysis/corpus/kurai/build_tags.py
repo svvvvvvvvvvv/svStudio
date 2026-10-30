@@ -67,6 +67,15 @@ def main() -> int:
                             wc=_med([r.get('warm_cool_b') for r in rs]),
                             light=max(set(lights), key=lights.count)))
 
+        allr = [r for rs in by.values() for r in rs]
+        if allr:
+            _l = [_light(r) for r in allr]
+            raw.append(dict(dir=corpus + '（整套）', corpus=corpus, n=len(allr),
+                            env=_med([r.get('env_share') for r in allr]),
+                            sky=_med([r.get('sky_share_frac') for r in allr]),
+                            fs=_med([r.get('face_size') for r in allr]),
+                            wc=_med([r.get('warm_cool_b') for r in allr]),
+                            light=max(set(_l), key=_l.count)))
     def cuts(key):
         v = [r[key] for r in raw if r[key] is not None]
         if len(v) <= 5:
