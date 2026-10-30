@@ -54,15 +54,20 @@ def render_pair(raf: str, film: str, paper: str, side: int = SIDE,
             tgt = getattr(tgt, part)
         setattr(tgt, leaf, v)
     lin = _load_lin(raf, side)
+    g = 1.0
     out = sf.simulate(lin, p, digest_params_first=True)
     if target_face_L:
-        im0 = Image.fromarray((np.clip(np.asarray(out), 0, 1) * 255 + 0.5).astype(np.uint8))
-        L0 = _face_L(im0)
-        if L0:
+        for it in range(4):
+            im0 = Image.fromarray((np.clip(np.asarray(out), 0, 1) * 255 + 0.5).astype(np.uint8))
+            L0 = _face_L(im0)
+            if L0 is None:
+                break
+            print('  iter %d face_L %.1f (target %.1f)' % (it, L0, target_face_L))
+            if abs(L0 - target_face_L) < 1.0:
+                break
             y_t = ((target_face_L + 16.0) / 116.0) ** 3
             y_0 = ((L0 + 16.0) / 116.0) ** 3
-            g = max(0.2, min(5.0, y_t / max(y_0, 1e-6)))
-            print('  exposure gain %.3f (face_L %.1f -> %.1f)' % (g, L0, target_face_L))
+            g *= max(0.25, min(8.0, y_t / max(y_0, 1e-6)))
             out = sf.simulate(np.clip(lin * g, 0.0, None), p, digest_params_first=True)
     a = np.clip(np.asarray(out, dtype=np.float64), 0, 1)
     return Image.fromarray((a * 255 + 0.5).astype(np.uint8))
