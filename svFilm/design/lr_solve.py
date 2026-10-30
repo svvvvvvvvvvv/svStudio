@@ -41,6 +41,23 @@ MAX_WHITE_PULL_EV = 1.5
 #   一律"方向 + 一档步进 + 记账"，不再用 k(L)/二次式反解。
 ONE_STEP_UI = 10.0
 
+# ---------------------------------------------------------------- 肤色彩度（主体蒙版）
+# ★ 2026-10-31 实测（LR 桥，逐档导出再量脸 C；n 小 ⇒ 台账级，本批 10 张的
+#   "预测 vs 实测"就是它的验证）：
+#     LocalSaturation −10 UI ⇒ −3.4 C（1231，0.34 C/UI）
+#     LocalSaturation +10 UI ⇒ +0.4~0.7 C（5 张，0.05 C/UI）
+#   ⇒ **压得下来，抬不上去**；淡脸是阴影的光决定的，硬抬只会把整张图拉爆。
+#   注意：HSL 橙/红**不用**（人已否：全局旋钮会连带改背景/衣服的橙红）。
+# 死区：原来"整条卡带都不动"（宽 7.8）看着就是没修；现在目标 = 带中点，
+#   容差 ±1.0 C（人拍板放宽 P1 的例外）。
+C_DOWN_PER_UI = 0.34       # C/UI（LocalSaturation 越负 → C 越低）
+C_UP_PER_UI = 0.05
+C_DOWN_MAX_UI = 100.0
+C_UP_MAX_UI = 100.0
+C_BAND_TOL = 1.0
+H_BAND_TOL = 2.0           # 色相死区（Lab 度）
+L_BAND_TOL = 1.5           # 明度死区（L*）
+
 
 def _hi(band, default):
     return float(band[1]) if isinstance(band, (list, tuple)) and len(band) == 2 else float(default)
@@ -97,63 +114,66 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
                split_highlight_hue=0.0, split_highlight_sat=0.0,
                split_shadow_hue=0.0, split_shadow_sat=0.0, split_balance=0.0)
     notes = []
-    cb = b.get('face_C')
-    sk = (rec.get('skin') or {}).get('C', rec.get('face_C'))
-    if isinstance(cb, list) and sk is not None:
-        lo, hi = float(cb[0]), float(cb[1])
-        _dc = 0.0
-        if sk < lo:
-            _dc = lo - sk
-        elif sk > hi:
-            _dc = hi - sk
-        if abs(_dc) > 0.05:
-            # ★ 人像优先：饱和只加在**人身上**（LocalSaturation），背景不动。
-            #   没有公开传递函数 ⇒ 只给方向 + 一档（10 UI），③ 验了再走。
-            out['local_saturation'] = ONE_STEP_UI if _dc > 0 else -ONE_STEP_UI
-            notes.append('脸 C %.1f 对卡带 [%.1f, %.1f] ⇒ ΔC%+.1f ⇒ 局部饱和 %+.0f UI'
-                         '（方向 + 一档；③ 验）' % (sk, lo, hi, _dc, out['local_saturation']))
-    hb = b.get('face_h')
-    hk = (rec.get('skin') or {}).get('h', rec.get('face_h'))
-    if isinstance(hb, list) and hk is not None:
-        lo, hi = float(hb[0]), float(hb[1])
-        _dh = 0.0
-        if hk < lo:
-            _dh = lo - hk
-        elif hk > hi:
-            _dh = hi - hk
-        if abs(_dh) > 2.0:
-            # 目标色相可以算（卡带给的是 Lab 色相角）；但把 Lab h 变成 LR 的
-            # 局部染色刻度还需要一次验证（单位语义未验）⇒ 只记账，不写。
-            notes.append('脸 h %.1f 对卡带 [%.1f, %.1f] ⇒ 目标 h %.1f（局部染色未接线：'
-                         '单位语义未验，桥回读 nil，不写幅度）'
-                         % (hk, lo, hi, lo if _dh > 0 else hi))
-    wc = b.get('warm_cool_b')
-    cur = rec.get('warm_cool_b')
-    if isinstance(wc, list) and cur is not None:
-        lo, hi = float(wc[0]), float(wc[1])
-        _db = 0.0
-        if cur < lo:
-            _db = lo - float(cur)
-        elif cur > hi:
-            _db = hi - float(cur)
-        if abs(_db) > 0.05:
-            # 冷暖也没有公开传递函数：方向 + 一档；两个轮子成对。
-            # SplitToning*Saturation 是 0..100，方向由 hue 交换表达，强度恒正。
-            sat = ONE_STEP_UI
-            warm = _db > 0                 # 需要"高光更暖 / 阴影更冷"
-            out['split_highlight_hue'] = SPLIT_WARM_HUE if warm else SPLIT_COOL_HUE
-            out['split_shadow_hue'] = SPLIT_COOL_HUE if warm else SPLIT_WARM_HUE
-            out['split_highlight_sat'] = sat
-            out['split_shadow_sat'] = sat
-            notes.append('暖冷 %.2f 对卡带 [%.2f, %.2f] ⇒ Δb%+.2f ⇒ 分离色调 %+.0f 点'
-                         '（方向 + 一档；高光 %s / 阴影 %s；③ 验）'
-                         % (float(cur), lo, hi, _db, sat,
-                            '暖' if warm else '冷', '冷' if warm else '暖'))
-        else:
-            notes.append('暖冷 %.2f 在卡带 [%.2f, %.2f] 内 ⇒ 不动' % (float(cur), lo, hi))
-    elif isinstance(wc, list):
-        notes.append('暖冷带 [%.2f, %.2f] 有，但这张图没测 warm_cool_b ⇒ 不动'
-                     % (float(wc[0]), float(wc[1])))
+    one = ONE_STEP_UI
+    # ---- 肤色 H/S/L **三根**（教程：肤色 = 橙、低饱和、高明度；三根都要管）
+    #   目标不是"卡带的边"，是**带中点**；容差只是死区（人：原来"整条带都不动"太宽）。
+    #   剂量按纪律：没有公开传递函数的滑块 ⇒ 方向 + 一档（10 UI），③ 验。
+    def _skin_axis(val, band, tol, key, label, nd=1):
+        if not (isinstance(band, (list, tuple)) and len(band) == 2) or val is None:
+            return
+        lo, hi = float(band[0]), float(band[1])
+        mid = 0.5 * (lo + hi)
+        d = mid - float(val)
+        if abs(d) <= tol:
+            notes.append('%s %.1f ≈ 带中点 %.1f（±%g 内）⇒ 不动' % (label, float(val), mid, tol))
+            return
+        out[key] = one if d > 0 else -one
+        notes.append('%s %.1f → 带中点 %.1f（差 %+.1f）⇒ %s %+.0f UI'
+                     % (label, float(val), mid, -d, label, out[key]))
+
+    _skin_axis((rec.get('skin') or {}).get('C', rec.get('face_C')),
+               b.get('face_C'), C_BAND_TOL, 'sat_orange', '脸 C')
+    _skin_axis((rec.get('skin') or {}).get('h', rec.get('face_h')),
+               b.get('face_h'), H_BAND_TOL, 'hue_orange', '脸 h')
+    _skin_axis((rec.get('skin') or {}).get('L', rec.get('face_L')),
+               b.get('face_L'), L_BAND_TOL, 'lum_orange', '脸 L')
+    # ---- 分色：**跟着卡来**。卡的暗部/高光色偏由 `design.card_tone` 从它自己的成片测出
+    #   （cards_v5 里 hue_bands/neutral_axis 是空的）。
+    #   教程那句话——"暗部青蓝、高光偏蓝"——就是这张卡的两个数，不是我的口味。
+    tone = (card or {}).get('tone') or {}
+    sh = ((tone.get('shadow') or {}) or {}).get('hsl_h')
+    hi = ((tone.get('highlight') or {}) or {}).get('hsl_h')
+    if sh is not None or hi is not None:
+        if sh is not None:
+            out['split_shadow_hue'] = round(float(sh), 1)
+            out['split_shadow_sat'] = one
+        if hi is not None:
+            out['split_highlight_hue'] = round(float(hi), 1)
+            out['split_highlight_sat'] = one
+        notes.append('卡的分色：暗部 %s° / 高光 %s°（各 %g 点；来自卡的成片实测）'
+                     % ('—' if sh is None else '%.0f' % sh,
+                        '—' if hi is None else '%.0f' % hi, one))
+    else:
+        # 没测过这张卡 ⇒ 退回"暖冷出带"的方向 + 一档（老路）
+        wc = b.get('warm_cool_b')
+        cur = rec.get('warm_cool_b')
+        if isinstance(wc, list) and cur is not None:
+            lo, hi = float(wc[0]), float(wc[1])
+            _db = 0.0
+            if cur < lo:
+                _db = lo - float(cur)
+            elif cur > hi:
+                _db = hi - float(cur)
+            if abs(_db) > 0.05:
+                warm = _db > 0
+                out['split_highlight_hue'] = SPLIT_WARM_HUE if warm else SPLIT_COOL_HUE
+                out['split_shadow_hue'] = SPLIT_COOL_HUE if warm else SPLIT_WARM_HUE
+                out['split_highlight_sat'] = one
+                out['split_shadow_sat'] = one
+                notes.append('暖冷 %.2f 出带 [%.2f, %.2f] ⇒ 分离色调 %g 点（方向 + 一档）'
+                             % (float(cur), lo, hi, one))
+            else:
+                notes.append('暖冷 %.2f 在卡带内 ⇒ 不动' % float(cur))
     out['note'] = '；'.join(notes)
     return out
 
@@ -364,7 +384,12 @@ def plan_batch(recs: Dict[str, dict], card: dict,
                          white=white_end_plan(rec, card, curve, ev=float(_ev_white)),
                          meas=meas, ledger=[str(e) for e in p.ledger],
                          curve=curve,
-                         grading=(batch.get('grading') if batch else grading_of(card, rec)))
+                         # ★ 2026-10-31：颜色改成**逐图**（这才是"补参差"）。
+                         #   旧写法 `batch.get('grading')` 让 10 张图共用一个批级颜色，
+                         #   而批级只在中位出带时才动 ⇒ 中位在带、个体出带时颜色全空转
+                         #   （实测：10 张 XMP 里一个颜色键都没有）。
+                         #   曲线仍用批级那一条（一套的骨架），颜色按每张自己的残差。
+                         grading=grading_of(card, rec))
     return out
 
 

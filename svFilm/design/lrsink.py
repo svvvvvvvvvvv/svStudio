@@ -199,9 +199,14 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
         _ev = float(getattr(plan, 'fill_ev', 0.0) or 0.0)
         _sh = float(getattr(plan, 'local_shadows', 0.0) or 0.0)
         _hl = float(getattr(plan, 'local_highlights', 0.0) or 0.0)
+        # ★ 2026-10-31：颜色也走主体蒙版（局部饱和/局部染色）⇒ 建蒙版的条件要把它们算进来，
+        #   否则"只有颜色、没有补光"的图不会建蒙版，颜色一个都不落（10-31 实测的坑）。
+        _ls = float(getattr(plan, 'local_saturation', 0.0) or 0.0)
+        _lt = max(abs(float(getattr(plan, 'local_toning_hue', 0.0) or 0.0)),
+                  abs(float(getattr(plan, 'local_toning_sat', 0.0) or 0.0)))
         # ★ 2026-10-30：蒙版不再只由 fill_ev 决定 —— LocalShadows 是"主体∩暗部"的
         #   原生等效（实测：脸 +7.1 L/单位，画面 p99 只 +0.1），必须能单独用。
-        if max(abs(_ev), abs(_sh), abs(_hl)) > 1e-6:
+        if max(abs(_ev), abs(_sh), abs(_hl), abs(_ls), _lt) > 1e-6:
             rm = LS.run('MASK %s subject' % tmp, timeout=180)
             if 'groups=0->0' in rm:
                 raise RuntimeError('%s 主体蒙版没建出来：%s' % (stem, rm[:120]))

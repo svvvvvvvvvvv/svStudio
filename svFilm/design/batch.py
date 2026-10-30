@@ -42,6 +42,10 @@ class Batch:
     raf_dir: str
     out_dir: str
     stems: List[str] = field(default_factory=list)
+    # ★ 人拍板的两件事（设计 §3.4）：选哪张卡 + 哪张样片当 hero。
+    #   hero 只做目检参考，**不进求解**（A 不拿 hero 做拟合，§4.1）。
+    card: str = ''
+    hero: str = ''
 
     @classmethod
     def of(cls, raf_dir: str, out_dir: str, limit: int = 0) -> 'Batch':
@@ -54,6 +58,25 @@ class Batch:
             stems = stems[:limit]
         name = os.path.basename(os.path.normpath(raf_dir))
         return cls(name=name, raf_dir=raf_dir, out_dir=out_dir, stems=stems)
+
+    def write_meta(self, **kv) -> str:
+        """批次元数据（card / hero / intent …）落到 `<out>/batch.json`。
+
+        原子写：先写临时文件再替换（纪律：改 JSON 要原子写，别写半个文件）。
+        """
+        import json
+        import time
+        os.makedirs(self.out_dir, exist_ok=True)
+        d = dict(batch=self.name, raf=self.raf_dir, n=len(self.stems),
+                 card=self.card, hero=self.hero,
+                 created=time.strftime('%Y-%m-%d %H:%M:%S'))
+        d.update({k: v for k, v in kv.items() if v not in (None, '')})
+        p = os.path.join(self.out_dir, 'batch.json')
+        tmp = p + '.tmp'
+        with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
+            json.dump(d, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp, p)
+        return p
 
     def raf_paths(self, stems: Optional[List[str]] = None) -> Dict[str, str]:
         want = set(stems or self.stems)
@@ -219,6 +242,25 @@ def _light_kind(p_engine, p_final):
 
 
 
+def measure_engine_dir(b: Batch, log=print) -> Dict[str, dict]:
+    """复用已经渲好的 ①（只重测，不重渲）。
+
+    用途：只改 LR 段（颜色/白端/曲线）时，引擎那一步不用重跑 —— ① 只取决于卡的介质，
+    介质没变就不该重渲（一次 4 分钟、还白白多一遍噪声）。
+    """
+    import glob
+    recs = {}
+    for p in sorted(glob.glob(os.path.join(b.sub('engine'), '*_engine.tif'))):
+        st = os.path.basename(p)[:-len('_engine.tif')]
+        if st not in b.stems:
+            continue
+        r = measure_tif(p)
+        r['file'] = os.path.basename(p)
+        recs[st] = r
+        log('  复用 ① %s' % st)
+    return recs
+
+
 def build_review(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
                  recs3: Dict[str, dict], light: Optional[str] = None,
                  log=print) -> Dict[str, object]:
@@ -226,7 +268,7 @@ def build_review(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
     from .review import make_review
     return make_review(recs, recs3, plans, b.out_dir,
                        tif_1_dir=b.sub('engine'), tif_3_dir=b.sub('final'),
-                       title='%s · 成片目检' % b.name, light=light, log=log)
+                       title='%s · 成片目检' % b.name, light=light, hero=b.hero, log=log)
 
 def estimate(n: int, per_image_s: float = 25.0) -> str:
     """给个时间预估（渲一张要跑两次 headroom 解，约 22~30 秒）。"""

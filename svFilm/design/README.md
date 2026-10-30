@@ -37,8 +37,15 @@ cd E:\svStudio\svFilm
 & $py -X utf8 -m design.cli stocks
 & $py -X utf8 -m design.cli cards
 
-# 全链（引擎 → LR → 成片 → 验收）
-& $py -X utf8 -m design.cli run --raf "D:\照片库\<批>" --out <输出目录> --yes --export
+# 第一段：整批渲基线 → 匹配 → 出选卡页（**不驱动 LR**）
+& $py -X utf8 -m design.cli run --raf "D:\照片库\<批>" --out <输出目录>
+
+# 人拍板：打开 <输出目录>\match\匹配页.html，点某张样片 = 选卡 + 选 hero（设计 §3.4）
+# 第二段：按这张卡整批渲 ① → LR 出 ③ → 量 → 验收 → 目检
+& $py -X utf8 -m design.cli run --raf "D:\照片库\<批>" --out <输出目录> --card <卡名> --hero <样片> --export
+
+# 只重出选卡页（不重渲；只花测量钱，约 1~2 秒/张）
+& $py -X utf8 -m design.cli page --out <输出目录>
 ```
 
 ---

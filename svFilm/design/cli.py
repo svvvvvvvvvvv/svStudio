@@ -198,6 +198,49 @@ def cmd_match(a):
         print('\n选卡页：%s' % os.path.join(a.out, '选卡.html'))
 
 
+def _resolve_hero(card_name: str, hero: str) -> str:
+    """`--hero` → 卡样片的绝对路径；不属于这张卡就返回 ''（不静默接受）。
+
+    hero 只做目检参考（设计 §4.1：A 不拿 hero 做拟合），所以这里只校验
+    "是不是这张卡目录下的样片"，不做别的。
+    """
+    from .matchcard import card_samples
+    samples = [os.path.normpath(p) for p in card_samples(card_name)]
+    if not samples:
+        return ''
+    hp = os.path.normpath(hero)
+    if os.path.isabs(hp):
+        return hp if hp in samples else ''
+    hits = [p for p in samples if os.path.basename(p) == hp]
+    return hits[0] if len(hits) == 1 else ''
+
+
+def cmd_page(a):
+    """只出选卡页：不渲、不算、不驱动 LR —— 把 <out>/engine/*.tif 重新量一遍再排版。
+
+    为什么要单独一条：`run` 停在「人选卡」那一步时，测量只在内存里，
+    页子重出一次就得整批重渲。人要看「这批 ① vs 卡的样片」对着选，
+    这条命令只花测量钱（约 1~2 秒/张）。
+    """
+    import glob
+    from .batch import measure_tif
+    eng = os.path.join(a.out, 'engine')
+    recs = {}
+    for p in sorted(glob.glob(os.path.join(eng, '*_engine.tif'))):
+        st = os.path.basename(p)[:-len('_engine.tif')]
+        r = measure_tif(p)
+        r['file'] = os.path.basename(p)
+        recs[st] = r
+        print('  量 %s ｜ 脸 L %s ｜ 爆 %s%%'
+              % (st, r.get('face_L'), (r.get('img') or {}).get('clip_pct')))
+    if not recs:
+        print('没有 ①：%s' % eng)
+        return
+    print('量完 %d 张 ｜ 口径 sha = %s' % (len(recs), M.measure_sha()))
+    page = make_match_page(recs, a.out, title=a.title or '匹配 · 挑一张卡')
+    print('匹配页：%s' % page)
+
+
 def cmd_run(a):
     """端到端七步：试点 → 匹配选卡 → 整批渲+量① → LR 计划+XMP → 出③+量+验收+目检 → 回归。
 
@@ -249,7 +292,7 @@ def cmd_run(a):
         print('  匹配页：%s' % page)
         if not getattr(a, 'yes', False):
             print('\n[4/7] **停在这里等你拍板**（不自动往下走）')
-            print('  看完回我：--card <名字>')
+            print('  看完回我：--card <名字> [--hero <样片>]')
             return
         print('\n[4/7] --yes ⇒ 自动用匹配分第一张，继续')
         _b = offer.best()
@@ -259,19 +302,45 @@ def cmd_run(a):
     if best is None:
         print('没有可用卡 ⇒ 停'); return
     if not use_card and not getattr(a, 'yes', False):
-        print('\n以上是匹配结果（权重与理由）。**用哪张卡你定**，看完页面再回来：')
-        print('  1) 打开 %s' % os.path.join(b.out_dir, '选卡.html'))
-        print('  2) 重跑并指定：--card <卡名>   （会跳过试点，直接整批渲）')
+        print('\n以上是匹配结果（权重与理由）。**用哪张卡 + 哪张样片当 hero 你定**，看完页面再回来：')
+        print('  1) 打开 %s' % page)
+        print('  2) 重跑并指定：--card <卡名> --hero <样片>   （会跳过试点，直接整批渲）')
         print('     或加 --yes 直接用匹配分第一张：%s' % best.card.label())
         return
     print('\n选中：%s' % best.card.label())
+
+    # ★ 设计 §3.4：人选卡时**同时**指定 hero（从这张卡的全部样片里点一张）。
+    #   hero 只进目检页做对照，不进求解（§4.1：A 不拿 hero 做拟合）。
+    b.card = best.card.name
+    if getattr(a, 'hero', ''):
+        hero = _resolve_hero(b.card, a.hero)
+        if not hero:
+            from .matchcard import card_samples
+            print('hero 不属于这张卡：%s' % a.hero)
+            print('  这张卡的样片（%d 张），例如：%s'
+                  % (len(card_samples(b.card)),
+                     '、'.join(os.path.basename(p) for p in card_samples(b.card)[:3])))
+            return
+        b.hero = hero
+        print('hero：%s' % os.path.basename(hero))
+    else:
+        print('hero：没指定（目检页就没有 look 参考；设计上这一步由人一起拍板）')
+    print('批次元数据：%s' % b.write_meta(intent=it.describe()))
 
     print('\n[4/7] 整批渲 + 量（①）')
     # ★ 2026-10-31：试点用的是基线卡。只有 best 也是基线卡时才能 skip；
     #   否则跳过的那几张永远不会用 best 渲，recs 里直接缺图。
     _base_name = sorted(c.name for c in match_cards())[0]
     _skip = list(recs0.keys()) if best.card.name == _base_name else []
-    recs = run_engine(b, best, limit=a.render_limit, log=print, skip=_skip)
+    if getattr(a, 'reuse', False):
+        from .batch import measure_engine_dir
+        print('  --reuse ⇒ 复用已渲的 ①（只重测，不重渲）')
+        recs = measure_engine_dir(b, log=print)
+        if not recs:
+            print('  没有可复用的 ① ⇒ 退回重渲')
+            recs = run_engine(b, best, limit=a.render_limit, log=print, skip=_skip)
+    else:
+        recs = run_engine(b, best, limit=a.render_limit, log=print, skip=_skip)
     # 试点那两张如果用的就是选中的卡，直接把旧测量并回来（避免漏）
     if best.card.name == sorted(c.name for c in match_cards())[0]:
         for k, v in recs0.items():
@@ -293,6 +362,45 @@ def cmd_run(a):
         print('  ' + line)
     plans = plan_batch(recs, card, batch=bg)
     print(lr_summary(plans, card['name']))
+
+    # ★ 2026-10-31「推一档」：滑块没有公开刻度，只能一轮一档。但**光重跑没用**——
+    #   参数是按 ① 算的，① 永远不变，重跑只会算出同一组数。
+    #   所以这里把每一轮当成"增量"：量**上一轮的 ③** → 算这一轮该推多少 → 和上轮累加。
+    if getattr(a, 'push', False):
+        import json as _json
+        from .batch import measure_tif as _mt
+        from .review import _find_tif as _ft
+        from .lr_solve import grading_of as _grading_of
+        cpath = os.path.join(b.out_dir, 'color_round.json')
+        prev = {}
+        if os.path.isfile(cpath):
+            prev = _json.load(open(cpath, encoding='utf-8'))
+        nxt = {}
+        for st, p in plans.items():
+            src = _ft(b.sub('final'), st)
+            rec = _mt(src) if src else recs.get(st)
+            step = _grading_of(card, rec) if rec else {}
+            # 上一轮的累计剂量：有记录用记录；**第一次**就用"本轮刚算出来的那组"，
+            # 因为现在这版 ③ 正是它产出的（否则第一次 --push 会原地踏步）。
+            base = prev.get(st) or dict(p.get('grading') or {})
+            cur = dict(base)
+            for k in ('hue_orange', 'sat_orange', 'lum_orange'):
+                v = float(base.get(k, 0.0)) + float(step.get(k, 0.0))
+                cur[k] = round(max(-100.0, min(100.0, v)), 1)
+            # 分色不累加：它是"跟着卡"的固定一档，不靠轮次加码
+            for k in ('split_shadow_hue', 'split_shadow_sat',
+                      'split_highlight_hue', 'split_highlight_sat'):
+                if step.get(k):
+                    cur[k] = float(step[k])
+            nxt[st] = cur
+            g = dict(p.get('grading') or {})
+            g.update(cur)
+            p['grading'] = g
+        tmp = cpath + '.tmp'
+        with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
+            _json.dump(nxt, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp, cpath)
+        print('  推一档：上轮 + 本轮 → 累计写入 %s' % cpath)
 
     reviewed = None
     if a.export:
@@ -503,6 +611,10 @@ def main(argv=None):
     p.add_argument('--intent', action='append')
     p.add_argument('--out', default='', help='出选卡页（选卡.html）到这里')
 
+    p = sub.add_parser('page'); p.set_defaults(fn=cmd_page)
+    p.add_argument('--out', required=True, help='批次输出目录（含 engine/）')
+    p.add_argument('--title', default='', help='页面标题')
+
     p = sub.add_parser('run'); p.set_defaults(fn=cmd_run)
     p.add_argument('--raf', required=True, help='RAW 目录')
     p.add_argument('--out', required=True, help='输出目录')
@@ -512,7 +624,12 @@ def main(argv=None):
     p.add_argument('--intent', action='append')
     p.add_argument('--yes', action='store_true', help='选卡后不再等确认')
     p.add_argument('--card', default='', help='手动指定卡名（跳过匹配排序）')
+    p.add_argument('--hero', default='', help='hero 样片（卡的样片路径或文件名；只做目检参考）')
     p.add_argument('--export', action='store_true', help='用 LR 导出 ③（要 LR 在跑）')
+    p.add_argument('--reuse', action='store_true',
+                   help='复用已渲好的 ①（只重跑 LR 段；介质没变时用）')
+    p.add_argument('--push', action='store_true',
+                   help='推一档：量上一轮 ③，把这一轮的剂量累加上去')
     p.add_argument('--rounds', type=int, default=2, help='③ 出片最多几轮（收白按脸进退）')
     p.add_argument('--light', default='auto', choices=['backlit', 'frontlit', 'auto', 'none'],
                    help='这批的光位由人给；不给=unknown（逆光才做的动作都不触发）')

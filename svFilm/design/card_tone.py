@@ -1,0 +1,123 @@
+# -*- coding: utf-8 -*-
+"""卡缺的那两块：**暗部/高光的冷暖特征**（cards_v5 里 hue_bands / neutral_axis 是空的）。
+
+为什么能量、也为什么要量：
+  · 量的是"这张卡在暗部/高光的**色偏**"（一个颜色），不是"蓝色占多少像素"（内容）。
+    同一套味道，拍海边和拍巷子，占比能差十倍，色偏不会。
+  · 教程的第一句话就是"高光偏蓝、暗部偏青蓝"——这就是卡的暗部/高光色偏，
+    卡里没有，只能从它自己的成片里取。
+
+产物：`analysis/corpus/kurai/card_tone.json`
+    { "<卡名>": {"shadow": {"ab": [a,b], "lab": [L,a,b], "hsl_h": 204.1, "n": 16},
+                 "highlight": {...}, "n_images": 16} }
+
+用法：
+    python -m design.card_tone            # 全部卡
+    python -m design.card_tone --card 001_鹿井小渔_n66f7fa31
+"""
+from __future__ import annotations
+
+import json
+import os
+import sys
+from typing import Dict, List, Optional
+
+import numpy as np
+
+_CORPUS = r'E:\svStudio\svFilm\analysis\corpus\kurai'
+_MASTER = r'E:\ds\大师成片'
+_OUT = os.path.join(_CORPUS, 'card_tone.json')
+
+SHADOW = (5.0, 25.0)       # L* 区间：暗部
+HIGHLIGHT = (85.0, 99.5)   # L* 区间：高光
+
+
+def _to_lab(rgb: np.ndarray):
+    """sRGB 0..1 → Lab（D65）。"""
+    m = rgb <= 0.04045
+    lin = np.where(m, rgb / 12.92, ((rgb + 0.055) / 1.055) ** 2.4)
+    M = np.array([[0.4124, 0.3576, 0.1805],
+                  [0.2126, 0.7152, 0.0722],
+                  [0.0193, 0.1192, 0.9505]])
+    xyz = lin @ M.T / np.array([0.95047, 1.0, 1.08883])
+    f = np.where(xyz > 0.008856, np.cbrt(xyz), 7.787 * xyz + 16.0 / 116.0)
+    L = 116.0 * f[..., 1] - 16.0
+    a = 500.0 * (f[..., 0] - f[..., 1])
+    b = 200.0 * (f[..., 1] - f[..., 2])
+    return L, a, b
+
+
+def _hue_of(lab) -> float:
+    from .color_math import lab_to_hsl
+    return round(float(lab_to_hsl(list(lab))[0]), 1)
+
+
+def _zone(L: np.ndarray, a: np.ndarray, b: np.ndarray, lo: float, hi: float):
+    m = (L >= lo) & (L <= hi)
+    if m.sum() < 200:
+        return None
+    return [float(np.median(L[m])), float(np.median(a[m])), float(np.median(b[m]))]
+
+
+def build_card(card: dict) -> Optional[dict]:
+    from PIL import Image
+    from .matchcard import _abs_samples
+    files = [p for p in _abs_samples(card) if os.path.isfile(p)]
+    if not files:
+        return None
+    sh, hi = [], []
+    for p in files:
+        im = Image.open(p).convert('RGB')
+        im.thumbnail((600, 600))
+        rgb = np.asarray(im, np.float64) / 255.0
+        L, a, b = _to_lab(rgb)
+        zs = _zone(L, a, b, *SHADOW)
+        zh = _zone(L, a, b, *HIGHLIGHT)
+        if zs:
+            sh.append(zs)
+        if zh:
+            hi.append(zh)
+
+    def med(rows):
+        if not rows:
+            return None
+        arr = np.array(rows)
+        lab = [float(np.median(arr[:, i])) for i in range(3)]
+        return dict(lab=[round(v, 2) for v in lab],
+                    ab=[round(lab[1], 2), round(lab[2], 2)],
+                    hsl_h=_hue_of(lab), n=len(rows))
+
+    out = dict(shadow=med(sh), highlight=med(hi), n_images=len(files))
+    if not out['shadow'] and not out['highlight']:
+        return None
+    return out
+
+
+def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    want = ''
+    if '--card' in argv:
+        want = argv[argv.index('--card') + 1]
+    d = json.load(open(os.path.join(_CORPUS, 'cards_v5.json'), encoding='utf-8'))
+    cards = [c for c in d['cards'] if (not want or c['name'] == want)]
+    old = {}
+    if os.path.isfile(_OUT):
+        old = json.load(open(_OUT, encoding='utf-8'))
+    for i, c in enumerate(cards, 1):
+        t = build_card(c)
+        if t:
+            old[c['name']] = t
+            print('[%d/%d] %s  暗部 b=%s ｜ 高光 b=%s'
+                  % (i, len(cards), c['name'],
+                     (t.get('shadow') or {}).get('ab', ['—', '—'])[1],
+                     (t.get('highlight') or {}).get('ab', ['—', '—'])[1]))
+    tmp = _OUT + '.tmp'
+    with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
+        json.dump(old, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, _OUT)
+    print('写入 %s（%d 张卡）' % (_OUT, len(old)))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

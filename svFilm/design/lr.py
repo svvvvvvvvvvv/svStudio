@@ -162,6 +162,11 @@ class LRPlan:
     local_shadows: float = 0.0
     # ★ 主体内的饱和度（⑧ 人像优先：背景不动）
     local_saturation: float = 0.0
+    # ★ 肤色的 H/S/L 三根（教程：肤色要同时管色相、饱和、明度；目标来自卡的
+    #   face_h / face_C / face_L 带）。单位 = LR 面板 UI（±100）。
+    hue_orange: float = 0.0
+    sat_orange: float = 0.0
+    lum_orange: float = 0.0
     # ★ 肤色色相修正（§6H-4）：局部染色，只动人
     local_toning_hue: float = 0.0
     local_toning_sat: float = 0.0
@@ -174,10 +179,20 @@ class LRPlan:
     notes: Dict[str, str] = field(default_factory=dict)
 
     def as_xmp_scalars(self) -> Dict[str, float]:
+        # ★ 2026-10-31：分离色调和 HSL 以前**根本没进 XMP**（as_xmp_scalars 只返回 7 个键），
+        #   所以"算了半天颜色"永远是 0 落地。这里把真正要写的键都列出来。
         return dict(Exposure2012=self.exposure_ev, Highlights2012=self.highlights,
                     Shadows2012=self.shadows, Whites2012=self.whites,
                     Blacks2012=self.blacks, Saturation=self.saturation,
-                    Vibrance=self.vibrance)
+                    Vibrance=self.vibrance,
+                    HueAdjustmentOrange=self.hue_orange,
+                    SaturationAdjustmentOrange=self.sat_orange,
+                    LuminanceAdjustmentOrange=self.lum_orange,
+                    SplitToningShadowHue=self.split_shadow_hue,
+                    SplitToningShadowSaturation=self.split_shadow_sat,
+                    SplitToningHighlightHue=self.split_highlight_hue,
+                    SplitToningHighlightSaturation=self.split_highlight_sat,
+                    SplitToningBalance=self.split_balance)
 
 
 # ---------------------------------------------------------------- ① 看哪里

@@ -197,16 +197,20 @@ details{margin:8px 0 0}
 summary{color:#7f8b99;font-size:12.5px;cursor:pointer;outline:none}
 details img{margin-top:8px}
 .foot{color:#6f6b64;font-size:12px;margin:30px 0 0;border-top:1px solid #2e2d2b;padding-top:12px}
+.herobox{border:1px solid #3a3126;background:#1b1815;border-radius:10px;padding:10px 12px;margin:0 0 22px}
+.herobox img{width:100%;height:auto;display:block;border-radius:8px;background:#000;margin-top:8px}
 """
 
 
-def contact_sheet(rows: List[dict], out_html: str, title: str, sub: str = '') -> str:
+def contact_sheet(rows: List[dict], out_html: str, title: str, sub: str = '',
+                  hero: Optional[dict] = None) -> str:
     """一页目检：**一张图占满宽、竖着排**，每张图下面跟它的账。
 
     rows 每项：
         dict(stem, final_jpg, engine_jpg, verdict(ok|bad 文本),
              values='曝光 +0.3 ｜ 收白 -50 ｜ 点颜色 0.6',
              note='③ 的脸 L 62.1（① 61.8）｜ clip 1.2%（① 5.4%）')
+    hero：人拍板的 look 参考（dict(jpg=..., label=...)），**只摆在图上方做对照，不参与算值**。
     """
     os.makedirs(os.path.dirname(out_html), exist_ok=True)
     out = ['<!DOCTYPE html>', '<html lang="zh-CN"><head><meta charset="utf-8">',
@@ -215,6 +219,11 @@ def contact_sheet(rows: List[dict], out_html: str, title: str, sub: str = '') ->
            '<h1>%s</h1>' % title]
     if sub:
         out.append('<p class="sub">%s</p>' % sub)
+    if hero and hero.get('jpg'):
+        out.append('<div class="herobox"><div class="lab"><span class="name">hero · %s</span>'
+                   '<span class="num">这一批的 look 参考（卡的样片，不参与算值）</span></div>'
+                   '<img loading="lazy" src="%s" alt="hero"></div>'
+                   % (hero.get('label') or 'look 参考', hero['jpg']))
     for r in rows:
         out.append('<figure>')
         out.append('<div class="lab"><span class="name">%s</span>'
@@ -277,11 +286,26 @@ def _find_tif(d: str, stem: str, allow_engine: bool = False) -> Optional[str]:
     return hits[0] if hits else None
 
 
+def _hero_block(hero: str, prev_dir: str, log=print) -> Optional[dict]:
+    """人选的 hero → 目检页顶部那张对照图。**只放图，不进算值**（设计 §4.1）。"""
+    if not hero:
+        return None
+    if not os.path.isfile(hero):
+        log('! hero 文件不存在，目检页不放参考图：%s' % hero)
+        return None
+    p = jpg_of(hero, os.path.join(prev_dir, 'hero.jpg'), width=1400)
+    if not p:
+        log('! hero 转 jpg 失败，目检页不放参考图：%s' % hero)
+        return None
+    return dict(jpg='preview/hero.jpg', label=os.path.basename(hero))
+
+
 def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict], plans: Dict[str, object],
                 out_dir: str, tif_1_dir: str = '', tif_3_dir: str = '',
                 title: str = '成片目检', sub: str = '', ev_known: bool = True,
                 light: Optional[str] = None,
                 url_map: Optional[Dict[str, str]] = None,
+                hero: str = '',
                 log=print) -> Dict[str, object]:
     """量完 ③ 之后：**验收 + 出一页目检**。只读，不改参数。
 
@@ -336,7 +360,8 @@ def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict], plans: Dict[st
 
     html = contact_sheet(rows, os.path.join(out_dir, '目检.html'), title=title,
                          sub=sub or ('%d 张 ｜ 硬门（脸）过 %d 张 ｜ 背景爆只报不拦'
-                                     % (len(rows), nok)))
+                                     % (len(rows), nok)),
+                         hero=_hero_block(hero, prev_dir, log=log))
     bad = [r for r in rows if not r['verdict'].startswith('✓')]
     log('目检页：%s' % html)
     for r in bad:

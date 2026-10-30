@@ -158,6 +158,41 @@ _CARDS_V5 = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v5.json'
 _CARDS_V4 = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v4.json'
 _CARDS_V3 = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v3.json'
 
+# ★ 大师成片根（`lrfinish/paths.py` 的 LRFINISH_MASTER 默认值）。cards_v5 里的
+#   `samples` 是 `<卡目录>/<文件>` 的**相对路径**；不接成绝对路径，匹配页一张图都
+#   打不开（PIL 找不到文件，`_thumb` 静默吞掉）。10-31 实测：64 张卡全缺图。
+_MASTER = r'E:\ds\大师成片'
+
+
+_TONE = os.path.join(_CORPUS, 'card_tone.json')
+_TONE_CACHE: Dict[str, dict] = {}
+
+
+def _card_tone() -> Dict[str, dict]:
+    """卡缺的那两块：暗部/高光的冷暖特征（由 `design.card_tone` 从卡的成片测出来）。"""
+    if not _TONE_CACHE:
+        try:
+            with open(_TONE, encoding='utf-8') as fh:
+                _TONE_CACHE.update(json.load(fh))
+        except Exception:                                  # noqa: BLE001
+            pass
+    return _TONE_CACHE
+
+
+def _abs_samples(card: dict) -> List[str]:
+    """卡的样片 → 绝对路径。已经是绝对路径的原样返回。"""
+    rel = list(card.get('samples') or [])
+    if not rel or any(os.path.isabs(p) for p in rel):
+        return rel
+    root = os.path.join(_MASTER, card.get('corpus') or '')
+    return [os.path.join(root, p) for p in rel]
+
+
+def card_samples(name: str) -> List[str]:
+    """某张卡的样片（绝对路径）。人从这里点一张当 hero（设计 §3.4）。"""
+    c = raw_card(name)
+    return _abs_samples(c) if c else []
+
 
 def _from_v3() -> List['MatchCard']:
     """从 cards_v4.json（没有就退回 v3）装卡：带的**中点**当画像，半宽当 spread。"""
@@ -194,7 +229,7 @@ def _from_v3() -> List['MatchCard']:
                              profile=prof, spread=spread,
                              tags=dict(tg.get('tags') or {}),
                              tag_conf=dict(tg.get('conf') or {}),
-                             samples=list(c.get('samples') or []),
+                             samples=_abs_samples(c),
                              thin=bool(c.get('thin'))))
     return out
 
@@ -245,9 +280,12 @@ def raw_cards() -> List[dict]:
 
 
 def raw_card(name: str) -> Optional[dict]:
-    """按名字取原样卡字典（`plan_batch` 的入参）。"""
+    """按名字取原样卡字典（`plan_batch` 的入参）。带上暗部/高光冷暖（card_tone.json）。"""
     for c in raw_cards():
         if c.get('name') == name:
+            t = _card_tone().get(name)
+            if t:
+                c = dict(c, tone=t)
             return c
     return None
 
