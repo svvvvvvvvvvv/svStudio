@@ -372,14 +372,14 @@ def rank_top5(recs: Dict[str, dict], k: int = 5,
         nd, ndiff = _num_distance(batch, c, scales)
         ld, lhit, lmiss = _label_distance(btags, c, kap)
         parts, wts = [], []
-        if np.isfinite(nd):
+        if np.isfinite(nd) and ndiff:
             parts.append(nd)
             wts.append(len(ndiff))
         if ld is not None:
             parts.append(ld)
             wts.append(len([1 for f in LABEL_FACETS if btags.get(f) and c.tags.get(f)]))
-        if not parts:
-            continue
+        if not parts and ld is None:
+            continue            # 数值/标签两边都缺才丢；缺一边照常参与
         score = float(np.average(parts, weights=wts))
         reason = []
         if lhit:

@@ -18,7 +18,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -53,7 +53,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -76,11 +76,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -111,11 +111,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -123,7 +123,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -146,11 +146,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -158,7 +158,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -181,7 +181,7 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "street",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
@@ -216,11 +216,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -251,11 +251,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -263,7 +263,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -286,11 +286,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -298,7 +298,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -321,11 +321,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -356,11 +356,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -368,7 +368,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -391,11 +391,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -403,7 +403,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -438,7 +438,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -461,11 +461,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -508,7 +508,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -531,11 +531,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -543,7 +543,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -566,11 +566,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -578,7 +578,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -601,11 +601,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -640,7 +640,7 @@
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -648,7 +648,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -683,7 +683,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -718,7 +718,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -741,11 +741,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -753,7 +753,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -776,11 +776,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -788,7 +788,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -811,11 +811,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -823,7 +823,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -858,11 +858,11 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
-     "dominant": "front",
+     "dominant": "back",
      "confidence": 1.0
     }
    }
@@ -893,7 +893,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -916,11 +916,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -928,7 +928,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -951,11 +951,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -963,7 +963,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -986,11 +986,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -998,7 +998,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1021,11 +1021,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1033,7 +1033,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1056,11 +1056,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1091,11 +1091,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1138,7 +1138,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1173,7 +1173,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1196,11 +1196,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1231,11 +1231,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1243,7 +1243,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1278,7 +1278,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1301,11 +1301,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "street",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1313,7 +1313,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1336,11 +1336,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1371,11 +1371,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1383,7 +1383,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1406,11 +1406,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1418,7 +1418,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1441,11 +1441,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1476,11 +1476,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1511,11 +1511,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1546,11 +1546,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1558,7 +1558,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1581,11 +1581,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1593,7 +1593,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1628,7 +1628,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1651,11 +1651,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1698,7 +1698,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1721,11 +1721,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1756,11 +1756,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1791,11 +1791,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1826,11 +1826,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1838,7 +1838,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1861,11 +1861,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1908,7 +1908,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -1931,11 +1931,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -1978,7 +1978,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2001,11 +2001,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -2013,7 +2013,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2036,11 +2036,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "street",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -2071,11 +2071,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -2083,7 +2083,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2106,11 +2106,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -2118,7 +2118,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2153,7 +2153,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2188,7 +2188,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2223,7 +2223,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2246,7 +2246,7 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "street",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
@@ -2281,7 +2281,7 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "street",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
@@ -2316,7 +2316,7 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "street",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
@@ -2363,7 +2363,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "half",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2398,7 +2398,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2421,11 +2421,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -2561,11 +2561,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "warm",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -2608,7 +2608,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "half",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2631,7 +2631,7 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "street",
+     "dominant": "interior",
      "confidence": 1.0
     },
     "background.palette": {
@@ -2678,7 +2678,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "half",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2713,7 +2713,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2748,7 +2748,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2783,7 +2783,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "half",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2818,7 +2818,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "half",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2845,7 +2845,7 @@
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "cool",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -2853,11 +2853,11 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "half",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
-     "dominant": "mid",
+     "dominant": "back",
      "confidence": 1.0
     }
    }
@@ -2888,7 +2888,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "half",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2911,11 +2911,11 @@
   "tags": {
    "light": {
     "background.type": {
-     "dominant": "nature",
+     "dominant": "street",
      "confidence": 1.0
     },
     "background.palette": {
-     "dominant": "green",
+     "dominant": "neutral",
      "confidence": 1.0
     },
     "color_env.value": {
@@ -2923,7 +2923,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
@@ -2958,7 +2958,7 @@
      "confidence": 1.0
     },
     "composition.framing": {
-     "dominant": "closeup",
+     "dominant": "environment",
      "confidence": 1.0
     },
     "light.direction": {
