@@ -82,6 +82,16 @@ def distance(pred: Dict[str, float], bands: Dict[str, object]) -> float:
     return float(d)
 
 
+# 正则权重（"1 档曝光" = 0.33，其余按各自的物理量折算）
+REG = dict(ev=0.33, fill=0.33, shadows=0.05, sat=0.044)
+
+
+def penalize(ev: float, fill: float, shadows: float, sat: float) -> float:
+    """动作惩罚：结果一样好时，优先选动作小的解（否则会走退化解）。"""
+    return (REG['ev'] * abs(ev) + REG['fill'] * abs(fill)
+            + REG['shadows'] * abs(shadows) + REG['sat'] * abs(sat))
+
+
 def fit(meas: Dict[str, object], bands: Dict[str, object],
         curve_base=None, tone_grid: Tuple[float, ...] = (1.0, 0.75, 0.5, 0.25),
         ev_grid=(-0.6, -0.3, 0.0), sh_grid=(0, 20, 40, 60),
@@ -106,7 +116,7 @@ def fit(meas: Dict[str, object], bands: Dict[str, object],
                 for sat in sat_grid:
                     for fl in fill_grid:
                         pred = forward(meas, cur, ev, sh, sat, fl)
-                        d = distance(pred, bands)
+                        d = distance(pred, bands) + penalize(ev, fl, sh, sat)
                         if best is None or d < best['dist']:
                             best = dict(dist=round(d, 3), tone=tone, ev=ev, shadows=sh,
                                         sat=sat, fill=fl, curve=cur,
