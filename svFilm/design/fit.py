@@ -58,9 +58,11 @@ def forward(meas: Dict[str, object], curve, ev: float, shadows: float,
     f50 = _apply(p50) + eval_slope(p50) * 0.0
     f95 = _apply(p95)
     ff = _apply(face) + shadows * L_PER_SHADOW + eval_slope(face) * fill
-    f99 = _apply(p99) + shadows * L_PER_SHADOW + eval_slope(p99) * fill
+    # ★ 蒙版 fill 对 p99 的响应比中位弱得多（羽化/选区边缘）⇒ 取 0.3 倍斜率。
+    #   这是**模型假设**，等标定（局部 fill 0 / 1.0 两点量 p99）出来后替换。
+    f99 = _apply(p99) + shadows * L_PER_SHADOW + 0.3 * eval_slope(p99) * fill
     fC = C + sat * C_PER_SAT
-    return dict(p50=f50, p95=f95, face=ff, C=fC, p99=f99)
+    return dict(p50=f50, p95=f95, face=ff, C=fC, p99=f99, p99_in=p99)
 
 
 def distance(pred: Dict[str, float], bands: Dict[str, object]) -> float:
@@ -74,9 +76,12 @@ def distance(pred: Dict[str, float], bands: Dict[str, object]) -> float:
     d += 2.0 * abs(pred['face'] - _mid(b.get('face_L'), 65.0)) / _half(b.get('face_L'), 6.0)
     d += 0.8 * abs(pred['C'] - _mid(b.get('face_C'), 24.0)) / _half(b.get('face_C'), 4.0)
     # 罚项（物理/生理）
+    # ★ 相对罚：只罚"本方案往上加的"，不罚 ① 本来就超的（那归引擎，LR 改不了）
     cap = float((b.get('p95') or [0, 93])[1])
-    if pred['p99'] > cap:
-        d += 2.0 * (pred['p99'] - cap) / 2.0
+    base99 = float(pred.get('p99_in') or 0.0)
+    cap_eff = max(cap, base99)
+    if pred['p99'] > cap_eff:
+        d += 2.0 * (pred['p99'] - cap_eff) / 2.0
     if pred['face'] < 55.0:
         d += 1.0 * (55.0 - pred['face']) / 3.0
     return float(d)
