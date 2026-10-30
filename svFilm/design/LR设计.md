@@ -56,7 +56,7 @@
 
 ```
 1 光位标签（从 ① 判）：gap = bg.L_p90 − skin.L；dark = face_dark_share40
-2 查条件表（语料级）：back / mid / front → face_over_bg 带（+ face_L 带作弱约束）
+2 查条件形状（模型级）：back / mid / front → 套在**这张卡的** face_over_bg 带上（+ face_L 弱约束）
 3 六格决策
 4 写 plan_<stem>.json：{light, band, cell, action, predicted, skipped_reason}
 ```
@@ -134,7 +134,7 @@ B：哪张图要用蒙版（背景组），就把 S 一起挂上去
 | 情况 | 处置 |
 |---|---|
 | 批内异质（IQR > 卡带宽） | 报人拆批 |
-| 条件格 n<30 / 无该语料表 | 只报，不动图级 |
+| 条件格 n<30 | 只报，不动图级 |
 | 无中性面 | WB 不做 |
 | 脸内死白 | 回退，不硬提 |
 | 冷暖与提脸同时要蒙版 | 二选一，记账 |
