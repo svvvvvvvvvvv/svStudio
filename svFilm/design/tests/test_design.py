@@ -909,5 +909,29 @@ def main():
     return 1 if bad else 0
 
 
+# ---------------------------------------------------------------- 2026-10-30 晚：轮廓光 / 颜色锚
+
+def test_predicted_rim_blames_lift_only_when_present():
+    """轮廓光预测：**提亮前就为 0 的，不许归咎于提亮**（1608 就是这种）。"""
+    from design.formula import predicted_rim
+    dark = dict(L_p10=4.2, L_p25=5.1, L_p50=8.1, L_p75=11.8, L_p90=15.7)
+    r = predicted_rim(dark, 39.6, 8.0)
+    same(r['ratio'], None)
+    ok(r['judged'] is False, '本来就没亮边，不该判"提亮吃掉了"')
+    bright = dict(L_p10=6.9, L_p25=9.1, L_p50=27.3, L_p75=50.0, L_p90=69.8)
+    ok(predicted_rim(bright, 39.0, 10.0)['judged'] is True, '提 10 档应判定吃掉亮边')
+    ok(predicted_rim(bright, 39.0, 2.0)['judged'] is False, '提 2 档不该判')
+
+
+def test_neutral_anchor_needs_enough_neutral_area():
+    """颜色锚：中性面不足 ⇒ 锚不可信，只做保守修正（不许硬归零 b*）。"""
+    from design.formula import neutral_anchor
+    ok(neutral_anchor(dict(neutral=dict(share=0.21, a=-0.1, b=0.3, n=9000)))['ok'] is True,
+       '20% 中性面应可用')
+    bad = neutral_anchor(dict(neutral=dict(share=0.01)))
+    ok(bad['ok'] is False and bad['b'] is None, '1% 中性面不该给出 b* 目标')
+
+
 if __name__ == '__main__':
     raise SystemExit(main())
+

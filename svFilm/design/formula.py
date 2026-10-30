@@ -137,3 +137,58 @@ def allocate_fill(face_L: float, target_L: float, p99: Optional[float],
     return dict(shadows_ui=round(sh_ui, 1), ev=round(ev, 4),
                 deficit_L=round(max(0.0, need - got), 2),
                 why=('白端截断' if capped else ('阴影吃满+曝光补齐' if ev > 0 else '阴影足够')))
+
+# ---------------------------------------------------------------- 轮廓光 / 颜色锚
+
+def _share_above(q: Dict[str, float], x: float) -> float:
+    """用五阶分位当**分段线性 CDF**，估算"大于 x 的占比"。
+
+    为什么不用全直方图：测量层只存分位（存直方图会让 json 膨胀十倍），
+    而分位足以估"提亮会吃掉多少亮边"这个量级——它本来就是粗判。
+    """
+    xs = [q.get('L_p10'), q.get('L_p25'), q.get('L_p50'), q.get('L_p75'), q.get('L_p90')]
+    us = [0.90, 0.75, 0.50, 0.25, 0.10]          # 对应"大于它的占比"
+    if any(v is None for v in xs):
+        return 0.0
+    if x <= xs[0]:
+        return 0.90
+    if x >= xs[-1]:
+        return 0.0
+    for i in range(len(xs) - 1):
+        if xs[i] <= x <= xs[i + 1]:
+            t = (x - xs[i]) / max(xs[i + 1] - xs[i], 1e-6)
+            return us[i] + (us[i + 1] - us[i]) * t
+    return 0.0
+
+
+def predicted_rim(rim: Dict[str, float], face_L: float, dL: float) -> Dict[str, float]:
+    """预测"提亮之后轮廓光还剩多少"（局部提亮才会吃掉它）。
+
+        亮边 = 环带里比 `脸 + 10` 更亮的像素占比
+        局部提亮 dL 之后，门槛变成 `脸 + dL + 10`、环带不动 ⇒ 亮边变少
+
+    ★ 全局提亮不吃亮边（环带与脸同步抬升，差值不变），所以只在局部分支调用。
+    ★ 提亮前就为 0 的（如 1608，亮边 0.000）**不许归咎于提亮**——那是源片的事。
+    """
+    now = _share_above(rim, float(face_L) + 10.0)
+    after = _share_above(rim, float(face_L) + float(dL) + 10.0)
+    ratio = (after / now) if now > 1e-9 else None
+    return dict(rim_now=round(now, 4), rim_after=round(after, 4),
+                ratio=(round(ratio, 3) if ratio is not None else None),
+                judged=(ratio is not None and ratio < 0.7))
+
+
+def neutral_anchor(rec: Dict[str, object]) -> Dict[str, object]:
+    """颜色锚：画面里有没有"可信的中性面"。
+
+    理论：色彩恒常性——人眼按场景光源解释颜色，中性面是判断光源的依据。
+    没有中性面 ⇒ **锚不可信**，白平衡只做保守修正（不许硬归零）。
+    """
+    nu = rec.get('neutral') or {}
+    share = float(nu.get('share') or 0.0)
+    ok = share >= 0.05 and nu.get('n')
+    return dict(ok=bool(ok), share=round(share, 4),
+                a=(round(float(nu['a']), 2) if ok and nu.get('a') is not None else None),
+                b=(round(float(nu['b']), 2) if ok and nu.get('b') is not None else None),
+                why=('有中性面（%.1f%%）' % (share * 100) if ok
+                     else '中性面不足（%.1f%%）⇒ 颜色锚不可信，只做保守修正' % (share * 100)))
