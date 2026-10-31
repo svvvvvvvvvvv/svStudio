@@ -350,7 +350,7 @@ def summary(plans: Dict[str, dict], card_name: str = '') -> str:
         w = p['white']
         lines.append('%-10s %+8.2f %+8.2f  %-22s %-10s %.2f%% / %.2f%% (p95 %.1f)'
                      % (stem, pl['exposure_ev'], pl['local_ev'],
-                        ','.join('%s%+.1f' % (k, v) for k, v in (pl.get('curve') or {}).items()) or '—',
+                        ','.join('%s%+.1f' % (k, v) for k, v in (p.get('curve') or {}).items()) or '—',
                         w['need'] or '不动', w.get('person_clip') or 0, w.get('bg_clip') or 0,
                         w['p95'] or 0))
     return '\n'.join(lines)

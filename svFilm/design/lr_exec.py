@@ -58,7 +58,7 @@ def to_lrplans(plans: Dict[str, dict]) -> Dict[str, LRPlan]:
             local_toning_hue=float(g.get('local_toning_hue') or 0.0),
             local_toning_sat=float(g.get('local_toning_sat') or 0.0),
             notes=dict(
-                curve=str(pl.get('curve') or {}),
+                curve=str(p.get('curve') or {}),
                 white_need=str(w.get('need')),
                 person_clip=str(w.get('person_clip')),
                 bg_clip=str(w.get('bg_clip')),
