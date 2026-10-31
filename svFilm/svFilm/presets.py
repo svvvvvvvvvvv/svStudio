@@ -57,12 +57,26 @@ def _check_white_gate(name, wc, bc, white_level):
         % (_key, wc, bc, _how, _how, _dead, _alive, white_level), file=sys.stderr)
 
 
+def _key_of(name):
+    """预设名(str) 或 **介质块**(dict) → 缓存/锁的键。"""
+    if isinstance(name, dict):
+        sim = name.get('simulation') or {}
+        return 'medium:%s+%s' % (sim.get('film_stock'), sim.get('print_paper'))
+    return name
+
+
+def _block_of(name):
+    """预设名 → 原样 JSON；介质块 → 它自己（**不再查任何注册表**）。"""
+    return dict(name) if isinstance(name, dict) else load_raw(name)
+
+
 def _lock_of(name):
+    key = _key_of(name)
     with _LOCK:
-        lk = _LOCKS.get(name)
+        lk = _LOCKS.get(key)
         if lk is None:
             # 用 **RLock**：`render_copy()` 要在持有同一把锁时再调 `render()`（内部会取同名锁）。
-            lk = _LOCKS[name] = threading.RLock()
+            lk = _LOCKS[key] = threading.RLock()
     return lk
 
 _SUFFIX = '.json'
@@ -384,7 +398,12 @@ def _file_sig(name):
 
 
 def _params_for(name, cfg):
-    """按 **(预设名, config 指纹, 预设文件指纹)** 缓存。"""
+    """按 **(介质键, config 指纹, 预设文件指纹)** 缓存。
+
+    `name` 可以是预设名(str)，也可以是**介质块**(dict) —— 后者不再查任何注册表，
+    每个目录自己带一份介质（2026-10-31：删掉"预设"这个概念）。
+    """
+    key = _key_of(name)
     _sig = None
     if hasattr(cfg, 'key_signature'):
         try:
@@ -396,20 +415,20 @@ def _params_for(name, cfg):
             _PARAMS.clear()                            # config 变了 ⇒ 老参数对象全部作废
             _PARAMS_FSIG.clear()
             _PARAMS_SIG[0] = _sig
-        _fs = _file_sig(name)
-        if _PARAMS_FSIG.get(name) != _fs:
-            _PARAMS.pop(name, None)
-            _PARAMS_FSIG[name] = _fs
-        p = _PARAMS.get(name)
+        _fs = _file_sig(name) if isinstance(name, str) else None
+        if _PARAMS_FSIG.get(key) != _fs:
+            _PARAMS.pop(key, None)
+            _PARAMS_FSIG[key] = _fs
+        p = _PARAMS.get(key)
         if p is not None:
             return p
-        d = load_raw(name)
+        d = _block_of(name)
         spektra = __import__(__name__.rsplit('.', 1)[0] + '.spektra', fromlist=['x'])
         init_params, _simulate = spektra._sf()
         p = init_params(film_profile=d['simulation']['film_stock'],
                         print_profile=d['simulation']['print_paper'])
-        _apply(p, d, cfg, name)
-        _PARAMS[name] = p
+        _apply(p, d, cfg, key)
+        _PARAMS[key] = p
         return p
 
 
@@ -444,13 +463,13 @@ def film_of(name):
 
 
 def pe_of(name):
-    """预设自己的印相曝光（落点）。"""
-    return float(load_raw(name)['simulation']['print_exposure'])
+    """这一份介质的印相曝光（落点）。"""
+    return float(_block_of(name)['simulation']['print_exposure'])
 
 
 def wb_of(name):
-    """★ 该预设**自己的白平衡**（解码层）：`{white_balance, temperature, tint}`。"""
-    d = load_raw(name)
+    """★ 该介质**自己的白平衡**（解码层）：`{white_balance, temperature, tint}`。"""
+    d = _block_of(name)
     wb = d.get('wb') or {}
     return dict(white_balance=str(wb.get('white_balance', getattr(C, 'PUBLIC_WB', 'custom'))),
                 temperature=float(wb.get('temperature', getattr(C, 'PUBLIC_WB_TEMPERATURE', 5200.0))),
