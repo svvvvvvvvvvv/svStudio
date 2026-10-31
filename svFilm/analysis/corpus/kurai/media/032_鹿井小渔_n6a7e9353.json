@@ -165,8 +165,8 @@
   "print_exposure": 0.694,
   "output_lightness_compression": "off",
   "print_exposure_compensation": true,
-  "print_y_filter_shift": 0.0,
-  "print_m_filter_shift": 0.0,
+  "print_y_filter_shift": 1.4,
+  "print_m_filter_shift": -0.4,
   "scan_lens_blur": 0.0,
   "scan_white_correction": true,
   "scan_black_correction": true,
@@ -377,6 +377,21 @@
    ],
    "cc_blue_yellow": -1.9,
    "cc_red_green": -0.6
+  },
+  "neutral": {
+   "lab": [
+    86.89,
+    -1.48,
+    1.9
+   ],
+   "cc_blue_yellow": -1.4,
+   "cc_red_green": -0.4
+  },
+  "filter_shift": {
+   "cc_blue_yellow": -1.4,
+   "cc_red_green": -0.4,
+   "y": 1.4,
+   "m": -0.4
   }
  },
  "_derived": {

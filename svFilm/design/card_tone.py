@@ -65,7 +65,7 @@ def build_card(card: dict) -> Optional[dict]:
     files = [p for p in _abs_samples(card) if os.path.isfile(p)]
     if not files:
         return None
-    sh, hi, overall = [], [], []
+    sh, hi, overall, neutral = [], [], [], []
     for p in files:
         im = Image.open(p).convert('RGB')
         im.thumbnail((600, 600))
@@ -83,6 +83,13 @@ def build_card(card: dict) -> Optional[dict]:
         C = np.hypot(a, b)
         overall.append([float(np.median(C)), float(np.percentile(C, 75)),
                         float(np.percentile(C, 90))])
+        # ★ 中性轴（低彩度像素的 a*/b*）：这是"整幅偏什么色"，用来定放大机滤片位移。
+        #   只取低彩度像素，避免把衣服/天空的颜色当白平衡。
+        thr = float(np.percentile(C, 30))
+        m = C <= max(thr, 1e-6)
+        if int(m.sum()) >= 500:
+            neutral.append([float(np.median(L[m])), float(np.median(a[m])),
+                            float(np.median(b[m]))])
 
     def med(rows):
         if not rows:
@@ -94,6 +101,8 @@ def build_card(card: dict) -> Optional[dict]:
                     hsl_h=_hue_of(lab), n=len(rows))
 
     out = dict(shadow=med(sh), highlight=med(hi), n_images=len(files))
+    if neutral:
+        out['neutral'] = med(neutral)
     if overall:
         arr = np.array(overall)
         out['overall_C'] = dict(

@@ -119,7 +119,7 @@ def targets_from_card(card_name: str) -> dict:
     )
     tone = json.load(open(_TONE, encoding='utf-8')).get(card_name) if os.path.isfile(_TONE) else None
     if tone:
-        for z in ('shadow', 'highlight'):
+        for z in ('shadow', 'highlight', 'neutral'):
             t = tone.get(z) or {}
             lab = t.get('lab')
             if lab:
@@ -130,11 +130,16 @@ def targets_from_card(card_name: str) -> dict:
 
 
 def apply_targets(card_name: str) -> str:
-    """把目录级目标写进它的介质：扫描端点直接落，其余进 `_target` 供批次求解。
+    """把目录级目标写进它的介质。
 
-    ★ 2026-10-31 修：端点在引擎里的真键是 `simulation.scan_white_level / scan_black_level`
-      （`svFilm/presets.py::_apply` 读的就是这两个），不是顶层 `scanner`。写错地方
-      = 一个数都没生效，而 `_render.json`/账面看着一切正常。
+    · 扫描端点 → `simulation.scan_white_level / scan_black_level`（引擎真键）
+    · **整幅色偏 → `simulation.print_y_filter_shift / print_m_filter_shift`**
+      （放大机 CC 滤片位移，单位 = Kodak CC；1 CC = 0.01 密度）
+      为什么用中性轴而不是暗部：滤片是**整幅**的，暗部青蓝来自分色，不是白平衡。
+    · 其余（p50 密度、形状带、暗部/高光 CC）→ `_target`，留给批次级求解
+
+    ★ 2026-10-31 修：端点的真键是 `simulation.scan_*`，不是顶层 `scanner`（写错过一次，
+      一个数都没生效而账面正常）。
     """
     tg = targets_from_card(card_name)
     block = load(card_name)
@@ -145,7 +150,20 @@ def apply_targets(card_name: str) -> str:
         sim['scan_white_level'] = tg['white_level']
     if tg.get('black_level') is not None:
         sim['scan_black_level'] = tg['black_level']
+    neu = tg.get('neutral') or {}
+    lab = neu.get('lab')
+    if lab:
+        by, rg = _cc(*lab)          # by: 正=偏蓝；rg: 正=偏红
+        # 符号：黄滤片吸收蓝 ⇒ 要更蓝 = 减黄（shift 取 −CC）；
+        #       品红吸收绿 ⇒ 要更红 = 加品红（shift 取 +CC）。
+        # ⚠ 这是按"吸收互补色"推的符号约定，第一次出片要人眼确认一次。
+        sim['print_y_filter_shift'] = round(-by, 1)
+        sim['print_m_filter_shift'] = round(rg, 1)
+        tg['filter_shift'] = dict(cc_blue_yellow=round(by, 1), cc_red_green=round(rg, 1),
+                                  y=sim['print_y_filter_shift'],
+                                  m=sim['print_m_filter_shift'])
     block['simulation'] = sim
     block.pop('scanner', None)          # 旧写法留下的空壳，删掉免得再被误认
     block['_target'] = tg
-    return save(card_name, block, note='扫描端点写在 simulation.scan_*；其余目标见 _target')
+    return save(card_name, block,
+                note='扫描端点/放大机滤片写进 simulation.*；其余目标见 _target')
