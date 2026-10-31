@@ -162,7 +162,7 @@
   "auto_exposure": true,
   "auto_exposure_method": "subject",
   "print_illuminant": "TH-KG3",
-  "print_exposure": 1.8039,
+  "print_exposure": 1.7854,
   "output_lightness_compression": "off",
   "print_exposure_compensation": true,
   "print_y_filter_shift": 0.9,
@@ -174,8 +174,8 @@
    0.0,
    0.0
   ],
-  "scan_black_level": 0.0744,
-  "scan_white_level": 0.9976,
+  "scan_black_level": 0.01,
+  "scan_white_level": 0.98,
   "output_color_space": "sRGB",
   "scan_film": false,
   "camera_diffusion_filter_active": true,
@@ -321,44 +321,18 @@
  "_note_base": "基线介质（从 卡38 一次性冻结；此后目录介质以各自 media/*.json 为准）",
  "_note_medium": "print_exposure = 参考灰 18.4% → 本卡目标密度（二分求得）",
  "_target": {
-  "white_level": 0.9946,
-  "black_level": 0.0065,
-  "p50_target_D": 1.022,
+  "p50_target_D": 1.008,
   "shape": {
-   "toe": [
-    5.88,
-    20.05
-   ],
-   "shoulder": [
-    17.75,
-    41.82
-   ],
-   "contrast_win": [
-    48.01,
-    88.01
-   ],
-   "skew": [
-    24.96,
-    51.62
-   ]
+   "toe": 11.36,
+   "shoulder": 28.94,
+   "contrast_win": 57.67,
+   "skew": 34.57
   },
-  "warm_cool_b": [
-   -10.44,
-   -7.65
-  ],
+  "warm_cool_b": -9.55,
   "face": {
-   "C": [
-    17.02,
-    24.75
-   ],
-   "h": [
-    34.24,
-    51.79
-   ],
-   "L": [
-    38.53,
-    59.64
-   ]
+   "C": 23.87,
+   "h": 45.39,
+   "L": 47.43
   },
   "shadow": {
    "lab": [
@@ -387,8 +361,6 @@
    "cc_blue_yellow": -0.9,
    "cc_red_green": -0.1
   },
-  "white_level_code": 0.9976,
-  "black_level_code": 0.0744,
   "filter_shift": {
    "cc_blue_yellow": -0.9,
    "cc_red_green": -0.1,
@@ -411,7 +383,7 @@
   "shadow_cc": -29.0,
   "scene_fit": true,
   "neutral_filters": "engine database (neutral_print_filters.json)",
-  "pe": 1.8039,
-  "pe_reason": "参考灰 18.4% → 目标 D 1.022（Y 0.0951）；实测 Y 0.0951 ⇒ PE 1.8039"
+  "pe": 1.7854,
+  "pe_reason": "参考灰 18.4% → 目标 D 1.008（Y 0.0982）；实测 Y 0.0982 ⇒ PE 1.7854"
  }
 }

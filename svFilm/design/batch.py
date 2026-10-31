@@ -13,11 +13,11 @@
     recs0 = pilot(b, n=2)                 # 试点渲 2 张 -> ①
     offer = choose(recs0, intent)         # 选卡
     recs  = run_engine(b, offer.best())   # 整批渲 -> ①
-    plans = plan_lr(recs, intent)         # LR 计划
+    plans = lr_solve.plan_batch(recs, card)  # LR 计划
     jobs  = write_jobs(plans, out_dir)    # XMP 作业单
 
 用法：
-    from design.batch import Batch, pilot, run_engine, plan_lr
+    from design.batch import Batch, pilot, run_engine
 """
 from __future__ import annotations
 
@@ -29,8 +29,6 @@ from typing import Dict, List, Optional
 
 from . import measure as M
 from .flow import Choice, choose, render_card
-from .intent import Intent
-from .lr import LRPlan, solve_one
 from .lrsink import write_jobs
 
 RAW_EXT = ('*.RAF', '*.raf', '*.NEF', '*.CR2', '*.CR3', '*.ARW', '*.DNG')
@@ -119,7 +117,7 @@ def measure_tif(path: str, with_bg: bool = True, fixed_xy=None) -> dict:
     rec.setdefault('person', dict(
         L=rec.get('person_L'), p95=rec.get('person_p95'),
         p99=rec.get('person_p99'), px=rec.get('person_px'),
-        clip_pct=None))
+        clip_pct=rec.get('person_clip_pct')))
     rec.setdefault('bg', dict(
         L=rec.get('bg_L'), L_p90=rec.get('bg_L_p90'),
         L_p95=rec.get('bg_L_p95'), px=rec.get('bg_px')))
@@ -207,17 +205,6 @@ def run_engine(b: Batch, choice: Choice, measure_fn=None, limit: int = 0,
     log('整批：%d 张渲完，%d 张有效，%.0f 秒（%.0f 秒/张）'
         % (len(tifs), len(recs), dt, dt / max(len(tifs), 1)))
     return recs
-
-
-def plan_lr(recs: Dict[str, dict], intent: Optional[Intent] = None,
-            light: Optional[str] = None, log=print) -> Dict[str, LRPlan]:
-    """① -> LR 计划（逐图）。"""
-    plans = {}
-    for st, rec in recs.items():
-        plans[st] = solve_one(rec, intent=intent, light=light, log=lambda *_: None)
-    log('LR 计划：%d 张' % len(plans))
-    return plans
-
 
 
 def _light_kind(p_engine, p_final):

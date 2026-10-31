@@ -207,7 +207,7 @@ def card_samples(name: str) -> List[str]:
 
 
 def _from_v3() -> List['MatchCard']:
-    """从 cards_v4.json（没有就退回 v3）装卡：带的**中点**当画像，半宽当 spread。"""
+    """从 cards_v5 装卡：**点值**当画像，带的半宽当 spread（匹配可用分布）。"""
     _path = _CARDS_V5 if os.path.isfile(_CARDS_V5) else (_CARDS_V4 if os.path.isfile(_CARDS_V4) else _CARDS_V3)
     if not os.path.isfile(_path):
         return []
@@ -217,21 +217,33 @@ def _from_v3() -> List['MatchCard']:
     out: List[MatchCard] = []
     for c in d.get('cards') or []:
         b = c.get('bands') or {}
+        pt = c.get('points') or {}
         prof: Dict[str, float] = {}
         spread: Dict[str, float] = {}
-        for key, bname in (('p5', 'p5'), ('p50', 'p50'), ('p95', 'p95'),
-                           ('contrast', 'contrast'), ('clip', 'clip'), ('sky', 'sky')):
+
+        def _pt(key):
+            v = pt.get(key)
+            if isinstance(v, (int, float)):
+                return float(v)
+            band = b.get(key)
+            if isinstance(band, list) and len(band) == 2:
+                return 0.5 * (float(band[0]) + float(band[1]))
+            return None
+
+        for key in ('p5', 'p50', 'p95', 'contrast', 'clip', 'sky'):
+            v = _pt(key)
+            if v is not None:
+                prof[key] = v
+            band = b.get(key)
+            if isinstance(band, list) and len(band) == 2:
+                spread[key] = max((float(band[1]) - float(band[0])) / 2.0, 1e-6)
+        for key, bname in (('L', 'face_L'), ('C', 'face_C')):
+            v = _pt(bname)
+            if v is not None:
+                prof[key] = v
             band = b.get(bname)
             if isinstance(band, list) and len(band) == 2:
-                prof[key] = 0.5 * (band[0] + band[1])
-                spread[key] = max((band[1] - band[0]) / 2.0, 1e-6)
-        fb = b.get('face_L')
-        if isinstance(fb, list):
-            prof['L'] = 0.5 * (fb[0] + fb[1])
-            spread['L'] = max((fb[1] - fb[0]) / 2.0, 1e-6)
-        cb = b.get('face_C')
-        if isinstance(cb, list):
-            prof['C'] = 0.5 * (cb[0] + cb[1])
+                spread[key] = max((float(band[1]) - float(band[0])) / 2.0, 1e-6)
         if prof.get('p95') is not None and prof.get('p5') is not None:
             prof['span'] = prof['p95'] - prof['p5']
         tg = tags.get(c['name']) or {}

@@ -22,14 +22,10 @@ from .invariants import T1, T2, T3, T4, T4_BACKLIT, T5, S1, S3
 
 def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True,
            light: Optional[str] = None) -> Dict[str, object]:
-    """③ 的验收：**硬门（脸 + 没把脸改坏）+ 软门（背景）**。
+    """③ 的验收：**物理底线（硬）+ 目检**；脸/背景/曲线/白点只报告。
 
-    为什么不像 check_S 那样直接比 ①→③：②曝光本来就会改脸的亮度，
-    拿"绝对位移"判 S1 会把正当的曝光算成违规。
-    这里比的是**残差**：③ 的脸位移 − 曝光该带来的位移。
-    残差大 ⇒ 收白/曲线/点颜色这几步偷偷改了明暗（那才是要抓的）。
-
-    返回 dict(hard=[(名, ok, 值, 限, 说明)], soft=[...], ok=bool)
+    2026-10-31：硬门只留物理（黑端 p1、人身上死白）；T4/T5/S1/S3/T3 降为报告，
+    最终过不过由人目检。`ok` = 物理底线；不是"这张好看"。
     """
     hard, soft = [], []
     img1 = rec_1.get('img') or {}
@@ -52,18 +48,18 @@ def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True,
     if L3 is not None:
         if L1 is not None and not (zlo <= float(L1) <= zhi):
             okv = abs(float(L3) - zhi) <= abs(float(L1) - zhi) + 0.2 or zlo <= float(L3) <= zhi
-            hard.append(('T4 脸L', okv, round(float(L3), 1), '比 ①(%.1f) 更靠近区' % float(L1),
-                         '① 本身出区 ⇒ 只要求别更远'))
+            soft.append(('T4 脸L', okv, round(float(L3), 1), '比 ①(%.1f) 更靠近区' % float(L1),
+                         '① 本身出区 ⇒ 只要求别更远（报告）'))
         else:
-            hard.append(('T4 脸L', zlo <= float(L3) <= zhi, round(float(L3), 1),
-                         '%g~%g' % (zlo, zhi), '脸在合理曝光区（%s）' % (lt or 'unknown')))
+            soft.append(('T4 脸L', zlo <= float(L3) <= zhi, round(float(L3), 1),
+                         '%g~%g' % (zlo, zhi), '脸在合理曝光区（%s，报告）' % (lt or 'unknown')))
     if C3 is not None:
         if C1 is not None and float(C1) < T5['C_min']:
-            hard.append(('T5 脸C', float(C3) >= float(C1) - 0.2, round(float(C3), 1),
-                         '≥ ①(%.1f)-0.2' % float(C1), '① 本身就发灰 ⇒ 只要求不比 ① 更差'))
+            soft.append(('T5 脸C', float(C3) >= float(C1) - 0.2, round(float(C3), 1),
+                         '≥ ①(%.1f)-0.2' % float(C1), '① 本身就发灰 ⇒ 只要求不比 ① 更差（报告）'))
         else:
-            hard.append(('T5 脸C', (C3 or 0) >= T5['C_min'], round(float(C3), 1),
-                         T5['C_min'], '脸不灰'))
+            soft.append(('T5 脸C', (C3 or 0) >= T5['C_min'], round(float(C3), 1),
+                         T5['C_min'], '脸不灰（报告）'))
 
     # ---- 硬门：脸的明暗残差（曝光与补光之外，别的步骤不许动脸）
     ev = float(getattr(plan, 'exposure_ev', 0.0) or 0.0) if plan is not None else 0.0
@@ -86,7 +82,7 @@ def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True,
         _lum = float((getattr(plan, 'point_color', None) or {}).get('lum', 0.0) or 0.0) \
             if plan is not None else 0.0
         if ev_known and abs(expect - float(L1)) <= 1e-9 and abs(_lum) < 1e-9:
-            hard.append(item)
+            soft.append(item)
         elif fill > 1e-9:
             soft.append(item[:4] + (item[4] + '（补光传递实测 10~20 L*/档，残差只当信息）',))
         else:
@@ -106,24 +102,24 @@ def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True,
             hard.append(('T2 p1', float(p1_3) >= T2['p1_min'], round(float(p1_3), 2),
                          T2['p1_min'], '黑端不堵'))
 
-    # ---- 硬门：曲线预算
+    # ---- 报告：曲线预算（S3 是自标定政策，不再当硬门）
     if plan is not None and getattr(plan, 'curve', None):
         from .curve import displacement
         Ls = [img1.get('p%d' % k) for k in (5, 25, 50, 75, 95)]
         ds = displacement(plan.curve, [v for v in Ls if isinstance(v, (int, float))])
         if ds:
             w = max(abs(x) for x in ds)
-            hard.append(('S3 曲线预算', w <= S3['anchor_max'], round(w, 2),
-                         S3['anchor_max'], '每锚点位移（L*）'))
+            soft.append(('S3 曲线预算', w <= S3['anchor_max'], round(w, 2),
+                         S3['anchor_max'], '每锚点位移（L*，报告）'))
 
-    # ---- 硬门：白点**不许被 LR 改坏**（相对 ①）；绝对值只进软门（那是卷/纸的账）
+    # ---- 报告：白点位移（不是物理判决）
     wp1 = rec_1.get('white_point') or None
     wp3 = rec_3.get('white_point') or None
     if wp3 and wp1:
         d = max(abs(wp3.get('a', 0) - wp1.get('a', 0)),
                 abs(wp3.get('b', 0) - wp1.get('b', 0)))
-        hard.append(('T3 白点位移', d <= T3['ab_max'], round(d, 2), T3['ab_max'],
-                     '白点相对 ① 的位移（绝对值是卷/纸的账，只看软门）'))
+        soft.append(('T3 白点位移', d <= T3['ab_max'], round(d, 2), T3['ab_max'],
+                     '白点相对 ① 的位移（报告）'))
     if wp3:
         worst = max(abs(wp3.get('a', 0.0)), abs(wp3.get('b', 0.0)))
         soft.append(('T3 白点绝对', worst <= T3['ab_max'], round(worst, 2), T3['ab_max'],
@@ -134,6 +130,11 @@ def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True,
     if clip is not None:
         soft.append(('T1 clip', float(clip) < T1['clip_max'], round(float(clip), 2),
                      T1['clip_max'], '终片不爆白（背景可爆，此项只报告）'))
+    # ---- 硬门：**人身上**的死白（物理不可逆；背景爆不算）
+    p_clip = (rec_3.get('person') or {}).get('clip_pct')
+    if p_clip is not None:
+        hard.append(('T1 人clip', float(p_clip) < T1['clip_max'], round(float(p_clip), 2),
+                     T1['clip_max'], '人身上可见剪裁（物理不可逆）'))
 
     # ---- 软门：背景 a/b 位移（要 background 掩膜才量得到）
     bb, ba = rec_1.get('bg') or {}, rec_3.get('bg') or {}

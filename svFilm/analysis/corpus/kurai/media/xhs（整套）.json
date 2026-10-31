@@ -162,7 +162,7 @@
   "auto_exposure": true,
   "auto_exposure_method": "subject",
   "print_illuminant": "TH-KG3",
-  "print_exposure": 1.5362,
+  "print_exposure": 1.5014,
   "output_lightness_compression": "off",
   "print_exposure_compensation": true,
   "print_y_filter_shift": -0.7,
@@ -174,8 +174,8 @@
    0.0,
    0.0
   ],
-  "scan_black_level": 0.0039,
-  "scan_white_level": 0.9893,
+  "scan_black_level": 0.01,
+  "scan_white_level": 0.98,
   "output_color_space": "sRGB",
   "scan_film": false,
   "camera_diffusion_filter_active": true,
@@ -322,44 +322,18 @@
  "_note_texture_1029": "2026-10-29 SV 定：**没研究过的**质感参数，先沿用鹿井那张卡（卡38）的值。改了三项：blur_dye_clouds_um 0.8→3.0；halation_strength [0.015,0.0048,0]→[2.5,0.8,0]（修单位笔误：原值是把已除过 100 的物理值写进了 ×100 的字段，实际只有 1/100，几乎等于关掉）；halation_first_sigma_um 65→75。**卡自己的没动**：grain.rms=10（目检定）、amount=1.2、wb、卷/纸、画幅。后期再开专题研究质感。",
  "_note_base": "基线介质（从 xhs预设 一次性冻结；此后目录介质以各自 media/*.json 为准）",
  "_target": {
-  "white_level": 0.9759,
-  "black_level": 0.0003,
-  "p50_target_D": 0.622,
+  "p50_target_D": 0.592,
   "shape": {
-   "toe": [
-    9.72,
-    32.69
-   ],
-   "shoulder": [
-    8.59,
-    25.14
-   ],
-   "contrast_win": [
-    47.05,
-    78.32
-   ],
-   "skew": [
-    36.04,
-    62.84
-   ]
+   "toe": 22.29,
+   "shoulder": 14.46,
+   "contrast_win": 65.18,
+   "skew": 45.75
   },
-  "warm_cool_b": [
-   -6.29,
-   5.88
-  ],
+  "warm_cool_b": 0.0,
   "face": {
-   "C": [
-    14.43,
-    29.82
-   ],
-   "h": [
-    46.54,
-    68.66
-   ],
-   "L": [
-    63.77,
-    82.74
-   ]
+   "C": 19.51,
+   "h": 57.84,
+   "L": 72.04
   },
   "shadow": {
    "lab": [
@@ -388,8 +362,6 @@
    "cc_blue_yellow": 0.7,
    "cc_red_green": 0.0
   },
-  "white_level_code": 0.9893,
-  "black_level_code": 0.0039,
   "filter_shift": {
    "cc_blue_yellow": 0.7,
    "cc_red_green": 0.0,
@@ -412,7 +384,7 @@
   "shadow_cc": 1.0,
   "scene_fit": true,
   "neutral_filters": "engine database (neutral_print_filters.json)",
-  "pe": 1.5362,
-  "pe_reason": "参考灰 18.4% → 目标 D 0.622（Y 0.2388）；实测 Y 0.2388 ⇒ PE 1.5362"
+  "pe": 1.5014,
+  "pe_reason": "参考灰 18.4% → 目标 D 0.592（Y 0.2559）；实测 Y 0.2559 ⇒ PE 1.5014"
  }
 }

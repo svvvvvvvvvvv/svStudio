@@ -421,7 +421,7 @@ def cmd_run(a):
             from .lr_exec import to_lrplans as _to_lrplans
             reviewed = build_review(b, recs, _to_lrplans(plans), recs3,
                                     light=getattr(a, 'light', None), log=print)
-            print(' 验收：硬门（脸）过 %d/%d 张' % (reviewed['ok'], reviewed['n']))
+            print(' 物理底线：%d/%d 张（脸/背景/曲线只报告）' % (reviewed['ok'], reviewed['n']))
             print(' 目检：%s' % reviewed['html'])
         except Exception as e:
             print(' ! LR 出片失败：%s' % str(e)[:160])
@@ -499,7 +499,7 @@ def cmd_review(a):
         print('用托管直链：%d 条' % len(um))
     out = make_review(r1, r3, plans, a.out, tif_1_dir=a.tif1, tif_3_dir=a.tif3,
                       title=a.title, ev_known=bool(a.manifest), url_map=um, log=print)
-    print('\n验收：硬门（脸）过 %d/%d' % (out['ok'], out['n']))
+    print('\n物理底线：%d/%d（T4/T5/S1/S3 只报告；过不过由你目检）' % (out['ok'], out['n']))
     for r in out['rows']:
         print('  %-10s %s' % (r['stem'], r['verdict']))
         print('             %s%s' % (r['values'], r['note']))

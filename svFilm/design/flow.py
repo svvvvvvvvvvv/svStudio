@@ -30,12 +30,8 @@ from .intent import Intent
 from .stocks import Registry, registry
 from .texture import Style, TexturePlan, plan_texture, warn
 
-# ★ 引擎用**它自己的测光**出片：`presets.render_safe`（两端都不死，取最暗可行解）
-#   ⚠ 它守的是 p95 ≤ p95_max（默认 96），而这是**引擎自己的安全阀**，不是我们的靶。
-#   ⚠ 它的白端循环只有 3 次 ×1.15、不看目标值 ⇒ 别指望用 p95_max 控高光（实测死参数）。
-#   引擎不管脸、不管落点 —— 那是 LR 的事（分工见 design/__init__.py）。
-BLACK_MAX = 3.0
-P95_ENGINE_SAFE = 96.0
+# ★ 2026-10-31：引擎**不再用 render_safe 自己找曝光**（那是引擎做放置，越界）。
+#   固定用每目录的 print_exposure 渲；余量只报告。引擎不管脸、不管落点。
 # ★★★ 余量只有在"上端没被砍"时才是一个可用的数（2026-10-29 实测，见下）
 #   `scan_white_level` 是**上端硬天花**：它按 sRGB 显示码切顶。
 #     white_level=1.00 ⇒ 天花 L*≈100（能到顶、clip 可测）
@@ -45,9 +41,6 @@ P95_ENGINE_SAFE = 96.0
 #   代价是中位 4.65%（1.5~14%）的像素被从 ≥96 压到 95.5 以下、直方图 96+ 段精确归零。
 #   ⇒ **不许再用降白端去制造余量**。天花低于此值 ⇒ 余量判为不可信。
 CEILING_MIN_L = 99.5
-# ★ 两条斜率都是实测出来的，各有适用范围，别混用
-SLOPE_MID_L_PER_EV = 30.0    # 中间调（曝光落点用这个）
-SLOPE_HIGH_L_PER_EV = 8.0    # 高光端（余量/收白用这个）
 
 
 @dataclass
@@ -231,9 +224,8 @@ def headroom_report(disp, clip_max: float = 0.5, white_level: float = None,
 
 
 def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
-                p95_max: Optional[float] = None, black_max: Optional[float] = None,
                 log=print) -> Dict[str, str]:
-    """用引擎自带的 `render_safe` 渲一批：**余量留给 LR**，出 16-bit TIF。
+    """用引擎固定 PE 渲一批：**引擎不做放置**，出 16-bit TIF。
 
     raf_paths = {stem: RAF 路径}
     返回 {stem: TIF 路径}
@@ -245,15 +237,10 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
     os.makedirs(out_dir, exist_ok=True)
     # ★ 2026-10-31：**没有"预设"这个可选集合了**。每个目录自带一份介质块
     #   （卷/纸/WB/amount/化学…），整块直接喂引擎；读不到就抛。
-    from .card_render import medium_of, safety_for
-    saf = getattr(choice.card, 'safety', None)
-    if not isinstance(saf, dict) or not saf:
-        saf = safety_for(choice.card)
+    from .card_render import medium_of
     medium = medium_of(choice.card)
     media_label = '%s + %s' % (medium['simulation']['film_stock'],
                               medium['simulation']['print_paper'])
-    p95_max = float(saf.get('p95_max', P95_ENGINE_SAFE) if p95_max is None else p95_max)
-    black_max = float(saf.get('black_max', BLACK_MAX) if black_max is None else black_max)
     # ★ 白端要**记下来**：它决定这张底片的天花，也决定"余量"这个数可不可信
     try:
         white_level = float(medium['simulation']['scan_white_level'])
@@ -282,30 +269,29 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
         log('  并行渲：%d 路（长边 %d，内存预算 %d GB）'
             % (jobs, long_side, ENGINE_PER_JOB_GB * jobs))
         from multiprocessing import get_context
-        argv = [(stem, raf, medium, out_dir, ov, p95_max, black_max,
-                 white_level) for stem, raf in raf_paths.items()]
+        argv = [(stem, raf, medium, out_dir, ov, white_level)
+                for stem, raf in raf_paths.items()]
         with get_context('spawn').Pool(jobs) as pool:
             for stem, dst, hr, c0, c1, msgs in pool.imap_unordered(_render_one, argv):
                 out[stem] = dst
                 _write_headroom(out_dir, stem, hr)
                 for m in msgs:
                     log(m)
-        _write_render_meta(out_dir, choice, media_label, p95_max, black_max, out)
+        _write_render_meta(out_dir, choice, media_label, out)
         return out
 
     for stem, raf in raf_paths.items():
         stem, dst, hr, c0, c1, msgs = _render_one(
-            (stem, raf, medium, out_dir, ov, p95_max, black_max, white_level))
+            (stem, raf, medium, out_dir, ov, white_level))
         out[stem] = dst
         _write_headroom(out_dir, stem, hr)
         for m in msgs:
             log(m)
-    _write_render_meta(out_dir, choice, media_label, p95_max, black_max, out)
+    _write_render_meta(out_dir, choice, media_label, out)
     return out
 
 
-def _write_render_meta(out_dir: str, choice, media_label: str,
-                       p95_max: float, black_max: float, out: dict) -> str:
+def _write_render_meta(out_dir: str, choice, media_label: str, out: dict) -> str:
     """把"这批 ① 是用什么渲的"写下来（供 --reuse 校验）。
 
     ★ 2026-10-31：没有它，`--reuse` 只能看文件名 —— 卡/预设/amount 换了也照样复用，
@@ -317,7 +303,6 @@ def _write_render_meta(out_dir: str, choice, media_label: str,
     d = dict(card=getattr(choice.card, 'name', ''),
              medium=media_label,
              corpus=getattr(choice.card, 'corpus', ''),
-             p95_max=float(p95_max), black_max=float(black_max),
              n=len(out), stems=sorted(out),
              ts=time.strftime('%Y-%m-%d %H:%M:%S'))
     tmp = p + '.tmp'
@@ -348,25 +333,18 @@ def engine_jobs(n_images: int) -> int:
 
 def _render_one(args):
     """渲一张 + 量余量（**必须在模块级**：Windows 的 spawn 不能 pickle 闭包）。"""
-    (stem, raf, medium, out_dir, ov, p95_max, black_max, white_level) = args
+    (stem, raf, medium, out_dir, ov, white_level) = args
     from svFilm import presets, io, lrbase       # 子进程里自己 import
     media_label = '%s + %s' % (medium['simulation']['film_stock'],
                                medium['simulation']['print_paper'])
-    msgs = ['  渲 %s ← %s（介质 %s，p95_max=%.1f）'
-            % (stem, os.path.basename(raf), media_label, p95_max)]
+    msgs = ['  渲 %s ← %s（介质 %s）'
+            % (stem, os.path.basename(raf), media_label)]
     lin = io.load_raw(raf).lin
     # ★★ 2026-10-31（按设计纠正）：**引擎只做介质，不做落点/形状**。
-    #   旧路径 `render_safe` 会二分搜索找一个"两端都不死"的印相曝光 —— 那是在引擎里
-    #   做**放置**，和"卡38 medium-only：PE 固定，placement 归 LR Basic"的设计冲突。
-    #   现在：固定用介质自带的 print_exposure 渲，出片偏亮偏暗都交给 LR 的 Exposure。
-    if bool(getattr(presets.C, 'ENGINE_AUTO_EXPOSURE', True)):
-        disp = presets.render_safe(lin, medium, p95_max=p95_max,
-                                   black_max=black_max, overrides=ov)
-        msgs.append('  引擎自动曝光：开（render_safe）')
-    else:
-        disp = presets.render(lin, medium, overrides=ov)
-        msgs.append('  引擎自动曝光：**关**（固定 print_exposure=%.3f，落点归 LR）'
-                    % presets.pe_of(medium))
+    #   固定用介质自带的 print_exposure 渲，出片偏亮偏暗都交给 LR 的 Exposure。
+    disp = presets.render(lin, medium, overrides=ov)
+    msgs.append('  引擎自动曝光：**关**（固定 print_exposure=%.3f，落点归 LR）'
+                % presets.pe_of(medium))
     dst = os.path.join(out_dir, '%s_engine.tif' % stem)
     lrbase.save_tiff16(disp, dst)
     hr = headroom_report(disp, white_level=white_level)
@@ -395,8 +373,8 @@ def _write_headroom(out_dir, stem, hr):
                        ceiling_expect_L=hr['ceiling_expect_L'],
                        white_level=hr['white_level'],
                        tautology_ev=hr['tautology_ev'], why=hr['why'],
-                       limit_clip=0.5,
-                       note='引擎自己的测光（render_safe）；脸归 LR'),
+                       limit_clip=None,
+                       note='引擎固定 PE；只报告余量，不改曝光；脸归 LR'),
                   fh, ensure_ascii=False, indent=1)
 
 

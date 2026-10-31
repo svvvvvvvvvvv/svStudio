@@ -5,8 +5,8 @@
 
 正确做法：
   · **位置**由这张图自己的分位给（p5/p25/p50/p75/p95，来自 ① 的测量）
-  · **间距**由卡的 toe / contrast_win / shoulder 带中点给
-  · 肩部落点由卡的 p95 带上沿给（不许把高光推过卡的肩）
+  · **间距**由卡的 toe / contrast_win / shoulder **点值**给（不用带中点）
+  · 肩部落点由卡的 p95 **点值**给（不许把高光推过卡的肩）
 
 公式（L* 域，全部可复算；2026-10-30 与实现对齐）：
 
@@ -72,9 +72,12 @@ def _pchip(xs: Sequence[float], ys: Sequence[float], x: float) -> float:
     return h00 * ys[i] + h10 * h[i] * m[i] + h01 * ys[i + 1] + h11 * h[i] * m[i + 1]
 
 
-def _mid(band) -> Optional[float]:
-    if isinstance(band, (list, tuple)) and len(band) == 2:
-        return 0.5 * (float(band[0]) + float(band[1]))
+def _point(v) -> Optional[float]:
+    """点值优先；旧卡给的是带时只做兼容取中点（求解不许用带中点）。"""
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, (list, tuple)) and len(v) == 2:
+        return 0.5 * (float(v[0]) + float(v[1]))
     return None
 
 
@@ -88,33 +91,23 @@ def curve_from_quantiles(quantiles: Dict[str, float],
                               quantiles.get('p95'))
     if None in (q5, q25, q50, q75, q95):
         return None
-    toe = _mid(shape.get('toe'))
-    cw = _mid(shape.get('contrast_win'))
-    sh = _mid(shape.get('shoulder'))
+    toe = _point(shape.get('toe'))
+    cw = _point(shape.get('contrast_win'))
+    sh = _point(shape.get('shoulder'))
     if None in (toe, cw, sh):
         return None
     # `skew` 不参与：它要求移动 p50（把中间调往亮/暗推），而 A 段的硬边界是
     # "曲线保持 p50"（不动亮度）。卡的 skew 只进 ledger，不进 LUT。
-    _ = _mid(shape.get('skew'))
+    _ = _point(shape.get('skew'))
 
-    # ★ 2026-10-30 最终口径：**只修形状残差**。
-    #   ① 绝对间距重置两端 → 低键图被压到底（1608 p95 79.6→66）
-    #   ② 按比例重分配   → 高键图中间调塌（1289 脸 63.9→41.3）
-    #   正确：量这张图自己的 toe/cw/sh，把它 clamp 进卡的带，只补**差量**。
-    def _clamp(v, band, lo_guard=1.0):
-        if isinstance(band, (list, tuple)) and len(band) == 2:
-            return max(float(band[0]), min(float(band[1]), float(v)))
-        return float(v)
-
-    toe_i = max(float(q25) - float(q5), lo_guard if False else 1.0)
+    # ★ 2026-10-31：**目标改成卡的点值**（不是带中点，也不是 clamp 进带）。
+    #   只补"这张图的形状"和"卡的点值"之间的差量；每锚点仍受 S3 预算约束。
+    toe_i = max(float(q25) - float(q5), 1.0)
     cw_i = max(float(q75) - float(q25), 1.0)
     sh_i = max(float(q95) - float(q75), 1.0)
-    toe_t = _clamp(toe_i, shape.get('toe'))
-    cw_t = _clamp(cw_i, shape.get('contrast_win'))
-    sh_t = _clamp(sh_i, shape.get('shoulder'))
-    d_toe = toe_t - toe_i
-    d_cw = cw_t - cw_i
-    d_sh = sh_t - sh_i
+    d_toe = toe - toe_i
+    d_cw = cw - cw_i
+    d_sh = sh - sh_i
 
     cap = float(p95_cap) if p95_cap is not None else float(q95)
     new5 = float(q5)

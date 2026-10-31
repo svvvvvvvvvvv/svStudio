@@ -18,8 +18,8 @@ B 段（曝光/白端/局部）仍在 `lr_solve.plan_batch` 里逐图算。
 ----
 · 位置：全批每张图自己的分位取**中位**（不是把所有像素混在一起）；
 · 形状：卡的 toe / contrast_win / shoulder 带；每锚点累计位移 ≤3 L*（S3）；
-· 颜色：全批脸 C/h、warm_cool_b 的中位 vs 卡带；剂量沿用 `calibration` 的相对刻度；
-· 异质检查：任一 A 量的 IQR > 卡带宽 ⇒ 报"可能该拆批"（§3.2），不偷偷平均。
+· 颜色：A 段只给方向；落地在 B 段逐图（`grading_of`）；
+· 异质检查：只报 IQR 数值，交人决定拆不拆批（不拿卡的带宽当门）。
 """
 from __future__ import annotations
 
@@ -56,72 +56,53 @@ def _iqr(xs: List[float]) -> Optional[float]:
     return float(q[1] - q[0])
 
 
-def _band_mid(band) -> Optional[float]:
-    if isinstance(band, (list, tuple)) and len(band) == 2:
-        return 0.5 * (float(band[0]) + float(band[1]))
-    return None
-
-
-def _band_w(band) -> Optional[float]:
-    if isinstance(band, (list, tuple)) and len(band) == 2:
-        return float(band[1]) - float(band[0])
-    return None
-
-
 def build(recs: Dict[str, dict], card: dict) -> dict:
     """全批中位 → A 段的参数（一条曲线 + 一套颜色）。"""
-    bands = (card or {}).get('bands') or {}
+    points = (card or {}).get('points') or {}
     n = len(recs)
     # ---------- 明暗：每张图的分位取中位 ----------
     med_q = {k: _med([_img(r).get(k) for r in recs.values()]) for k in A_KEYS}
     shape = {}
     for k in ('toe', 'contrast_win', 'shoulder'):
-        band = bands.get(k)
-        if isinstance(band, (list, tuple)) and len(band) == 2:
-            shape[k] = (float(band[0]), float(band[1]))
-    cap_band = bands.get('p95')
-    cap = min(100.0, float(cap_band[1])) if isinstance(cap_band, (list, tuple)) else 100.0
+        v = points.get(k)
+        if isinstance(v, (int, float)):
+            shape[k] = float(v)
+    cap = float(points['p95']) if isinstance(points.get('p95'), (int, float)) else 100.0
     curve = None
     if all(v is not None for v in med_q.values()) and shape:
         curve = curve_from_quantiles(med_q, shape, p95_cap=cap)
 
-    # ---------- 颜色：全批中位 vs 卡带 ----------
+    # ---------- 颜色：A 段**只给方向**；落地在 B 段逐图（不在这里算剂量） ----------
     med_face_C = _med([_face(r, 'C', 'face_C') for r in recs.values()])
     med_face_h = _med([_face(r, 'h', 'face_h') for r in recs.values()])
     med_wc = _med([r.get('warm_cool_b') for r in recs.values()])
-    med_rec = {'face_C': med_face_C, 'face_h': med_face_h,
-               'warm_cool_b': med_wc,
-               'skin': {'C': med_face_C, 'h': med_face_h}}
-    from .lr_solve import grading_of            # 延迟导入，避免循环
-    grading = grading_of(card, med_rec)
 
-    # ---------- 异质性：A 量的 IQR vs 卡带宽 ----------
+    # ---------- 异质性：只报 IQR，交人决定拆不拆批（不拿卡的带宽当门） ----------
     hetero = []
     checks = [
-        ('face_C', [ _face(r, 'C', 'face_C') for r in recs.values() ], bands.get('face_C')),
-        ('face_h', [ _face(r, 'h', 'face_h') for r in recs.values() ], bands.get('face_h')),
-        ('warm_cool_b', [r.get('warm_cool_b') for r in recs.values()], bands.get('warm_cool_b')),
-        ('p95', [_img(r).get('p95') for r in recs.values()], bands.get('p95')),
-        ('contrast', [ (float(_img(r).get('p95')) - float(_img(r).get('p5')))
+        ('face_C', [_face(r, 'C', 'face_C') for r in recs.values()]),
+        ('face_h', [_face(r, 'h', 'face_h') for r in recs.values()]),
+        ('warm_cool_b', [r.get('warm_cool_b') for r in recs.values()]),
+        ('p95', [_img(r).get('p95') for r in recs.values()]),
+        ('contrast', [(float(_img(r).get('p95')) - float(_img(r).get('p5')))
                        for r in recs.values()
-                       if _img(r).get('p95') is not None and _img(r).get('p5') is not None ],
-         bands.get('contrast')),
+                       if _img(r).get('p95') is not None and _img(r).get('p5') is not None]),
     ]
-    for key, vals, band in checks:
-        iqr, w = _iqr(vals), _band_w(band)
-        if iqr is not None and w is not None and iqr > w:
-            hetero.append('%s IQR %.2f > 卡带宽 %.2f' % (key, iqr, w))
+    for key, vals in checks:
+        iqr = _iqr(vals)
+        if iqr is not None:
+            hetero.append('%s IQR %.2f' % (key, iqr))
 
     ledger = []
     if hetero:
-        ledger.append('批内异质：' + '；'.join(hetero) + ' ⇒ 先报人，可能要拆批')
-    if med_face_C is not None and _band_mid(bands.get('face_C')) is not None:
-        ledger.append('全批脸 C 中位 %.2f，卡带中点 %.2f'
-                      % (med_face_C, _band_mid(bands.get('face_C'))))
-    if med_wc is not None and _band_mid(bands.get('warm_cool_b')) is not None:
-        ledger.append('全批暖冷中位 %.2f，卡带中点 %.2f'
-                      % (med_wc, _band_mid(bands.get('warm_cool_b'))))
+        ledger.append('批内离散度：' + '；'.join(hetero) + ' ⇒ 交人决定拆不拆批')
+    if med_face_C is not None and isinstance(points.get('face_C'), (int, float)):
+        ledger.append('全批脸 C 中位 %.2f，卡的点值 %.2f'
+                      % (med_face_C, float(points['face_C'])))
+    if med_wc is not None and isinstance(points.get('warm_cool_b'), (int, float)):
+        ledger.append('全批暖冷中位 %.2f，卡的点值 %.2f'
+                      % (med_wc, float(points['warm_cool_b'])))
     return dict(card=(card or {}).get('name'), n=n, med=med_q, shape=shape,
-                curve=curve, grading=grading,
+                curve=curve,
                 med_color=dict(face_C=med_face_C, face_h=med_face_h, warm_cool_b=med_wc),
                 hetero=hetero, ledger=ledger)

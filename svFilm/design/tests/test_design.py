@@ -551,13 +551,12 @@ def test_verify_face_first():
     v = verify(r1, dict(img=dict(p1=5.0, clip_pct=9.0), skin=dict(L=62.4, C=14.0)), _p3())
     ok(v['ok'], '脸没动就该过硬门：%s' % v['hard'])
     ok(any((not x[1]) for x in v['soft']), '背景爆要进软门：%s' % v['soft'])
-    # ③ 把脸压暗 2 L* ⇒ 硬门破（S1 残差）
+    # ③ 把脸压暗 2 L* ⇒ S1 残差只报告（T4/T5/S1 不再当硬门）
     v2 = verify(r1, dict(img=dict(p1=5.0, clip_pct=1.0), skin=dict(L=60.0, C=14.0)), _p3())
-    ok(not v2['ok'], '把脸压暗必须破硬门')
-    ok(any(x[0].startswith('S1') and not x[1] for x in v2['hard']), v2['hard'])
-    # 脸出区 ⇒ T4 破
+    ok(any(x[0].startswith('S1') and not x[1] for x in v2['soft']), v2['soft'])
+    # 脸出区 ⇒ T4 只报告
     v3 = verify(r1, dict(img=dict(p1=5.0, clip_pct=1.0), skin=dict(L=50.0, C=14.0)), _p3())
-    ok(any(x[0].startswith('T4') and not x[1] for x in v3['hard']), v3['hard'])
+    ok(any(x[0].startswith('T4') and not x[1] for x in v3['soft']), v3['soft'])
 
 
 def test_verify_exposure_move_is_not_a_violation():
@@ -580,17 +579,17 @@ def test_verify_does_not_punish_engine_leftovers():
                white_point=dict(a=3.2, b=1.0))
     v = verify(r1, ok3, _p3())
     ok(all(x[1] for x in v['hard']), '① 的旧账不该算在 ③ 头上：%s' % v['hard'])
-    ok(any(x[0].startswith('T3') and x[1] for x in v['hard']), '白点要看"相对位移"')
+    ok(any(x[0].startswith('T3') and x[1] for x in v['soft']), '白点要看"相对位移"（报告）')
     # 但 ③ 把 ① 的窟窿捅更大就要罚
     worse = dict(img=dict(p1=0.2, clip_pct=0.2), skin=dict(L=60.0, C=14.0),
                  white_point=dict(a=3.0, b=1.0))
     v2 = verify(r1, worse, _p3())
     ok(any(x[0].startswith('T2') and not x[1] for x in v2['hard']), v2['hard'])
-    # 白点被 LR 挪走 > 2 也要罚
+    # 白点被 LR 挪走 > 2 只报告
     moved = dict(img=dict(p1=0.9, clip_pct=0.2), skin=dict(L=60.0, C=14.0),
                  white_point=dict(a=6.0, b=1.0))
     v3 = verify(r1, moved, _p3())
-    ok(any(x[0].startswith('T3') and not x[1] for x in v3['hard']), v3['hard'])
+    ok(any(x[0].startswith('T3') and not x[1] for x in v3['soft']), v3['soft'])
 
 
 def test_match_sheet_is_a_decision_page():
@@ -780,10 +779,9 @@ def test_point_color_no_longer_compensates_backlit():
 
 
 def test_card_render_maps_medium_and_bounds():
-    """卡要带出**它自己的介质块**（不是"选一个预设"）；两端边界来自不变量（§63.7）。"""
+    """卡要带出**它自己的介质块**（不是"选一个预设"）；数值只做参考。"""
     from design.matchcard import MatchCard
-    from design.card_render import (INVARIANT_P95_MAX, medium_of,
-                                    reference_for, safety_for)
+    from design.card_render import medium_of, reference_for
     c = MatchCard(name='001_鹿井小渔_n66f7fa31', stock='kodak_portra_400',
                   paper='kodak_portra_endura', corpus='鹿井',
                   profile=dict(p95=90.0), spread=dict(p95=2.0))
@@ -797,27 +795,18 @@ def test_card_render_maps_medium_and_bounds():
         ok(False, '没有介质的目录却返回了介质（会静默用默认值）')
     except KeyError:
         pass
-    s = safety_for(c)
-    ok(abs(s['p95_max'] - INVARIANT_P95_MAX) < 1e-9,
-       '白端必须是不变量 %s，实际 %s（拿卡的分布当门 = 把场景当标准）'
-       % (INVARIANT_P95_MAX, s['p95_max']))
     r = reference_for(c)
     ok(r.get('p95') == 90.0, '卡的 p95 要留在参考里，实际 %s' % r.get('p95'))
 
 
-
-def test_safety_is_invariant_but_reference_differs():
-    """边界对所有卡都该一样（那是不变量）；**参考**才随卡变。
-
-    这条以前是反的（钉'两张卡边界必须不同'）——那是把卡的分布当门，
-    2026-10-29 按 §63.7 翻过来。
-    """
+def test_reference_differs_but_no_engine_gate():
+    """参考随卡变；**引擎不再拿 p95/black 当门**（门已删）。"""
     from design.matchcard import MatchCard
-    from design.card_render import reference_for, safety_for
+    from design.card_render import reference_for
     a = MatchCard(name='a', profile=dict(p95=88.0), spread=dict(p95=1.0))
     b = MatchCard(name='b', profile=dict(p95=96.0), spread=dict(p95=1.0))
-    ok(safety_for(a)['p95_max'] == safety_for(b)['p95_max'],
-       '不变量不该随卡变：%s vs %s' % (safety_for(a)['p95_max'], safety_for(b)['p95_max']))
+    ok(reference_for(a)['p95'] != reference_for(b)['p95'],
+       '参考应该随卡变：%s vs %s' % (reference_for(a)['p95'], reference_for(b)['p95']))
     ok(reference_for(a)['p95'] != reference_for(b)['p95'], '参考应该随卡变')
 
 def test_eval_slope_is_not_a_constant():
@@ -1007,8 +996,7 @@ def test_curve_p95_cap_is_not_dead():
     """卡的 p95 上沿是**硬上限**：旧式 min(cand, max(cap, cand, …)) 恒等 ⇒ 死参数。"""
     from design.curve_design import apply_lut, curve_from_quantiles
     q = dict(p5=5.0, p25=20.0, p50=50.0, p75=80.0, p95=99.0)
-    shape = dict(toe=(10.0, 20.0), contrast_win=(50.0, 60.0),
-                 shoulder=(10.0, 20.0), skew=(0.4, 0.6))
+    shape = dict(toe=15.0, contrast_win=60.0, shoulder=19.0, skew=0.5)
     capped = curve_from_quantiles(q, shape, p95_cap=96.0)
     ok(capped is not None, '曲线没造出来')
     got = apply_lut(capped, 99.0)
@@ -1031,8 +1019,9 @@ def test_whites_plan_is_wired_to_lrplan():
 def test_no_model_knobs_are_one_step():
     """没有公开传递函数的旋钮：只给方向 + 一档（10 UI），不许模型反解。"""
     from design.lr_solve import ONE_STEP_UI, white_end_plan
-    card = dict(name='t', bands=dict(p95=[85.0, 90.0], clip=[0.0, 1.0]))
+    card = dict(name='t', points=dict(p95=90.0))
     rec = dict(img=dict(p5=10.0, p50=50.0, p95=99.0, p99=100.0, clip_pct=5.0),
+               person=dict(clip_pct=5.0),
                skin=dict(L=60.0, C=20.0, h=50.0))
     w = white_end_plan(rec, card, curve=None)
     eq(w['whites_ui'], -ONE_STEP_UI)
@@ -1040,13 +1029,13 @@ def test_no_model_knobs_are_one_step():
 
 
 def test_batch_grade_is_one_curve_and_one_grading():
-    """A 段必须**全批同参**：同一批所有图拿到同一条曲线、同一套颜色。"""
+    """A 段必须**全批同一条曲线**；颜色在 B 段逐图，不再要求同参。"""
     from design.batch_grade import build
     from design.lr_solve import plan_batch
-    card = dict(name='t', bands=dict(
-        p95=[90.0, 95.0], face_C=[18.0, 26.0], face_h=[40.0, 50.0],
-        warm_cool_b=[0.0, 3.0], toe=[5.0, 10.0], contrast_win=[40.0, 60.0],
-        shoulder=[5.0, 10.0], face_over_bg=[0.7, 0.8], p5=[2.0, 8.0]))
+    card = dict(name='t', points=dict(
+        p95=93.0, face_C=22.0, face_h=45.0, warm_cool_b=1.5,
+        toe=7.0, contrast_win=50.0, shoulder=8.0, face_over_bg=0.75, p5=5.0),
+        bands=dict(p95=[90.0, 95.0]))
     a = _lr_rec(img=dict(p5=5.0, p25=18.0, p50=50.0, p75=78.0, p95=94.0,
                          p99=99.9, clip_pct=0.1, contrast=89.0))
     b = _lr_rec(img=dict(p5=12.0, p25=30.0, p50=58.0, p75=80.0, p95=92.0,
@@ -1057,9 +1046,7 @@ def test_batch_grade_is_one_curve_and_one_grading():
     plans = plan_batch(recs, card, batch=bg)
     c0 = plans['a']['curve']
     ok(all(p['curve'] == c0 for p in plans.values()), '同一批的曲线不一致')
-    g0 = json.dumps(plans['a']['grading'], sort_keys=True)
-    ok(all(json.dumps(p['grading'], sort_keys=True) == g0 for p in plans.values()),
-       '同一批的颜色参数不一致')
+    ok(all('grading' in p for p in plans.values()), '每张都要有颜色计划（B 段逐图）')
 
 
 def test_measure_adapter_reads_v7_rows():

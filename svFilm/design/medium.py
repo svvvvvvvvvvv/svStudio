@@ -23,6 +23,10 @@ _ROOT = r'E:\svStudio\svFilm\analysis\corpus\kurai\media'
 # 只作"生成新介质块"的模板（不是可选预设）
 _TEMPLATE = r'E:\svStudio\svFilm\analysis\corpus\kurai\medium_base\鹿井.json'
 
+# ★ 扫描端点是**引擎常量**（设计 引擎设计 §4.2：0.98 / 0.01），不跟卡的分布走。
+SCAN_WHITE_LEVEL = 0.98
+SCAN_BLACK_LEVEL = 0.01
+
 
 def path_of(card_name: str) -> str:
     return os.path.join(_ROOT, '%s.json' % card_name)
@@ -124,17 +128,25 @@ def targets_from_card(card_name: str) -> dict:
     c = cards.get(card_name)
     if not c:
         raise KeyError('没有这张卡：%s' % card_name)
-    b = c.get('bands') or {}
-    p5, p50, p95 = b.get('p5'), b.get('p50'), b.get('p95')
+    pt = c.get('points') or {}
+
+    def _point(key, fallback=None):
+        """点值优先；没有点值就返回 None（不退回带中点/带边）。"""
+        v = pt.get(key)
+        if isinstance(v, (int, float)):
+            return float(v)
+        return fallback
+
     out = dict(
-        white_level=round(_y_of_l(p95[1]), 4) if p95 else None,
-        black_level=round(_y_of_l(p5[0]), 4) if p5 else None,
-        p50_target_D=round(-__import__('math').log10(_y_of_l(0.5 * (p50[0] + p50[1]))), 3)
-        if p50 else None,
-        shape={k: b.get(k) for k in ('toe', 'shoulder', 'contrast_win', 'skew')},
-        warm_cool_b=b.get('warm_cool_b'),
-        face=dict(C=b.get('face_C'), h=b.get('face_h'), L=b.get('face_L')),
+        p50_target_D=None,
+        shape={k: _point(k, None) for k in ('toe', 'shoulder', 'contrast_win', 'skew')},
+        warm_cool_b=_point('warm_cool_b', None),
+        face=dict(C=_point('face_C', None), h=_point('face_h', None),
+                  L=_point('face_L', None)),
     )
+    v50 = _point('p50', None)
+    if v50 is not None:
+        out['p50_target_D'] = round(-__import__('math').log10(_y_of_l(v50)), 3)
     tone = json.load(open(_TONE, encoding='utf-8')).get(card_name) if os.path.isfile(_TONE) else None
     if tone:
         for z in ('shadow', 'highlight', 'neutral'):
@@ -150,14 +162,11 @@ def targets_from_card(card_name: str) -> dict:
 def apply_targets(card_name: str) -> str:
     """把目录级目标写进它的介质。
 
-    · 扫描端点 → `simulation.scan_white_level / scan_black_level`（引擎真键）
+    · 扫描端点 → **引擎常量** `0.98 / 0.01`（不跟卡的 p95/p5 走；卡只做参考）
     · **整幅色偏 → `simulation.print_y_filter_shift / print_m_filter_shift`**
       （放大机 CC 滤片位移，单位 = Kodak CC；1 CC = 0.01 密度）
       为什么用中性轴而不是暗部：滤片是**整幅**的，暗部青蓝来自分色，不是白平衡。
-    · 其余（p50 密度、形状带、暗部/高光 CC）→ `_target`，留给批次级求解
-
-    ★ 2026-10-31 修：端点的真键是 `simulation.scan_*`，不是顶层 `scanner`（写错过一次，
-      一个数都没生效而账面正常）。
+    · 其余（p50 点值密度、形状点值、暗部/高光 CC）→ `_target`，留给批次级求解
     """
     tg = targets_from_card(card_name)
     block = load(card_name)
@@ -172,13 +181,10 @@ def apply_targets(card_name: str) -> str:
     sim['camera_diffusion_filter_active'] = True
     sim['camera_diffusion_filter_family'] = 'black_pro_mist'
     sim['camera_diffusion_filter_strength'] = 0.25
-    if tg.get('white_level') is not None:
-        # 引擎收的是 sRGB 码值（内部再线性化）⇒ 这里必须编码一次
-        sim['scan_white_level'] = round(_code_of_y(tg['white_level']), 4)
-        tg['white_level_code'] = sim['scan_white_level']
-    if tg.get('black_level') is not None:
-        sim['scan_black_level'] = round(_code_of_y(tg['black_level']), 4)
-        tg['black_level_code'] = sim['scan_black_level']
+    # ★ 2026-10-31：扫描端点是引擎常量，不是卡的统计量（拿卡的 p95/p5 当端点 =
+    #   把场景当介质；卡只用于 _target 里的点值参考）。
+    sim['scan_white_level'] = SCAN_WHITE_LEVEL
+    sim['scan_black_level'] = SCAN_BLACK_LEVEL
     neu = tg.get('neutral') or {}
     lab = neu.get('lab')
     if lab:

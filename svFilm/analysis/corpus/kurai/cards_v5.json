@@ -84,6 +84,25 @@
      1.38
     ]
    },
+   "points": {
+    "p50": 61.0,
+    "p95": 95.11,
+    "p5": 0.72,
+    "contrast": 93.39,
+    "clip": 0.07,
+    "sky": 0.09,
+    "face_L": 65.94,
+    "face_C": 21.81,
+    "face_h": 45.48,
+    "toe": 33.78,
+    "shoulder": 15.59,
+    "contrast_win": 59.06,
+    "skew": 45.24,
+    "face_over_bg": 0.73,
+    "person_over_bg": 1.34,
+    "warm_cool_b": -0.48,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -228,6 +247,25 @@
      -1.12
     ]
    },
+   "points": {
+    "p50": 76.78,
+    "p95": 95.79,
+    "p5": 6.85,
+    "contrast": 87.45,
+    "clip": 0.38,
+    "sky": 0.07,
+    "face_L": 74.33,
+    "face_C": 19.73,
+    "face_h": 63.72,
+    "toe": 30.25,
+    "shoulder": 7.81,
+    "contrast_win": 52.99,
+    "skew": 39.87,
+    "face_over_bg": 0.81,
+    "person_over_bg": 1.06,
+    "warm_cool_b": -2.69,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -370,6 +408,25 @@
      16.49
     ]
    },
+   "points": {
+    "p50": 42.11,
+    "p95": 90.43,
+    "p5": 10.44,
+    "contrast": 79.03,
+    "clip": 0.06,
+    "sky": 0.01,
+    "face_L": 59.53,
+    "face_C": 22.74,
+    "face_h": 55.93,
+    "toe": 6.08,
+    "shoulder": 21.38,
+    "contrast_win": 70.0,
+    "skew": 51.72,
+    "face_over_bg": 0.7,
+    "person_over_bg": 0.23,
+    "warm_cool_b": 3.77,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -510,6 +567,25 @@
      5.52
     ]
    },
+   "points": {
+    "p50": 41.01,
+    "p95": 88.39,
+    "p5": 12.58,
+    "contrast": 75.63,
+    "clip": 0.06,
+    "sky": 0.03,
+    "face_L": 63.77,
+    "face_C": 27.19,
+    "face_h": 55.48,
+    "toe": 6.2,
+    "shoulder": 19.66,
+    "contrast_win": 65.85,
+    "skew": 43.46,
+    "face_over_bg": 0.85,
+    "person_over_bg": 1.85,
+    "warm_cool_b": 1.04,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -646,6 +722,25 @@
      0.24,
      2.83
     ]
+   },
+   "points": {
+    "p50": 59.28,
+    "p95": 91.98,
+    "p5": 12.74,
+    "contrast": 79.08,
+    "clip": 0.05,
+    "sky": 0.1,
+    "face_L": 69.13,
+    "face_C": 22.25,
+    "face_h": 55.13,
+    "toe": 22.03,
+    "shoulder": 15.9,
+    "contrast_win": 55.73,
+    "skew": 41.97,
+    "face_over_bg": 0.85,
+    "person_over_bg": 1.34,
+    "warm_cool_b": 0.58,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -786,6 +881,25 @@
      9.24
     ]
    },
+   "points": {
+    "p50": 68.3,
+    "p95": 92.04,
+    "p5": 6.33,
+    "contrast": 86.49,
+    "clip": 0.04,
+    "sky": 0.0,
+    "face_L": 75.51,
+    "face_C": 18.1,
+    "face_h": 51.31,
+    "toe": 11.39,
+    "shoulder": 11.47,
+    "contrast_win": 71.96,
+    "skew": 55.06,
+    "face_over_bg": 0.85,
+    "person_over_bg": 1.04,
+    "warm_cool_b": 6.13,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -922,6 +1036,25 @@
      5.05,
      7.67
     ]
+   },
+   "points": {
+    "p50": 51.51,
+    "p95": 89.01,
+    "p5": 6.19,
+    "contrast": 81.78,
+    "clip": 0.07,
+    "sky": 0.01,
+    "face_L": 72.1,
+    "face_C": 22.39,
+    "face_h": 48.11,
+    "toe": 10.12,
+    "shoulder": 14.94,
+    "contrast_win": 72.38,
+    "skew": 54.92,
+    "face_over_bg": 0.94,
+    "person_over_bg": 1.27,
+    "warm_cool_b": 6.37,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -1065,6 +1198,25 @@
      -2.34
     ]
    },
+   "points": {
+    "p50": 38.7,
+    "p95": 89.03,
+    "p5": 12.6,
+    "contrast": 76.13,
+    "clip": 0.05,
+    "sky": 0.09,
+    "face_L": 70.04,
+    "face_C": 21.2,
+    "face_h": 49.7,
+    "toe": 5.24,
+    "shoulder": 20.82,
+    "contrast_win": 72.74,
+    "skew": 46.97,
+    "face_over_bg": 0.86,
+    "person_over_bg": 1.77,
+    "warm_cool_b": -4.17,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -1199,6 +1351,25 @@
      -6.54,
      -0.95
     ]
+   },
+   "points": {
+    "p50": 49.21,
+    "p95": 91.89,
+    "p5": 14.91,
+    "contrast": 76.91,
+    "clip": 0.06,
+    "sky": 0.08,
+    "face_L": 68.13,
+    "face_C": 25.5,
+    "face_h": 53.33,
+    "toe": 9.62,
+    "shoulder": 17.44,
+    "contrast_win": 66.72,
+    "skew": 44.6,
+    "face_over_bg": 0.82,
+    "person_over_bg": 1.49,
+    "warm_cool_b": -3.47,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -1338,6 +1509,25 @@
      5.52
     ]
    },
+   "points": {
+    "p50": 52.83,
+    "p95": 91.92,
+    "p5": 12.05,
+    "contrast": 82.09,
+    "clip": 0.05,
+    "sky": 0.07,
+    "face_L": 66.11,
+    "face_C": 25.68,
+    "face_h": 57.51,
+    "toe": 16.39,
+    "shoulder": 13.93,
+    "contrast_win": 66.11,
+    "skew": 52.67,
+    "face_over_bg": 0.8,
+    "person_over_bg": 0.78,
+    "warm_cool_b": -1.4,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -1475,6 +1665,25 @@
      4.91
     ]
    },
+   "points": {
+    "p50": 49.91,
+    "p95": 88.88,
+    "p5": 11.48,
+    "contrast": 78.6,
+    "clip": 0.06,
+    "sky": 0.06,
+    "face_L": 57.29,
+    "face_C": 20.8,
+    "face_h": 58.14,
+    "toe": 10.22,
+    "shoulder": 18.18,
+    "contrast_win": 70.46,
+    "skew": 44.75,
+    "face_over_bg": 0.74,
+    "person_over_bg": 0.99,
+    "warm_cool_b": 1.17,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -1610,6 +1819,25 @@
      2.54,
      6.1
     ]
+   },
+   "points": {
+    "p50": 39.5,
+    "p95": 96.17,
+    "p5": 8.92,
+    "contrast": 88.05,
+    "clip": 0.11,
+    "sky": 0.02,
+    "face_L": 70.56,
+    "face_C": 23.06,
+    "face_h": 59.84,
+    "toe": 7.38,
+    "shoulder": 19.13,
+    "contrast_win": 74.34,
+    "skew": 60.46,
+    "face_over_bg": 0.77,
+    "person_over_bg": 2.31,
+    "warm_cool_b": 4.08,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -1751,6 +1979,25 @@
      -1.95,
      2.9
     ]
+   },
+   "points": {
+    "p50": 49.05,
+    "p95": 92.8,
+    "p5": 11.45,
+    "contrast": 81.0,
+    "clip": 0.05,
+    "sky": 0.01,
+    "face_L": 58.08,
+    "face_C": 42.8,
+    "face_h": 50.26,
+    "toe": 13.89,
+    "shoulder": 18.69,
+    "contrast_win": 66.63,
+    "skew": 43.01,
+    "face_over_bg": 0.64,
+    "person_over_bg": 0.54,
+    "warm_cool_b": 0.91,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -1895,6 +2142,25 @@
      12.94
     ]
    },
+   "points": {
+    "p50": 60.26,
+    "p95": 93.83,
+    "p5": 11.4,
+    "contrast": 81.75,
+    "clip": 0.05,
+    "sky": 0.04,
+    "face_L": 63.99,
+    "face_C": 26.16,
+    "face_h": 55.83,
+    "toe": 21.34,
+    "shoulder": 15.65,
+    "contrast_win": 60.41,
+    "skew": 44.79,
+    "face_over_bg": 0.68,
+    "person_over_bg": 1.22,
+    "warm_cool_b": 2.7,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -2030,6 +2296,25 @@
      15.44
     ]
    },
+   "points": {
+    "p50": 35.88,
+    "p95": 88.77,
+    "p5": 9.98,
+    "contrast": 78.78,
+    "clip": 0.04,
+    "sky": 0.03,
+    "face_L": 76.13,
+    "face_C": 15.21,
+    "face_h": 47.53,
+    "toe": 5.09,
+    "shoulder": 28.02,
+    "contrast_win": 70.64,
+    "skew": 43.48,
+    "face_over_bg": 0.98,
+    "person_over_bg": 1.13,
+    "warm_cool_b": 5.56,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -2163,6 +2448,25 @@
      0.5,
      9.69
     ]
+   },
+   "points": {
+    "p50": 27.19,
+    "p95": 87.95,
+    "p5": 9.9,
+    "contrast": 77.04,
+    "clip": 0.05,
+    "sky": 0.04,
+    "face_L": 75.34,
+    "face_C": 23.29,
+    "face_h": 52.32,
+    "toe": 1.61,
+    "shoulder": 30.3,
+    "contrast_win": 75.63,
+    "skew": 37.68,
+    "face_over_bg": 0.98,
+    "person_over_bg": 2.02,
+    "warm_cool_b": 3.69,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -2299,6 +2603,25 @@
      -0.71,
      27.35
     ]
+   },
+   "points": {
+    "p50": 38.46,
+    "p95": 91.53,
+    "p5": 6.84,
+    "contrast": 83.22,
+    "clip": 0.06,
+    "sky": 0.0,
+    "face_L": 61.95,
+    "face_C": 30.17,
+    "face_h": 61.02,
+    "toe": 6.94,
+    "shoulder": 18.57,
+    "contrast_win": 77.43,
+    "skew": 41.1,
+    "face_over_bg": 0.77,
+    "person_over_bg": 1.32,
+    "warm_cool_b": 10.58,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -2439,6 +2762,25 @@
      0.9,
      7.34
     ]
+   },
+   "points": {
+    "p50": 62.29,
+    "p95": 94.32,
+    "p5": 8.99,
+    "contrast": 83.12,
+    "clip": 0.08,
+    "sky": 0.01,
+    "face_L": 61.2,
+    "face_C": 23.98,
+    "face_h": 55.44,
+    "toe": 18.0,
+    "shoulder": 14.84,
+    "contrast_win": 66.61,
+    "skew": 46.84,
+    "face_over_bg": 0.7,
+    "person_over_bg": 0.91,
+    "warm_cool_b": 3.6,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -2585,6 +2927,25 @@
      -3.81
     ]
    },
+   "points": {
+    "p50": 43.83,
+    "p95": 89.51,
+    "p5": 6.75,
+    "contrast": 83.24,
+    "clip": 0.06,
+    "sky": 0.14,
+    "face_L": 67.69,
+    "face_C": 26.28,
+    "face_h": 56.45,
+    "toe": 6.25,
+    "shoulder": 14.92,
+    "contrast_win": 75.91,
+    "skew": 61.41,
+    "face_over_bg": 0.77,
+    "person_over_bg": 1.95,
+    "warm_cool_b": -4.71,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -2725,6 +3086,25 @@
      -2.85,
      5.08
     ]
+   },
+   "points": {
+    "p50": 50.77,
+    "p95": 89.89,
+    "p5": 10.67,
+    "contrast": 77.56,
+    "clip": 0.07,
+    "sky": 0.01,
+    "face_L": 63.99,
+    "face_C": 22.39,
+    "face_h": 60.73,
+    "toe": 12.41,
+    "shoulder": 14.17,
+    "contrast_win": 63.1,
+    "skew": 44.89,
+    "face_over_bg": 0.73,
+    "person_over_bg": 1.14,
+    "warm_cool_b": -0.35,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -2868,6 +3248,25 @@
      2.91
     ]
    },
+   "points": {
+    "p50": 62.57,
+    "p95": 90.95,
+    "p5": 12.31,
+    "contrast": 77.61,
+    "clip": 0.05,
+    "sky": 0.01,
+    "face_L": 66.24,
+    "face_C": 23.39,
+    "face_h": 63.64,
+    "toe": 20.08,
+    "shoulder": 8.97,
+    "contrast_win": 59.59,
+    "skew": 39.5,
+    "face_over_bg": 0.77,
+    "person_over_bg": 1.03,
+    "warm_cool_b": -1.57,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -3005,6 +3404,25 @@
      -1.29,
      3.65
     ]
+   },
+   "points": {
+    "p50": 36.05,
+    "p95": 89.85,
+    "p5": 6.92,
+    "contrast": 82.16,
+    "clip": 0.06,
+    "sky": 0.05,
+    "face_L": 69.58,
+    "face_C": 24.89,
+    "face_h": 60.11,
+    "toe": 7.99,
+    "shoulder": 20.44,
+    "contrast_win": 77.59,
+    "skew": 52.67,
+    "face_over_bg": 0.77,
+    "person_over_bg": 0.78,
+    "warm_cool_b": 0.89,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -3144,6 +3562,25 @@
      2.18
     ]
    },
+   "points": {
+    "p50": 49.08,
+    "p95": 91.0,
+    "p5": 8.56,
+    "contrast": 81.42,
+    "clip": 0.04,
+    "sky": 0.04,
+    "face_L": 66.5,
+    "face_C": 26.75,
+    "face_h": 48.65,
+    "toe": 18.13,
+    "shoulder": 15.96,
+    "contrast_win": 63.73,
+    "skew": 42.66,
+    "face_over_bg": 0.76,
+    "person_over_bg": 1.32,
+    "warm_cool_b": -0.78,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -3281,6 +3718,25 @@
      -2.97,
      -0.31
     ]
+   },
+   "points": {
+    "p50": 62.82,
+    "p95": 90.86,
+    "p5": 5.66,
+    "contrast": 85.27,
+    "clip": 0.06,
+    "sky": 0.08,
+    "face_L": 68.86,
+    "face_C": 18.88,
+    "face_h": 52.63,
+    "toe": 16.65,
+    "shoulder": 9.78,
+    "contrast_win": 65.56,
+    "skew": 54.81,
+    "face_over_bg": 0.81,
+    "person_over_bg": 1.66,
+    "warm_cool_b": -1.12,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -3422,6 +3878,25 @@
      -7.65
     ]
    },
+   "points": {
+    "p50": 37.51,
+    "p95": 85.59,
+    "p5": 6.62,
+    "contrast": 74.28,
+    "clip": 1.16,
+    "sky": 0.03,
+    "face_L": 47.43,
+    "face_C": 23.87,
+    "face_h": 45.39,
+    "toe": 11.36,
+    "shoulder": 28.94,
+    "contrast_win": 57.67,
+    "skew": 34.57,
+    "face_over_bg": 0.65,
+    "person_over_bg": 0.95,
+    "warm_cool_b": -9.55,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -3554,6 +4029,25 @@
      -2.6,
      3.35
     ]
+   },
+   "points": {
+    "p50": 26.69,
+    "p95": 89.33,
+    "p5": 5.7,
+    "contrast": 83.59,
+    "clip": 0.06,
+    "sky": 0.04,
+    "face_L": 68.5,
+    "face_C": 29.67,
+    "face_h": 61.77,
+    "toe": 4.44,
+    "shoulder": 25.75,
+    "contrast_win": 76.98,
+    "skew": 52.22,
+    "face_over_bg": 0.86,
+    "person_over_bg": 0.33,
+    "warm_cool_b": 0.51,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -3692,6 +4186,25 @@
      -2.63,
      3.79
     ]
+   },
+   "points": {
+    "p50": 40.58,
+    "p95": 86.29,
+    "p5": 11.63,
+    "contrast": 75.16,
+    "clip": 0.05,
+    "sky": 0.07,
+    "face_L": 71.22,
+    "face_C": 24.61,
+    "face_h": 56.27,
+    "toe": 5.71,
+    "shoulder": 20.77,
+    "contrast_win": 66.39,
+    "skew": 43.12,
+    "face_over_bg": 0.93,
+    "person_over_bg": 1.3,
+    "warm_cool_b": -0.88,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -3833,6 +4346,25 @@
      10.36
     ]
    },
+   "points": {
+    "p50": 55.62,
+    "p95": 93.35,
+    "p5": 10.99,
+    "contrast": 82.99,
+    "clip": 0.04,
+    "sky": 0.0,
+    "face_L": 71.81,
+    "face_C": 33.16,
+    "face_h": 69.0,
+    "toe": 16.87,
+    "shoulder": 4.77,
+    "contrast_win": 66.48,
+    "skew": 60.38,
+    "face_over_bg": 0.77,
+    "person_over_bg": 0.41,
+    "warm_cool_b": 5.02,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -3966,6 +4498,25 @@
      -4.34,
      -1.97
     ]
+   },
+   "points": {
+    "p50": 56.44,
+    "p95": 92.05,
+    "p5": 7.41,
+    "contrast": 83.2,
+    "clip": 0.05,
+    "sky": 0.07,
+    "face_L": 72.25,
+    "face_C": 26.3,
+    "face_h": 56.44,
+    "toe": 26.91,
+    "shoulder": 13.91,
+    "contrast_win": 56.27,
+    "skew": 43.52,
+    "face_over_bg": 0.83,
+    "person_over_bg": 1.12,
+    "warm_cool_b": -3.39,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -4103,6 +4654,25 @@
      0.9
     ]
    },
+   "points": {
+    "p50": 43.54,
+    "p95": 89.55,
+    "p5": 11.4,
+    "contrast": 78.15,
+    "clip": 0.05,
+    "sky": 0.05,
+    "face_L": 72.78,
+    "face_C": 23.14,
+    "face_h": 55.53,
+    "toe": 7.88,
+    "shoulder": 23.02,
+    "contrast_win": 72.3,
+    "skew": 45.74,
+    "face_over_bg": 1.07,
+    "person_over_bg": 1.77,
+    "warm_cool_b": -1.51,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -4237,6 +4807,25 @@
      -5.26,
      6.33
     ]
+   },
+   "points": {
+    "p50": 39.31,
+    "p95": 89.53,
+    "p5": 8.48,
+    "contrast": 81.52,
+    "clip": 0.06,
+    "sky": 0.01,
+    "face_L": 73.79,
+    "face_C": 22.15,
+    "face_h": 67.84,
+    "toe": 9.76,
+    "shoulder": 17.79,
+    "contrast_win": 68.5,
+    "skew": 50.18,
+    "face_over_bg": 0.85,
+    "person_over_bg": 0.58,
+    "warm_cool_b": 1.93,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -4380,6 +4969,25 @@
      1.02
     ]
    },
+   "points": {
+    "p50": 67.0,
+    "p95": 96.32,
+    "p5": 12.44,
+    "contrast": 83.27,
+    "clip": 0.11,
+    "sky": 0.0,
+    "face_L": 70.94,
+    "face_C": 19.25,
+    "face_h": 62.72,
+    "toe": 21.93,
+    "shoulder": 10.96,
+    "contrast_win": 57.02,
+    "skew": 46.68,
+    "face_over_bg": 0.76,
+    "person_over_bg": 1.35,
+    "warm_cool_b": 0.29,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -4517,6 +5125,25 @@
      0.84,
      3.57
     ]
+   },
+   "points": {
+    "p50": 49.9,
+    "p95": 91.66,
+    "p5": 5.81,
+    "contrast": 85.93,
+    "clip": 0.07,
+    "sky": 0.03,
+    "face_L": 63.61,
+    "face_C": 23.51,
+    "face_h": 52.09,
+    "toe": 9.13,
+    "shoulder": 13.05,
+    "contrast_win": 76.72,
+    "skew": 60.08,
+    "face_over_bg": 0.74,
+    "person_over_bg": 1.63,
+    "warm_cool_b": 2.81,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -4659,6 +5286,25 @@
      -0.78
     ]
    },
+   "points": {
+    "p50": 49.17,
+    "p95": 89.76,
+    "p5": 5.44,
+    "contrast": 83.57,
+    "clip": 0.05,
+    "sky": 0.08,
+    "face_L": 70.47,
+    "face_C": 23.1,
+    "face_h": 53.87,
+    "toe": 14.79,
+    "shoulder": 14.46,
+    "contrast_win": 69.19,
+    "skew": 50.11,
+    "face_over_bg": 0.82,
+    "person_over_bg": 1.47,
+    "warm_cool_b": -3.67,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -4798,6 +5444,25 @@
      4.08
     ]
    },
+   "points": {
+    "p50": 46.95,
+    "p95": 91.64,
+    "p5": 8.07,
+    "contrast": 82.11,
+    "clip": 0.08,
+    "sky": 0.07,
+    "face_L": 68.87,
+    "face_C": 26.38,
+    "face_h": 42.46,
+    "toe": 9.44,
+    "shoulder": 17.14,
+    "contrast_win": 71.0,
+    "skew": 54.3,
+    "face_over_bg": 0.94,
+    "person_over_bg": 2.73,
+    "warm_cool_b": 2.36,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -4933,6 +5598,25 @@
      -7.6,
      1.55
     ]
+   },
+   "points": {
+    "p50": 56.46,
+    "p95": 88.96,
+    "p5": 6.62,
+    "contrast": 83.19,
+    "clip": 0.06,
+    "sky": 0.2,
+    "face_L": 69.09,
+    "face_C": 22.59,
+    "face_h": 52.27,
+    "toe": 17.52,
+    "shoulder": 13.49,
+    "contrast_win": 66.4,
+    "skew": 50.76,
+    "face_over_bg": 0.88,
+    "person_over_bg": 1.67,
+    "warm_cool_b": -1.98,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -5076,6 +5760,25 @@
      1.88
     ]
    },
+   "points": {
+    "p50": 35.89,
+    "p95": 92.32,
+    "p5": 7.7,
+    "contrast": 84.46,
+    "clip": 0.07,
+    "sky": 0.07,
+    "face_L": 67.99,
+    "face_C": 25.77,
+    "face_h": 51.59,
+    "toe": 7.73,
+    "shoulder": 20.13,
+    "contrast_win": 77.17,
+    "skew": 54.94,
+    "face_over_bg": 0.8,
+    "person_over_bg": 2.09,
+    "warm_cool_b": -1.13,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -5211,6 +5914,25 @@
      -9.34,
      1.49
     ]
+   },
+   "points": {
+    "p50": 50.97,
+    "p95": 91.9,
+    "p5": 6.83,
+    "contrast": 83.09,
+    "clip": 0.05,
+    "sky": 0.13,
+    "face_L": 64.84,
+    "face_C": 25.61,
+    "face_h": 51.75,
+    "toe": 10.33,
+    "shoulder": 16.33,
+    "contrast_win": 67.76,
+    "skew": 54.55,
+    "face_over_bg": 0.84,
+    "person_over_bg": 2.0,
+    "warm_cool_b": -0.55,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -5349,6 +6071,25 @@
      1.95
     ]
    },
+   "points": {
+    "p50": 41.07,
+    "p95": 88.33,
+    "p5": 10.57,
+    "contrast": 77.62,
+    "clip": 0.06,
+    "sky": 0.06,
+    "face_L": 67.79,
+    "face_C": 27.38,
+    "face_h": 47.45,
+    "toe": 6.64,
+    "shoulder": 15.75,
+    "contrast_win": 69.95,
+    "skew": 51.2,
+    "face_over_bg": 0.86,
+    "person_over_bg": 1.78,
+    "warm_cool_b": -0.74,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -5484,6 +6225,25 @@
      -4.49,
      4.54
     ]
+   },
+   "points": {
+    "p50": 35.32,
+    "p95": 93.92,
+    "p5": 6.5,
+    "contrast": 87.7,
+    "clip": 0.05,
+    "sky": 0.05,
+    "face_L": 66.25,
+    "face_C": 21.66,
+    "face_h": 57.72,
+    "toe": 8.66,
+    "shoulder": 20.15,
+    "contrast_win": 78.03,
+    "skew": 58.08,
+    "face_over_bg": 0.76,
+    "person_over_bg": 2.51,
+    "warm_cool_b": 1.83,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -5622,6 +6382,25 @@
      -1.59,
      3.39
     ]
+   },
+   "points": {
+    "p50": 50.43,
+    "p95": 90.25,
+    "p5": 10.93,
+    "contrast": 77.62,
+    "clip": 0.05,
+    "sky": 0.1,
+    "face_L": 66.36,
+    "face_C": 29.31,
+    "face_h": 46.28,
+    "toe": 8.33,
+    "shoulder": 13.6,
+    "contrast_win": 69.6,
+    "skew": 55.17,
+    "face_over_bg": 0.8,
+    "person_over_bg": 1.46,
+    "warm_cool_b": 0.47,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -5765,6 +6544,25 @@
      7.04
     ]
    },
+   "points": {
+    "p50": 66.24,
+    "p95": 89.81,
+    "p5": 9.12,
+    "contrast": 79.38,
+    "clip": 0.05,
+    "sky": 0.03,
+    "face_L": 75.98,
+    "face_C": 19.83,
+    "face_h": 48.29,
+    "toe": 18.37,
+    "shoulder": 9.28,
+    "contrast_win": 62.49,
+    "skew": 53.21,
+    "face_over_bg": 0.88,
+    "person_over_bg": 0.3,
+    "warm_cool_b": 4.92,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -5902,6 +6700,25 @@
      -0.46
     ]
    },
+   "points": {
+    "p50": 58.33,
+    "p95": 90.39,
+    "p5": 8.2,
+    "contrast": 82.5,
+    "clip": 0.04,
+    "sky": 0.12,
+    "face_L": 68.33,
+    "face_C": 25.96,
+    "face_h": 49.08,
+    "toe": 10.28,
+    "shoulder": 11.07,
+    "contrast_win": 70.12,
+    "skew": 54.28,
+    "face_over_bg": 0.88,
+    "person_over_bg": 2.02,
+    "warm_cool_b": -2.19,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -6037,6 +6854,25 @@
      -4.09,
      0.82
     ]
+   },
+   "points": {
+    "p50": 58.13,
+    "p95": 88.45,
+    "p5": 10.46,
+    "contrast": 79.41,
+    "clip": 0.06,
+    "sky": 0.06,
+    "face_L": 63.2,
+    "face_C": 29.2,
+    "face_h": 49.26,
+    "toe": 12.71,
+    "shoulder": 10.93,
+    "contrast_win": 63.74,
+    "skew": 45.59,
+    "face_over_bg": 0.79,
+    "person_over_bg": 1.6,
+    "warm_cool_b": -0.02,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -6179,6 +7015,25 @@
      3.61
     ]
    },
+   "points": {
+    "p50": 63.7,
+    "p95": 88.88,
+    "p5": 6.27,
+    "contrast": 82.46,
+    "clip": 0.05,
+    "sky": 0.09,
+    "face_L": 63.46,
+    "face_C": 23.14,
+    "face_h": 51.67,
+    "toe": 28.24,
+    "shoulder": 9.51,
+    "contrast_win": 54.02,
+    "skew": 44.1,
+    "face_over_bg": 0.73,
+    "person_over_bg": 1.15,
+    "warm_cool_b": 0.27,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -6318,6 +7173,25 @@
      2.55
     ]
    },
+   "points": {
+    "p50": 60.42,
+    "p95": 91.29,
+    "p5": 11.4,
+    "contrast": 79.81,
+    "clip": 0.05,
+    "sky": 0.03,
+    "face_L": 66.36,
+    "face_C": 19.08,
+    "face_h": 50.34,
+    "toe": 21.79,
+    "shoulder": 10.78,
+    "contrast_win": 59.36,
+    "skew": 46.41,
+    "face_over_bg": 0.77,
+    "person_over_bg": 1.46,
+    "warm_cool_b": 1.54,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -6454,6 +7328,25 @@
      -2.63,
      1.55
     ]
+   },
+   "points": {
+    "p50": 48.68,
+    "p95": 86.68,
+    "p5": 8.48,
+    "contrast": 78.52,
+    "clip": 0.06,
+    "sky": 0.08,
+    "face_L": 73.92,
+    "face_C": 14.79,
+    "face_h": 53.87,
+    "toe": 9.87,
+    "shoulder": 12.5,
+    "contrast_win": 69.25,
+    "skew": 52.45,
+    "face_over_bg": 0.98,
+    "person_over_bg": 1.69,
+    "warm_cool_b": -1.18,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -6595,6 +7488,25 @@
      6.06
     ]
    },
+   "points": {
+    "p50": 62.58,
+    "p95": 88.73,
+    "p5": 8.0,
+    "contrast": 80.33,
+    "clip": 0.05,
+    "sky": 0.08,
+    "face_L": 61.19,
+    "face_C": 21.92,
+    "face_h": 50.2,
+    "toe": 28.0,
+    "shoulder": 10.33,
+    "contrast_win": 53.19,
+    "skew": 42.86,
+    "face_over_bg": 0.69,
+    "person_over_bg": 1.19,
+    "warm_cool_b": -0.97,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -6734,6 +7646,25 @@
      -1.69,
      3.06
     ]
+   },
+   "points": {
+    "p50": 45.0,
+    "p95": 91.31,
+    "p5": 8.89,
+    "contrast": 81.5,
+    "clip": 0.06,
+    "sky": 0.02,
+    "face_L": 65.47,
+    "face_C": 28.38,
+    "face_h": 59.41,
+    "toe": 7.03,
+    "shoulder": 19.76,
+    "contrast_win": 73.24,
+    "skew": 53.17,
+    "face_over_bg": 0.78,
+    "person_over_bg": 1.7,
+    "warm_cool_b": 0.61,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -6877,6 +7808,25 @@
      14.73
     ]
    },
+   "points": {
+    "p50": 57.69,
+    "p95": 88.75,
+    "p5": 9.08,
+    "contrast": 79.75,
+    "clip": 0.05,
+    "sky": 0.03,
+    "face_L": 67.6,
+    "face_C": 24.61,
+    "face_h": 47.48,
+    "toe": 15.13,
+    "shoulder": 12.03,
+    "contrast_win": 66.25,
+    "skew": 46.21,
+    "face_over_bg": 0.8,
+    "person_over_bg": 0.67,
+    "warm_cool_b": 5.34,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -7017,6 +7967,25 @@
      -3.43,
      1.36
     ]
+   },
+   "points": {
+    "p50": 41.44,
+    "p95": 88.11,
+    "p5": 9.4,
+    "contrast": 77.06,
+    "clip": 0.06,
+    "sky": 0.03,
+    "face_L": 63.03,
+    "face_C": 26.19,
+    "face_h": 60.02,
+    "toe": 5.34,
+    "shoulder": 18.95,
+    "contrast_win": 69.66,
+    "skew": 48.97,
+    "face_over_bg": 0.83,
+    "person_over_bg": 1.61,
+    "warm_cool_b": -1.1,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -7162,6 +8131,25 @@
      12.94
     ]
    },
+   "points": {
+    "p50": 60.49,
+    "p95": 88.75,
+    "p5": 13.16,
+    "contrast": 75.17,
+    "clip": 0.06,
+    "sky": 0.03,
+    "face_L": 60.27,
+    "face_C": 22.81,
+    "face_h": 50.76,
+    "toe": 25.15,
+    "shoulder": 14.2,
+    "contrast_win": 50.26,
+    "skew": 36.88,
+    "face_over_bg": 0.69,
+    "person_over_bg": 1.08,
+    "warm_cool_b": 4.77,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -7298,6 +8286,25 @@
      -3.55,
      0.48
     ]
+   },
+   "points": {
+    "p50": 51.94,
+    "p95": 90.63,
+    "p5": 6.6,
+    "contrast": 83.34,
+    "clip": 0.05,
+    "sky": 0.09,
+    "face_L": 72.36,
+    "face_C": 22.64,
+    "face_h": 57.98,
+    "toe": 10.68,
+    "shoulder": 11.9,
+    "contrast_win": 72.73,
+    "skew": 57.1,
+    "face_over_bg": 0.82,
+    "person_over_bg": 0.6,
+    "warm_cool_b": -2.35,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -7439,6 +8446,25 @@
      1.15
     ]
    },
+   "points": {
+    "p50": 43.43,
+    "p95": 87.81,
+    "p5": 5.99,
+    "contrast": 81.79,
+    "clip": 0.06,
+    "sky": 0.04,
+    "face_L": 71.82,
+    "face_C": 20.12,
+    "face_h": 58.08,
+    "toe": 9.22,
+    "shoulder": 15.11,
+    "contrast_win": 71.74,
+    "skew": 56.27,
+    "face_over_bg": 0.84,
+    "person_over_bg": 0.82,
+    "warm_cool_b": -0.87,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -7579,6 +8605,25 @@
      4.93
     ]
    },
+   "points": {
+    "p50": 33.61,
+    "p95": 86.44,
+    "p5": 6.0,
+    "contrast": 81.15,
+    "clip": 0.04,
+    "sky": 0.04,
+    "face_L": 67.59,
+    "face_C": 23.94,
+    "face_h": 58.97,
+    "toe": 4.54,
+    "shoulder": 23.27,
+    "contrast_win": 76.24,
+    "skew": 51.19,
+    "face_over_bg": 0.93,
+    "person_over_bg": 2.17,
+    "warm_cool_b": -0.59,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -7717,6 +8762,25 @@
      -5.08,
      -0.17
     ]
+   },
+   "points": {
+    "p50": 29.5,
+    "p95": 86.27,
+    "p5": 5.08,
+    "contrast": 81.68,
+    "clip": 0.06,
+    "sky": 0.03,
+    "face_L": 71.37,
+    "face_C": 19.4,
+    "face_h": 55.16,
+    "toe": 4.99,
+    "shoulder": 18.22,
+    "contrast_win": 75.69,
+    "skew": 56.11,
+    "face_over_bg": 0.97,
+    "person_over_bg": 2.24,
+    "warm_cool_b": -1.82,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -7858,6 +8922,25 @@
      0.47
     ]
    },
+   "points": {
+    "p50": 32.0,
+    "p95": 90.71,
+    "p5": 6.98,
+    "contrast": 82.91,
+    "clip": 0.05,
+    "sky": 0.04,
+    "face_L": 67.43,
+    "face_C": 22.1,
+    "face_h": 63.39,
+    "toe": 5.43,
+    "shoulder": 21.15,
+    "contrast_win": 77.37,
+    "skew": 56.58,
+    "face_over_bg": 0.79,
+    "person_over_bg": 0.72,
+    "warm_cool_b": -0.93,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -7998,6 +9081,25 @@
      2.64
     ]
    },
+   "points": {
+    "p50": 33.65,
+    "p95": 89.19,
+    "p5": 6.61,
+    "contrast": 81.84,
+    "clip": 0.06,
+    "sky": 0.05,
+    "face_L": 64.69,
+    "face_C": 18.61,
+    "face_h": 61.22,
+    "toe": 6.85,
+    "shoulder": 20.92,
+    "contrast_win": 73.9,
+    "skew": 51.85,
+    "face_over_bg": 0.76,
+    "person_over_bg": 1.08,
+    "warm_cool_b": -2.07,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -8136,6 +9238,25 @@
      -2.21
     ]
    },
+   "points": {
+    "p50": 60.01,
+    "p95": 90.23,
+    "p5": 6.63,
+    "contrast": 84.42,
+    "clip": 0.06,
+    "sky": 0.09,
+    "face_L": 64.74,
+    "face_C": 21.04,
+    "face_h": 46.08,
+    "toe": 18.16,
+    "shoulder": 9.36,
+    "contrast_win": 65.1,
+    "skew": 52.75,
+    "face_over_bg": 0.75,
+    "person_over_bg": 0.98,
+    "warm_cool_b": -3.54,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -8270,6 +9391,25 @@
      -3.58,
      2.2
     ]
+   },
+   "points": {
+    "p50": 63.08,
+    "p95": 93.24,
+    "p5": 7.53,
+    "contrast": 86.01,
+    "clip": 0.05,
+    "sky": 0.08,
+    "face_L": 65.95,
+    "face_C": 24.19,
+    "face_h": 56.69,
+    "toe": 26.3,
+    "shoulder": 7.51,
+    "contrast_win": 59.87,
+    "skew": 46.9,
+    "face_over_bg": 0.71,
+    "person_over_bg": 0.77,
+    "warm_cool_b": 0.97,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -8411,6 +9551,25 @@
      -3.49
     ]
    },
+   "points": {
+    "p50": 72.06,
+    "p95": 92.75,
+    "p5": 7.28,
+    "contrast": 85.05,
+    "clip": 0.04,
+    "sky": 0.08,
+    "face_L": 65.01,
+    "face_C": 25.63,
+    "face_h": 44.36,
+    "toe": 29.13,
+    "shoulder": 5.6,
+    "contrast_win": 57.52,
+    "skew": 51.19,
+    "face_over_bg": 0.71,
+    "person_over_bg": 1.05,
+    "warm_cool_b": -4.17,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -8550,6 +9709,25 @@
      7.06
     ]
    },
+   "points": {
+    "p50": 51.62,
+    "p95": 92.37,
+    "p5": 6.15,
+    "contrast": 85.12,
+    "clip": 0.06,
+    "sky": 0.08,
+    "face_L": 66.2,
+    "face_C": 25.18,
+    "face_h": 53.53,
+    "toe": 15.69,
+    "shoulder": 15.84,
+    "contrast_win": 70.37,
+    "skew": 55.67,
+    "face_over_bg": 0.73,
+    "person_over_bg": 0.77,
+    "warm_cool_b": 2.03,
+    "light_ratio": null
+   },
    "neutral_axis": [
     {
      "a": null,
@@ -8688,6 +9866,25 @@
      -6.29,
      5.88
     ]
+   },
+   "points": {
+    "p50": 57.65,
+    "p95": 94.16,
+    "p5": 4.9,
+    "contrast": 87.07,
+    "clip": 0.21,
+    "sky": 0.07,
+    "face_L": 72.04,
+    "face_C": 19.51,
+    "face_h": 57.84,
+    "toe": 22.29,
+    "shoulder": 14.46,
+    "contrast_win": 65.18,
+    "skew": 45.75,
+    "face_over_bg": 0.79,
+    "person_over_bg": 1.24,
+    "warm_cool_b": 0.0,
+    "light_ratio": null
    },
    "neutral_axis": [
     {
@@ -8875,6 +10072,25 @@
      -5.35,
      6.05
     ]
+   },
+   "points": {
+    "p50": 72.84,
+    "p95": 91.59,
+    "p5": 12.82,
+    "contrast": 73.03,
+    "clip": 0.1,
+    "sky": 0.07,
+    "face_L": 76.81,
+    "face_C": 12.83,
+    "face_h": 69.91,
+    "toe": 29.45,
+    "shoulder": 7.84,
+    "contrast_win": 40.35,
+    "skew": 25.72,
+    "face_over_bg": 0.87,
+    "person_over_bg": 0.92,
+    "warm_cool_b": 1.73,
+    "light_ratio": null
    },
    "neutral_axis": [
     {

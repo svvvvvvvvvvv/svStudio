@@ -156,6 +156,20 @@ def build() -> List[dict]:
                 light_ratio=_band([r.get('light_ratio') for r in rows]),
                 warm_cool_b=_band([r.get('warm_cool_b') for r in rows]),
             ),
+            # ★ 2026-10-31：点值（中位）——求解只许用点，不许用带中点/带边。
+            points=dict(
+                p50=_med(get_img('p50')), p95=_med(get_img('p95')), p5=_med(get_img('p5')),
+                contrast=_med(get_img('contrast')), clip=_med(get_img('clip_pct')),
+                sky=_med([r.get('sky_share_frac') for r in wit
+                          if r.get('sky_share_frac') is not None]),
+                face_L=_med([s['L'] for s in sk]), face_C=_med([s['C'] for s in sk]),
+                face_h=_med([s['h'] for s in sk]),
+                toe=_med(shape('toe')), shoulder=_med(shape('shoulder')),
+                contrast_win=_med(shape('contrast_win')), skew=_med(shape('skew')),
+                face_over_bg=_med(rel_fb), person_over_bg=_med(rel_pb),
+                warm_cool_b=_med([r.get('warm_cool_b') for r in rows]),
+                light_ratio=_med([r.get('light_ratio') for r in rows]),
+            ),
             neutral_axis=na, hue_bands=hb, light=labels, samples=samples,
         ))
     return out

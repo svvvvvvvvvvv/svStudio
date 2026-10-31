@@ -1,19 +1,16 @@
 # -*- coding: utf-8 -*-
-"""LR 侧求解：把**卡的带**接进一次算（§56 步 6 / §52）。
+"""LR 侧求解：只用**卡的点值**做目标（不再用带/带中点）。
 
-    from design.lr_solve import bands_of, plan_batch
+    from design.lr_solve import points_of, plan_batch
     card = <cards_v5.json 里的一张>
     plans = plan_batch(recs_1, card)      # recs_1 = ① 的测量 {stem: rec}
 
 三件事：
-  1. `bands_of(card)` —— 从卡取出**可行域**（§63.4：只收关系/形状/色彩，
-     绝对落点只作参考、不进可行域）
-  2. `plan_batch` —— 逐图调用 `solver.solve_pass`（曝光/曲线/局部），并把 ③ 的白端
-     （T1：p95 ≤ 93 · clip < 0.5%）作为**待执行的一步**写进计划
+  1. `points_of(card)` —— 从卡取点值（p50 / face_L / face_C / face_h / shape …）
+  2. `plan_batch` —— 逐图：曲线（点值形状）→ placement（点值 p50 / face）→ 白端一档
   3. `summary` —— 人读的一行一图
 
-★ 为什么白端在这里：2026-10-30 定（选项 b）——① 的白端由"场景 + 扫描白端"决定，
-  引擎不求解；白端是"这张片子该多亮"，归 LR 的 ③。
+★ 没有点值就不动、记账；**不退回带中点/带边**。
 """
 from __future__ import annotations
 
@@ -24,11 +21,11 @@ from typing import Dict, List, Optional
 from .curve_design import apply_lut, curve_from_quantiles
 from .invariants import T1
 from .photometry import ev_for_l, l_after_ev
-from .solver import Plan, local_exposure_for, solve_pass
+from .solver import Plan, local_exposure_for
 
-# ★ 2026-10-30：**所有阈值改从卡带来**（SV：求解必须照着匹配卡）。
-#   原来这里的 P95_MAX=93 / CLIP_MAX=0.5 是我自己的常数，属于"乱搞"，
-#   已删除；下面从卡带的上下沿取，取不到才退回物理线。
+# ★ 2026-10-31：**所有阈值改从卡的点值来**（SV：求解必须照着匹配卡）。
+#   原来的 P95_MAX=93 / CLIP_MAX=0.5 是自造常数，已删；现在用 `points_of(card)`
+#   的点值，不再从带的上下沿/中点取。
 # ★ 2026-10-30 第二次收：`PHYS_P95=96` / `PHYS_CLIP=1.0` 也不是物理 ——
 #   它们是上一版自己写的"保守上界"。真正的物理线只有两条：
 #     · 白平台 L*=100（像素不可能更亮）；
@@ -37,27 +34,9 @@ PHYS_P95 = 100.0
 PHYS_CLIP = T1['clip_max']
 # 一次收白最多压几档：政策（超过这个量级就不是单张图的问题，先查底片/场景）
 MAX_WHITE_PULL_EV = 1.5
-# ★ 2026-10-31 减法：没有公开传递函数的旋钮（Whites/局部饱和/局部阴影/冷暖）
-#   一律"方向 + 一档步进 + 记账"，不再用 k(L)/二次式反解。
+# ★ 2026-10-31：**不要用绝对斜率/连续反解**（C/UI 随图变）。肤色饱和只给一档；
+#   没有公开传递函数的旋钮一律方向 + 一档 + ③ 验。
 ONE_STEP_UI = 10.0
-
-# ---------------------------------------------------------------- 肤色彩度（主体蒙版）
-# ★ 2026-10-31 实测（LR 桥，逐档导出再量脸 C；n 小 ⇒ 台账级，本批 10 张的
-#   "预测 vs 实测"就是它的验证）：
-#     LocalSaturation −10 UI ⇒ −3.4 C（1231，0.34 C/UI）
-#     LocalSaturation +10 UI ⇒ +0.4~0.7 C（5 张，0.05 C/UI）
-#   ⇒ **压得下来，抬不上去**；淡脸是阴影的光决定的，硬抬只会把整张图拉爆。
-#   注意：HSL 橙/红**不用**（人已否：全局旋钮会连带改背景/衣服的橙红）。
-# 死区：原来"整条卡带都不动"（宽 7.8）看着就是没修；现在目标 = 带中点，
-#   容差 ±1.0 C（人拍板放宽 P1 的例外）。
-# ---------------------------------------------------------------- 肤色彩度（主体蒙版）
-# ★ 2026-10-31：**不要用绝对斜率**（C/UI）。它随图变：同样 −20 UI，暗脸掉 4 个 C、
-#   亮脸掉 8.5 个 —— 换张图就失效（人当场就指出来了）。
-#   正确的关系是**相对律**：ΔC/C ≈ 1.03% 每 UI（5 张实测 1.02~1.05%，几乎不散）。
-#   这也正是"百分比滑块"的定义：+10 UI ≈ +10% 彩度。
-#   ⇒ 剂量 UI = (目标C / 当前C − 1) × 100，与图无关。
-#   注意：HSL 橙/红**不用**（人已否：全局旋钮会连带改背景/衣服的橙红）。
-C_PCT_PER_UI = 1.03       # 每 UI 改变当前彩度的百分比（= 1%，实测 1.02~1.05，n=5）
 C_DOWN_MAX_UI = 100.0
 C_BAND_TOL = 1.0
 H_BAND_TOL = 2.0           # 色相死区（Lab 度）
@@ -65,38 +44,19 @@ L_BAND_TOL = 1.5           # 明度死区（L*）
 HUE_STEP_UI = 5.0          # 肤色色相半档（一档 10 UI ≈ 15~20°，太大）
 
 
-def _hi(band, default):
-    return float(band[1]) if isinstance(band, (list, tuple)) and len(band) == 2 else float(default)
+def points_of(card: dict) -> Dict[str, Optional[float]]:
+    """卡 → **点值**（求解唯一允许的目标形态）。
 
-
-def _lo(band, default):
-    return float(band[0]) if isinstance(band, (list, tuple)) and len(band) == 2 else float(default)
-
-
-def bands_of(card: dict) -> Dict[str, object]:
-    """卡 → 可行域（只收关系/形状；绝对落点只作参考，见 §63.4）。"""
-    b = (card or {}).get('bands') or {}
-    out: Dict[str, object] = {}
-    # 形状（风格量，进可行域）
-    shape = {}
-    for k in ('toe', 'shoulder', 'contrast_win', 'skew'):
-        v = b.get(k)
-        if isinstance(v, list) and len(v) == 2:
-            shape[k] = (float(v[0]), float(v[1]))
-    if shape:
-        out['shape'] = shape
-    # 脸（生理 + 语料区间）
-    if isinstance(b.get('face_L'), list):
-        out['face_L'] = (float(b['face_L'][0]), float(b['face_L'][1]))
-    if isinstance(b.get('face_over_bg'), list):
-        out['face_over_bg'] = (float(b['face_over_bg'][0]), float(b['face_over_bg'][1]))
-    # 关系（人÷背景中位）
-    if isinstance(b.get('person_over_bg'), list):
-        # 卡里存的是比值；求解器要的是"人的中位 L 区间"，所以这边只透传比值带
-        out['person_over_bg'] = (float(b['person_over_bg'][0]), float(b['person_over_bg'][1]))
-    # 绝对落点：**只作参考**，不进可行域
-    out['_ref'] = {k: b.get(k) for k in ('p50', 'p95', 'p5', 'clip') if b.get(k)}
-    return out
+    2026-10-31：不再从 `bands` 取中点/带边；没有 `points` 就返回 None，
+    该步不动并记账（不许偷偷退回带中点）。
+    """
+    p = (card or {}).get('points') or {}
+    keys = ('p50', 'p95', 'p5', 'contrast', 'clip', 'sky',
+            'face_L', 'face_C', 'face_h',
+            'toe', 'shoulder', 'contrast_win', 'skew',
+            'face_over_bg', 'person_over_bg', 'warm_cool_b', 'light_ratio')
+    return {k: (float(p[k]) if isinstance(p.get(k), (int, float)) else None)
+            for k in keys}
 
 
 # 分离色调的色相轴（UI 约定，不是标定值）：暖端 45°、冷端 210°。
@@ -107,13 +67,12 @@ SPLIT_COOL_HUE = 210.0
 def grading_of(card: dict, rec: dict) -> Dict[str, float]:
     """⑧ 彩色：**能算的算，不能算的只给方向 + 一档**（§47 / §6D）。
 
-    2026-10-31 减法：
-      · 肤色饱和：没有公开传递函数，局部/全局还差 0.364× ⇒ 只给 ±10 UI。
-      · 肤色色相：只记账，不写幅度（强染色，非微调）。
-      · 冷暖：`warm_cool_b` 出带 ⇒ 两个轮子各 ±10 点、色相成对；
-        不再用"带宽×2.5 / 0.18 b*/点"反解。
+    2026-10-31：
+      · 目标只用**卡的点值**（不是带中点/带边）；没有点值就不动、只记账。
+      · 肤色饱和只降不升；色相半档；冷暖按卡的分色方向 + 一档。
+      · 没有公开传递函数的旋钮 ⇒ 一档 10 UI，③ 验；不再用 1.03%/UI 连续反解。
     """
-    b = (card or {}).get('bands') or {}
+    pts = points_of(card)
     out = dict(saturation=0.0, vibrance=0.0,
                local_saturation=0.0, local_vibrance=0.0,
                local_toning_hue=0.0, local_toning_sat=0.0,
@@ -121,51 +80,37 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
                split_shadow_hue=0.0, split_shadow_sat=0.0, split_balance=0.0)
     notes = []
     one = ONE_STEP_UI
-    # ---- 肤色 H/S/L **三根**（教程：肤色 = 橙、低饱和、高明度；三根都要管）
-    #   目标不是"卡带的边"，是**带中点**；容差只是死区（人：原来"整条带都不动"太宽）。
-    #   剂量按纪律：没有公开传递函数的滑块 ⇒ 方向 + 一档（10 UI），③ 验。
-    def _skin_axis(val, band, tol, key, label, step=None, nd=1):
-        if not (isinstance(band, (list, tuple)) and len(band) == 2) or val is None:
+
+    def _axis(val, target, tol, key, label, step=None):
+        if target is None or val is None:
             return
-        lo, hi = float(band[0]), float(band[1])
-        mid = 0.5 * (lo + hi)
-        d = mid - float(val)
+        d = float(target) - float(val)
         if abs(d) <= tol:
-            notes.append('%s %.1f ≈ 带中点 %.1f（±%g 内）⇒ 不动' % (label, float(val), mid, tol))
+            notes.append('%s %.1f ≈ 卡的点值 %.1f（±%g 内）⇒ 不动'
+                         % (label, float(val), float(target), tol))
             return
         s = one if step is None else float(step)
         out[key] = s if d > 0 else -s
-        notes.append('%s %.1f → 带中点 %.1f（差 %+.1f）⇒ %s %+.0f UI'
-                     % (label, float(val), mid, -d, label, out[key]))
+        notes.append('%s %.1f → 卡的点值 %.1f（差 %+.1f）⇒ %+.0f UI'
+                     % (label, float(val), float(target), -d, out[key]))
 
-    # ★ 2026-10-31：**人物降饱和走主体蒙版**（人：整片有点艳，别动背景）。
-    #   不用 HSL 橙（那是全局，会连背景的橙红一起改）——蒙版只压人。
-    #   只降不升：比带中点低的本来就不艳，再压只会更灰（记账不动）。
-    #   剂量用实测斜率（LocalSaturation −10 UI ⇒ 脸 C −3.4，n=1 图，台账级）。
+    # ★ 人物降饱和走主体蒙版：只压人、只降不升。
     cv = (rec.get('skin') or {}).get('C', rec.get('face_C'))
-    cb = b.get('face_C')
-    if isinstance(cb, list) and cv is not None and float(cv) > 0.5:
-        mid = 0.5 * (float(cb[0]) + float(cb[1]))
-        if mid < float(cv) - C_BAND_TOL:
-            # 相对律：每 UI 改变当前彩度的 C_PCT_PER_UI%
-            ui = (mid / float(cv) - 1.0) * 100.0 / C_PCT_PER_UI
-            ui = max(-C_DOWN_MAX_UI, ui)
-            out['local_saturation'] = round(ui, 1)
-            notes.append('脸 C %.1f → 带中点 %.1f（×%.3f）⇒ 主体蒙版降饱和 %+.0f UI'
-                         '（相对律 %.2f%%/UI，只压人）'
-                         % (float(cv), mid, mid / float(cv), out['local_saturation'],
-                            C_PCT_PER_UI))
+    target_C = pts.get('face_C')
+    if cv is not None and target_C is not None and float(cv) > 0.5:
+        if float(cv) > float(target_C) + C_BAND_TOL:
+            out['local_saturation'] = -one
+            notes.append('脸 C %.1f > 卡的点值 %.1f + %.1f ⇒ 主体蒙版降饱和 %.0f UI（一档）'
+                         % (float(cv), float(target_C), C_BAND_TOL, one))
         else:
-            notes.append('脸 C %.1f ≤ 带中点 %.1f ⇒ 不降饱和（再压会更灰）' % (float(cv), mid))
-    # ★ 色相单独用半档（5 UI）：实测一档 10 UI 能挪 15~20°（1231 60°→43°），
-    #   太大 ⇒ 脸从黄褐直接被推成粉，"艳"就是这么来的。
-    _skin_axis((rec.get('skin') or {}).get('h', rec.get('face_h')),
-               b.get('face_h'), H_BAND_TOL, 'hue_orange', '脸 h', step=HUE_STEP_UI)
-    _skin_axis((rec.get('skin') or {}).get('L', rec.get('face_L')),
-               b.get('face_L'), L_BAND_TOL, 'lum_orange', '脸 L')
-    # ---- 分色：**跟着卡来**。卡的暗部/高光色偏由 `design.card_tone` 从它自己的成片测出
-    #   （cards_v5 里 hue_bands/neutral_axis 是空的）。
-    #   教程那句话——"暗部青蓝、高光偏蓝"——就是这张卡的两个数，不是我的口味。
+            notes.append('脸 C %.1f ≤ 卡的点值 %.1f + %.1f ⇒ 不降饱和（只降不升）'
+                         % (float(cv), float(target_C), C_BAND_TOL))
+    _axis((rec.get('skin') or {}).get('h', rec.get('face_h')),
+          pts.get('face_h'), H_BAND_TOL, 'hue_orange', '脸 h', step=HUE_STEP_UI)
+    _axis((rec.get('skin') or {}).get('L', rec.get('face_L')),
+          pts.get('face_L'), L_BAND_TOL, 'lum_orange', '脸 L')
+
+    # ---- 分色：卡的暗部/高光色偏（`design.card_tone` 从它自己的成片测出）
     tone = (card or {}).get('tone') or {}
     sh = ((tone.get('shadow') or {}) or {}).get('hsl_h')
     hi = ((tone.get('highlight') or {}) or {}).get('hsl_h')
@@ -180,32 +125,27 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
                      % ('—' if sh is None else '%.0f' % sh,
                         '—' if hi is None else '%.0f' % hi, one))
     else:
-        # 没测过这张卡 ⇒ 退回"暖冷出带"的方向 + 一档（老路）
-        wc = b.get('warm_cool_b')
+        # 没测过这张卡 ⇒ 按卡的点值给方向 + 一档
+        wc = pts.get('warm_cool_b')
         cur = rec.get('warm_cool_b')
-        if isinstance(wc, list) and cur is not None:
-            lo, hi = float(wc[0]), float(wc[1])
-            _db = 0.0
-            if cur < lo:
-                _db = lo - float(cur)
-            elif cur > hi:
-                _db = hi - float(cur)
-            if abs(_db) > 0.05:
-                warm = _db > 0
+        if wc is not None and cur is not None:
+            d = float(wc) - float(cur)
+            if abs(d) > 0.05:
+                warm = d > 0
                 out['split_highlight_hue'] = SPLIT_WARM_HUE if warm else SPLIT_COOL_HUE
                 out['split_shadow_hue'] = SPLIT_COOL_HUE if warm else SPLIT_WARM_HUE
                 out['split_highlight_sat'] = one
                 out['split_shadow_sat'] = one
-                notes.append('暖冷 %.2f 出带 [%.2f, %.2f] ⇒ 分离色调 %g 点（方向 + 一档）'
-                             % (float(cur), lo, hi, one))
+                notes.append('暖冷 %.2f → 卡的点值 %.2f ⇒ 分离色调 %g 点（方向 + 一档）'
+                             % (float(cur), float(wc), one))
             else:
-                notes.append('暖冷 %.2f 在卡带内 ⇒ 不动' % float(cur))
+                notes.append('暖冷 %.2f ≈ 卡的点值 %.2f ⇒ 不动' % (float(cur), float(wc)))
     out['note'] = '；'.join(notes)
     return out
 
 
 def _meas_of(rec: dict) -> Dict[str, object]:
-    """① 的测录 → solve_pass 需要的形状。
+    """① 的测录 → plan 需要的形状（v7 扁平 / 旧嵌套都吃）。
 
     ★ 2026-10-30：同时吃**旧测量**（`skin/bg/person` 嵌套）与 **v7 测量**
     （`face_L / person_L / bg_L_p90` 扁平；`m_*_v7.json`）。v7 没有 `shape`，
@@ -257,10 +197,10 @@ def white_end_plan(rec: dict, card: Optional[dict] = None,
     p95 = im.get('p95')
     p_clip = per.get('clip_pct')
     b_clip = bgr.get('clip_pct')
-    # ★ 门 = 卡的带（上沿），不是我的常数
-    b = (card or {}).get('bands') or {}
-    p95_gate = min(PHYS_P95, _hi(b.get('p95'), PHYS_P95))
-    clip_gate = min(PHYS_CLIP, max(_hi(b.get('clip'), PHYS_CLIP), 0.3))
+    # ★ 门 = 卡的点值（肩部），不是带边、不是我的常数；没有点值才退回白平台。
+    pts = points_of(card)
+    p95_gate = float(pts['p95']) if pts.get('p95') is not None else PHYS_P95
+    clip_gate = PHYS_CLIP
     # ★ ③ 的判据是**曝光 + 曲线之后**的残差（§6B.2）：
     #   上一版只看曲线、不看已经给的全局曝光 ⇒ 曝光已经压下去了还报"要收白"。
     from .curve_design import apply_lut
@@ -285,43 +225,31 @@ def white_end_plan(rec: dict, card: Optional[dict] = None,
                 clip=p_clip, person_clip=p_clip,
                 bg_clip=b_clip, frame_clip=im.get('clip_pct'),
                 gate=dict(p95_max=round(p95_gate, 1), person_clip_max=round(clip_gate, 2),
-                          from_card=bool(b)))
+                          from_card=pts.get('p95') is not None))
 
 
 def plan_batch(recs: Dict[str, dict], card: dict,
                batch: Optional[dict] = None) -> Dict[str, dict]:
     """逐图出计划：曝光（整幅）· 曲线（形状）· 局部（人）· 白端（③）。
 
-    `batch` = `batch_grade.build(recs, card)`：A 段（曲线/颜色）**全批同参**。
-    不传时退回"逐图造曲线/颜色"（只给诊断用；生产必须传，见设计真源 §2）。
+    `batch` = `batch_grade.build(recs, card)`：A 段给**全批同一条曲线**；
+    颜色在 B 段逐图（`grading_of`），不用批级颜色。
+    目标只用**卡的点值**（`points_of`）；没有点值就不动、记账，不退回带中点。
     """
-    bands = bands_of(card)
-    shape_band = bands.get('shape') or {}
-    face_band = bands.get('face_L')
+    pts = points_of(card)
+    _shape = {k: pts[k] for k in ('toe', 'shoulder', 'contrast_win', 'skew')
+              if pts.get(k) is not None}
+    _cap = float(pts['p95']) if pts.get('p95') is not None else PHYS_P95
+    face_rel = pts.get('face_over_bg')
     out: Dict[str, dict] = {}
-    # ⑥ 曲线：由卡的形状带反推（可算，不跑 LR）
-    _shape = bands.get('shape') or {}
-    _cap = min(PHYS_P95, _hi((card or {}).get('bands', {}).get('p95'), PHYS_P95))
+
     def _curve_for(rec):
         q = rec.get('img') or {}
         return curve_from_quantiles(q, _shape, p95_cap=_cap)
-    _cap_hi = min(PHYS_P95, _hi((card or {}).get('bands', {}).get('p95'), PHYS_P95))
-    face_rel = bands.get('face_over_bg')
-    person_rel = bands.get('person_over_bg')
+
     for stem, rec in recs.items():
         meas = _meas_of(rec)
-        card_in = dict(shape=shape_band)
-        # ★ 目标 = 卡的**关系带** × **这张图自己的背景**（§63：只用关系，不用绝对落点）
-        if face_rel and meas.get('bg_hi'):
-            card_in['face_L'] = (face_rel[0] * meas['bg_hi'], face_rel[1] * meas['bg_hi'])
-        elif face_band:
-            card_in['face_L'] = face_band
-        if person_rel and meas.get('bg_med'):
-            card_in['person_med'] = (person_rel[0] * meas['bg_med'], person_rel[1] * meas['bg_med'])
-
-        # ★ 一起动起来：⑥ 曲线是全局的，它会改脸的亮度 ⇒ ⑦ 的起点要换成**曲线之后**的值。
-        #   否则曲线压暗多少，脸就白丢多少（实测 1772 脸 65.5→51.4）。
-        # ★ A 段：给了 batch 就用**全批那一条**曲线；逐图曲线只作诊断兜底。
+        # A 段：给了 batch 就用全批那一条曲线；逐图曲线只作诊断兜底。
         curve = (batch.get('curve') if (batch and batch.get('curve'))
                  else _curve_for(rec))
         if curve:
@@ -330,113 +258,75 @@ def plan_batch(recs: Dict[str, dict], card: dict,
                     meas[_k] = apply_lut(curve, float(meas[_k]))
             if meas.get('p99') is not None:
                 meas['p99'] = apply_lut(curve, float(meas['p99']))
-        # ★★ 2026-10-31：**落点求解**（每张都算，不再"越界才压"）
-        #   旧逻辑：p99 超了才给负 EV，否则 EV=0 ⇒ 19 张全 +0.00，脸一路暗着出片。
-        #   新逻辑：把这张图的 p50 放到的**介质目标密度**（`_target.p50_target_D`），
-        #   用精确闭式解 EV（`placement.ev_to_place`），再用主体 p99 ≤ 100 封顶。
+
+        # ★ 每张都算：把 p50 放到介质的目标密度（精确闭式），再用主体 p99 封顶。
         from .placement import ev_to_place, ev_cap_by_p99, density_of_l, l_of_density
         _tgt = (card or {}).get('target') or {}
         _D50 = _tgt.get('p50_target_D')
         _ev_place = 0.0
-        _place_basis = '无介质目标 ⇒ EV=0'
         if _D50 is not None and meas.get('p50') is not None:
             _ev_place = ev_to_place(float(meas['p50']), float(_D50))
             _ev_place = ev_cap_by_p99(_ev_place, meas.get('p99'))
-            _place_basis = ('p50 %.1f → D %.3f（L* %.1f）⇒ EV %+.3f'
-                            % (float(meas['p50']), float(_D50),
-                               l_of_density(float(_D50)), _ev_place))
             for _k in ('face_L', 'person_L', 'p99', 'p50', 'p95'):
                 if meas.get(_k) is not None:
                     meas[_k] = l_after_ev(float(meas[_k]), _ev_place)
         _ev_white = _ev_place
-        # ★ 白端：落点之后仍超卡的肩 ⇒ 再压（EV 有文档单位）
-        # ★ 人像优先：白端只为**人**服务 —— 整幅 p95 高（天空）不压，人 p99 高才压。
+        # ★ 白端：落点之后仍超卡的点值（肩）⇒ 再压；只为**人**服务。
         _p95_res = meas.get('p99') or meas.get('p95')
-        if _p95_res is not None and float(_p95_res) > _cap_hi:
-            _ev_white += ev_for_l(float(_p95_res), float(_cap_hi))
+        if _p95_res is not None and float(_p95_res) > _cap:
+            _ev_white += ev_for_l(float(_p95_res), float(_cap))
             _ev_white = max(_ev_white, -MAX_WHITE_PULL_EV)
             for _k in ('face_L', 'person_L', 'p99'):
                 if meas.get(_k) is not None:
                     meas[_k] = l_after_ev(float(meas[_k]), _ev_white - _ev_place)
 
-        # ★★ 2026-10-30 废掉"拟合式求解"（网格 + 罚项 = 区间靶）。
-        #    改为**残差闭式**：目标来自卡的关系带，幅度由 CIELAB 的 Y 比反解，
-        #    上限由白端物理量（主体 p99 → 100）给出。不搜索、不迭代。
-        from .formula import ev_for_face, R_DEFAULT
-        p: Plan = solve_pass(meas, card_in)
+        p = Plan()
         _face = meas.get('face_L')
         _bghi = (rec.get('bg') or {}).get('L_p90')
-        # 曲线是全局的，背景亮部也会被它改；目标比值要用**同一态**的背景。
         if _bghi is not None and curve:
             _bghi = apply_lut(curve, float(_bghi))
-        # ★ 2026-10-30：白端上限只能看**人**的 p99，不能看整幅 p99
-        #   （整幅 p99 常被天空/窗光顶到 99.9 ⇒ 脸永远不许提，实测这批全被截断）。
-        #   `_meas_of` 取的正是 person.clip_p95；没人读数时**不设上限**并记账。
         _p99 = meas.get('p99')
-        if _face is not None and _bghi:
-            # ★ 2026-10-30：R 不再写死 0.85。卡的 `face_over_bg` 带就是"脸该是
-            #   背景亮部的多少"，按 P1/P3：出带才动，动到**最近的那个带边**；
-            #   在带内就 R = 当前比值（EV=0）。没有带才退回 R_DEFAULT。
-            _R = float(R_DEFAULT)
-            _cur_r = None
-            if face_rel:
-                _cur_r = float(_face) / max(float(_bghi), 1e-6)
-                if _cur_r < float(face_rel[0]):
-                    _R = float(face_rel[0])
-                elif _cur_r > float(face_rel[1]):
-                    _R = float(face_rel[1])
-                else:
-                    _R = _cur_r
-            _res = ev_for_face(_face, _bghi, _R, p99=_p99)
-            # ★ 2026-10-31：有**点目标**就按点求解（不用区间、不再"带内就归零"）。
-            #   目标 = 这张卡的介质目标脸 L（`_target.face.L` 的中点，是放置点）。
-            _tf = (_tgt.get('face') or {}).get('L')
-            if _tf and _face is not None:
-                _Lt = 0.5 * (float(_tf[0]) + float(_tf[1]))
-                _ev_face = ev_cap_by_p99(ev_to_place(float(_face), density_of_l(_Lt)), _p99)
-                _res = dict(target=_Lt, ev=_ev_face, capped_by=None)
-            p.exposure_ev = round(float(_ev_white), 3)
-            p.local_ev = _res['ev']
-            p.local_exposure = round(local_exposure_for(_res['ev']), 5)
-            # 预测用精确式；局部旋钮的实际效率实测 1.06~1.16（n=2 台账），不折进剂量。
-            p.pred_face = round(l_after_ev(float(_face), float(_res['ev'])), 2)
-            p.fit_dist = None
-            p.ledger = list(getattr(p, 'ledger', []) or []) + [
-                'face_L %.1f ｜ 目标 %.1f ｜ EV %+.3f%s'
-                % (_face, _res['target'], _res['ev'],
-                   '（白端截断）' if _res.get('capped_by') else '')]
-            if _p99 is None:
-                p.ledger = list(p.ledger) + [
-                    '没人 p99 读数 ⇒ 局部提亮不设白端上限（记账，③ 出片必须验人 clip）']
-        else:
-            p.exposure_ev = round(float(_ev_white), 3)
-        # §6E：局部高光**未接线**（桥回读 nil）。旧版在"要提亮/贴近肩"时给 −30，
-        #   那是没有出处也没有落地的常数 —— 2026-10-30 删除，只记账。
-        _p99m = meas.get('p99')
-        _need_lift = float(p.local_ev or 0.0) > 0.05 or float(p.local_shadows or 0.0) > 0.5
+        _tf = (_tgt.get('face') or {}).get('L')
+        _res = dict(target=None, ev=0.0, capped_by=None)
+        if _face is not None and isinstance(_tf, (int, float)):
+            _Lt = float(_tf)
+            _raw = ev_to_place(float(_face), density_of_l(_Lt))
+            _ev_face = ev_cap_by_p99(_raw, _p99)
+            _res = dict(target=_Lt, ev=_ev_face,
+                        capped_by=('p99' if _ev_face < _raw else None))
+        elif _face is not None and face_rel is not None and _bghi:
+            _Lt = float(face_rel) * float(_bghi)
+            _raw = ev_to_place(float(_face), density_of_l(_Lt))
+            _ev_face = ev_cap_by_p99(_raw, _p99)
+            _res = dict(target=_Lt, ev=_ev_face,
+                        capped_by=('p99' if _ev_face < _raw else None))
+
+        p.exposure_ev = round(float(_ev_white), 3)
+        p.local_ev = round(float(_res['ev']), 3)
+        p.local_exposure = round(local_exposure_for(p.local_ev), 5)
         p.light_weight = 1.0
         p.local_highlights = 0.0
-        if _need_lift or (_p99m is not None and float(_p99m) > _cap_hi):
-            p.ledger = list(getattr(p, 'ledger', []) or []) + [
-                '局部高光未接线（桥回读 nil）⇒ 不写；不用 −30 这个无出处常数']
-        _lr_val = meas.get('light_ratio')
-        if _lr_val is not None:
-            p.ledger = list(getattr(p, 'ledger', []) or []) + [
-                '光比 %.2f（不参与剂量：逆光的"多补"已由 R×bg_hi 表达，'
-                '旧版再乘 mid_b/ratio 是重复计权）' % float(_lr_val)]
-        _plan_d = dict(p.as_dict(), light_weight=round(float(getattr(p, 'light_weight', 1.0)), 2),
-                      fit_dist=getattr(p, 'fit_dist', None), pred_face=getattr(p, 'pred_face', None))
-        out[stem] = dict(plan=_plan_d,
+        if _res.get('target') is not None and _face is not None:
+            p.pred_face = round(l_after_ev(float(_face), float(_res['ev'])), 2)
+            p.ledger.append('face_L %.1f ｜ 点目标 %.1f ｜ EV %+.3f%s'
+                            % (_face, _res['target'], _res['ev'],
+                               '（白端截断）' if _res.get('capped_by') else ''))
+        else:
+            p.ledger.append('没有脸的点目标 ⇒ 局部不动（记账，不退回带中点）')
+        if _p99 is None and p.local_ev > 0:
+            p.ledger.append('没人 p99 读数 ⇒ 局部提亮不设白端上限（记账，③ 出片必须验人 clip）')
+        meas['face_target'] = _res.get('target')
+
+        out[stem] = dict(plan=dict(p.as_dict(),
+                                  light_weight=round(float(getattr(p, 'light_weight', 1.0)), 2),
+                                  fit_dist=getattr(p, 'fit_dist', None),
+                                  pred_face=getattr(p, 'pred_face', None)),
                          white=white_end_plan(rec, card, curve, ev=float(_ev_white)),
                          meas=meas, ledger=[str(e) for e in p.ledger],
                          curve=curve,
-                         # ★ 2026-10-31：颜色改成**逐图**（这才是"补参差"）。
-                         #   旧写法 `batch.get('grading')` 让 10 张图共用一个批级颜色，
-                         #   而批级只在中位出带时才动 ⇒ 中位在带、个体出带时颜色全空转
-                         #   （实测：10 张 XMP 里一个颜色键都没有）。
-                         #   曲线仍用批级那一条（一套的骨架），颜色按每张自己的残差。
                          grading=grading_of(card, rec))
     return out
+
 
 
 def summary(plans: Dict[str, dict], card_name: str = '') -> str:
@@ -480,19 +370,14 @@ if __name__ == '__main__':
 
 
 def refine(plans: Dict[str, dict], meas3: Dict[str, dict], card: dict) -> Dict[str, dict]:
-    """**一次验后修正**：用实测 ③ 的残差，重算第二轮的量（只用可算/已标定量）。
+    """**一次验后修正**：用实测 ③ 的残差，重算第二轮的量（只走一档，不反解）。
 
-    为什么需要：`compose` 是**开环预测**，而 LR 的实际传递（蒙版羽化、
-    曲线与曝光的交互）比线性模型复杂。我们已经在量 ③ 了，就没有理由不做闭环。
-
-    规则（只在残差超过门槛时才动，避免来回抖）：
-      · 脸 L 差 > 2 L*      ⇒ 用局部曝光补（精确反解 EV，受 p99 白端约束）
-      · 脸 C 差 > 1.5 C*    ⇒ 局部饱和 ±一档（10 UI）
-      · 人 p99 > 卡的肩     ⇒ 局部曝光回撤
-
-    2026-10-31 减法：局部饱和没有公开传递函数，只给一档；不再用 k(L)/二次式。
+    2026-10-31：目标只用卡的点值；局部饱和只降不升；`local_exposure` 用
+    `local_exposure_for`（EV/4 的定义式）。
     """
-    bands = (card or {}).get('bands') or {}
+    pts = points_of(card)
+    cap = float(pts['p95']) if pts.get('p95') is not None else PHYS_P95
+    target_C = pts.get('face_C')
     out: Dict[str, dict] = {}
     for stem, p in plans.items():
         m3 = meas3.get(stem) or {}
@@ -503,32 +388,24 @@ def refine(plans: Dict[str, dict], meas3: Dict[str, dict], card: dict) -> Dict[s
         face = sk.get('L')
         C = sk.get('C')
         p99 = per.get('clip_p95')
-        cap = min(PHYS_P95, _hi((bands.get('p95') or [0, PHYS_P95]), PHYS_P95))
         dL = 0.0
-        dC = 0.0
         fb = (p.get('meas') or {}).get('face_target')
-        if face is not None and fb:
+        if face is not None and isinstance(fb, (int, float)):
             dL = float(fb) - float(face)
-        cb = bands.get('face_C')
-        if C is not None and isinstance(cb, list):
-            lo, hi = float(cb[0]), float(cb[1])
-            if C < lo:
-                dC = lo - C
-            elif C > hi:
-                dC = hi - C
         add_fill = 0.0
-        if abs(dL) > 2.0:
+        if abs(dL) > L_BAND_TOL:
             add_fill = ev_for_l(float(face or 50.0), float(face or 50.0) + float(dL))
             if p99 is not None and add_fill > 0.0:
                 ev_cap = max(0.0, ev_for_l(float(p99), float(cap)))
                 add_fill = min(add_fill, ev_cap)
         add_sat = 0.0
-        if abs(dC) > 1.5:
-            add_sat = ONE_STEP_UI if dC > 0 else -ONE_STEP_UI
+        if (C is not None and isinstance(target_C, (int, float))
+                and float(C) > float(target_C) + C_BAND_TOL):
+            add_sat = -ONE_STEP_UI
         cur['local_ev'] = round(float(cur.get('local_ev') or 0.0) + add_fill, 3)
-        cur['local_exposure'] = round(cur['local_ev'] / 4.0, 5)
+        cur['local_exposure'] = round(local_exposure_for(cur['local_ev']), 5)
         g['local_saturation'] = round(float(g.get('local_saturation') or 0.0) + add_sat, 1)
         out[stem] = dict(p, plan=cur, grading=g,
-                         refine=dict(dL=round(dL, 1), dC=round(dC, 1),
-                                     add_fill=round(add_fill, 2), add_sat=round(add_sat, 1)))
+                         refine=dict(dL=round(dL, 1), add_fill=round(add_fill, 2),
+                                     add_sat=round(add_sat, 1)))
     return out

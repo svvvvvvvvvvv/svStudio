@@ -4,8 +4,10 @@
 **为什么要这一层**：匹配卡是"一套风格"（介质 + 画像 + 分面 + 样片），它自己不是引擎参数；
 引擎要的是一份**介质块**（卷/纸/化学/扫描端点…）。这一层做两件事：
   ① `medium_of(card)`   —— 取**这个目录自己的**介质块（`design/medium.py`；读不到就报）
-  ② `safety_for(card)`  —— 把 `p95_max / black_max` 从**卡的画像区间**算出来（§20/§52）
-     不再用卡里写死的 96 / 3
+  ② `reference_for(card)` —— 卡的数值**只报不判**（匹配页/账里用）
+
+★ 2026-10-31：**不再给引擎 p95_max/black_max**。引擎固定 PE 渲，只守死白/死黑；
+  拿卡的分布当门 = 把场景当标准，已删（有 git 历史）。
 
 ★ 2026-10-31：**"预设"这个概念已删**（没有可选集合、没有按名字查参数）；
   每个目录自带一份介质块，引擎直接吃 dict。
@@ -42,27 +44,6 @@ def _band(card, key: str, k: float = 0.95) -> Optional[Tuple[float, float]]:
     if q is None or q <= 0:
         return (float(v), float(v))
     return (float(v) - k * float(q), float(v) + k * float(q))
-
-
-# ★ 不变量阈值（§58.1 T0 / §63.7）：来自物理与量化下限，**不来自卡的分布**。
-#   p95 ≤ 93 —— 大师语料自己的 p95 上沿本来就在 92.9~96.5，93 不严于任何一套；
-#   clip < 0.5% —— 可见剪裁的量级；
-#   p1 ≥ 1.0 —— 黑端不堵。
-INVARIANT_P95_MAX = 93.0
-INVARIANT_CLIP_MAX = 0.5
-INVARIANT_P1_MIN = 1.0
-
-
-def safety_for(card) -> Dict[str, float]:
-    """引擎的两端边界 = **不变量**（§63.7）。
-
-    卡在这件事上只当参考：它的 p95 说明"这套通常多亮"，用来在匹配页讲代价，
-    **不拿来当门的阈值**（拿卡的分布当门 = 把场景当标准）。
-    """
-    return dict(p95_max=INVARIANT_P95_MAX,
-                clip_max=INVARIANT_CLIP_MAX,
-                p1_min=INVARIANT_P1_MIN,
-                black_max=3.0)
 
 
 def reference_for(card) -> Dict[str, object]:

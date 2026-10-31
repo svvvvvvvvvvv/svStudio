@@ -42,7 +42,7 @@ def ev_for_face(face_L: float, bg_hi: float, R: float,
                 p99: Optional[float] = None) -> Dict[str, float]:
     """⑦ 局部补光：**连续函数**，不是网格。
 
-        target = R × bg_hi                      ← R 是显式的卡带参数（见调用处）
+        target = R × bg_hi                      ← R 是卡的 face_over_bg **点值**（见调用处）
         EV(L)  = ev_for_l(L, target)            ← CIELAB 精确反解，只提"低于目标"的部分
         上限   = ev_to_white(p99)               ← 白端物理上限（到 L*=100 还剩几档）
 

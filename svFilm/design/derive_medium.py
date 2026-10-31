@@ -65,8 +65,10 @@ def _papers() -> dict:
 
 def _required_D(card: dict):
     """卡的黑端要求多少纸密度（Dmax）。黑端被扫到 0 = 没信息，返回 None。"""
-    p5 = (card.get('bands') or {}).get('p5') or [None, None]
-    L = p5[0]
+    p5 = (card.get('points') or {}).get('p5')
+    if not isinstance(p5, (int, float)):
+        p5 = ((card.get('bands') or {}).get('p5') or [None, None])[0]
+    L = p5
     if L is None or L <= 1.0:          # 0~1 L* 已经被扫描切平 ⇒ 不约束纸
         return None
     y = (L + 16.0) / 116.0
@@ -98,15 +100,19 @@ def _paper_shape() -> dict:
 
 
 def _card_shape_ratio(card: dict):
-    """卡的形状比 (toe/contrast_win, shoulder/contrast_win)。"""
+    """卡的形状比 (toe/contrast_win, shoulder/contrast_win) —— 用点值。"""
     b = card.get('bands') or {}
-    toe, sh, win = b.get('toe'), b.get('shoulder'), b.get('contrast_win')
-    if not (toe and sh and win):
+    pt = card.get('points') or {}
+    def _pt(key):
+        v = pt.get(key)
+        if isinstance(v, (int, float)):
+            return float(v)
+        band = b.get(key)
+        return 0.5 * (float(band[0]) + float(band[1])) if band else None
+    toe, sh, win = _pt('toe'), _pt('shoulder'), _pt('contrast_win')
+    if None in (toe, sh, win):
         return None
-    t = 0.5 * (toe[0] + toe[1])
-    s = 0.5 * (sh[0] + sh[1])
-    w = 0.5 * (win[0] + win[1])
-    return (t / w, s / w) if w else None
+    return (toe / win, sh / win) if win else None
 
 
 def _pct(xs, v):
@@ -341,9 +347,12 @@ def _split_of(name: str):
 
 
 def _face_c_mid(name: str, cards=None):
-    """这张卡的脸彩度带中点（= 它的"颜色饱和度"目标）。"""
+    """这张卡的脸彩度**点值**（= 它的"颜色饱和度"目标）。"""
     cards = cards or json.load(open(_CARDS, encoding='utf-8'))['cards']
     c = next((x for x in cards if x['name'] == name), None)
+    pt = ((c or {}).get('points') or {}).get('face_C')
+    if isinstance(pt, (int, float)):
+        return float(pt)
     b = ((c or {}).get('bands') or {}).get('face_C')
     return 0.5 * (float(b[0]) + float(b[1])) if b else None
 

@@ -78,6 +78,7 @@ def measure_one(path: str) -> dict:
     if int(ps.sum()) >= 300:
         out['person_p95'] = round(float(np.percentile(L[ps], 95)), 2)
         out['person_p99'] = round(float(np.percentile(L[ps], 99)), 2)
+        out['person_clip_pct'] = round(float((L[ps] > 99).mean() * 100.0), 3)
     if int(bgm.sum()) >= 300:
         out['bg_L_p90'] = round(float(np.percentile(L[bgm], 90)), 2)
         out['bg_L_p95'] = round(float(np.percentile(L[bgm], 95)), 2)
