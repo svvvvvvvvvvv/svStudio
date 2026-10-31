@@ -174,8 +174,8 @@
    0.0,
    0.0
   ],
-  "scan_black_level": 0.0081,
-  "scan_white_level": 0.8118,
+  "scan_black_level": 0.0868,
+  "scan_white_level": 0.9122,
   "output_color_space": "sRGB",
   "scan_film": false,
   "camera_diffusion_filter_active": true,
@@ -387,6 +387,8 @@
    "cc_blue_yellow": 0.5,
    "cc_red_green": 0.1
   },
+  "white_level_code": 0.9122,
+  "black_level_code": 0.0868,
   "filter_shift": {
    "cc_blue_yellow": 0.5,
    "cc_red_green": 0.1,

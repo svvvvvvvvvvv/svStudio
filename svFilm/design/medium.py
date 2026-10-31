@@ -78,12 +78,30 @@ _TONE = r'E:\svStudio\svFilm\analysis\corpus\kurai\card_tone.json'
 
 
 def _y_of_l(L: float) -> float:
-    """CIE L* → 相对亮度。"""
+    """CIE L* → 相对亮度 Y。"""
     return ((L + 16.0) / 116.0) ** 3 if L > 8.0 else L / 903.3
 
 
+def _code_of_y(y: float) -> float:
+    """线性亮度 Y → **sRGB 编码码值**（0~1）。
+
+    ★ 2026-10-31 修（公式错误）：引擎里 `scanner.white_level / black_level` 是
+      **sRGB 编码值**，内部再用 `_remove_sRGB_cctf()` 线性化
+      （`runtime/services/color_reference.py:27`）。我们之前直接写线性 Y，
+      会被二次线性化：0.9227 → 0.833，白端整体压暗约 3.5 L*。
+    """
+    if y <= 0.0031308:
+        return 12.92 * y
+    return 1.055 * (y ** (1.0 / 2.4)) - 0.055
+
+
 def _cc(L: float, a: float, b: float):
-    """(L*,a*,b*) → (蓝/黄 CC, 红/绿 CC)。1 CC = 0.01 密度（定义式，不拟合）。"""
+    """(L*,a*,b*) → (蓝/黄 CC, 红/绿 CC)。
+
+    ⚠ 这是**色度比**的近似：把 b* 反解成 Z/Y 的亮度比，再以 1 CC = 0.01 密度换算。
+      柯达 CC 的严格定义是**滤片密度**（作用在相纸光谱灵敏度上），不是 XYZ 的 Z/Y 比；
+      两者只在一阶上一致。所以它是"CC 当量"，不是"定义式"。
+    """
     import math
     fY = (L + 16.0) / 116.0
     Z = (fY - b / 200.0) ** 3
@@ -147,9 +165,12 @@ def apply_targets(card_name: str) -> str:
         raise KeyError('目录没有介质：%s（先 from_preset 迁移一份）' % card_name)
     sim = dict(block.get('simulation') or {})
     if tg.get('white_level') is not None:
-        sim['scan_white_level'] = tg['white_level']
+        # 引擎收的是 sRGB 码值（内部再线性化）⇒ 这里必须编码一次
+        sim['scan_white_level'] = round(_code_of_y(tg['white_level']), 4)
+        tg['white_level_code'] = sim['scan_white_level']
     if tg.get('black_level') is not None:
-        sim['scan_black_level'] = tg['black_level']
+        sim['scan_black_level'] = round(_code_of_y(tg['black_level']), 4)
+        tg['black_level_code'] = sim['scan_black_level']
     neu = tg.get('neutral') or {}
     lab = neu.get('lab')
     if lab:
