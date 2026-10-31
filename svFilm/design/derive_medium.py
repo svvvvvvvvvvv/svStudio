@@ -39,6 +39,39 @@ def _block(corpus: str) -> dict:
     return json.load(open(os.path.join(_BASE, corpus + '.json'), encoding='utf-8'))
 
 
+def pick_film(base_paper: str, shadow_cc) -> tuple:
+    """按卡的**暗部色偏方向**在"同一张纸"的卷里选一个（单量规则，不掺权重）。
+
+    物理依据（`stocks.py` 从 profile 读的轴）：
+      · sepB 越负 = 蓝灵敏度过量越多 ⇒ 暗部越容易偏蓝
+      · sepR 越大 = 红灵敏度过量越多 ⇒ 暗部越容易偏暖
+    规则：
+      暗部偏蓝（CC ≤ −1）→ 取 sepB 最负的那支卷
+      暗部偏暖（CC ≥ +1）→ 取 sepR 最大的那支卷
+      中间（|CC| < 1）   → 取 sepB 最接近 0 的那支（最中性）
+    """
+    from design.stocks import registry
+    reg = registry()
+    cands = [s for s in reg.stocks.values()
+             if s.kind == 'negative' and s.target_print == base_paper]
+    if not cands:
+        return None, '这张纸没有负片卷'
+    if shadow_cc is None:
+        return min(cands, key=lambda s: abs(s.sepB)), '没有暗部 Lab ⇒ 取最中性'
+    # ★ 符号：CC = log10(Z/Y)×100，**正 = 蓝多（偏蓝）**，负 = 偏黄（暖）
+    if shadow_cc >= 1.0:
+        s = min(cands, key=lambda x: x.sepB)
+        return s, ('暗部 %+.1f CC（偏蓝）⇒ sepB 最负：%s（%+.2f）'
+                   % (shadow_cc, s.name, s.sepB))
+    if shadow_cc <= -1.0:
+        s = max(cands, key=lambda x: x.sepR)
+        return s, ('暗部 %+.1f CC（偏暖）⇒ sepR 最大：%s（%+.2f）'
+                   % (shadow_cc, s.name, s.sepR))
+    s = min(cands, key=lambda x: abs(x.sepB))
+    return s, ('暗部 %+.1f CC（中性）⇒ 取 sepB 最接近 0：%s（%+.2f）'
+               % (shadow_cc, s.name, s.sepB))
+
+
 def apply_all() -> dict:
     from design.medium import apply_targets, load, save
     cards = json.load(open(_CARDS, encoding='utf-8'))['cards']
@@ -46,23 +79,32 @@ def apply_all() -> dict:
     for c in cards:
         name = c['name']
         corpus = c.get('corpus') or ''
-        preset = CORPUS_BASE.get(corpus)
-        if not preset:
-            out[name] = dict(ok=False, why='语料「%s」在 _DESC 里没有对应预设' % corpus)
+        base_name = CORPUS_BASE.get(corpus)
+        if not base_name:
+            out[name] = dict(ok=False, why='语料「%s」没有基线介质' % corpus)
             continue
-        block = _block(preset)
+        block = _block(base_name)
+        paper = block['simulation']['print_paper']
+        shadow_cc = _shadow_cc(name)
+        film, film_why = pick_film(paper, shadow_cc)
+        if film is None:
+            out[name] = dict(ok=False, why=film_why)
+            continue
+        block['simulation']['film_stock'] = film.name
         split = _split_of(name)
-        base = float(block['couplers']['amount'])
-        amount, why = _amount_from_split(base, name, split)
+        base_amt = float(block['couplers']['amount'])
+        amount, why = _amount_from_split(base_amt, name, split)
         block['couplers'] = dict(block.get('couplers') or {}, amount=amount)
-        save(name, block, note='卷/纸按语料声明（%s → %s）；amount 按分色强度；端点见 _target' % (corpus, preset))
+        save(name, block, note='卷按暗部色偏方向、amount 按分色强度；端点见 _target')
         apply_targets(name)
         b = load(name)
-        b['_derived'] = dict(corpus=corpus, preset=preset, amount=amount, amount_reason=why,
-                             split=split)
-        save(name, b, note='卷/纸按语料声明；amount 按分色强度；端点取自卡的打印端')
-        out[name] = dict(ok=True, preset=preset, film=block['simulation']['film_stock'],
-                         paper=block['simulation']['print_paper'], amount=amount, why=why)
+        b['_derived'] = dict(corpus=corpus, base=base_name, film=film.name, paper=paper,
+                             film_reason=film_why, amount=amount, amount_reason=why,
+                             split=split, shadow_cc=shadow_cc,
+                             wb_inherited=True)
+        save(name, b, note='卷按暗部色偏推、amount 按分色强度；WB 暂沿用基线（未按卷单独定）')
+        out[name] = dict(ok=True, base=base_name, film=film.name, paper=paper,
+                         amount=amount, film_reason=film_why, amount_reason=why)
     tmp = os.path.join(_ROOT, 'card_medium.json') + '.tmp'
     with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
         json.dump(out, fh, ensure_ascii=False, indent=1)
@@ -71,6 +113,19 @@ def apply_all() -> dict:
 
 
 _TONE = os.path.join(_ROOT, 'card_tone.json')
+
+
+def _shadow_cc(name: str):
+    """这个目录暗部偏蓝/偏黄多少 CC（card_tone 的 Lab → 定义式）。"""
+    tones = json.load(open(_TONE, encoding='utf-8'))
+    lab = ((tones.get(name) or {}).get('shadow') or {}).get('lab')
+    if not lab:
+        return None
+    L, a, b = lab
+    fY = (L + 16.0) / 116.0
+    Z = (fY - b / 200.0) ** 3
+    Y = fY ** 3
+    return round(math.log10(Z / Y) * 100.0, 1)
 
 
 def _split_of(name: str):
