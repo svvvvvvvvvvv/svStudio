@@ -97,7 +97,7 @@
  },
  "couplers": {
   "active": true,
-  "amount": 1.2,
+  "amount": 1.0,
   "inhibition_samelayer": 1.0,
   "inhibition_interlayer": 1.0,
   "gamma_samelayer_rgb": [
@@ -162,7 +162,7 @@
   "auto_exposure": false,
   "auto_exposure_method": "center_weighted",
   "print_illuminant": "TH-KG3",
-  "print_exposure": 0.8589,
+  "print_exposure": 0.8615,
   "output_lightness_compression": "off",
   "print_exposure_compensation": true,
   "print_y_filter_shift": -0.7,
@@ -376,15 +376,15 @@
   "film": "kodak_portra_800_push2",
   "paper": "fujifilm_crystal_archive_typeii",
   "film_reason": "暗部 +1.0 CC ⇒ 蓝度分位 0.74；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
-  "paper_reason": "黑端需 D≥无；形状 (toe/win 0.34, sh/win 0.27) 分位 (0.43, 0.37) ⇒ 最接近的纸 fujifilm_crystal_archive_typeii（σf/σm 1.34, σs/σm 1.40）",
-  "amount": 1.2,
-  "amount_reason": "样本不足（脸 n=1 / 整幅 n=1）⇒ 沿用 1.20",
+  "paper_reason": "黑端需 D≥2.233；形状 (toe/win 0.34, sh/win 0.22) 分位 (0.45, 0.35) ⇒ 最接近的纸 fujifilm_crystal_archive_typeii（σf/σm 1.34, σs/σm 1.40）",
+  "amount": 1.0,
+  "amount_reason": "卷 kodak_portra_800_push2 的 DIR couplers 默认 1.00（源码 DirCouplersParams.amount；profile 无此字段，不按卡推）",
   "halation_reason": "still/strong ⇒ sigma_h 65 µm，strength (0.015, 0.005, 0.0)（写百分数 [1.5, 0.5, 0.0]）",
   "split": 0.81,
   "shadow_cc": 1.0,
   "scene_fit": true,
   "neutral_filters": "engine database (neutral_print_filters.json)",
-  "pe": 0.8589,
-  "pe_reason": "参考灰 18.4% → 目标 D 0.592（Y 0.2559）；实测 Y 0.2559 ⇒ PE 0.8589"
+  "pe": 0.8615,
+  "pe_reason": "参考灰 18.4% → 目标 D 0.592（Y 0.2559）；实测 Y 0.2560 ⇒ PE 0.8615"
  }
 }

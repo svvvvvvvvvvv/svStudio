@@ -11,13 +11,13 @@
 2) **纸**：黑端要求 Dmax ≥ −log10(Y(p5))；卷的设计配纸够就用它，不够才换更厚的纸。
    p5 ≈ 0（被扫描切平）⇒ 没有信息，直接用设计配纸。只用 `use == 'still'` 的 print profile。
 
-3) **amount**：按**颜色饱和度**——两个比值取平均，再乘语料标定值，夹 [0.6, 1.6]：
-   · 本卡脸 C 带中点 ÷ 同语料中位
-   · 本卡**整幅彩度**（背景+主体，`card_tone.overall_C`）÷ 同语料中位
-   为什么要整幅：`couplers.py:126` 里 amount 是**整幅**通道耦合的标量倍率，
-   只看脸会漏掉背景那一半。
-   为什么用比值：只需要一个锚点（语料标定值），不需要"每单位 amount 值多少 C"
-   （手册那条 2.3 C/单位 已否：反解 −1.8~7.5，69% 撞边界）。
+3) **amount**：**按卷（film_stock）定，不按目录/不按卡**。
+   引擎源码 `couplers.py`：`couplers_matrix *= dir_couplers.amount`，
+   它缩放的是 DIR coupler 的抑制矩阵，影响**饱和度/对比度/局部对比**；
+   不是“肤色 C 的旋钮”。引擎默认 `DirCouplersParams.amount=1.0`，
+   profile 里没有 amount 字段，作者给的标定方式是 0/0.5/1/1.5/2 ramp。
+   所以默认取 **1.0**；以后按卷做参考色卡标定，写进 STOCK_AMOUNT，
+   绝不拿卡的脸 C/整幅 C 反推。
 
 4) **中性滤片（WB）不用我们定**：引擎自带 `data/filters/neutral_print_filters.json`
    （8 纸 × 20 卷 × 照明），`digest_params` 按 (卷, 纸) 自动套 C/M/Y 中性值。
@@ -40,9 +40,13 @@ _BASE = r'E:\svStudio\svFilm\analysis\corpus\kurai\medium_base'
 # 这里没有 preset 这个名字，也没有"从若干预设里挑一个"这一步。
 CORPUS_BASE = {'鹿井': '鹿井', '滨田': '滨田', 'xhs': 'xhs'}
 
-# 引擎手册：couplers.amount +1 ⇒ 颊 C* +2.3（台账级，n=2~3 卷）
-C_PER_AMOUNT = 2.3
-AMOUNT_MIN, AMOUNT_MAX = 0.6, 1.6
+# 引擎 DIR couplers 默认值（`DirCouplersParams.amount=1.0`；测试也钉 1.0）。
+# 以后按卷做 0/0.5/1/1.5/2 参考色卡标定，再把结果写进这里；不要按卡推。
+STOCK_AMOUNT = {}
+
+
+def amount_for_film(film: str) -> float:
+    return float(STOCK_AMOUNT.get(film, 1.0))
 
 
 def _block(corpus: str) -> dict:
@@ -267,8 +271,9 @@ def apply_all() -> dict:
         block['simulation']['film_stock'] = film.name
         block['simulation']['print_paper'] = paper
         hal_why = _apply_halation(block, film.name)
-        base_amt = float(block['couplers']['amount'])
-        amount, why = _amount_from_saturation(base_amt, name, cards)
+        amount = amount_for_film(film.name)
+        why = ('卷 %s 的 DIR couplers 默认 %.2f（源码 DirCouplersParams.amount；'
+               'profile 无此字段，不按卡推）' % (film.name, amount))
         block['couplers'] = dict(block.get('couplers') or {}, amount=amount)
         save(name, block, note='卷按暗部色偏、纸按黑端密度、amount 按脸彩度；端点见 _target')
         apply_targets(name)
@@ -344,52 +349,3 @@ def _split_of(name: str):
         Y = fY ** 3
         return math.log10(Z / Y) * 100.0
     return round(abs(cc(sh) - cc(hi)), 2)
-
-
-def _face_c_mid(name: str, cards=None):
-    """这张卡的脸彩度**点值**（= 它的"颜色饱和度"目标）。"""
-    cards = cards or json.load(open(_CARDS, encoding='utf-8'))['cards']
-    c = next((x for x in cards if x['name'] == name), None)
-    pt = ((c or {}).get('points') or {}).get('face_C')
-    if isinstance(pt, (int, float)):
-        return float(pt)
-    b = ((c or {}).get('bands') or {}).get('face_C')
-    return 0.5 * (float(b[0]) + float(b[1])) if b else None
-
-
-def _overall_c(name: str):
-    """这张卡的**整幅彩度**（背景+主体）中位，来自 card_tone 的 overall_C。"""
-    tones = json.load(open(_TONE, encoding='utf-8'))
-    return ((tones.get(name) or {}).get('overall_C') or {}).get('med')
-
-
-def _amount_from_saturation(base: float, name: str, cards=None) -> tuple:
-    """amount 由**颜色饱和度**定：脸与整幅各算一半。
-
-    · 脸：本卡脸 C 带中点 ÷ 同语料中位
-    · 整幅：本卡 overall_C 中位 ÷ 同语料中位（背景+主体，不只看脸）
-    两个比值取平均，乘语料标定值，夹 [0.6, 1.6]。
-
-    依据：`couplers.py:126` 里 `couplers_matrix *= amount` —— amount 是**整幅**
-    通道耦合的倍率；只拿脸推会漏掉背景那一半。
-    仍分不开"场景本来就艳"与"耦合剂强"，所以介质里标 scene_fit。
-    """
-    cards = cards or json.load(open(_CARDS, encoding='utf-8'))['cards']
-    corpus = next((c.get('corpus') for c in cards if c['name'] == name), '')
-    mine_f = _face_c_mid(name, cards)
-    mine_o = _overall_c(name)
-    xs_f = [x for x in (_face_c_mid(c['name'], cards) for c in cards
-                        if c.get('corpus') == corpus) if x is not None]
-    xs_o = [x for x in (_overall_c(c['name']) for c in cards
-                        if c.get('corpus') == corpus) if x is not None]
-    if (mine_f is None and mine_o is None) or len(xs_f) < 5 or len(xs_o) < 5:
-        return base, '样本不足（脸 n=%d / 整幅 n=%d）⇒ 沿用 %.2f' % (len(xs_f), len(xs_o), base)
-    rf = (mine_f / st.median(xs_f)) if mine_f else None
-    ro = (mine_o / st.median(xs_o)) if mine_o else None
-    rs = [r for r in (rf, ro) if r is not None]
-    ratio = sum(rs) / len(rs)
-    amount = round(max(0.6, min(1.6, base * ratio)), 2)
-    return amount, ('脸C %.2f→%s ｜ 整幅C %.2f→%s ⇒ 平均 %.3f ⇒ amount %.2f×%.3f=%.2f'
-                    % (mine_f or 0, ('%.3f' % rf) if rf is not None else '—',
-                       mine_o or 0, ('%.3f' % ro) if ro is not None else '—',
-                       ratio, base, ratio, amount))

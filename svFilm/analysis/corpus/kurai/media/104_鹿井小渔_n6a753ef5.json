@@ -97,7 +97,7 @@
  },
  "couplers": {
   "active": true,
-  "amount": 1.32,
+  "amount": 1.0,
   "inhibition_samelayer": 1.0,
   "inhibition_interlayer": 1.0,
   "gamma_samelayer_rgb": [
@@ -162,7 +162,7 @@
   "auto_exposure": false,
   "auto_exposure_method": "center_weighted",
   "print_illuminant": "TH-KG3",
-  "print_exposure": 0.8851,
+  "print_exposure": 0.8807,
   "output_lightness_compression": "off",
   "print_exposure_compensation": true,
   "print_y_filter_shift": -0.9,
@@ -201,7 +201,7 @@
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
   "film_stock": "kodak_portra_800_push1",
-  "print_paper": "kodak_ultra_endura"
+  "print_paper": "kodak_supra_endura"
  },
  "display": {
   "preview_max_size": 640
@@ -373,17 +373,17 @@
   "corpus": "鹿井",
   "base": "鹿井",
   "film": "kodak_portra_800_push1",
-  "paper": "kodak_ultra_endura",
+  "paper": "kodak_supra_endura",
   "film_reason": "暗部 -0.3 CC ⇒ 蓝度分位 0.71；取中性黄滤片 Y=68.0（分位 0.71）的卷 kodak_portra_800_push1",
-  "paper_reason": "黑端需 D≥2.322；形状 (toe/win 0.26, sh/win 0.19) 分位 (0.31, 0.21) ⇒ 最接近的纸 kodak_ultra_endura（σf/σm 1.21, σs/σm 1.40）",
-  "amount": 1.32,
-  "amount_reason": "脸C 23.20→0.990 ｜ 整幅C 7.86→1.041 ⇒ 平均 1.016 ⇒ amount 1.30×1.016=1.32",
+  "paper_reason": "黑端需 D≥2.13；形状 (toe/win 0.26, sh/win 0.20) 分位 (0.34, 0.31) ⇒ 最接近的纸 kodak_supra_endura（σf/σm 1.32, σs/σm 1.38）",
+  "amount": 1.0,
+  "amount_reason": "卷 kodak_portra_800_push1 的 DIR couplers 默认 1.00（源码 DirCouplersParams.amount；profile 无此字段，不按卡推）",
   "halation_reason": "still/strong ⇒ sigma_h 65 µm，strength (0.015, 0.005, 0.0)（写百分数 [1.5, 0.5, 0.0]）",
   "split": 1.22,
   "shadow_cc": -0.3,
   "scene_fit": true,
   "neutral_filters": "engine database (neutral_print_filters.json)",
-  "pe": 0.8851,
-  "pe_reason": "参考灰 18.4% → 目标 D 0.613（Y 0.2438）；实测 Y 0.2439 ⇒ PE 0.8851"
+  "pe": 0.8807,
+  "pe_reason": "参考灰 18.4% → 目标 D 0.613（Y 0.2438）；实测 Y 0.2439 ⇒ PE 0.8807"
  }
 }

@@ -97,7 +97,7 @@
  },
  "couplers": {
   "active": true,
-  "amount": 1.6,
+  "amount": 1.0,
   "inhibition_samelayer": 1.0,
   "inhibition_interlayer": 1.0,
   "gamma_samelayer_rgb": [
@@ -162,7 +162,7 @@
   "auto_exposure": false,
   "auto_exposure_method": "center_weighted",
   "print_illuminant": "TH-KG3",
-  "print_exposure": 0.9791,
+  "print_exposure": 0.9831,
   "output_lightness_compression": "off",
   "print_exposure_compensation": true,
   "print_y_filter_shift": 1.1,
@@ -375,15 +375,15 @@
   "film": "kodak_portra_160",
   "paper": "kodak_ultra_endura",
   "film_reason": "暗部 -10.2 CC ⇒ 蓝度分位 0.47；取中性黄滤片 Y=53.2（分位 0.47）的卷 kodak_portra_160",
-  "paper_reason": "黑端需 D≥1.93；形状 (toe/win 0.22, sh/win 0.35) 分位 (0.24, 0.54) ⇒ 最接近的纸 kodak_ultra_endura（σf/σm 1.21, σs/σm 1.40）",
-  "amount": 1.6,
-  "amount_reason": "脸C 37.69→1.609 ｜ 整幅C 16.99→2.250 ⇒ 平均 1.929 ⇒ amount 1.30×1.929=1.60",
+  "paper_reason": "黑端需 D≥1.878；形状 (toe/win 0.21, sh/win 0.28) 分位 (0.26, 0.49) ⇒ 最接近的纸 kodak_ultra_endura（σf/σm 1.21, σs/σm 1.40）",
+  "amount": 1.0,
+  "amount_reason": "卷 kodak_portra_160 的 DIR couplers 默认 1.00（源码 DirCouplersParams.amount；profile 无此字段，不按卡推）",
   "halation_reason": "still/strong ⇒ sigma_h 65 µm，strength (0.015, 0.005, 0.0)（写百分数 [1.5, 0.5, 0.0]）",
   "split": 8.76,
   "shadow_cc": -10.2,
   "scene_fit": true,
   "neutral_filters": "engine database (neutral_print_filters.json)",
-  "pe": 0.9791,
-  "pe_reason": "参考灰 18.4% → 目标 D 0.754（Y 0.1762）；实测 Y 0.1762 ⇒ PE 0.9791"
+  "pe": 0.9831,
+  "pe_reason": "参考灰 18.4% → 目标 D 0.754（Y 0.1762）；实测 Y 0.1762 ⇒ PE 0.9831"
  }
 }

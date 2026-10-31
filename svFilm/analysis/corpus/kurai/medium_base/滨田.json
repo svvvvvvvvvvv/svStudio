@@ -97,7 +97,7 @@
  },
  "couplers": {
   "active": true,
-  "amount": 0.65,
+  "amount": 1.0,
   "inhibition_samelayer": 1.0,
   "inhibition_interlayer": 1.0,
   "gamma_samelayer_rgb": [

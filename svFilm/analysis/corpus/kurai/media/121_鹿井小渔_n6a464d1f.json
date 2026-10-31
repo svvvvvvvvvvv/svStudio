@@ -97,7 +97,7 @@
  },
  "couplers": {
   "active": true,
-  "amount": 1.1,
+  "amount": 1.0,
   "inhibition_samelayer": 1.0,
   "inhibition_interlayer": 1.0,
   "gamma_samelayer_rgb": [
@@ -162,7 +162,7 @@
   "auto_exposure": false,
   "auto_exposure_method": "center_weighted",
   "print_illuminant": "TH-KG3",
-  "print_exposure": 0.9555,
+  "print_exposure": 0.9457,
   "output_lightness_compression": "off",
   "print_exposure_compensation": true,
   "print_y_filter_shift": 0.3,
@@ -201,7 +201,7 @@
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
   "film_stock": "kodak_ektar_100",
-  "print_paper": "kodak_endura_premier"
+  "print_paper": "kodak_ultra_endura"
  },
  "display": {
   "preview_max_size": 640
@@ -373,17 +373,17 @@
   "corpus": "鹿井",
   "base": "鹿井",
   "film": "kodak_ektar_100",
-  "paper": "kodak_endura_premier",
+  "paper": "kodak_ultra_endura",
   "film_reason": "暗部 -4.7 CC ⇒ 蓝度分位 0.60；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
-  "paper_reason": "黑端需 D≥2.291；形状 (toe/win 0.20, sh/win 0.21) 分位 (0.21, 0.25) ⇒ 最接近的纸 kodak_endura_premier（σf/σm 1.10, σs/σm 1.18）",
-  "amount": 1.1,
-  "amount_reason": "脸C 21.19→0.904 ｜ 整幅C 5.95→0.788 ⇒ 平均 0.846 ⇒ amount 1.30×0.846=1.10",
+  "paper_reason": "黑端需 D≥2.131；形状 (toe/win 0.15, sh/win 0.16) 分位 (0.18, 0.21) ⇒ 最接近的纸 kodak_ultra_endura（σf/σm 1.21, σs/σm 1.40）",
+  "amount": 1.0,
+  "amount_reason": "卷 kodak_ektar_100 的 DIR couplers 默认 1.00（源码 DirCouplersParams.amount；profile 无此字段，不按卡推）",
   "halation_reason": "still/strong ⇒ sigma_h 65 µm，strength (0.015, 0.005, 0.0)（写百分数 [1.5, 0.5, 0.0]）",
   "split": 5.24,
   "shadow_cc": -4.7,
   "scene_fit": true,
   "neutral_filters": "engine database (neutral_print_filters.json)",
-  "pe": 0.9555,
-  "pe_reason": "参考灰 18.4% → 目标 D 0.697（Y 0.2009）；实测 Y 0.2009 ⇒ PE 0.9555"
+  "pe": 0.9457,
+  "pe_reason": "参考灰 18.4% → 目标 D 0.697（Y 0.2009）；实测 Y 0.2009 ⇒ PE 0.9457"
  }
 }
