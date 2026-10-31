@@ -200,7 +200,7 @@
   "diffusion_filter_halo_size": 1.0,
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
-  "film_stock": "kodak_ektar_100",
+  "film_stock": "kodak_portra_160",
   "print_paper": "kodak_portra_endura"
  },
  "display": {
@@ -319,7 +319,7 @@
  },
  "_note_medium_20261028": "介质定值 2026-10-28（报告§13/§4.3）：wb 4545/0.998→4630/0.95（n=10 生产路径格点：肤h中位47.53=靶47.7带内；中性a 0.0 量化噪声内）；amount 1.00→1.30（n=10：肤C中位17.42，带[15.12,23.36]内；高彩脸1526/1422/1772 C29-40 不再上推）。备份 .bak_medium_20261028，前sha 587767abb2bd",
  "_note_base": "基线介质（从 卡38 一次性冻结；此后目录介质以各自 media/*.json 为准）",
- "_note_medium": "卷按暗部色偏推、amount 按分色强度；WB 暂沿用基线（未按卷单独定）",
+ "_note_medium": "卷按暗部色偏、纸按黑端密度、amount 按分色强度；中性滤片由引擎数据库给",
  "_target": {
   "white_level": 0.8878,
   "black_level": 0.0127,
@@ -382,13 +382,14 @@
  "_derived": {
   "corpus": "鹿井",
   "base": "鹿井",
-  "film": "kodak_ektar_100",
+  "film": "kodak_portra_160",
   "paper": "kodak_portra_endura",
-  "film_reason": "暗部 +2.2 CC（偏蓝）⇒ sepB 最负：kodak_ektar_100（-1.83）",
+  "film_reason": "暗部 +2.2 CC ⇒ 暖度分位 0.23；取暖度最接近的卷 kodak_portra_160（sepR +0.62 / sepB -0.63）",
+  "paper_reason": "黑端需 D≥1.90，设计配纸 kodak_portra_endura Dmax=2.46 够用",
   "amount": 1.21,
   "amount_reason": "分色强度 2.2 在同语料排 27% ⇒ amount 1.30×(0.85+0.30×0.27)=1.21",
   "split": 2.18,
   "shadow_cc": 2.2,
-  "wb_inherited": true
+  "neutral_filters": "engine database (neutral_print_filters.json)"
  }
 }
