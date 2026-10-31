@@ -330,18 +330,34 @@ def plan_batch(recs: Dict[str, dict], card: dict,
                     meas[_k] = apply_lut(curve, float(meas[_k]))
             if meas.get('p99') is not None:
                 meas['p99'] = apply_lut(curve, float(meas['p99']))
-        # ★ 白端：曲线之后仍超卡的肩 ⇒ 用**曝光**把它压下来（EV 有文档单位）
+        # ★★ 2026-10-31：**落点求解**（每张都算，不再"越界才压"）
+        #   旧逻辑：p99 超了才给负 EV，否则 EV=0 ⇒ 19 张全 +0.00，脸一路暗着出片。
+        #   新逻辑：把这张图的 p50 放到的**介质目标密度**（`_target.p50_target_D`），
+        #   用精确闭式解 EV（`placement.ev_to_place`），再用主体 p99 ≤ 100 封顶。
+        from .placement import ev_to_place, ev_cap_by_p99, density_of_l, l_of_density
+        _tgt = (card or {}).get('target') or {}
+        _D50 = _tgt.get('p50_target_D')
+        _ev_place = 0.0
+        _place_basis = '无介质目标 ⇒ EV=0'
+        if _D50 is not None and meas.get('p50') is not None:
+            _ev_place = ev_to_place(float(meas['p50']), float(_D50))
+            _ev_place = ev_cap_by_p99(_ev_place, meas.get('p99'))
+            _place_basis = ('p50 %.1f → D %.3f（L* %.1f）⇒ EV %+.3f'
+                            % (float(meas['p50']), float(_D50),
+                               l_of_density(float(_D50)), _ev_place))
+            for _k in ('face_L', 'person_L', 'p99', 'p50', 'p95'):
+                if meas.get(_k) is not None:
+                    meas[_k] = l_after_ev(float(meas[_k]), _ev_place)
+        _ev_white = _ev_place
+        # ★ 白端：落点之后仍超卡的肩 ⇒ 再压（EV 有文档单位）
         # ★ 人像优先：白端只为**人**服务 —— 整幅 p95 高（天空）不压，人 p99 高才压。
-        _p95_res = apply_lut(curve, float(meas.get('p99') or meas.get('p95') or 0.0)) if curve else (meas.get('p99') or meas.get('p95'))
-        _ev_white = 0.0
+        _p95_res = meas.get('p99') or meas.get('p95')
         if _p95_res is not None and float(_p95_res) > _cap_hi:
-            # 2026-10-30：原来的 `(cap−L)/斜率` 是线性近似；改成精确反解。
-            # 一步最多压 1.5 档是**政策**（再大就不是这张图的问题，是底片/场景）。
-            _ev_white = ev_for_l(float(_p95_res), float(_cap_hi))
+            _ev_white += ev_for_l(float(_p95_res), float(_cap_hi))
             _ev_white = max(_ev_white, -MAX_WHITE_PULL_EV)
             for _k in ('face_L', 'person_L', 'p99'):
                 if meas.get(_k) is not None:
-                    meas[_k] = l_after_ev(float(meas[_k]), _ev_white)
+                    meas[_k] = l_after_ev(float(meas[_k]), _ev_white - _ev_place)
 
         # ★★ 2026-10-30 废掉"拟合式求解"（网格 + 罚项 = 区间靶）。
         #    改为**残差闭式**：目标来自卡的关系带，幅度由 CIELAB 的 Y 比反解，
@@ -372,6 +388,13 @@ def plan_batch(recs: Dict[str, dict], card: dict,
                 else:
                     _R = _cur_r
             _res = ev_for_face(_face, _bghi, _R, p99=_p99)
+            # ★ 2026-10-31：有**点目标**就按点求解（不用区间、不再"带内就归零"）。
+            #   目标 = 这张卡的介质目标脸 L（`_target.face.L` 的中点，是放置点）。
+            _tf = (_tgt.get('face') or {}).get('L')
+            if _tf and _face is not None:
+                _Lt = 0.5 * (float(_tf[0]) + float(_tf[1]))
+                _ev_face = ev_cap_by_p99(ev_to_place(float(_face), density_of_l(_Lt)), _p99)
+                _res = dict(target=_Lt, ev=_ev_face, capped_by=None)
             p.exposure_ev = round(float(_ev_white), 3)
             p.local_ev = _res['ev']
             p.local_exposure = round(local_exposure_for(_res['ev']), 5)
@@ -379,11 +402,8 @@ def plan_batch(recs: Dict[str, dict], card: dict,
             p.pred_face = round(l_after_ev(float(_face), float(_res['ev'])), 2)
             p.fit_dist = None
             p.ledger = list(getattr(p, 'ledger', []) or []) + [
-                'face_L %.1f ｜ 目标 %.1f（R=%.3f×bg_hi %.1f，%s）｜ EV %+.3f%s'
-                % (_face, _res['target'], _R, _bghi,
-                   ('卡带内' if (_cur_r is not None and _R == _cur_r)
-                    else ('卡带边' if face_rel else '无卡带·R_DEFAULT')),
-                   _res['ev'],
+                'face_L %.1f ｜ 目标 %.1f ｜ EV %+.3f%s'
+                % (_face, _res['target'], _res['ev'],
                    '（白端截断）' if _res.get('capped_by') else '')]
             if _p99 is None:
                 p.ledger = list(p.ledger) + [

@@ -293,13 +293,26 @@ def raw_cards() -> List[dict]:
 
 
 def raw_card(name: str) -> Optional[dict]:
-    """按名字取原样卡字典（`plan_batch` 的入参）。带上暗部/高光冷暖（card_tone.json）。"""
+    """按名字取原样卡字典（`plan_batch` 的入参）。
+
+    带上：暗部/高光冷暖（`card_tone.json`）+ **介质目标**（`media/<卡名>.json` 的 `_target`）。
+    ★ 2026-10-31：`target` 是**放置用的点目标**（p50 密度、端点、分色 CC），
+      不是区间；solver 用它做闭式求解，`bands` 只留给验收看。
+    """
     for c in raw_cards():
         if c.get('name') == name:
+            extra = {}
             t = _card_tone().get(name)
             if t:
-                c = dict(c, tone=t)
-            return c
+                extra['tone'] = t
+            try:
+                from .medium import load as _load_medium
+                m = _load_medium(name) or {}
+                if m.get('_target'):
+                    extra['target'] = m['_target']
+            except Exception:                              # noqa: BLE001
+                pass
+            return dict(c, **extra) if extra else c
     return None
 
 
