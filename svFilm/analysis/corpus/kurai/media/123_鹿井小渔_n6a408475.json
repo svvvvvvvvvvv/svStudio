@@ -97,7 +97,7 @@
  },
  "couplers": {
   "active": true,
-  "amount": 1.34,
+  "amount": 1.46,
   "inhibition_samelayer": 1.0,
   "inhibition_interlayer": 1.0,
   "gamma_samelayer_rgb": [
@@ -386,8 +386,8 @@
   "paper": "kodak_portra_endura",
   "film_reason": "暗部 -4.8 CC ⇒ 蓝度分位 0.60；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
   "paper_reason": "黑端需 D≥2.26，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount": 1.34,
-  "amount_reason": "分色强度 5.5 在同语料排 60% ⇒ amount 1.30×(0.85+0.30×0.60)=1.34",
+  "amount": 1.46,
+  "amount_reason": "脸 C 26.26 / 同语料中位 23.43 = 1.121 ⇒ amount 1.30×1.121 = 1.46（夹 0.6~1.6）",
   "split": 5.55,
   "shadow_cc": -4.8,
   "scene_fit": true,

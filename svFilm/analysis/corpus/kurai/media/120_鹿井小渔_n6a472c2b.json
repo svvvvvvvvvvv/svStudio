@@ -97,7 +97,7 @@
  },
  "couplers": {
   "active": true,
-  "amount": 1.48,
+  "amount": 1.18,
   "inhibition_samelayer": 1.0,
   "inhibition_interlayer": 1.0,
   "gamma_samelayer_rgb": [
@@ -386,8 +386,8 @@
   "paper": "fujifilm_crystal_archive_typeii",
   "film_reason": "暗部 +11.3 CC ⇒ 蓝度分位 1.00；取中性黄滤片 Y=85.4（分位 1.00）的卷 fujifilm_xtra_400",
   "paper_reason": "黑端需 D≥1.89，设计配纸 fujifilm_crystal_archive_typeii Dmax=2.45 够用",
-  "amount": 1.48,
-  "amount_reason": "分色强度 10.6 在同语料排 97% ⇒ amount 1.30×(0.85+0.30×0.97)=1.48",
+  "amount": 1.18,
+  "amount_reason": "脸 C 21.24 / 同语料中位 23.43 = 0.907 ⇒ amount 1.30×0.907 = 1.18（夹 0.6~1.6）",
   "split": 10.61,
   "shadow_cc": 11.3,
   "scene_fit": true,

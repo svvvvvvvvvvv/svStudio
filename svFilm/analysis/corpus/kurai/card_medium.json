@@ -4,150 +4,150 @@
   "base": "鹿井",
   "film": "fujifilm_xtra_400",
   "paper": "fujifilm_crystal_archive_typeii",
-  "amount": 1.48,
+  "amount": 1.23,
   "film_reason": "暗部 +10.9 CC ⇒ 蓝度分位 0.99；取中性黄滤片 Y=85.4（分位 1.00）的卷 fujifilm_xtra_400",
   "paper_reason": "黑端无信息（p5≈0）⇒ 用设计配纸 fujifilm_crystal_archive_typeii",
-  "amount_reason": "分色强度 10.4 在同语料排 95% ⇒ amount 1.30×(0.85+0.30×0.95)=1.48"
+  "amount_reason": "脸 C 22.19 / 同语料中位 23.43 = 0.947 ⇒ amount 1.30×0.947 = 1.23（夹 0.6~1.6）"
  },
  "002_鹿井小渔_n67ea66c3": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push1",
   "paper": "kodak_portra_endura",
-  "amount": 1.16,
+  "amount": 1.05,
   "film_reason": "暗部 +0.1 CC ⇒ 蓝度分位 0.72；取中性黄滤片 Y=68.0（分位 0.71）的卷 kodak_portra_800_push1",
   "paper_reason": "黑端需 D≥2.42，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 1.0 在同语料排 15% ⇒ amount 1.30×(0.85+0.30×0.15)=1.16"
+  "amount_reason": "脸 C 18.84 / 同语料中位 23.43 = 0.804 ⇒ amount 1.30×0.804 = 1.05（夹 0.6~1.6）"
  },
  "003_鹿井小渔_n6ab32b12": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_supra_endura",
-  "amount": 1.29,
+  "amount": 1.32,
   "film_reason": "暗部 +4.1 CC ⇒ 蓝度分位 0.82；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.48，没有纸够（最高 kodak_supra_endura 2.48）⇒ 用它",
-  "amount_reason": "分色强度 4.8 在同语料排 48% ⇒ amount 1.30×(0.85+0.30×0.48)=1.29"
+  "amount_reason": "脸 C 23.81 / 同语料中位 23.43 = 1.016 ⇒ amount 1.30×1.016 = 1.32（夹 0.6~1.6）"
  },
  "004_鹿井小渔_n6ab1e755": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push1",
   "paper": "kodak_portra_endura",
-  "amount": 1.12,
+  "amount": 1.45,
   "film_reason": "暗部 -0.7 CC ⇒ 蓝度分位 0.70；取中性黄滤片 Y=68.0（分位 0.71）的卷 kodak_portra_800_push1",
   "paper_reason": "黑端需 D≥1.89，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 0.1 在同语料排 3% ⇒ amount 1.30×(0.85+0.30×0.03)=1.12"
+  "amount_reason": "脸 C 26.15 / 同语料中位 23.43 = 1.116 ⇒ amount 1.30×1.116 = 1.45（夹 0.6~1.6）"
  },
  "005_鹿井小渔_n6ab1e1b9": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.21,
+  "amount": 1.28,
   "film_reason": "暗部 +2.2 CC ⇒ 蓝度分位 0.77；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥1.90，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 2.2 在同语料排 27% ⇒ amount 1.30×(0.85+0.30×0.27)=1.21"
+  "amount_reason": "脸 C 23.09 / 同语料中位 23.43 = 0.986 ⇒ amount 1.30×0.986 = 1.28（夹 0.6~1.6）"
  },
  "006_鹿井小渔_n6aac9ef7": {
   "ok": true,
   "base": "鹿井",
   "film": "fujifilm_c200",
   "paper": "fujifilm_crystal_archive_typeii",
-  "amount": 1.46,
+  "amount": 1.02,
   "film_reason": "暗部 +6.5 CC ⇒ 蓝度分位 0.88；取中性黄滤片 Y=83.9（分位 0.97）的卷 fujifilm_c200",
   "paper_reason": "黑端需 D≥2.25，设计配纸 fujifilm_crystal_archive_typeii Dmax=2.45 够用",
-  "amount_reason": "分色强度 8.9 在同语料排 90% ⇒ amount 1.30×(0.85+0.30×0.90)=1.46"
+  "amount_reason": "脸 C 18.32 / 同语料中位 23.43 = 0.782 ⇒ amount 1.30×0.782 = 1.02（夹 0.6~1.6）"
  },
  "007_鹿井小渔_n6aac9e26": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.41,
+  "amount": 1.22,
   "film_reason": "暗部 +5.5 CC ⇒ 蓝度分位 0.86；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.23，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 7.2 在同语料排 77% ⇒ amount 1.30×(0.85+0.30×0.77)=1.41"
+  "amount_reason": "脸 C 22.05 / 同语料中位 23.43 = 0.941 ⇒ amount 1.30×0.941 = 1.22（夹 0.6~1.6）"
  },
  "008_鹿井小渔_n6aa9f5ec": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ektar_100",
   "paper": "kodak_portra_endura",
-  "amount": 1.33,
+  "amount": 1.26,
   "film_reason": "暗部 -4.6 CC ⇒ 蓝度分位 0.61；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
   "paper_reason": "黑端需 D≥1.88，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 5.4 在同语料排 58% ⇒ amount 1.30×(0.85+0.30×0.58)=1.33"
+  "amount_reason": "脸 C 22.65 / 同语料中位 23.43 = 0.967 ⇒ amount 1.30×0.967 = 1.26（夹 0.6~1.6）"
  },
  "009_鹿井小渔_n6aa9f55d": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ultramax_400",
   "paper": "kodak_portra_endura",
-  "amount": 1.39,
+  "amount": 1.31,
   "film_reason": "暗部 -6.6 CC ⇒ 蓝度分位 0.56；取中性黄滤片 Y=59.2（分位 0.57）的卷 kodak_ultramax_400",
   "paper_reason": "黑端需 D≥1.81，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 7.1 在同语料排 74% ⇒ amount 1.30×(0.85+0.30×0.74)=1.39"
+  "amount_reason": "脸 C 23.66 / 同语料中位 23.43 = 1.010 ⇒ amount 1.30×1.010 = 1.31（夹 0.6~1.6）"
  },
  "010_鹿井小渔_n6aa4aedb": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ektar_100",
   "paper": "kodak_portra_endura",
-  "amount": 1.24,
+  "amount": 1.36,
   "film_reason": "暗部 -4.4 CC ⇒ 蓝度分位 0.61；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
   "paper_reason": "黑端需 D≥2.10，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 3.0 在同语料排 34% ⇒ amount 1.30×(0.85+0.30×0.34)=1.24"
+  "amount_reason": "脸 C 24.50 / 同语料中位 23.43 = 1.046 ⇒ amount 1.30×1.046 = 1.36（夹 0.6~1.6）"
  },
  "011_鹿井小渔_n6aa4ad8c": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ultramax_400",
   "paper": "kodak_portra_endura",
-  "amount": 1.24,
+  "amount": 1.23,
   "film_reason": "暗部 -5.6 CC ⇒ 蓝度分位 0.58；取中性黄滤片 Y=59.2（分位 0.57）的卷 kodak_ultramax_400",
   "paper_reason": "黑端需 D≥2.02，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 3.1 在同语料排 35% ⇒ amount 1.30×(0.85+0.30×0.35)=1.24"
+  "amount_reason": "脸 C 22.17 / 同语料中位 23.43 = 0.946 ⇒ amount 1.30×0.946 = 1.23（夹 0.6~1.6）"
  },
  "012_鹿井小渔_n6aa4acb9": {
   "ok": true,
   "base": "鹿井",
   "film": "fujifilm_c200",
   "paper": "fujifilm_crystal_archive_typeii",
-  "amount": 1.44,
+  "amount": 1.22,
   "film_reason": "暗部 +7.4 CC ⇒ 蓝度分位 0.90；取中性黄滤片 Y=83.9（分位 0.97）的卷 fujifilm_c200",
   "paper_reason": "黑端需 D≥2.08，设计配纸 fujifilm_crystal_archive_typeii Dmax=2.45 够用",
-  "amount_reason": "分色强度 7.9 在同语料排 85% ⇒ amount 1.30×(0.85+0.30×0.85)=1.44"
+  "amount_reason": "脸 C 21.91 / 同语料中位 23.43 = 0.935 ⇒ amount 1.30×0.935 = 1.22（夹 0.6~1.6）"
  },
  "013_鹿井小渔_n6aa213d4": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_160",
   "paper": "kodak_portra_endura",
-  "amount": 1.45,
+  "amount": 1.6,
   "film_reason": "暗部 -10.2 CC ⇒ 蓝度分位 0.47；取中性黄滤片 Y=53.2（分位 0.47）的卷 kodak_portra_160",
   "paper_reason": "黑端需 D≥1.93，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 8.8 在同语料排 89% ⇒ amount 1.30×(0.85+0.30×0.89)=1.45"
+  "amount_reason": "脸 C 37.69 / 同语料中位 23.43 = 1.609 ⇒ amount 1.30×1.609 = 1.60（夹 0.6~1.6）"
  },
  "014_鹿井小渔_n6aa205d7": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800",
   "paper": "kodak_portra_endura",
-  "amount": 1.13,
+  "amount": 1.34,
   "film_reason": "暗部 -2.1 CC ⇒ 蓝度分位 0.67；取中性黄滤片 Y=66.1（分位 0.68）的卷 kodak_portra_800",
   "paper_reason": "黑端需 D≥2.10，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 0.2 在同语料排 6% ⇒ amount 1.30×(0.85+0.30×0.06)=1.13"
+  "amount_reason": "脸 C 24.09 / 同语料中位 23.43 = 1.028 ⇒ amount 1.30×1.028 = 1.34（夹 0.6~1.6）"
  },
  "015_鹿井小渔_n6aa203da": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.33,
+  "amount": 1.37,
   "film_reason": "暗部 +3.8 CC ⇒ 蓝度分位 0.81；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥1.98，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 5.2 在同语料排 56% ⇒ amount 1.30×(0.85+0.30×0.56)=1.33"
+  "amount_reason": "脸 C 24.75 / 同语料中位 23.43 = 1.056 ⇒ amount 1.30×1.056 = 1.37（夹 0.6~1.6）"
  },
  "016_鹿井小渔_n6a9f7679": {
   "ok": true,
@@ -157,467 +157,467 @@
   "amount": 1.39,
   "film_reason": "暗部 +5.4 CC ⇒ 蓝度分位 0.85；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥1.96，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 6.8 在同语料排 73% ⇒ amount 1.30×(0.85+0.30×0.73)=1.39"
+  "amount_reason": "脸 C 25.04 / 同语料中位 23.43 = 1.069 ⇒ amount 1.30×1.069 = 1.39（夹 0.6~1.6）"
  },
  "017_鹿井小渔_n6a9e0ca6": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800",
   "paper": "kodak_portra_endura",
-  "amount": 1.34,
+  "amount": 1.54,
   "film_reason": "暗部 -2.1 CC ⇒ 蓝度分位 0.67；取中性黄滤片 Y=66.1（分位 0.68）的卷 kodak_portra_800",
   "paper_reason": "黑端需 D≥2.26，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 5.6 在同语料排 61% ⇒ amount 1.30×(0.85+0.30×0.61)=1.34"
+  "amount_reason": "脸 C 27.78 / 同语料中位 23.43 = 1.186 ⇒ amount 1.30×1.186 = 1.54（夹 0.6~1.6）"
  },
  "018_鹿井小渔_n6a9909ad": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.32,
+  "amount": 1.45,
   "film_reason": "暗部 +5.0 CC ⇒ 蓝度分位 0.84；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.07，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 5.2 在同语料排 55% ⇒ amount 1.30×(0.85+0.30×0.55)=1.32"
+  "amount_reason": "脸 C 26.05 / 同语料中位 23.43 = 1.112 ⇒ amount 1.30×1.112 = 1.45（夹 0.6~1.6）"
  },
  "019_鹿井小渔_n6a94cf77": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800",
   "paper": "kodak_portra_endura",
-  "amount": 1.23,
+  "amount": 1.24,
   "film_reason": "暗部 -1.5 CC ⇒ 蓝度分位 0.68；取中性黄滤片 Y=66.1（分位 0.68）的卷 kodak_portra_800",
   "paper_reason": "黑端需 D≥2.23，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 2.8 在同语料排 32% ⇒ amount 1.30×(0.85+0.30×0.32)=1.23"
+  "amount_reason": "脸 C 22.34 / 同语料中位 23.43 = 0.953 ⇒ amount 1.30×0.953 = 1.24（夹 0.6~1.6）"
  },
  "020_鹿井小渔_n6a937cea": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ektar_100",
   "paper": "kodak_portra_endura",
-  "amount": 1.27,
+  "amount": 1.21,
   "film_reason": "暗部 -5.5 CC ⇒ 蓝度分位 0.58；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
   "paper_reason": "黑端需 D≥2.04，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 4.0 在同语料排 42% ⇒ amount 1.30×(0.85+0.30×0.42)=1.27"
+  "amount_reason": "脸 C 21.84 / 同语料中位 23.43 = 0.932 ⇒ amount 1.30×0.932 = 1.21（夹 0.6~1.6）"
  },
  "021_鹿井小渔_n6a924c6e": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_gold_200",
   "paper": "kodak_portra_endura",
-  "amount": 1.43,
+  "amount": 1.12,
   "film_reason": "暗部 -8.6 CC ⇒ 蓝度分位 0.51；取中性黄滤片 Y=55.6（分位 0.51）的卷 kodak_gold_200",
   "paper_reason": "黑端需 D≥1.99，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 7.9 在同语料排 82% ⇒ amount 1.30×(0.85+0.30×0.82)=1.43"
+  "amount_reason": "脸 C 20.16 / 同语料中位 23.43 = 0.861 ⇒ amount 1.30×0.861 = 1.12（夹 0.6~1.6）"
  },
  "022_鹿井小渔_n6a8f88dd": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ektar_100",
   "paper": "kodak_portra_endura",
-  "amount": 1.26,
+  "amount": 1.47,
   "film_reason": "暗部 -5.0 CC ⇒ 蓝度分位 0.60；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
   "paper_reason": "黑端需 D≥2.24，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 3.3 在同语料排 40% ⇒ amount 1.30×(0.85+0.30×0.40)=1.26"
+  "amount_reason": "脸 C 26.49 / 同语料中位 23.43 = 1.131 ⇒ amount 1.30×1.131 = 1.47（夹 0.6~1.6）"
  },
  "023_鹿井小渔_n6a8e41df": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800",
   "paper": "kodak_portra_endura",
-  "amount": 1.25,
+  "amount": 1.45,
   "film_reason": "暗部 -3.0 CC ⇒ 蓝度分位 0.65；取中性黄滤片 Y=66.1（分位 0.68）的卷 kodak_portra_800",
   "paper_reason": "黑端需 D≥2.10，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 3.3 在同语料排 37% ⇒ amount 1.30×(0.85+0.30×0.37)=1.25"
+  "amount_reason": "脸 C 26.18 / 同语料中位 23.43 = 1.117 ⇒ amount 1.30×1.117 = 1.45（夹 0.6~1.6）"
  },
  "024_鹿井小渔_n6a8cf6df": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push1",
   "paper": "kodak_portra_endura",
-  "amount": 1.19,
+  "amount": 1.06,
   "film_reason": "暗部 -0.7 CC ⇒ 蓝度分位 0.70；取中性黄滤片 Y=68.0（分位 0.71）的卷 kodak_portra_800_push1",
   "paper_reason": "黑端需 D≥2.26，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 1.4 在同语料排 21% ⇒ amount 1.30×(0.85+0.30×0.21)=1.19"
+  "amount_reason": "脸 C 19.04 / 同语料中位 23.43 = 0.812 ⇒ amount 1.30×0.812 = 1.06（夹 0.6~1.6）"
  },
  "025_鹿井小渔_n6a8c07ed": {
   "ok": true,
   "base": "鹿井",
   "film": "fujifilm_pro_400h",
   "paper": "fujifilm_crystal_archive_typeii",
-  "amount": 1.49,
+  "amount": 1.16,
   "film_reason": "暗部 -29.0 CC ⇒ 蓝度分位 0.00；取中性黄滤片 Y=24.6（分位 0.00）的卷 fujifilm_pro_400h",
   "paper_reason": "黑端需 D≥2.17，设计配纸 fujifilm_crystal_archive_typeii Dmax=2.45 够用",
-  "amount_reason": "分色强度 29.6 在同语料排 100% ⇒ amount 1.30×(0.85+0.30×1.00)=1.49"
+  "amount_reason": "脸 C 20.88 / 同语料中位 23.43 = 0.891 ⇒ amount 1.30×0.891 = 1.16（夹 0.6~1.6）"
  },
  "026_鹿井小渔_n6a88fced": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_gold_200",
   "paper": "kodak_portra_endura",
-  "amount": 1.38,
+  "amount": 1.47,
   "film_reason": "暗部 -7.8 CC ⇒ 蓝度分位 0.53；取中性黄滤片 Y=55.6（分位 0.51）的卷 kodak_gold_200",
   "paper_reason": "黑端需 D≥2.23，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 6.5 在同语料排 71% ⇒ amount 1.30×(0.85+0.30×0.71)=1.38"
+  "amount_reason": "脸 C 26.56 / 同语料中位 23.43 = 1.134 ⇒ amount 1.30×1.134 = 1.47（夹 0.6~1.6）"
  },
  "027_鹿井小渔_n6a866296": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800",
   "paper": "kodak_portra_endura",
-  "amount": 1.17,
+  "amount": 1.43,
   "film_reason": "暗部 -1.0 CC ⇒ 蓝度分位 0.69；取中性黄滤片 Y=66.1（分位 0.68）的卷 kodak_portra_800",
   "paper_reason": "黑端需 D≥1.91，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 1.1 在同语料排 16% ⇒ amount 1.30×(0.85+0.30×0.16)=1.17"
+  "amount_reason": "脸 C 25.71 / 同语料中位 23.43 = 1.097 ⇒ amount 1.30×1.097 = 1.43（夹 0.6~1.6）"
  },
  "028_鹿井小渔_n6a8511c3": {
   "ok": true,
   "base": "鹿井",
   "film": "fujifilm_c200",
   "paper": "fujifilm_crystal_archive_typeii",
-  "amount": 1.43,
+  "amount": 1.6,
   "film_reason": "暗部 +6.7 CC ⇒ 蓝度分位 0.89；取中性黄滤片 Y=83.9（分位 0.97）的卷 fujifilm_c200",
   "paper_reason": "黑端需 D≥2.06，设计配纸 fujifilm_crystal_archive_typeii Dmax=2.45 够用",
-  "amount_reason": "分色强度 7.9 在同语料排 84% ⇒ amount 1.30×(0.85+0.30×0.84)=1.43"
+  "amount_reason": "脸 C 30.84 / 同语料中位 23.43 = 1.316 ⇒ amount 1.30×1.316 = 1.60（夹 0.6~1.6）"
  },
  "029_鹿井小渔_n6a83bdb1": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_400",
   "paper": "kodak_portra_endura",
-  "amount": 1.49,
+  "amount": 1.37,
   "film_reason": "暗部 -10.7 CC ⇒ 蓝度分位 0.45；取中性黄滤片 Y=52.5（分位 0.46）的卷 kodak_portra_400",
   "paper_reason": "黑端需 D≥2.20，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 10.7 在同语料排 98% ⇒ amount 1.30×(0.85+0.30×0.98)=1.49"
+  "amount_reason": "脸 C 24.76 / 同语料中位 23.43 = 1.057 ⇒ amount 1.30×1.057 = 1.37（夹 0.6~1.6）"
  },
  "030_鹿井小渔_n6a8272a8": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ektar_100",
   "paper": "kodak_portra_endura",
-  "amount": 1.3,
+  "amount": 1.26,
   "film_reason": "暗部 -4.5 CC ⇒ 蓝度分位 0.61；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
   "paper_reason": "黑端需 D≥1.94，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 5.2 在同语料排 50% ⇒ amount 1.30×(0.85+0.30×0.50)=1.30"
+  "amount_reason": "脸 C 22.77 / 同语料中位 23.43 = 0.972 ⇒ amount 1.30×0.972 = 1.26（夹 0.6~1.6）"
  },
  "031_鹿井小渔_n6a8037df": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ultramax_400",
   "paper": "kodak_portra_endura",
-  "amount": 1.28,
+  "amount": 1.34,
   "film_reason": "暗部 -5.6 CC ⇒ 蓝度分位 0.58；取中性黄滤片 Y=59.2（分位 0.57）的卷 kodak_ultramax_400",
   "paper_reason": "黑端需 D≥2.15，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 4.2 在同语料排 45% ⇒ amount 1.30×(0.85+0.30×0.45)=1.28"
+  "amount_reason": "脸 C 24.13 / 同语料中位 23.43 = 1.030 ⇒ amount 1.30×1.030 = 1.34（夹 0.6~1.6）"
  },
  "032_鹿井小渔_n6a7e9353": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_gold_200",
   "paper": "kodak_portra_endura",
-  "amount": 1.37,
+  "amount": 1.04,
   "film_reason": "暗部 -8.2 CC ⇒ 蓝度分位 0.52；取中性黄滤片 Y=55.6（分位 0.51）的卷 kodak_gold_200",
   "paper_reason": "黑端需 D≥2.18，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 6.2 在同语料排 68% ⇒ amount 1.30×(0.85+0.30×0.68)=1.37"
+  "amount_reason": "脸 C 18.66 / 同语料中位 23.43 = 0.797 ⇒ amount 1.30×0.797 = 1.04（夹 0.6~1.6）"
  },
  "101_鹿井小渔_n6a7bca1c": {
   "ok": true,
   "base": "鹿井",
   "film": "fujifilm_c200",
   "paper": "fujifilm_crystal_archive_typeii",
-  "amount": 1.38,
+  "amount": 1.32,
   "film_reason": "暗部 +6.0 CC ⇒ 蓝度分位 0.87；取中性黄滤片 Y=83.9（分位 0.97）的卷 fujifilm_c200",
   "paper_reason": "黑端需 D≥2.23，设计配纸 fujifilm_crystal_archive_typeii Dmax=2.45 够用",
-  "amount_reason": "分色强度 6.4 在同语料排 69% ⇒ amount 1.30×(0.85+0.30×0.69)=1.38"
+  "amount_reason": "脸 C 23.86 / 同语料中位 23.43 = 1.018 ⇒ amount 1.30×1.018 = 1.32（夹 0.6~1.6）"
  },
  "102_鹿井小渔_n6a791275": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_400",
   "paper": "kodak_portra_endura",
-  "amount": 1.47,
+  "amount": 1.32,
   "film_reason": "暗部 -10.3 CC ⇒ 蓝度分位 0.46；取中性黄滤片 Y=52.5（分位 0.46）的卷 kodak_portra_400",
   "paper_reason": "黑端需 D≥2.28，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 10.3 在同语料排 94% ⇒ amount 1.30×(0.85+0.30×0.94)=1.47"
+  "amount_reason": "脸 C 23.82 / 同语料中位 23.43 = 1.017 ⇒ amount 1.30×1.017 = 1.32（夹 0.6~1.6）"
  },
  "103_鹿井小渔_n6a7693b9": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.18,
+  "amount": 1.44,
   "film_reason": "暗部 +0.7 CC ⇒ 蓝度分位 0.74；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.20，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 1.3 在同语料排 19% ⇒ amount 1.30×(0.85+0.30×0.19)=1.18"
+  "amount_reason": "脸 C 25.91 / 同语料中位 23.43 = 1.106 ⇒ amount 1.30×1.106 = 1.44（夹 0.6~1.6）"
  },
  "104_鹿井小渔_n6a753ef5": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push1",
   "paper": "kodak_portra_endura",
-  "amount": 1.17,
+  "amount": 1.29,
   "film_reason": "暗部 -0.3 CC ⇒ 蓝度分位 0.71；取中性黄滤片 Y=68.0（分位 0.71）的卷 kodak_portra_800_push1",
   "paper_reason": "黑端需 D≥2.32，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 1.2 在同语料排 18% ⇒ amount 1.30×(0.85+0.30×0.18)=1.17"
+  "amount_reason": "脸 C 23.20 / 同语料中位 23.43 = 0.990 ⇒ amount 1.30×0.990 = 1.29（夹 0.6~1.6）"
  },
  "105_鹿井小渔_n6a729970": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ultramax_400",
   "paper": "kodak_portra_endura",
-  "amount": 1.36,
+  "amount": 1.4,
   "film_reason": "暗部 -6.0 CC ⇒ 蓝度分位 0.57；取中性黄滤片 Y=59.2（分位 0.57）的卷 kodak_ultramax_400",
   "paper_reason": "黑端需 D≥2.34，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 6.2 在同语料排 66% ⇒ amount 1.30×(0.85+0.30×0.66)=1.36"
+  "amount_reason": "脸 C 25.22 / 同语料中位 23.43 = 1.076 ⇒ amount 1.30×1.076 = 1.40（夹 0.6~1.6）"
  },
  "106_鹿井小渔_n6a6ea5d3": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ultramax_400",
   "paper": "kodak_portra_endura",
-  "amount": 1.36,
+  "amount": 1.18,
   "film_reason": "暗部 -5.8 CC ⇒ 蓝度分位 0.58；取中性黄滤片 Y=59.2（分位 0.57）的卷 kodak_ultramax_400",
   "paper_reason": "黑端需 D≥2.25，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 5.9 在同语料排 65% ⇒ amount 1.30×(0.85+0.30×0.65)=1.36"
+  "amount_reason": "脸 C 21.25 / 同语料中位 23.43 = 0.907 ⇒ amount 1.30×0.907 = 1.18（夹 0.6~1.6）"
  },
  "107_鹿井小渔_n6a6aed54": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push1",
   "paper": "kodak_portra_endura",
-  "amount": 1.14,
+  "amount": 1.51,
   "film_reason": "暗部 -0.3 CC ⇒ 蓝度分位 0.71；取中性黄滤片 Y=68.0（分位 0.71）的卷 kodak_portra_800_push1",
   "paper_reason": "黑端需 D≥2.05，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 0.4 在同语料排 10% ⇒ amount 1.30×(0.85+0.30×0.10)=1.14"
+  "amount_reason": "脸 C 27.19 / 同语料中位 23.43 = 1.160 ⇒ amount 1.30×1.160 = 1.51（夹 0.6~1.6）"
  },
  "108_鹿井小渔_n6a657e88": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800",
   "paper": "kodak_portra_endura",
-  "amount": 1.15,
+  "amount": 1.22,
   "film_reason": "暗部 -2.0 CC ⇒ 蓝度分位 0.67；取中性黄滤片 Y=66.1（分位 0.68）的卷 kodak_portra_800",
   "paper_reason": "黑端需 D≥2.24，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 0.6 在同语料排 11% ⇒ amount 1.30×(0.85+0.30×0.11)=1.15"
+  "amount_reason": "脸 C 21.95 / 同语料中位 23.43 = 0.937 ⇒ amount 1.30×0.937 = 1.22（夹 0.6~1.6）"
  },
  "109_鹿井小渔_n6a642594": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.22,
+  "amount": 1.49,
   "film_reason": "暗部 +3.5 CC ⇒ 蓝度分位 0.81；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥1.97，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 2.7 在同语料排 29% ⇒ amount 1.30×(0.85+0.30×0.29)=1.22"
+  "amount_reason": "脸 C 26.84 / 同语料中位 23.43 = 1.146 ⇒ amount 1.30×1.146 = 1.49（夹 0.6~1.6）"
  },
  "110_鹿井小渔_n6a620c9a": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.29,
+  "amount": 1.06,
   "film_reason": "暗部 +3.5 CC ⇒ 蓝度分位 0.81；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.09，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 4.5 在同语料排 47% ⇒ amount 1.30×(0.85+0.30×0.47)=1.29"
+  "amount_reason": "脸 C 19.18 / 同语料中位 23.43 = 0.819 ⇒ amount 1.30×0.819 = 1.06（夹 0.6~1.6）"
  },
  "111_鹿井小渔_n6a606ed2": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ektar_100",
   "paper": "kodak_portra_endura",
-  "amount": 1.27,
+  "amount": 1.39,
   "film_reason": "暗部 -3.6 CC ⇒ 蓝度分位 0.63；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
   "paper_reason": "黑端需 D≥2.17，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 4.1 在同语料排 44% ⇒ amount 1.30×(0.85+0.30×0.44)=1.27"
+  "amount_reason": "脸 C 24.99 / 同语料中位 23.43 = 1.067 ⇒ amount 1.30×1.067 = 1.39（夹 0.6~1.6）"
  },
  "112_鹿井小渔_n6a59cde8": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800",
   "paper": "kodak_portra_endura",
-  "amount": 1.26,
+  "amount": 1.48,
   "film_reason": "暗部 -3.1 CC ⇒ 蓝度分位 0.64；取中性黄滤片 Y=66.1（分位 0.68）的卷 kodak_portra_800",
   "paper_reason": "黑端需 D≥2.13，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 3.3 在同语料排 40% ⇒ amount 1.30×(0.85+0.30×0.40)=1.26"
+  "amount_reason": "脸 C 26.62 / 同语料中位 23.43 = 1.136 ⇒ amount 1.30×1.136 = 1.48（夹 0.6~1.6）"
  },
  "113_鹿井小渔_n6a58435c": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_gold_200",
   "paper": "kodak_portra_endura",
-  "amount": 1.42,
+  "amount": 1.16,
   "film_reason": "暗部 -8.3 CC ⇒ 蓝度分位 0.51；取中性黄滤片 Y=55.6（分位 0.51）的卷 kodak_gold_200",
   "paper_reason": "黑端需 D≥2.22，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 7.5 在同语料排 81% ⇒ amount 1.30×(0.85+0.30×0.81)=1.42"
+  "amount_reason": "脸 C 20.82 / 同语料中位 23.43 = 0.889 ⇒ amount 1.30×0.889 = 1.16（夹 0.6~1.6）"
  },
  "114_鹿井小渔_n6a56f722": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.22,
+  "amount": 1.15,
   "film_reason": "暗部 +3.4 CC ⇒ 蓝度分位 0.80；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥1.91，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 2.7 在同语料排 31% ⇒ amount 1.30×(0.85+0.30×0.31)=1.22"
+  "amount_reason": "脸 C 20.73 / 同语料中位 23.43 = 0.885 ⇒ amount 1.30×0.885 = 1.15（夹 0.6~1.6）"
  },
  "115_鹿井小渔_n6a523a22": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.11,
+  "amount": 0.9,
   "film_reason": "暗部 +0.5 CC ⇒ 蓝度分位 0.73；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.07，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 0.0 在同语料排 2% ⇒ amount 1.30×(0.85+0.30×0.02)=1.11"
+  "amount_reason": "脸 C 16.25 / 同语料中位 23.43 = 0.693 ⇒ amount 1.30×0.693 = 0.90（夹 0.6~1.6）"
  },
  "116_鹿井小渔_n6a50db76": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_gold_200",
   "paper": "kodak_portra_endura",
-  "amount": 1.4,
+  "amount": 1.22,
   "film_reason": "暗部 -7.9 CC ⇒ 蓝度分位 0.52；取中性黄滤片 Y=55.6（分位 0.51）的卷 kodak_gold_200",
   "paper_reason": "黑端需 D≥2.25，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 7.2 在同语料排 76% ⇒ amount 1.30×(0.85+0.30×0.76)=1.40"
+  "amount_reason": "脸 C 21.96 / 同语料中位 23.43 = 0.937 ⇒ amount 1.30×0.937 = 1.22（夹 0.6~1.6）"
  },
  "117_鹿井小渔_n6a4f15e0": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.14,
+  "amount": 1.54,
   "film_reason": "暗部 +0.3 CC ⇒ 蓝度分位 0.73；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.08，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 0.3 在同语料排 8% ⇒ amount 1.30×(0.85+0.30×0.08)=1.14"
+  "amount_reason": "脸 C 27.83 / 同语料中位 23.43 = 1.188 ⇒ amount 1.30×1.188 = 1.54（夹 0.6~1.6）"
  },
  "118_鹿井小渔_n6a4db9bc": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.41,
+  "amount": 1.6,
   "film_reason": "暗部 +3.5 CC ⇒ 蓝度分位 0.81；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.12，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 7.5 在同语料排 79% ⇒ amount 1.30×(0.85+0.30×0.79)=1.41"
+  "amount_reason": "脸 C 30.78 / 同语料中位 23.43 = 1.313 ⇒ amount 1.30×1.313 = 1.60（夹 0.6~1.6）"
  },
  "119_鹿井小渔_n6a487f2f": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push1",
   "paper": "kodak_portra_endura",
-  "amount": 1.16,
+  "amount": 1.49,
   "film_reason": "暗部 -0.1 CC ⇒ 蓝度分位 0.72；取中性黄滤片 Y=68.0（分位 0.71）的卷 kodak_portra_800_push1",
   "paper_reason": "黑端需 D≥2.02，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 0.9 在同语料排 13% ⇒ amount 1.30×(0.85+0.30×0.13)=1.16"
+  "amount_reason": "脸 C 26.91 / 同语料中位 23.43 = 1.149 ⇒ amount 1.30×1.149 = 1.49（夹 0.6~1.6）"
  },
  "120_鹿井小渔_n6a472c2b": {
   "ok": true,
   "base": "鹿井",
   "film": "fujifilm_xtra_400",
   "paper": "fujifilm_crystal_archive_typeii",
-  "amount": 1.48,
+  "amount": 1.18,
   "film_reason": "暗部 +11.3 CC ⇒ 蓝度分位 1.00；取中性黄滤片 Y=85.4（分位 1.00）的卷 fujifilm_xtra_400",
   "paper_reason": "黑端需 D≥1.89，设计配纸 fujifilm_crystal_archive_typeii Dmax=2.45 够用",
-  "amount_reason": "分色强度 10.6 在同语料排 97% ⇒ amount 1.30×(0.85+0.30×0.97)=1.48"
+  "amount_reason": "脸 C 21.24 / 同语料中位 23.43 = 0.907 ⇒ amount 1.30×0.907 = 1.18（夹 0.6~1.6）"
  },
  "121_鹿井小渔_n6a464d1f": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ektar_100",
   "paper": "kodak_portra_endura",
-  "amount": 1.32,
+  "amount": 1.18,
   "film_reason": "暗部 -4.7 CC ⇒ 蓝度分位 0.60；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
   "paper_reason": "黑端需 D≥2.29，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 5.2 在同语料排 55% ⇒ amount 1.30×(0.85+0.30×0.55)=1.32"
+  "amount_reason": "脸 C 21.19 / 同语料中位 23.43 = 0.904 ⇒ amount 1.30×0.904 = 1.18（夹 0.6~1.6）"
  },
  "122_鹿井小渔_n6a4331a5": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.12,
+  "amount": 1.1,
   "film_reason": "暗部 +0.3 CC ⇒ 蓝度分位 0.73；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.21，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 0.1 在同语料排 5% ⇒ amount 1.30×(0.85+0.30×0.05)=1.12"
+  "amount_reason": "脸 C 19.83 / 同语料中位 23.43 = 0.846 ⇒ amount 1.30×0.846 = 1.10（夹 0.6~1.6）"
  },
  "123_鹿井小渔_n6a408475": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ektar_100",
   "paper": "kodak_portra_endura",
-  "amount": 1.34,
+  "amount": 1.46,
   "film_reason": "暗部 -4.8 CC ⇒ 蓝度分位 0.60；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
   "paper_reason": "黑端需 D≥2.26，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 5.5 在同语料排 60% ⇒ amount 1.30×(0.85+0.30×0.60)=1.34"
+  "amount_reason": "脸 C 26.26 / 同语料中位 23.43 = 1.121 ⇒ amount 1.30×1.121 = 1.46（夹 0.6~1.6）"
  },
  "124_鹿井小渔_n6a3df798": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_160",
   "paper": "kodak_portra_endura",
-  "amount": 1.46,
+  "amount": 1.23,
   "film_reason": "暗部 -9.5 CC ⇒ 蓝度分位 0.48；取中性黄滤片 Y=53.2（分位 0.47）的卷 kodak_portra_160",
   "paper_reason": "黑端需 D≥2.31，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 9.9 在同语料排 92% ⇒ amount 1.30×(0.85+0.30×0.92)=1.46"
+  "amount_reason": "脸 C 22.14 / 同语料中位 23.43 = 0.945 ⇒ amount 1.30×0.945 = 1.23（夹 0.6~1.6）"
  },
  "125_鹿井小渔_n6a3ca43f": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800",
   "paper": "kodak_portra_endura",
-  "amount": 1.19,
+  "amount": 1.21,
   "film_reason": "暗部 -1.1 CC ⇒ 蓝度分位 0.69；取中性黄滤片 Y=66.1（分位 0.68）的卷 kodak_portra_800",
   "paper_reason": "黑端需 D≥2.17，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 1.4 在同语料排 23% ⇒ amount 1.30×(0.85+0.30×0.23)=1.19"
+  "amount_reason": "脸 C 21.81 / 同语料中位 23.43 = 0.931 ⇒ amount 1.30×0.931 = 1.21（夹 0.6~1.6）"
  },
  "126_鹿井小渔_n6a3753bc": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ektar_100",
   "paper": "kodak_portra_endura",
-  "amount": 1.35,
+  "amount": 1.08,
   "film_reason": "暗部 -4.2 CC ⇒ 蓝度分位 0.62；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
   "paper_reason": "黑端需 D≥2.18，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 5.7 在同语料排 63% ⇒ amount 1.30×(0.85+0.30×0.63)=1.35"
+  "amount_reason": "脸 C 19.48 / 同语料中位 23.43 = 0.832 ⇒ amount 1.30×0.832 = 1.08（夹 0.6~1.6）"
  },
  "127_鹿井小渔_n6a321d2d": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ektar_100",
   "paper": "kodak_portra_endura",
-  "amount": 1.31,
+  "amount": 1.19,
   "film_reason": "暗部 -3.8 CC ⇒ 蓝度分位 0.63；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
   "paper_reason": "黑端需 D≥2.33，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 5.2 在同语料排 52% ⇒ amount 1.30×(0.85+0.30×0.52)=1.31"
+  "amount_reason": "脸 C 21.52 / 同语料中位 23.43 = 0.918 ⇒ amount 1.30×0.918 = 1.19（夹 0.6~1.6）"
  },
  "128_鹿井小渔_n6a312aef": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.21,
+  "amount": 1.2,
   "film_reason": "暗部 +2.9 CC ⇒ 蓝度分位 0.79；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.12，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 2.2 在同语料排 26% ⇒ amount 1.30×(0.85+0.30×0.26)=1.21"
+  "amount_reason": "脸 C 21.66 / 同语料中位 23.43 = 0.924 ⇒ amount 1.30×0.924 = 1.20（夹 0.6~1.6）"
  },
  "129_鹿井小渔_n6a2d3b5a": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_ultramax_400",
   "paper": "kodak_portra_endura",
-  "amount": 1.44,
+  "amount": 1.41,
   "film_reason": "暗部 -6.5 CC ⇒ 蓝度分位 0.56；取中性黄滤片 Y=59.2（分位 0.57）的卷 kodak_ultramax_400",
   "paper_reason": "黑端需 D≥2.28，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 8.1 在同语料排 87% ⇒ amount 1.30×(0.85+0.30×0.87)=1.44"
+  "amount_reason": "脸 C 25.39 / 同语料中位 23.43 = 1.084 ⇒ amount 1.30×1.084 = 1.41（夹 0.6~1.6）"
  },
  "130_鹿井小渔_n6a2a1c06": {
   "ok": true,
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "amount": 1.2,
+  "amount": 1.36,
   "film_reason": "暗部 +1.1 CC ⇒ 蓝度分位 0.75；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.22，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount_reason": "分色强度 1.7 在同语料排 24% ⇒ amount 1.30×(0.85+0.30×0.24)=1.20"
+  "amount_reason": "脸 C 24.56 / 同语料中位 23.43 = 1.048 ⇒ amount 1.30×1.048 = 1.36（夹 0.6~1.6）"
  },
  "xhs（整套）": {
   "ok": true,

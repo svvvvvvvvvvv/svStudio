@@ -97,7 +97,7 @@
  },
  "couplers": {
   "active": true,
-  "amount": 1.44,
+  "amount": 1.22,
   "inhibition_samelayer": 1.0,
   "inhibition_interlayer": 1.0,
   "gamma_samelayer_rgb": [
@@ -386,8 +386,8 @@
   "paper": "fujifilm_crystal_archive_typeii",
   "film_reason": "暗部 +7.4 CC ⇒ 蓝度分位 0.90；取中性黄滤片 Y=83.9（分位 0.97）的卷 fujifilm_c200",
   "paper_reason": "黑端需 D≥2.08，设计配纸 fujifilm_crystal_archive_typeii Dmax=2.45 够用",
-  "amount": 1.44,
-  "amount_reason": "分色强度 7.9 在同语料排 85% ⇒ amount 1.30×(0.85+0.30×0.85)=1.44",
+  "amount": 1.22,
+  "amount_reason": "脸 C 21.91 / 同语料中位 23.43 = 0.935 ⇒ amount 1.30×0.935 = 1.22（夹 0.6~1.6）",
   "split": 7.93,
   "shadow_cc": 7.4,
   "scene_fit": true,
