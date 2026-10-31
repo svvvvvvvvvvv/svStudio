@@ -152,6 +152,13 @@ class LRPlan:
     curve: Optional[List[Tuple[int, int]]] = None
     point_color: Optional[Dict[str, float]] = None
     point_color_rgb: Optional[list] = None      # ②处取样色（过完曲线后），造 19 数字要用它
+    # ★ 2026-11-01：主体蒙版内的 Point Color（肤色范围）；不是全局 HSL。
+    point_color_h: float = 0.0                  # HSL 色相 0..6（SDK 刻度）
+    point_color_s: float = 0.0
+    point_color_l: float = 0.0
+    point_color_range: float = 0.0              # RangeAmount 0..1
+    point_color_sat_scale: float = 0.0          # SatScale -1..1（一步 = 0.1）
+    point_color_sat_raw: float = 0.0            # 关系残差（记账）
     # ★ 补光（2026-10-29 晚，分工改口）：**脸的亮度从此只由局部给**，全局曝光不再为脸动。
     #   ⚠ 2026-10-30：`LocalExposure2012 = fill_ev / 4` 的 1/4 **查不到出处**（Adobe/社区均无），按纪律停用；
     #   它作用在**主体蒙版**上，背景不动 —— 这是"背景定曝光 + 补光档"的实现。

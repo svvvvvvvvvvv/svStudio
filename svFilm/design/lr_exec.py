@@ -49,6 +49,12 @@ def to_lrplans(plans: Dict[str, dict]) -> Dict[str, LRPlan]:
             split_shadow_sat=float(g.get('split_shadow_sat') or 0.0),
             split_balance=float(g.get('split_balance') or 0.0),
             local_saturation=float(g.get('local_saturation') or 0.0),
+            point_color_h=float(g.get('point_color_h') or 0.0),
+            point_color_s=float(g.get('point_color_s') or 0.0),
+            point_color_l=float(g.get('point_color_l') or 0.0),
+            point_color_range=float(g.get('point_color_range') or 0.0),
+            point_color_sat_scale=float(g.get('point_color_sat_scale') or 0.0),
+            point_color_sat_raw=float(g.get('point_color_sat_raw') or 0.0),
             local_toning_hue=float(g.get('local_toning_hue') or 0.0),
             local_toning_sat=float(g.get('local_toning_sat') or 0.0),
             notes=dict(

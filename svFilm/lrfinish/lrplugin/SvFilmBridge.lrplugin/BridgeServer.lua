@@ -1251,6 +1251,50 @@ local function add_photo(path)
   return 'ADDED ' .. tostring(photo:getRawMetadata('path') or path)
 end
 
+
+-- ---- svFilm point-color / show-mask test commands (2026-11-01) ----
+local function _brief(v)
+  if type(v) ~= 'table' then return tostring(v) end
+  local n = 0
+  for _ in pairs(v) do n = n + 1 end
+  return 'table#' .. tostring(n)
+end
+
+local function point_swatch(path, h, s, l, r, ss)
+  local _, photo = find_photo(path)
+  local tpath = activate_develop(photo)
+  local hit = target_matches(photo, tpath)
+  if not hit then return 'POINTSWATCH target=MISMATCH' end
+  LrTasks.pcall(function() LrDevelopController.selectTool('local_point_color') end)
+  LrTasks.sleep(0.8)
+  LrTasks.pcall(function()
+    LrDevelopController.deletePointColorSwatch(true, nil, true)
+  end)
+  LrTasks.sleep(0.5)
+  local sw = { SrcHue = h, SrcSat = s, SrcLum = l, RangeAmount = r,
+               HueShift = 0, SatScale = ss, LumScale = 0 }
+  local ok, res, err = LrTasks.pcall(function()
+    return LrDevelopController.addPointColorSwatch(sw, true)
+  end)
+  LrTasks.sleep(0.8)
+  local ok2, pc = LrTasks.pcall(function()
+    return LrDevelopController.getValue('local_PointColors')
+  end)
+  return string.format('POINTSWATCH ok=%s res=%s err=%s read=%s localPC=%s',
+    tostring(ok), tostring(res), tostring(err), tostring(ok2), _brief(pc))
+end
+
+local function show_mask(path)
+  local _, photo = find_photo(path)
+  local tpath = activate_develop(photo)
+  local hit = target_matches(photo, tpath)
+  if not hit then return 'SHOWMASK target=MISMATCH' end
+  LrTasks.pcall(function() LrDevelopController.selectTool('masking') end)
+  LrTasks.sleep(0.8)
+  local ok = LrTasks.pcall(function() LrDevelopController.toggleOverlay() end)
+  return 'SHOWMASK ok=' .. tostring(ok)
+end
+
 local function mask_dump(path)
   local _, photo = find_photo(path)
   local tpath = activate_develop(photo)
@@ -1726,6 +1770,14 @@ local function handle(cmd)
     end
     table.sort(keys)
     return 'KEYS ' .. table.concat(keys, '; ')
+  end
+  if verb == 'POINTSWATCH' then
+    local path, h, s, l, r, ss = rest:match('^(%S+)%s+([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)')
+    if not path then error('POINTSWATCH needs <path> <h> <s> <l> <range> <sat_scale>') end
+    return point_swatch(path, tonumber(h), tonumber(s), tonumber(l), tonumber(r), tonumber(ss))
+  end
+  if verb == 'SHOWMASK' then
+    return show_mask(rest:gsub('^%s+', ''):gsub('%s+$', ''))
   end
   if verb == 'MASK' then
     local path, tail = rest:match('^(%S+)%s*(.*)$')

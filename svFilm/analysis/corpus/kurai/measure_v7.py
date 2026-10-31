@@ -56,6 +56,9 @@ def measure_one(path: str) -> dict:
     out['face_L'] = med(fs, L)
     out['face_C'] = med(fs, C)
     out['face_b'] = med(fs, b)
+    if int(fs.sum()) >= 300:
+        _rgb = np.median(rgb[fs].astype(np.float64), axis=0)
+        out['skin_rgb'] = [int(round(float(v))) for v in _rgb]
     out['face_h'] = (float(np.degrees(np.arctan2(np.median(b[fs]), np.median(a[fs]))) % 360)
                      if int(fs.sum()) >= 300 else None)
     out['person_L'] = med(ps, L)

@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import os
 from typing import Dict, List, Optional
+import colorsys
 
 from .curve_design import apply_lut, curve_from_quantiles
 from .invariants import T1
@@ -41,6 +42,10 @@ C_BAND_TOL = 1.0
 H_BAND_TOL = 2.0           # 色相死区（Lab 度）
 L_BAND_TOL = 1.5           # 明度死区（L*）
 HUE_STEP_UI = 5.0          # 肤色色相半档（一档 10 UI ≈ 15~20°，太大）
+# ★ 2026-11-01：Point Color 的动态饱和上限。关系差超过它，不再让 LR 硬补，
+#   余量归引擎/卡。0.2 = 两档（一档 0.1 = 10 UI）。
+POINT_COLOR_CAP = 0.2
+POINT_COLOR_RANGE = 0.5
 
 
 def points_of(card: dict) -> Dict[str, Optional[float]]:
@@ -75,41 +80,50 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
     out = dict(saturation=0.0, vibrance=0.0,
                local_saturation=0.0, local_vibrance=0.0,
                local_toning_hue=0.0, local_toning_sat=0.0,
+               point_color_h=0.0, point_color_s=0.0, point_color_l=0.0,
+               point_color_range=0.0, point_color_sat_scale=0.0,
+               point_color_sat_raw=0.0,
                split_highlight_hue=0.0, split_highlight_sat=0.0,
                split_shadow_hue=0.0, split_shadow_sat=0.0, split_balance=0.0)
     notes = []
     one = ONE_STEP_UI
 
-    def _axis(val, target, tol, key, label, step=None):
-        if target is None or val is None:
-            return
-        d = float(target) - float(val)
-        if abs(d) <= tol:
-            notes.append('%s %.1f ≈ 卡的点值 %.1f（±%g 内）⇒ 不动'
-                         % (label, float(val), float(target), tol))
-            return
-        s = one if step is None else float(step)
-        out[key] = s if d > 0 else -s
-        notes.append('%s %.1f → 卡的点值 %.1f（差 %+.1f）⇒ %+.0f UI'
-                     % (label, float(val), float(target), -d, out[key]))
-
-    # ★ 人物降饱和走主体蒙版：只压人、只降不升。
+    # ★ 2026-11-01：肤色走「主体蒙版 + Point Color」。
+    #   不用绝对 C 靶；用 C/L 关系：
+    #     r0 = C0/L0（这张 ① 的关系）
+    #     r* = 卡 face_C/face_L（卡的关系，不是 C 点值本身）
+    #     e = r*/r0 - 1；SatScale 是相对饱和刻度，e 就是动态量。
+    #   上限 ±0.2；超过就报「LR 局部不够，余量归引擎/卡」，不硬补。
     cv = (rec.get('skin') or {}).get('C', rec.get('face_C'))
-    target_C = pts.get('face_C')
-    if cv is not None and target_C is not None and float(cv) > 0.5:
-        if float(cv) > float(target_C) + C_BAND_TOL:
-            out['local_saturation'] = -one
-            notes.append('脸 C %.1f > 卡的点值 %.1f + %.1f ⇒ 主体蒙版降饱和 %.0f UI（一档）'
-                         % (float(cv), float(target_C), C_BAND_TOL, one))
-        else:
-            notes.append('脸 C %.1f ≤ 卡的点值 %.1f + %.1f ⇒ 不降饱和（只降不升）'
-                         % (float(cv), float(target_C), C_BAND_TOL))
-    _axis((rec.get('skin') or {}).get('h', rec.get('face_h')),
-          pts.get('face_h'), H_BAND_TOL, 'hue_orange', '脸 h', step=HUE_STEP_UI)
-    _axis((rec.get('skin') or {}).get('L', rec.get('face_L')),
-          pts.get('face_L'), L_BAND_TOL, 'lum_orange', '脸 L')
+    lv = (rec.get('skin') or {}).get('L', rec.get('face_L'))
+    tC = pts.get('face_C')
+    tL = pts.get('face_L')
+    rgbv = rec.get('skin_rgb')
+    if (cv is not None and lv is not None and float(lv) > 1e-3
+            and isinstance(tC, (int, float)) and isinstance(tL, (int, float))
+            and float(tL) > 1e-3 and rgbv and len(rgbv) == 3):
+        r0 = float(cv) / float(lv)
+        rt = float(tC) / float(tL)
+        e = rt / r0 - 1.0
+        s = max(-POINT_COLOR_CAP, min(POINT_COLOR_CAP, e))
+        try:
+            h, l, sat = colorsys.rgb_to_hls(*(float(v) / 255.0 for v in rgbv))
+            out['point_color_h'] = round(h * 6.0, 4)
+            out['point_color_s'] = round(sat, 4)
+            out['point_color_l'] = round(l, 4)
+            out['point_color_range'] = POINT_COLOR_RANGE
+            out['point_color_sat_raw'] = round(e, 3)
+            out['point_color_sat_scale'] = round(s, 3)
+            notes.append('肤色 C/L %.3f → 卡 %.3f（差 %+.1f%%）⇒ Point Color SatScale %+.2f'
+                         % (r0, rt, e * 100.0, s))
+            if abs(e) > POINT_COLOR_CAP + 1e-9:
+                notes.append('关系差超过 ±%.1f ⇒ 只给边界值，余量归引擎/卡' % POINT_COLOR_CAP)
+        except (TypeError, ValueError):
+            notes.append('skin_rgb 无法转 HSL ⇒ Point Color 不动')
+    else:
+        notes.append('缺 C/L 关系或 skin_rgb ⇒ Point Color 不动（记账）')
 
-    # ---- 分色：卡的暗部/高光色偏（`design.card_tone` 从它自己的成片测出）
+    # 分色：卡的暗部/高光色偏（`design.card_tone` 从它自己的成片测出）
     tone = (card or {}).get('tone') or {}
     sh = ((tone.get('shadow') or {}) or {}).get('hsl_h')
     hi = ((tone.get('highlight') or {}) or {}).get('hsl_h')

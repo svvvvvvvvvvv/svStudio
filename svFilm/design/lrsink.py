@@ -204,12 +204,25 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
         _ls = float(getattr(plan, 'local_saturation', 0.0) or 0.0)
         _lt = max(abs(float(getattr(plan, 'local_toning_hue', 0.0) or 0.0)),
                   abs(float(getattr(plan, 'local_toning_sat', 0.0) or 0.0)))
+        _pc = abs(float(getattr(plan, 'point_color_sat_scale', 0.0) or 0.0))
         # ★ 2026-10-30：蒙版不再只由 fill_ev 决定 —— LocalShadows 是"主体∩暗部"的
         #   原生等效（实测：脸 +7.1 L/单位，画面 p99 只 +0.1），必须能单独用。
-        if max(abs(_ev), abs(_sh), abs(_hl), abs(_ls), _lt) > 1e-6:
+        if max(abs(_ev), abs(_sh), abs(_hl), abs(_ls), _lt, _pc) > 1e-6:
             rm = LS.run('MASK %s subject' % tmp, timeout=180)
             if 'groups=0->0' in rm:
                 raise RuntimeError('%s 主体蒙版没建出来：%s' % (stem, rm[:120]))
+            if _pc > 1e-6:
+                _h = float(getattr(plan, 'point_color_h', 0.0) or 0.0)
+                _s = float(getattr(plan, 'point_color_s', 0.0) or 0.0)
+                _ll = float(getattr(plan, 'point_color_l', 0.0) or 0.0)
+                _r = float(getattr(plan, 'point_color_range', 0.0) or 0.5)
+                _ss = float(getattr(plan, 'point_color_sat_scale', 0.0) or 0.0)
+                rp = LS.run('POINTSWATCH %s %.6f %.6f %.6f %.4f %.4f'
+                            % (tmp, _h, _s, _ll, _r, _ss), timeout=180)
+                if 'res=true' not in rp:
+                    raise RuntimeError('%s Point Color 没落下去：%s' % (stem, rp[:160]))
+                log('    Point Color H%.3f/S%.3f/L%.3f range%.2f SatScale%+.2f'
+                    % (_h, _s, _ll, _r, _ss))
             from .calibration import LOCAL_EXPOSURE_PER_EV
             _v = _ev * LOCAL_EXPOSURE_PER_EV
             rp = LS.run('MASKPARAM %s LocalExposure2012 %.6f' % (tmp, _v), timeout=180)
