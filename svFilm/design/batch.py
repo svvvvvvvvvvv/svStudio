@@ -10,11 +10,11 @@
 
 流程：
     b = Batch.of(raf_dir, out_dir)
-    recs0 = pilot(b, n=2)                 # 试点渲 2 张 -> ①
-    offer = choose(recs0, intent)         # 选卡
-    recs  = run_engine(b, offer.best())   # 整批渲 -> ①
+    recs0 = run_engine(b, baseline_choice)   # 基线 ①′（整批）
+    offer = choose(recs0, intent)            # 选卡
+    recs  = run_engine(b, offer.best())      # 整批渲 -> ①
     plans = lr_solve.plan_batch(recs, card)  # LR 计划
-    jobs  = write_jobs(plans, out_dir)    # XMP 作业单
+    jobs  = write_jobs(plans, out_dir)       # XMP 作业单
 
 用法：
     from design.batch import Batch, pilot, run_engine
@@ -130,50 +130,6 @@ def measure_tif(path: str, with_bg: bool = True, fixed_xy=None) -> dict:
         except Exception:
             pass
     return rec
-
-
-# ---------------------------------------------------------------- 试点（解鸡生蛋）
-
-def pilot(b: Batch, n: int = 2, card: Optional[str] = None,
-          measure_fn=None, log=print) -> Dict[str, dict]:
-    """拿现有卡渲 n 张，得到 ① 的测量，供选卡用。
-
-    为什么试点卡的风格不影响选卡：`need_from_batch` 只读**场景侧量**
-    （天空占比 / 爆白 / 光比），不读我们自己的颜色偏差。
-    """
-    from .matchcard import cards as _mc
-    tb = {c.name: c for c in _mc()}
-    name = card or sorted(tb)[0]
-    if name not in tb:
-        raise KeyError('没有这张卡：%s（现有：%s）' % (name, ', '.join(tb)))
-    stems = b.stems[:max(1, n)]
-    if not stems:
-        raise RuntimeError('RAF 目录里没有可用的 RAW：%s' % b.raf_dir)
-    log('试点：卡 %s ｜ %d 张（%s）' % (name, len(stems), ', '.join(stems)))
-    ch = Choice(hit=_fake_hit(tb[name]), texture=_fake_texture(tb[name]))
-    tifs = render_card(ch, b.raf_paths(stems), b.sub('engine'), log=log)
-    mf = measure_fn or measure_tif
-    recs = {}
-    for st, p in tifs.items():
-        r = mf(p)
-        r['file'] = os.path.basename(p)
-        # ★ **没脸的图也要留着**（10-29 真跑发现 DSCF1726 整张被漏掉）：
-        #   `pick_lookat` 会给它"整幅 + 弃权 0 档"，照样出片；
-        #   在这里按皮肤过滤 = 这张图干脆没有 LR 计划、也就不出 ③。
-        recs[st] = r
-    log('试点完成：%d/%d 张有效' % (len(recs), len(tifs)))
-    log('! 试点卡的爆白率会影响 shoulder 需求（试点只渲 %d 张，代表性有限）' % len(stems))
-    return recs
-
-
-def _fake_hit(card):
-    from .flow import _Hit
-    return _Hit(card, 0.0)
-
-
-def _fake_texture(card):
-    from .texture import plan_texture
-    return plan_texture(card.stock, card.paper, long_side=1080)
 
 
 # ---------------------------------------------------------------- 整批

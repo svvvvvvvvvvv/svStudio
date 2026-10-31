@@ -37,7 +37,6 @@ MAX_WHITE_PULL_EV = 1.5
 # ★ 2026-10-31：**不要用绝对斜率/连续反解**（C/UI 随图变）。肤色饱和只给一档；
 #   没有公开传递函数的旋钮一律方向 + 一档 + ③ 验。
 ONE_STEP_UI = 10.0
-C_DOWN_MAX_UI = 100.0
 C_BAND_TOL = 1.0
 H_BAND_TOL = 2.0           # 色相死区（Lab 度）
 L_BAND_TOL = 1.5           # 明度死区（L*）

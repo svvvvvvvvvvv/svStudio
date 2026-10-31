@@ -47,6 +47,7 @@ CEILING_MIN_L = 99.5
 class Choice:
     hit: CardHit
     texture: TexturePlan
+    medium: Optional[dict] = None      # 基线 ①′ 用；None = 读卡自己的介质
     note: str = ''
 
     @property
@@ -238,7 +239,7 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
     # ★ 2026-10-31：**没有"预设"这个可选集合了**。每个目录自带一份介质块
     #   （卷/纸/WB/amount/化学…），整块直接喂引擎；读不到就抛。
     from .card_render import medium_of
-    medium = medium_of(choice.card)
+    medium = choice.medium if getattr(choice, 'medium', None) else medium_of(choice.card)
     media_label = '%s + %s' % (medium['simulation']['film_stock'],
                               medium['simulation']['print_paper'])
     # ★ 白端要**记下来**：它决定这张底片的天花，也决定"余量"这个数可不可信
@@ -299,9 +300,14 @@ def _write_render_meta(out_dir: str, choice, media_label: str, out: dict) -> str
     """
     import json
     import time
+    from .card_render import medium_of
+    m = choice.medium if getattr(choice, 'medium', None) else medium_of(choice.card)
+    sim = m.get('simulation') or {}
     p = os.path.join(out_dir, '_render.json')
     d = dict(card=getattr(choice.card, 'name', ''),
              medium=media_label,
+             print_exposure=float(sim.get('print_exposure') or 0.0),
+             amount=float((m.get('couplers') or {}).get('amount') or 0.0),
              corpus=getattr(choice.card, 'corpus', ''),
              n=len(out), stems=sorted(out),
              ts=time.strftime('%Y-%m-%d %H:%M:%S'))
@@ -395,9 +401,8 @@ def _lab_of_disp(disp):
 
 # ---------------------------------------------------------------- 引擎侧的边界（别再越界）
 
-# ★★★ 2026-10-29 中午，SV 当面纠正过一次，记在这里免得再犯：
-#   设计 §21 原文：「**保留** 引擎自带的中灰归一 / auto_exposure —— 它不是"我们的曝光旋钮"，
-#   是**余量保证机制**」「**不要再** 在外面乘我们的 EV / PE（那就是手册说会振荡的那条路）」
+# ★★★ 2026-10-31：引擎 **auto_exposure 关**（`design/medium.py` 写死 False），
+#   只做介质 + 固定 PE；落点/形状全归 LR。`render_safe` 不再从生产路径调用。
 #   设计 §20：引擎侧只剩三件事，都不逐图 —— ① 选卷/纸 ② T0 余量校验 ③ 白点按配对给定。
 #   设计 §19：引擎判据只有 **T0 余量 · T3 白点**；曝光落点/明暗分布/颜色全是 LR 的。
 #

@@ -52,6 +52,23 @@ def template() -> dict:
     return json.load(open(_TEMPLATE, encoding='utf-8'))
 
 
+def baseline_medium() -> dict:
+    """①′ 基线介质：引擎默认配对 `portra_400 + portra_endura`，只为把原片送进成片域。
+
+    ★ 2026-10-31：无卡路径不再拿"第一张卡"的介质当基线；基线固定为默认配对。
+    """
+    m = template()
+    sim = dict(m.get('simulation') or {})
+    sim['film_stock'] = 'kodak_portra_400'
+    sim['print_paper'] = 'kodak_portra_endura'
+    sim['auto_exposure'] = False
+    sim['auto_exposure_method'] = 'center_weighted'
+    sim['scan_white_level'] = SCAN_WHITE_LEVEL
+    sim['scan_black_level'] = SCAN_BLACK_LEVEL
+    m['simulation'] = sim
+    return m
+
+
 def save(card_name: str, block: dict, note: str = '') -> str:
     os.makedirs(_ROOT, exist_ok=True)
     p = path_of(card_name)
@@ -181,6 +198,10 @@ def apply_targets(card_name: str) -> str:
     sim['camera_diffusion_filter_active'] = True
     sim['camera_diffusion_filter_family'] = 'black_pro_mist'
     sim['camera_diffusion_filter_strength'] = 0.25
+    # ★ 2026-10-31：**关掉引擎的逐图自动曝光**。引擎只做介质；落点归 LR。
+    #   开着 subject 测光 = 引擎在做 LR 的活，PE 也不是真正的"固定基线"。
+    sim['auto_exposure'] = False
+    sim['auto_exposure_method'] = 'center_weighted'
     # ★ 2026-10-31：扫描端点是引擎常量，不是卡的统计量（拿卡的 p95/p5 当端点 =
     #   把场景当介质；卡只用于 _target 里的点值参考）。
     sim['scan_white_level'] = SCAN_WHITE_LEVEL

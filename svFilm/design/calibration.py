@@ -37,29 +37,6 @@ from typing import Dict, Optional
 LOCAL_EXPOSURE_PER_EV = 1.0 / 4.0      # 文件值 = EV/4（4 档 = 1.0）
 LOCAL_UI_SCALE = 1.0 / 100.0           # 局部其余滑杆：文件值 = UI/100
 
-# 幅度上限是**政策**（一次最多补多少），不是物理：
-SAT_LIMIT = 30.0
-SHADOW_LIMIT = 60.0
-
-
-def sat_for_dc(dc: float, C0: Optional[float] = None) -> float:
-    """要把肤色 C\\* 挪 `dc` 需要多少全局 Saturation 单位。
-
-    ★ 为什么不再用 `0.221 C*/单位`：Saturation 是**相对**刻度（百分比），
-    ΔC 与当前 C\\* 成正比。实测（n=1，C*=20，S=30）：20.00 → 26.63，
-    相对增益 1.3315 ⇒ 约 1.105×“1% 刻度”。旧常数 0.221 只在 C*≈20 附近成立；
-    C*=10 时会把剂量放大一倍。
-    这里取**公开语义**：ΔC = C0 · S/100（S 以 UI 计），实测的 +10% 偏差
-    记进台账（n=1，等 n≥5 再决定要不要 κ）。
-
-    `C0` 缺省 20.0 只为兼容旧调用；新代码必须给。
-    """
-    if not dc:
-        return 0.0
-    c0 = 20.0 if not C0 or float(C0) <= 1e-6 else float(C0)
-    v = 100.0 * float(dc) / c0
-    return max(-SAT_LIMIT, min(SAT_LIMIT, v))
-
 
 # ---------------------------------------------------------------- C. 台账（n<5）
 

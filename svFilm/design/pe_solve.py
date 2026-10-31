@@ -12,8 +12,8 @@
 · 目标：这张卡的**介质目标中间调密度** `_target.p50_target_D`
 · 求解：对 PE 单调（PE↑ ⇒ 印相更暗 ⇒ Y↓），二分 12 次即可
   每次都是 48×48 的灰块，约 0.1 秒
-· 求解时 **必须和真图同一状态**（`auto_exposure` 开）；
-  否则测光会把探针本身归一化掉，探不到 PE 的作用（实测关着标会偏 3 档）。
+· 求解时 **和真图同一状态**（`auto_exposure` 关，固定 PE）；
+  探针也必须关，否则测光会把探针本身归一化掉。
 
 结果写进 `simulation.print_exposure`，并在 `_derived.pe` 记账。
 """
@@ -36,9 +36,13 @@ def _probe_pe(medium: dict, pe: float) -> float:
     """用参考灰渲一次，返回输出中灰的**线性 Y**。"""
     from svFilm import presets
     g = np.full((48, 48, 3), _GRAY, np.float32)
-    # ★ 必须和真图**同一状态**：真图是 auto_exposure=True 渲的，探针也要开着，
-    #   否则标出来的 PE 落到真图上会偏 3 档（实测：关着标 0.843，真图 p50 86.9 洗白）。
-    d = presets.render(g, medium, print_exposure=float(pe))
+    # ★ 必须和真图**同一状态**：真图现在是 auto_exposure=False（固定 PE），
+    #   探针也必须关；否则标出来的 PE 落到真图上会偏。
+    m = dict(medium)
+    sim = dict(m.get('simulation') or {})
+    sim['auto_exposure'] = False
+    m['simulation'] = sim
+    d = presets.render(g, m, print_exposure=float(pe))
     return _srgb_to_linear(float(np.mean(d)))
 
 

@@ -288,7 +288,11 @@ def _find_tif(d: str, stem: str, allow_engine: bool = False) -> Optional[str]:
 
 
 def _hero_block(hero: str, prev_dir: str, log=print) -> Optional[dict]:
-    """人选的 hero → 目检页顶部那张对照图。**只放图，不进算值**（设计 §4.1）。"""
+    """人选的 hero → 目检页顶部那张对照图 + 肤色读数。
+
+    ★ 2026-10-31：hero 目前**不进求解**（设计 §4.1：A 不拿 hero 做拟合）；
+      但至少把它的肤色量出来摆在页面上，别让人选完像没用。
+    """
     if not hero:
         return None
     if not os.path.isfile(hero):
@@ -298,7 +302,21 @@ def _hero_block(hero: str, prev_dir: str, log=print) -> Optional[dict]:
     if not p:
         log('! hero 转 jpg 失败，目检页不放参考图：%s' % hero)
         return None
-    return dict(jpg='preview/hero.jpg', label=os.path.basename(hero))
+    label = os.path.basename(hero)
+    try:
+        import sys
+        P = r'E:\svStudio\svFilm\analysis\corpus\kurai'
+        if P not in sys.path:
+            sys.path.insert(0, P)
+        import measure_v7 as _M
+        r = _M.measure_one(hero)
+        L, C, h = r.get('face_L'), r.get('face_C'), r.get('face_h')
+        if L is not None:
+            label += ' ｜ 脸 L %.1f · C %.1f · h %.1f' % (
+                float(L), float(C or 0.0), float(h or 0.0))
+    except Exception as e:                                      # noqa: BLE001
+        log('! hero 肤色测量失败（只放图）：%s' % str(e)[:120])
+    return dict(jpg='preview/hero.jpg', label=label)
 
 
 def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict], plans: Dict[str, object],
@@ -392,14 +410,24 @@ a{text-decoration:none}
 
 def _card_diffs(a, b) -> List[str]:
     """两张同卷同纸的卡，真正不同的档位（这是人做决定要看的东西）。"""
+    def _tex(c, key):
+        t = getattr(c, 'texture', None)
+        if isinstance(t, dict):
+            return t.get(key)
+        return getattr(t, key, None)
+
     def rms(c):
-        v = c.texture.get('rms_granularity') or ()
+        v = _tex(c, 'rms_granularity') or ()
         return ('%.1f' % (sum(v) / len(v))) if v else None
-    rows = [('颗粒 rms', rms(a), rms(b)),
-            ('彩度 amount', a.style.get('amount'), b.style.get('amount')),
-            ('柔光', a.style.get('diffusion'), b.style.get('diffusion')),
-            ('画幅', a.style.get('film_format_mm'), b.style.get('film_format_mm')),
-            ('余量 p95≤', a.safety.get('p95_max'), b.safety.get('p95_max'))]
+
+    rows = [('卷/纸', (getattr(a, 'stock', None), getattr(a, 'paper', None)),
+             (getattr(b, 'stock', None), getattr(b, 'paper', None))),
+            ('颗粒 rms', rms(a), rms(b)),
+            ('彩度 amount', _tex(a, 'amount'), _tex(b, 'amount')),
+            ('柔光', _tex(a, 'diffusion'), _tex(b, 'diffusion')),
+            ('画幅', _tex(a, 'film_format_mm'), _tex(b, 'film_format_mm')),
+            ('参考 p95', (getattr(a, 'profile', {}) or {}).get('p95'),
+             (getattr(b, 'profile', {}) or {}).get('p95'))]
     return ['%s %s→%s' % (k, x, y) for k, x, y in rows if str(x) != str(y)]
 
 

@@ -1064,16 +1064,6 @@ def test_measure_adapter_reads_v7_rows():
        'v7 没 shape 时要能从 img 分位算出来')
 
 
-def test_saturation_dose_is_relative_to_chroma():
-    """Saturation 是相对刻度：同样的 ΔC，在 C*=10 上要两倍于 C*=20 的点数。"""
-    from design.calibration import sat_for_dc
-    a = sat_for_dc(2.0, 20.0)
-    b = sat_for_dc(2.0, 10.0)
-    ok(abs(b - 2.0 * a) < 1e-9, '剂量没跟着 C* 缩放：%s vs %s' % (a, b))
-    ok(abs(sat_for_dc(6.0, 20.0) - 30.0) < 1e-9, 'C20 提 6 C* 应 30 点')
-    ok(abs(sat_for_dc(100.0, 20.0) - 30.0) < 1e-9, '超上限要夹到 30')
-
-
 if __name__ == '__main__':
     raise SystemExit(main())
 

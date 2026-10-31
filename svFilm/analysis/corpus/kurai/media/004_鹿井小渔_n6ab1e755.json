@@ -159,10 +159,10 @@
   "film_format_mm": 35,
   "camera_lens_blur_um": 0.0,
   "exposure_compensation_ev": 0.0,
-  "auto_exposure": true,
-  "auto_exposure_method": "subject",
+  "auto_exposure": false,
+  "auto_exposure_method": "center_weighted",
   "print_illuminant": "TH-KG3",
-  "print_exposure": 1.8024,
+  "print_exposure": 1.083,
   "output_lightness_compression": "off",
   "print_exposure_compensation": true,
   "print_y_filter_shift": -0.0,
@@ -383,7 +383,7 @@
   "shadow_cc": -0.7,
   "scene_fit": true,
   "neutral_filters": "engine database (neutral_print_filters.json)",
-  "pe": 1.8024,
-  "pe_reason": "参考灰 18.4% → 目标 D 0.926（Y 0.1186）；实测 Y 0.1186 ⇒ PE 1.8024"
+  "pe": 1.083,
+  "pe_reason": "参考灰 18.4% → 目标 D 0.926（Y 0.1186）；实测 Y 0.1186 ⇒ PE 1.0830"
  }
 }

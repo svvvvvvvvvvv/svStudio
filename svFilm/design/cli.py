@@ -22,7 +22,7 @@ from .stocks import registry
 from .matchcard import batch_profile, batch_tags, cards as match_cards
 from .matchpage import make_match_page
 from .states import limit_note, regression_curve
-from .batch import Batch, pilot, run_engine, build_review, estimate
+from .batch import Batch, run_engine, build_review, estimate
 from .lr_solve import plan_batch, summary as lr_summary
 from .lr_exec import run as lr_run
 from .texture import Style, plan_texture, warn as tex_warn
@@ -274,8 +274,10 @@ def cmd_run(a):
         #   2 张的"中位"就是那 2 张；全批才有分布，匹配才有分辨力。
         print('\n[1/7] 整批渲（用基线卡），再拿全批测量去匹配')
         _base = sorted(c.name for c in match_cards())[0]
+        from .medium import baseline_medium
         _bch = Choice(hit=types.SimpleNamespace(card=_tb[_base], score=0.0),
-                      texture=_plan_tex(_tb[_base].stock, _tb[_base].paper))
+                      texture=_plan_tex(_tb[_base].stock, _tb[_base].paper),
+                      medium=baseline_medium())
         recs0 = run_engine(b, _bch, limit=a.render_limit, log=print)
 
         print('\n[2/7] 用全批 %d 张的测量算匹配' % len(recs0))
@@ -290,23 +292,13 @@ def cmd_run(a):
         page = make_match_page(recs0, b.out_dir,
                                title='%s · 匹配五选一' % b.name)
         print('  匹配页：%s' % page)
-        if not getattr(a, 'yes', False):
-            print('\n[4/7] **停在这里等你拍板**（不自动往下走）')
-            print('  看完回我：--card <名字> [--hero <样片>]')
-            return
-        print('\n[4/7] --yes ⇒ 自动用匹配分第一张，继续')
-        _b = offer.best()
-        print('  自动选：%s' % ('（无候选）' if _b is None else _b.card.label()))
+        print('\n[4/7] **停在这里等你拍板**（不自动往下走）')
+        print('  看完回我：--card <名字> --hero <样片>')
+        return
 
     best = offer.best()
     if best is None:
         print('没有可用卡 ⇒ 停'); return
-    if not use_card and not getattr(a, 'yes', False):
-        print('\n以上是匹配结果（权重与理由）。**用哪张卡 + 哪张样片当 hero 你定**，看完页面再回来：')
-        print('  1) 打开 %s' % page)
-        print('  2) 重跑并指定：--card <卡名> --hero <样片>   （会跳过试点，直接整批渲）')
-        print('     或加 --yes 直接用匹配分第一张：%s' % best.card.label())
-        return
     print('\n选中：%s' % best.card.label())
 
     # ★ 设计 §3.4：人选卡时**同时**指定 hero（从这张卡的全部样片里点一张）。
@@ -328,23 +320,25 @@ def cmd_run(a):
     print('批次元数据：%s' % b.write_meta(intent=it.describe()))
 
     print('\n[4/7] 整批渲 + 量（①）')
-    # ★ 2026-10-31：试点用的是基线卡。只有 best 也是基线卡时才能 skip；
-    #   否则跳过的那几张永远不会用 best 渲，recs 里直接缺图。
-    _base_name = sorted(c.name for c in match_cards())[0]
-    _skip = list(recs0.keys()) if best.card.name == _base_name else []
+    # ★ 2026-10-31：基线 ①′ 用的是默认配对介质，和选中卡的介质不同 ⇒ **不能复用**。
+    _skip = []
     if getattr(a, 'reuse', False):
         from .batch import measure_engine_dir
+        from .card_render import medium_of as _med_of
+        _m = _med_of(best.card)
+        _sim = _m.get('simulation') or {}
+        _expect = dict(
+            card=best.card.name,
+            medium='%s + %s' % (_sim.get('film_stock'), _sim.get('print_paper')),
+            print_exposure=float(_sim.get('print_exposure') or 0.0),
+            amount=float((_m.get('couplers') or {}).get('amount') or 0.0))
         print('  --reuse ⇒ 复用已渲的 ①（只重测，不重渲）')
-        recs = measure_engine_dir(b, log=print, expect=dict(card=best.card.name))
+        recs = measure_engine_dir(b, log=print, expect=_expect)
         if not recs:
             print('  没有可复用的 ① ⇒ 退回重渲')
             recs = run_engine(b, best, limit=a.render_limit, log=print, skip=_skip)
     else:
         recs = run_engine(b, best, limit=a.render_limit, log=print, skip=_skip)
-    # 试点那两张如果用的就是选中的卡，直接把旧测量并回来（避免漏）
-    if best.card.name == sorted(c.name for c in match_cards())[0]:
-        for k, v in recs0.items():
-            recs.setdefault(k, v)
     if not recs:
         print('整批无一有效 ⇒ 停'); return
 
@@ -627,9 +621,7 @@ def main(argv=None):
     p.add_argument('--out', required=True, help='输出目录')
     p.add_argument('--limit', type=int, default=0, help='本批最多几张 RAW')
     p.add_argument('--render-limit', type=int, default=0, help='只渲前几张（试跑用）')
-    p.add_argument('--pilot', type=int, default=2, help='试点渲染张数')
     p.add_argument('--intent', action='append')
-    p.add_argument('--yes', action='store_true', help='选卡后不再等确认')
     p.add_argument('--card', default='', help='手动指定卡名（跳过匹配排序）')
     p.add_argument('--hero', default='', help='hero 样片（卡的样片路径或文件名；只做目检参考）')
     p.add_argument('--export', action='store_true', help='用 LR 导出 ③（要 LR 在跑）')
