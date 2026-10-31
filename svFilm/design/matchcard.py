@@ -145,15 +145,24 @@ def _samples_by_dir(limit: Optional[int] = None) -> Dict[str, List[str]]:
     return out
 
 
-_PRESET_DIR = r'E:\svStudio\svFilm\svFilm\data\presets'
-
-
 def _medium_by_corpus() -> Dict[str, Tuple[str, str]]:
-    """介质从哪来：卡自带（§48.2）。现有的三张 preset 卡给了显式介质；
-    64 张大师卡没有配方 ⇒ 用它们的 corpus 对应的默认介质（人可覆盖）。"""
-    return {'鹿井': ('kodak_portra_400', 'kodak_portra_endura'),
-            '滨田': ('kodak_portra_400', 'kodak_portra_endura'),
-            'xhs': ('kodak_ultramax_400', 'kodak_portra_endura')}
+    """旧卡的兜底：按语料取**基线介质**（`medium_base/<语料>.json`）里的卷+纸。
+
+    ★ 2026-10-31：以前这里是三行硬编码，xhs 还写成 ultramax（和它自己的介质不一致）。
+      现在唯一真源是 `medium_base/`，读不到就不给兜底（宁缺勿错）。
+    """
+    import glob
+    import json
+    out = {}
+    for p in glob.glob(os.path.join(r'E:\svStudio\svFilm\analysis\corpus\kurai\medium_base', '*.json')):
+        try:
+            d = json.load(open(p, encoding='utf-8'))
+        except Exception:                                  # noqa: BLE001
+            continue
+        sim = d.get('simulation') or {}
+        if sim.get('film_stock') and sim.get('print_paper'):
+            out[os.path.splitext(os.path.basename(p))[0]] = (sim['film_stock'], sim['print_paper'])
+    return out
 
 
 

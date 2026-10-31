@@ -21,7 +21,7 @@ from typing import Optional
 
 _ROOT = r'E:\svStudio\svFilm\analysis\corpus\kurai\media'
 # 只作"生成新介质块"的模板（不是可选预设）
-_TEMPLATE = r'E:\svStudio\svFilm\svFilm\data\presets\卡38\preset.json'
+_TEMPLATE = r'E:\svStudio\svFilm\analysis\corpus\kurai\medium_base\鹿井.json'
 
 
 def path_of(card_name: str) -> str:
@@ -130,16 +130,22 @@ def targets_from_card(card_name: str) -> dict:
 
 
 def apply_targets(card_name: str) -> str:
-    """把目录级目标写进它的介质：scanner 端点直接落，其余进 `_target` 供批次求解。"""
+    """把目录级目标写进它的介质：扫描端点直接落，其余进 `_target` 供批次求解。
+
+    ★ 2026-10-31 修：端点在引擎里的真键是 `simulation.scan_white_level / scan_black_level`
+      （`svFilm/presets.py::_apply` 读的就是这两个），不是顶层 `scanner`。写错地方
+      = 一个数都没生效，而 `_render.json`/账面看着一切正常。
+    """
     tg = targets_from_card(card_name)
     block = load(card_name)
     if block is None:
         raise KeyError('目录没有介质：%s（先 from_preset 迁移一份）' % card_name)
-    sc = dict(block.get('scanner') or {})
+    sim = dict(block.get('simulation') or {})
     if tg.get('white_level') is not None:
-        sc['white_level'] = tg['white_level']
+        sim['scan_white_level'] = tg['white_level']
     if tg.get('black_level') is not None:
-        sc['black_level'] = tg['black_level']
-    block['scanner'] = sc
+        sim['scan_black_level'] = tg['black_level']
+    block['simulation'] = sim
+    block.pop('scanner', None)          # 旧写法留下的空壳，删掉免得再被误认
     block['_target'] = tg
-    return save(card_name, block, note='scanner 端点取自卡的打印端；其余目标见 _target')
+    return save(card_name, block, note='扫描端点写在 simulation.scan_*；其余目标见 _target')

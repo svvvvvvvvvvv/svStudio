@@ -780,21 +780,21 @@ def test_point_color_no_longer_compensates_backlit():
 
 
 def test_card_render_maps_medium_and_bounds():
-    """卡的介质要映射到 preset；两端边界要来自**不变量**（§63.7），不是卡的分布。"""
+    """卡要带出**它自己的介质块**（不是"选一个预设"）；两端边界来自不变量（§63.7）。"""
     from design.matchcard import MatchCard
-    from design.card_render import (INVARIANT_P95_MAX, _preset_media, preset_for,
+    from design.card_render import (INVARIANT_P95_MAX, medium_of,
                                     reference_for, safety_for)
-    ok(bool(_preset_media()), '一个 preset 都没读到，介质映射无从谈起')
-    c = MatchCard(name='x', stock='kodak_portra_400', paper='kodak_portra_endura',
-                  corpus='鹿井',
+    c = MatchCard(name='001_鹿井小渔_n66f7fa31', stock='kodak_portra_400',
+                  paper='kodak_portra_endura', corpus='鹿井',
                   profile=dict(p95=90.0), spread=dict(p95=2.0))
-    ok(preset_for(c) in _preset_media(), '映射出来的 preset 不存在：%s' % preset_for(c))
-    ok(preset_for(c) == '卡38', '鹿井语料必须映射到卡38，实际 %s' % preset_for(c))
-    # ★ 同介质的两张卡（卡38 1.3 / 滨田 0.65）不许按排序猜：没 corpus 必须抛
-    amb = MatchCard(name='z', stock='kodak_portra_400', paper='kodak_portra_endura')
+    m = medium_of(c)
+    ok(bool(m.get('simulation', {}).get('film_stock')), '介质块里没有卷：%r' % (m.get('simulation'),))
+    ok(bool(m.get('simulation', {}).get('print_paper')), '介质块里没有纸')
+    # ★ 目录没有再没有介质：读不到必须抛（不许回退、不许猜）
+    bad = MatchCard(name='没有这个目录', stock='kodak_portra_400', paper='kodak_portra_endura')
     try:
-        preset_for(amb)
-        ok(False, '同介质的多个 preset 必须抛，不许静默选一个')
+        medium_of(bad)
+        ok(False, '没有介质的目录却返回了介质（会静默用默认值）')
     except KeyError:
         pass
     s = safety_for(c)
@@ -803,12 +803,6 @@ def test_card_render_maps_medium_and_bounds():
        % (INVARIANT_P95_MAX, s['p95_max']))
     r = reference_for(c)
     ok(r.get('p95') == 90.0, '卡的 p95 要留在参考里，实际 %s' % r.get('p95'))
-    bad = MatchCard(name='y', stock='no_such_stock', paper='no_such_paper')
-    try:
-        preset_for(bad)
-        ok(False, '映射不上却返回了 preset（会静默换掉整条链的介质）')
-    except KeyError:
-        pass
 
 
 

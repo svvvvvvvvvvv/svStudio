@@ -243,19 +243,20 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
     from svFilm import lrbase
 
     os.makedirs(out_dir, exist_ok=True)
-    # ★ §20② / §48.2：引擎的两端边界**从卡来**（匹配卡的画像区间），不是卡里写死的 96/3。
-    #   匹配卡自己没有 preset 名（它是一套风格），要映射到能渲的 preset —— 映射不上就抛。
-    from .card_render import preset_for, safety_for
+    # ★ 2026-10-31：**没有"预设"这个可选集合了**。每个目录自带一份介质块
+    #   （卷/纸/WB/amount/化学…），整块直接喂引擎；读不到就抛。
+    from .card_render import medium_of, safety_for
     saf = getattr(choice.card, 'safety', None)
     if not isinstance(saf, dict) or not saf:
         saf = safety_for(choice.card)
-    preset_name = getattr(choice.card, 'preset', None) or preset_for(choice.card)
+    medium = medium_of(choice.card)
+    media_label = '%s + %s' % (medium['simulation']['film_stock'],
+                              medium['simulation']['print_paper'])
     p95_max = float(saf.get('p95_max', P95_ENGINE_SAFE) if p95_max is None else p95_max)
     black_max = float(saf.get('black_max', BLACK_MAX) if black_max is None else black_max)
     # ★ 白端要**记下来**：它决定这张底片的天花，也决定"余量"这个数可不可信
     try:
-        import svFilm.presets as _presets
-        white_level = float(_presets.load_raw(preset_name)['simulation']['scan_white_level'])
+        white_level = float(medium['simulation']['scan_white_level'])
     except Exception:
         white_level = None
     if white_level is not None and white_level < 1.0:
@@ -281,7 +282,7 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
         log('  并行渲：%d 路（长边 %d，内存预算 %d GB）'
             % (jobs, long_side, ENGINE_PER_JOB_GB * jobs))
         from multiprocessing import get_context
-        argv = [(stem, raf, preset_name, out_dir, ov, p95_max, black_max,
+        argv = [(stem, raf, medium, out_dir, ov, p95_max, black_max,
                  white_level) for stem, raf in raf_paths.items()]
         with get_context('spawn').Pool(jobs) as pool:
             for stem, dst, hr, c0, c1, msgs in pool.imap_unordered(_render_one, argv):
@@ -289,21 +290,21 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
                 _write_headroom(out_dir, stem, hr)
                 for m in msgs:
                     log(m)
-        _write_render_meta(out_dir, choice, preset_name, p95_max, black_max, out)
+        _write_render_meta(out_dir, choice, media_label, p95_max, black_max, out)
         return out
 
     for stem, raf in raf_paths.items():
         stem, dst, hr, c0, c1, msgs = _render_one(
-            (stem, raf, preset_name, out_dir, ov, p95_max, black_max, white_level))
+            (stem, raf, medium, out_dir, ov, p95_max, black_max, white_level))
         out[stem] = dst
         _write_headroom(out_dir, stem, hr)
         for m in msgs:
             log(m)
-    _write_render_meta(out_dir, choice, preset_name, p95_max, black_max, out)
+    _write_render_meta(out_dir, choice, media_label, p95_max, black_max, out)
     return out
 
 
-def _write_render_meta(out_dir: str, choice, preset_name: str,
+def _write_render_meta(out_dir: str, choice, media_label: str,
                        p95_max: float, black_max: float, out: dict) -> str:
     """把"这批 ① 是用什么渲的"写下来（供 --reuse 校验）。
 
@@ -314,7 +315,7 @@ def _write_render_meta(out_dir: str, choice, preset_name: str,
     import time
     p = os.path.join(out_dir, '_render.json')
     d = dict(card=getattr(choice.card, 'name', ''),
-             preset=preset_name,
+             medium=media_label,
              corpus=getattr(choice.card, 'corpus', ''),
              p95_max=float(p95_max), black_max=float(black_max),
              n=len(out), stems=sorted(out),
@@ -347,12 +348,14 @@ def engine_jobs(n_images: int) -> int:
 
 def _render_one(args):
     """渲一张 + 量余量（**必须在模块级**：Windows 的 spawn 不能 pickle 闭包）。"""
-    (stem, raf, card_name, out_dir, ov, p95_max, black_max, white_level) = args
+    (stem, raf, medium, out_dir, ov, p95_max, black_max, white_level) = args
     from svFilm import presets, io, lrbase       # 子进程里自己 import
-    msgs = ['  渲 %s ← %s（卡 %s，p95_max=%.1f）'
-            % (stem, os.path.basename(raf), card_name, p95_max)]
+    media_label = '%s + %s' % (medium['simulation']['film_stock'],
+                               medium['simulation']['print_paper'])
+    msgs = ['  渲 %s ← %s（介质 %s，p95_max=%.1f）'
+            % (stem, os.path.basename(raf), media_label, p95_max)]
     lin = io.load_raw(raf).lin
-    disp = presets.render_safe(lin, card_name, p95_max=p95_max,
+    disp = presets.render_safe(lin, medium, p95_max=p95_max,
                                black_max=black_max, overrides=ov)
     dst = os.path.join(out_dir, '%s_engine.tif' % stem)
     lrbase.save_tiff16(disp, dst)

@@ -1,15 +1,15 @@
 # -*- coding: utf-8 -*-
 """给每个目录写出它自己的介质（卷/纸/amount），全部有据、不要人拍板。
 
-三条依据：
+三条依据（**都不涉及"选一个预设"**）：
 
-1) **卷 + 纸**：源码里写着每套预设是照谁立的靶（`svFilm/presets.py::_DESC`）：
-      鹿井预设 ← 鹿井屿渔 26 张 ｜ 滨田预设 ← 滨田正和 22 张 ｜ xhs预设 ← 不詹锅 50 张
-   我们的 64 张卡，语料正好是 鹿井 / 滨田 / xhs ⇒ 按语料取**该语料声明的**那套。
-   （打印端数据反推不出卷 —— 实测过：反推会把大半卡判成电影卷，那是映射假象。）
+1) **卷 + 纸**：取自 `medium_base/<语料>.json` —— 从旧 preset 一次性冻结出来的
+   **基线介质**（此后没有任何"预设"可选集合）。语料 → 基线的对应是**一次性迁移**，
+   不是物理推导：打印端数据反推不出卷（实测过：反推会把大半卡判成电影卷，那是映射假象）。
 
-2) **amount**：引擎手册实测「amount +1 ⇒ 颊 C* +2.3」（n=2~3 卷，台账级）。
-   每个目录按"这张卡的肤 C 中位 vs 它的卡带中点"反解所需的 amount 偏移，夹在 [0.6, 1.6]。
+2) **amount**：同一语料内按"分色强度"（暗部 CC − 高光 CC）排百分位，
+   在基线值上下 ±15% 有界缩放。**±15% 是工程选择，不是物理定律**——
+   好处是不推翻基线已标定的值。
 
 3) **白端/黑端/落点/色偏**：定义式换算（L*→Y→D、Lab→CC），见 medium.targets_from_card。
 
@@ -24,18 +24,19 @@ import statistics as st
 
 _ROOT = r'E:\svStudio\svFilm\analysis\corpus\kurai'
 _CARDS = os.path.join(_ROOT, 'cards_v5.json')
-_PRESETS = r'E:\svStudio\svFilm\svFilm\data\presets'
+_BASE = r'E:\svStudio\svFilm\analysis\corpus\kurai\medium_base'
 
-# 源码 `_DESC` 声明的"预设 ← 大师"关系；我们的卡语料名 → 该预设
-CORPUS_PRESET = {'鹿井': '卡38', '滨田': '滨田预设', 'xhs': 'xhs预设'}
+# 每个语料的**基线介质**（已从旧 preset 一次性冻结成 medium_base/<语料>.json）。
+# 这里没有 preset 这个名字，也没有"从若干预设里挑一个"这一步。
+CORPUS_BASE = {'鹿井': '鹿井', '滨田': '滨田', 'xhs': 'xhs'}
 
 # 引擎手册：couplers.amount +1 ⇒ 颊 C* +2.3（台账级，n=2~3 卷）
 C_PER_AMOUNT = 2.3
 AMOUNT_MIN, AMOUNT_MAX = 0.6, 1.6
 
 
-def _block(preset: str) -> dict:
-    return json.load(open(os.path.join(_PRESETS, preset, 'preset.json'), encoding='utf-8'))
+def _block(corpus: str) -> dict:
+    return json.load(open(os.path.join(_BASE, corpus + '.json'), encoding='utf-8'))
 
 
 def apply_all() -> dict:
@@ -45,7 +46,7 @@ def apply_all() -> dict:
     for c in cards:
         name = c['name']
         corpus = c.get('corpus') or ''
-        preset = CORPUS_PRESET.get(corpus)
+        preset = CORPUS_BASE.get(corpus)
         if not preset:
             out[name] = dict(ok=False, why='语料「%s」在 _DESC 里没有对应预设' % corpus)
             continue

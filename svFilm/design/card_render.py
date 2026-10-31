@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 """把匹配卡（matchcard.MatchCard）接成"能渲的那一份"（设计真源 §48 / §55 / §56 步 5）。
 
-**为什么要这一层**：匹配卡是"一套风格"（介质 + 画像 + 分面 + 样片），它自己不是引擎的 preset；
-引擎要的是 preset 名（卷/纸/化学都在那份 JSON 里）。这一层做两件事：
-  ① `preset_for(card)`  —— 把卡的**介质**映射到 preset 名（找不到就直接报，不许猜）
+**为什么要这一层**：匹配卡是"一套风格"（介质 + 画像 + 分面 + 样片），它自己不是引擎参数；
+引擎要的是一份**介质块**（卷/纸/化学/扫描端点…）。这一层做两件事：
+  ① `medium_of(card)`   —— 取**这个目录自己的**介质块（`design/medium.py`；读不到就报）
   ② `safety_for(card)`  —— 把 `p95_max / black_max` 从**卡的画像区间**算出来（§20/§52）
      不再用卡里写死的 96 / 3
+
+★ 2026-10-31：**"预设"这个概念已删**（没有可选集合、没有按名字查参数）；
+  每个目录自带一份介质块，引擎直接吃 dict。
 
 ★ 区间怎么取（写清楚，免得以后当靶）：
   卡只有**中位 + IQR**（P25~P75）。这里用 `中位 ± 0.95×IQR` 近似 P10~P90（正态：IQR=1.349σ，P10/P90=±1.2816σ=±0.95·IQR）。
@@ -16,71 +19,16 @@ from __future__ import annotations
 import os
 from typing import Dict, Optional, Tuple
 
-_PRESET_DIR = r'E:\svStudio\svFilm\svFilm\data\presets'
 
-# 介质（卷/纸）→ preset 名。**反查表**：preset 里的 stock/paper 是唯一真源，
-# 这里只做映射；映射不上就抛，不许悄悄用默认卡（那会静默换掉整条链的介质）。
-_PRESET_CACHE: Dict[str, Tuple[str, str]] = {}
+def medium_of(card) -> dict:
+    """卡的**介质块**（卷/纸/WB/amount/化学…）。没有就抛。
 
-# ★ 2026-10-31：卡 → preset 的**显式**映射。以前靠"遍历到第一个介质相同的"，
-#   而 卡38 与 滨田预设 介质**完全一样**（portra_400 + endura）、amount 却 1.3 vs 0.65；
-#   排序恰好让 卡38 先中。一旦 卡38 的 JSON 读不了（实测：被写出 BOM），就会**静默**
-#   换成滨田，整批发灰、无人报错。
-_CORPUS_PRESET = {'鹿井': '卡38', '滨田': '滨田预设', 'xhs': 'xhs预设'}
-
-
-def _preset_media() -> Dict[str, Tuple[str, str]]:
-    """{preset 名: (stock, paper)} —— 从 preset JSON 读。
-
-    ★ 读不了**必须抛**（以前是 continue 跳过）：坏掉的那张会从介质表里消失，
-      `preset_for` 便静默匹配到另一张同介质的卡。
+    ★ 2026-10-31：这一层原来叫 `preset_for`——把卡映射到一个"预设名"，
+      再由引擎按名字去查参数。现在没有"预设"这个可选集合了：每个目录自带一份介质，
+      引擎直接吃这个 dict（`svFilm.presets._params_for` 已支持）。
     """
-    if _PRESET_CACHE:
-        return _PRESET_CACHE
-    import json
-    bad = []
-    for name in sorted(os.listdir(_PRESET_DIR)):
-        p = os.path.join(_PRESET_DIR, name, 'preset.json')
-        if not os.path.isfile(p):
-            continue
-        try:
-            d = json.load(open(p, encoding='utf-8'))
-        except Exception as e:                             # noqa: BLE001
-            bad.append('%s: %s' % (name, e))
-            continue
-        sim = d.get('simulation') or {}
-        st, pp = sim.get('film_stock'), sim.get('print_paper')
-        if st and pp:
-            _PRESET_CACHE[name] = (st, pp)
-    if bad:
-        raise RuntimeError(
-            '预设读不了（**不许静默跳过**，那会悄悄换掉整条链的介质）：\n  '
-            + '\n  '.join(bad))
-    return _PRESET_CACHE
-
-
-def preset_for(card) -> str:
-    """卡的介质 → preset 名。**映射不上就抛**，不许回退到默认卡。"""
-    media = _preset_media()
-    corpus = getattr(card, 'corpus', '') or ''
-    name = _CORPUS_PRESET.get(corpus)
-    if name:
-        if name not in media:
-            raise KeyError('语料「%s」该用 preset「%s」，但没读到（现有：%s）'
-                           % (corpus, name, '、'.join(sorted(media)) or '无'))
-        return name
-    want = (getattr(card, 'stock', None), getattr(card, 'paper', None))
-    if not all(want):
-        raise KeyError('这张卡没有介质：%r' % (getattr(card, 'name', card),))
-    hits = [n for n, m in media.items() if m == want]
-    if len(hits) == 1:
-        return hits[0]
-    if not hits:
-        raise KeyError('没有卷/纸为 %s + %s 的 preset（现有：%s）'
-                       % (want[0], want[1],
-                          '、'.join('%s=%s+%s' % (k, v[0], v[1]) for k, v in media.items())))
-    raise KeyError('有 %d 个 preset 用同一套介质（%s + %s）：%s ⇒ 卡必须显式带 corpus，'
-                   '不许按排序猜' % (len(hits), want[0], want[1], '、'.join(hits)))
+    from .medium import medium_of as _medium_of
+    return _medium_of(card)
 
 
 def _band(card, key: str, k: float = 0.95) -> Optional[Tuple[float, float]]:
