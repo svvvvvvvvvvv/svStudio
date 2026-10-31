@@ -162,7 +162,7 @@
   "auto_exposure": true,
   "auto_exposure_method": "subject",
   "print_illuminant": "TH-KG3",
-  "print_exposure": 0.694,
+  "print_exposure": 2.1344,
   "output_lightness_compression": "off",
   "print_exposure_compensation": true,
   "print_y_filter_shift": -3.3,
@@ -319,7 +319,7 @@
  },
  "_note_medium_20261028": "介质定值 2026-10-28（报告§13/§4.3）：wb 4545/0.998→4630/0.95（n=10 生产路径格点：肤h中位47.53=靶47.7带内；中性a 0.0 量化噪声内）；amount 1.00→1.30（n=10：肤C中位17.42，带[15.12,23.36]内；高彩脸1526/1422/1772 C29-40 不再上推）。备份 .bak_medium_20261028，前sha 587767abb2bd",
  "_note_base": "基线介质（从 卡38 一次性冻结；此后目录介质以各自 media/*.json 为准）",
- "_note_medium": "卷按暗部色偏、纸按黑端密度、amount 按分色强度；中性滤片由引擎数据库给",
+ "_note_medium": "print_exposure = 参考灰 18.4% → 本卡目标密度（二分求得）",
  "_target": {
   "white_level": 0.7868,
   "black_level": 0.0105,
@@ -410,6 +410,8 @@
   "split": 5.25,
   "shadow_cc": 3.8,
   "scene_fit": true,
-  "neutral_filters": "engine database (neutral_print_filters.json)"
+  "neutral_filters": "engine database (neutral_print_filters.json)",
+  "pe": 2.1344,
+  "pe_reason": "参考灰 18.4% → 目标 D 1.099（Y 0.0796）；实测 Y 0.0796 ⇒ PE 2.1344"
  }
 }

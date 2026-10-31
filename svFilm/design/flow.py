@@ -355,8 +355,18 @@ def _render_one(args):
     msgs = ['  渲 %s ← %s（介质 %s，p95_max=%.1f）'
             % (stem, os.path.basename(raf), media_label, p95_max)]
     lin = io.load_raw(raf).lin
-    disp = presets.render_safe(lin, medium, p95_max=p95_max,
-                               black_max=black_max, overrides=ov)
+    # ★★ 2026-10-31（按设计纠正）：**引擎只做介质，不做落点/形状**。
+    #   旧路径 `render_safe` 会二分搜索找一个"两端都不死"的印相曝光 —— 那是在引擎里
+    #   做**放置**，和"卡38 medium-only：PE 固定，placement 归 LR Basic"的设计冲突。
+    #   现在：固定用介质自带的 print_exposure 渲，出片偏亮偏暗都交给 LR 的 Exposure。
+    if bool(getattr(presets.C, 'ENGINE_AUTO_EXPOSURE', True)):
+        disp = presets.render_safe(lin, medium, p95_max=p95_max,
+                                   black_max=black_max, overrides=ov)
+        msgs.append('  引擎自动曝光：开（render_safe）')
+    else:
+        disp = presets.render(lin, medium, overrides=ov)
+        msgs.append('  引擎自动曝光：**关**（固定 print_exposure=%.3f，落点归 LR）'
+                    % presets.pe_of(medium))
     dst = os.path.join(out_dir, '%s_engine.tif' % stem)
     lrbase.save_tiff16(disp, dst)
     hr = headroom_report(disp, white_level=white_level)
