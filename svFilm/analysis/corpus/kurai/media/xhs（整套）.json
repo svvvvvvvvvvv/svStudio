@@ -200,7 +200,7 @@
   "diffusion_filter_halo_size": 1.0,
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
-  "film_stock": "kodak_portra_160",
+  "film_stock": "kodak_portra_800_push2",
   "print_paper": "kodak_portra_endura"
  },
  "display": {
@@ -383,9 +383,9 @@
  "_derived": {
   "corpus": "xhs",
   "base": "xhs",
-  "film": "kodak_portra_160",
+  "film": "kodak_portra_800_push2",
   "paper": "kodak_portra_endura",
-  "film_reason": "暗部 +1.0 CC ⇒ 暖度分位 0.26；取暖度最接近的卷 kodak_portra_160（sepR +0.62 / sepB -0.63）",
+  "film_reason": "暗部 +1.0 CC ⇒ 蓝度分位 0.74；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端无信息（p5≈0）⇒ 用设计配纸 kodak_portra_endura",
   "amount": 1.2,
   "amount_reason": "同语料样本不足（n=1）⇒ 沿用 1.20",

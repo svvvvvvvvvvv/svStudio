@@ -200,7 +200,7 @@
   "diffusion_filter_halo_size": 1.0,
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
-  "film_stock": "fujifilm_c200",
+  "film_stock": "kodak_portra_800_push2",
   "print_paper": "kodak_supra_endura"
  },
  "display": {
@@ -382,9 +382,9 @@
  "_derived": {
   "corpus": "鹿井",
   "base": "鹿井",
-  "film": "fujifilm_c200",
+  "film": "kodak_portra_800_push2",
   "paper": "kodak_supra_endura",
-  "film_reason": "暗部 +4.1 CC ⇒ 暖度分位 0.18；取暖度最接近的卷 fujifilm_c200（sepR +0.17 / sepB -1.01）",
+  "film_reason": "暗部 +4.1 CC ⇒ 蓝度分位 0.82；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.48，没有纸够（最高 kodak_supra_endura 2.48）⇒ 用它",
   "amount": 1.29,
   "amount_reason": "分色强度 4.8 在同语料排 48% ⇒ amount 1.30×(0.85+0.30×0.48)=1.29",

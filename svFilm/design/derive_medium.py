@@ -88,41 +88,55 @@ def pick_paper(film, card: dict) -> tuple:
         return best[0], ('黑端需 D≥%.2f，没有纸够（最高 %s %.2f）⇒ 用它' % (need, best[0], best[1]))
     v, k = min(ok)
     return k, '黑端需 D≥%.2f，设计配纸不够 ⇒ 换 %s（Dmax %.2f）' % (need, k, v)
+_DB = r'E:\spektrafilm\src\spektrafilm\data\filters\neutral_print_filters.json'
+_REF_PAPER = 'kodak_portra_endura'
+_REF_ILLUM = 'TH-KG3'
+
+
+def _neutral_y() -> dict:
+    """{卷名: 中性黄滤片 Y} —— 引擎自带数据库（作者按 log_sensitivity 算出来的色平衡）。
+
+    Y 越大 = 这支卷越"蓝富"（要更多黄滤片才能中性）；
+    Y 越小 = 越"蓝穷"（偏黄/暖）。
+    这比 sepR−sepB 更接近"色偏"这件事：它是**中和这支卷需要多少黄**。
+    """
+    d = json.load(open(_DB, encoding='utf-8'))
+    return {k: float(v[2]) for k, v in (d.get(_REF_PAPER, {}).get(_REF_ILLUM) or {}).items()}
+
+
 def pick_film(shadow_cc, all_cc=None) -> tuple:
-    """按卡的**暗部色偏**匹配卷：用**分位**对齐，不掺量纲、不取极端。
+    """按卡的**暗部偏蓝程度**匹配卷：用中性黄滤片 Y 做分位对齐。
 
-    为什么用分位：sepR/sepB 是 log 灵敏度（无量纲），卡的 CC 是密度（无量纲），
-    两个单位不能直接比大小；但"这批卡里谁最暖、20 支卷里谁最暖"是可比的。
-      卡暖度 = −CC（CC 负 = 偏黄 = 暖）
-      卷暖度 = sepR − sepB（大红灵敏度、小蓝灵敏度 = 暖）
-    取"卷暖度的分位"最接近"卡暖度的分位"的那支。
-
-    ★ 黑白卷（sepR=sepB=0，如 kodak_doublex）排除：它给不出颜色。
-    ★ 纸不再作为筛选条件：引擎的 `neutral_print_filters.json` 覆盖 8 纸 × 20 卷，
-      换纸/换卷都会自动套对应的中性滤片（`digest_params` 干这事）。
+    卡：暗部 CC 正 = 偏蓝。
+    卷：中性黄滤片 Y 大 = 蓝富（暗部更容易偏蓝）。
+    两边都按"蓝的程度"升序排，取分位最接近的一支。
+    ★ 只用 use=still、有颜色、且在中性滤片库里的负片。
     """
     from design.stocks import registry
     reg = registry()
+    ys = _neutral_y()
     cands = [s for s in reg.stocks.values()
              if s.kind == 'negative' and s.use == 'still'
-             and (abs(s.sepR) > 1e-6 or abs(s.sepB) > 1e-6)]
+             and (abs(s.sepR) > 1e-6 or abs(s.sepB) > 1e-6)
+             and s.name in ys]
     if not cands:
-        return None, '没有彩色负片卷'
+        return None, '没有可用负片卷'
     if shadow_cc is None:
-        return min(cands, key=lambda s: abs(s.sepR - s.sepB)), '没有暗部 Lab ⇒ 取最中性'
-    warmth = [s.sepR - s.sepB for s in cands]
-    lo, hi = min(warmth), max(warmth)
+        return min(cands, key=lambda s: abs(ys[s.name] - 50.0)), '没有暗部 Lab ⇒ 取最中性'
+    vals = sorted(ys[s.name] for s in cands)
+    lo, hi = vals[0], vals[-1]
     cc_all = list(all_cc or [shadow_cc])
     c_lo, c_hi = min(cc_all), max(cc_all)
-    card_warm_pct = (c_hi - shadow_cc) / (c_hi - c_lo) if c_hi > c_lo else 0.5   # 越暖 → 1
+    card_pct = (shadow_cc - c_lo) / (c_hi - c_lo) if c_hi > c_lo else 0.5
     best, best_d = None, 9e9
-    for s, w in zip(cands, warmth):
-        pct = (w - lo) / (hi - lo) if hi > lo else 0.5
-        d = abs(pct - card_warm_pct)
+    for s in cands:
+        pct = (ys[s.name] - lo) / (hi - lo) if hi > lo else 0.5
+        d = abs(pct - card_pct)
         if d < best_d:
             best, best_d = s, d
-    return best, ('暗部 %+.1f CC ⇒ 暖度分位 %.2f；取暖度最接近的卷 %s（sepR %+.2f / sepB %+.2f）'
-                  % (shadow_cc, card_warm_pct, best.name, best.sepR, best.sepB))
+    return best, ('暗部 %+.1f CC ⇒ 蓝度分位 %.2f；取中性黄滤片 Y=%.1f（分位 %.2f）的卷 %s'
+                  % (shadow_cc, card_pct, ys[best.name],
+                     (ys[best.name] - lo) / (hi - lo) if hi > lo else 0.5, best.name))
 
 
 def apply_all() -> dict:

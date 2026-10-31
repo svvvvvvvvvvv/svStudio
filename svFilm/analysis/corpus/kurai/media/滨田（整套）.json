@@ -200,8 +200,8 @@
   "diffusion_filter_halo_size": 1.0,
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
-  "film_stock": "fujifilm_c200",
-  "print_paper": "fujifilm_crystal_archive_typeii"
+  "film_stock": "kodak_portra_800_push2",
+  "print_paper": "kodak_portra_endura"
  },
  "display": {
   "preview_max_size": 640
@@ -382,10 +382,10 @@
  "_derived": {
   "corpus": "滨田",
   "base": "滨田",
-  "film": "fujifilm_c200",
-  "paper": "fujifilm_crystal_archive_typeii",
-  "film_reason": "暗部 +4.8 CC ⇒ 暖度分位 0.16；取暖度最接近的卷 fujifilm_c200（sepR +0.17 / sepB -1.01）",
-  "paper_reason": "黑端需 D≥2.31，设计配纸 fujifilm_crystal_archive_typeii Dmax=2.45 够用",
+  "film": "kodak_portra_800_push2",
+  "paper": "kodak_portra_endura",
+  "film_reason": "暗部 +4.8 CC ⇒ 蓝度分位 0.84；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
+  "paper_reason": "黑端需 D≥2.31，设计配纸 kodak_portra_endura Dmax=2.46 够用",
   "amount": 0.65,
   "amount_reason": "同语料样本不足（n=1）⇒ 沿用 0.65",
   "split": 4.83,

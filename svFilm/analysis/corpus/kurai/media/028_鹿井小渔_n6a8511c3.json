@@ -200,8 +200,8 @@
   "diffusion_filter_halo_size": 1.0,
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
-  "film_stock": "kodak_portra_400",
-  "print_paper": "kodak_portra_endura"
+  "film_stock": "fujifilm_c200",
+  "print_paper": "fujifilm_crystal_archive_typeii"
  },
  "display": {
   "preview_max_size": 640
@@ -382,10 +382,10 @@
  "_derived": {
   "corpus": "鹿井",
   "base": "鹿井",
-  "film": "kodak_portra_400",
-  "paper": "kodak_portra_endura",
-  "film_reason": "暗部 +6.7 CC ⇒ 暖度分位 0.11；取暖度最接近的卷 kodak_portra_400（sepR +0.81 / sepB -0.06）",
-  "paper_reason": "黑端需 D≥2.06，设计配纸 kodak_portra_endura Dmax=2.46 够用",
+  "film": "fujifilm_c200",
+  "paper": "fujifilm_crystal_archive_typeii",
+  "film_reason": "暗部 +6.7 CC ⇒ 蓝度分位 0.89；取中性黄滤片 Y=83.9（分位 0.97）的卷 fujifilm_c200",
+  "paper_reason": "黑端需 D≥2.06，设计配纸 fujifilm_crystal_archive_typeii Dmax=2.45 够用",
   "amount": 1.43,
   "amount_reason": "分色强度 7.9 在同语料排 84% ⇒ amount 1.30×(0.85+0.30×0.84)=1.43",
   "split": 7.92,

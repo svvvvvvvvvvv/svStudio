@@ -200,7 +200,7 @@
   "diffusion_filter_halo_size": 1.0,
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
-  "film_stock": "kodak_gold_200",
+  "film_stock": "kodak_portra_160",
   "print_paper": "kodak_portra_endura"
  },
  "display": {
@@ -382,9 +382,9 @@
  "_derived": {
   "corpus": "鹿井",
   "base": "鹿井",
-  "film": "kodak_gold_200",
+  "film": "kodak_portra_160",
   "paper": "kodak_portra_endura",
-  "film_reason": "暗部 -10.2 CC ⇒ 暖度分位 0.53；取暖度最接近的卷 kodak_gold_200（sepR +1.82 / sepB -0.54）",
+  "film_reason": "暗部 -10.2 CC ⇒ 蓝度分位 0.47；取中性黄滤片 Y=53.2（分位 0.47）的卷 kodak_portra_160",
   "paper_reason": "黑端需 D≥1.93，设计配纸 kodak_portra_endura Dmax=2.46 够用",
   "amount": 1.45,
   "amount_reason": "分色强度 8.8 在同语料排 89% ⇒ amount 1.30×(0.85+0.30×0.89)=1.45",
