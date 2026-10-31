@@ -87,9 +87,9 @@
    0.0
   ],
   "halation_first_sigma_um": [
-   75.0,
-   75.0,
-   75.0
+   65.0,
+   65.0,
+   65.0
   ],
   "halation_n_bounces": 3,
   "halation_bounce_decay": 0.5,
@@ -406,6 +406,7 @@
   "paper_reason": "黑端需 D≥2.315；形状 (toe/win 0.70, sh/win 0.30) 分位 (1.00, 0.44) ⇒ 最接近的纸 fujifilm_crystal_archive_typeii（σf/σm 1.34, σs/σm 1.40）",
   "amount": 0.65,
   "amount_reason": "样本不足（脸 n=1 / 整幅 n=1）⇒ 沿用 0.65",
+  "halation_reason": "still/strong ⇒ sigma_h 65 µm，strength (0.015, 0.005, 0.0)（写百分数 [1.5, 0.5, 0.0]）",
   "split": 4.83,
   "shadow_cc": 4.8,
   "scene_fit": true,

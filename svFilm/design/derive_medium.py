@@ -205,6 +205,40 @@ def pick_film(shadow_cc, all_cc=None) -> tuple:
                      (ys[best.name] - lo) / (hi - lo) if hi > lo else 0.5, best.name))
 
 
+_PROFILES = r'E:\spektrafilm\src\spektrafilm\data\profiles'
+
+
+def _apply_halation(block: dict, film_name: str) -> str:
+    """按**卷**写 halation 的低层物理量（来自引擎自己的 `_HALATION_PRESETS`）。
+
+    为什么这么做：`svFilm/config.py` 里 `PRESET_APPLY_STOCK_SPECIFICS = False`，
+    所以引擎那套"按 profile 的 use/antihalation 自动套"**在我们的路径上不跑**；
+    介质块里那份值是卡38 的（75 µm / 0.025），所有卷一个样。
+
+    表本身是引擎的（`params_builder._HALATION_PRESETS`），按 (use, antihalation) 给：
+       still + strong → sigma_h 65 µm，strength (0.015, 0.005, 0.0)
+       still + weak   → sigma_h 65 µm，strength (0.08,  0.02,  0.0)
+       still + no     → sigma_h 65 µm，strength (0.30,  0.10,  0.015)
+    ⚠ 介质块里这两个字段是**百分数**（`presets._apply` 会 /100），所以要 ×100 写回。
+    """
+    path = os.path.join(_PROFILES, film_name + '.json')
+    if not os.path.isfile(path):
+        return '没有这支卷的 profile'
+    info = json.load(open(path, encoding='utf-8')).get('info') or {}
+    key = (info.get('use'), info.get('antihalation'))
+    from spektrafilm.runtime.params_builder import _HALATION_PRESETS
+    preset = _HALATION_PRESETS.get(key)
+    if not preset:
+        return 'profile 没标 use/antihalation（%s）⇒ 保持原值' % (key,)
+    h = dict(block.get('halation') or {})
+    h['halation_first_sigma_um'] = [round(float(v), 1) for v in preset['sigma_h']]
+    h['halation_strength'] = [round(float(v) * 100.0, 3) for v in preset['strength']]
+    block['halation'] = h
+    return ('%s/%s ⇒ sigma_h %.0f µm，strength %s（写百分数 %s）'
+            % (key[0], key[1], preset['sigma_h'][0], preset['strength'],
+               h['halation_strength']))
+
+
 def apply_all() -> dict:
     from design.medium import apply_targets, load, save
     cards = json.load(open(_CARDS, encoding='utf-8'))['cards']
@@ -226,6 +260,7 @@ def apply_all() -> dict:
         paper, paper_why = pick_paper(film, c, cards)
         block['simulation']['film_stock'] = film.name
         block['simulation']['print_paper'] = paper
+        hal_why = _apply_halation(block, film.name)
         base_amt = float(block['couplers']['amount'])
         amount, why = _amount_from_saturation(base_amt, name, cards)
         block['couplers'] = dict(block.get('couplers') or {}, amount=amount)
@@ -234,7 +269,7 @@ def apply_all() -> dict:
         b = load(name)
         b['_derived'] = dict(corpus=corpus, base=base_name, film=film.name, paper=paper,
                              film_reason=film_why, paper_reason=paper_why,
-                             amount=amount, amount_reason=why,
+                             amount=amount, amount_reason=why, halation_reason=hal_why,
                              split=_split_of(name), shadow_cc=shadow_cc,
                              # ★ 诚实标记：这是**按成片统计逐目录拟合**出来的，
                              #   不是"这个摄影师真的用了这支卷"。场景差异与介质差异

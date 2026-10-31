@@ -82,14 +82,14 @@
    67.0
   ],
   "halation_strength": [
-   2.5,
-   0.8,
+   1.5,
+   0.5,
    0.0
   ],
   "halation_first_sigma_um": [
-   75.0,
-   75.0,
-   75.0
+   65.0,
+   65.0,
+   65.0
   ],
   "halation_n_bounces": 3,
   "halation_bounce_decay": 0.5,
@@ -406,6 +406,7 @@
   "paper_reason": "黑端需 D≥1.878；形状 (toe/win 0.19, sh/win 0.33) 分位 (0.20, 0.50) ⇒ 最接近的纸 kodak_ultra_endura（σf/σm 1.21, σs/σm 1.40）",
   "amount": 1.27,
   "amount_reason": "脸C 22.65→0.967 ｜ 整幅C 7.47→0.989 ⇒ 平均 0.978 ⇒ amount 1.30×0.978=1.27",
+  "halation_reason": "still/strong ⇒ sigma_h 65 µm，strength (0.015, 0.005, 0.0)（写百分数 [1.5, 0.5, 0.0]）",
   "split": 5.39,
   "shadow_cc": -4.6,
   "scene_fit": true,
