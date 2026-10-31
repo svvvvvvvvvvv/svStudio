@@ -201,7 +201,7 @@
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
   "film_stock": "fujifilm_pro_400h",
-  "print_paper": "fujifilm_crystal_archive_typeii"
+  "print_paper": "kodak_ultra_endura"
  },
  "display": {
   "preview_max_size": 640
@@ -392,15 +392,16 @@
    "cc_red_green": -0.1,
    "y": 0.9,
    "m": -0.1
-  }
+  },
+  "morph": "identity（未解：需前向模型；形状已用于选纸）"
  },
  "_derived": {
   "corpus": "鹿井",
   "base": "鹿井",
   "film": "fujifilm_pro_400h",
-  "paper": "fujifilm_crystal_archive_typeii",
+  "paper": "kodak_ultra_endura",
   "film_reason": "暗部 -29.0 CC ⇒ 蓝度分位 0.00；取中性黄滤片 Y=24.6（分位 0.00）的卷 fujifilm_pro_400h",
-  "paper_reason": "黑端需 D≥2.17，设计配纸 fujifilm_crystal_archive_typeii Dmax=2.45 够用",
+  "paper_reason": "黑端需 D≥2.174；形状 (toe/win 0.19, sh/win 0.44) 分位 (0.20, 0.72) ⇒ 最接近的纸 kodak_ultra_endura（σf/σm 1.21, σs/σm 1.40）",
   "amount": 1.31,
   "amount_reason": "脸C 20.88→0.891 ｜ 整幅C 8.46→1.121 ⇒ 平均 1.006 ⇒ amount 1.30×1.006=1.31",
   "split": 29.62,

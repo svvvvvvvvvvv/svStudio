@@ -201,7 +201,7 @@
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
   "film_stock": "fujifilm_c200",
-  "print_paper": "fujifilm_crystal_archive_typeii"
+  "print_paper": "kodak_ultra_endura"
  },
  "display": {
   "preview_max_size": 640
@@ -392,15 +392,16 @@
    "cc_red_green": 0.0,
    "y": -0.0,
    "m": 0.0
-  }
+  },
+  "morph": "identity（未解：需前向模型；形状已用于选纸）"
  },
  "_derived": {
   "corpus": "鹿井",
   "base": "鹿井",
   "film": "fujifilm_c200",
-  "paper": "fujifilm_crystal_archive_typeii",
+  "paper": "kodak_ultra_endura",
   "film_reason": "暗部 +6.5 CC ⇒ 蓝度分位 0.88；取中性黄滤片 Y=83.9（分位 0.97）的卷 fujifilm_c200",
-  "paper_reason": "黑端需 D≥2.25，设计配纸 fujifilm_crystal_archive_typeii Dmax=2.45 够用",
+  "paper_reason": "黑端需 D≥2.253；形状 (toe/win 0.24, sh/win 0.21) 分位 (0.29, 0.26) ⇒ 最接近的纸 kodak_ultra_endura（σf/σm 1.21, σs/σm 1.40）",
   "amount": 1.03,
   "amount_reason": "脸C 18.32→0.782 ｜ 整幅C 6.01→0.796 ⇒ 平均 0.789 ⇒ amount 1.30×0.789=1.03",
   "split": 8.88,

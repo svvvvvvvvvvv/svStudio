@@ -201,7 +201,7 @@
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
   "film_stock": "kodak_portra_800_push2",
-  "print_paper": "kodak_portra_endura"
+  "print_paper": "fujifilm_crystal_archive_typeii"
  },
  "display": {
   "preview_max_size": 640
@@ -392,15 +392,16 @@
    "cc_red_green": -0.1,
    "y": -0.1,
    "m": -0.1
-  }
+  },
+  "morph": "identity（未解：需前向模型；形状已用于选纸）"
  },
  "_derived": {
   "corpus": "鹿井",
   "base": "鹿井",
   "film": "kodak_portra_800_push2",
-  "paper": "kodak_portra_endura",
+  "paper": "fujifilm_crystal_archive_typeii",
   "film_reason": "暗部 +5.0 CC ⇒ 蓝度分位 0.84；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
-  "paper_reason": "黑端需 D≥2.07，设计配纸 kodak_portra_endura Dmax=2.46 够用",
+  "paper_reason": "黑端需 D≥2.074；形状 (toe/win 0.41, sh/win 0.25) 分位 (0.54, 0.34) ⇒ 最接近的纸 fujifilm_crystal_archive_typeii（σf/σm 1.34, σs/σm 1.40）",
   "amount": 1.38,
   "amount_reason": "脸C 26.05→1.112 ｜ 整幅C 7.64→1.012 ⇒ 平均 1.062 ⇒ amount 1.30×1.062=1.38",
   "split": 5.24,

@@ -392,7 +392,8 @@
    "cc_red_green": -1.1,
    "y": -3.5,
    "m": -1.1
-  }
+  },
+  "morph": "identity（未解：需前向模型；形状已用于选纸）"
  },
  "_derived": {
   "corpus": "鹿井",
@@ -400,7 +401,7 @@
   "film": "kodak_portra_800_push2",
   "paper": "kodak_supra_endura",
   "film_reason": "暗部 +4.1 CC ⇒ 蓝度分位 0.82；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
-  "paper_reason": "黑端需 D≥2.48，没有纸够（最高 kodak_supra_endura 2.48）⇒ 用它",
+  "paper_reason": "黑端需 D≥2.483，没有纸够 ⇒ 用最厚的 kodak_supra_endura（2.48）",
   "amount": 1.23,
   "amount_reason": "脸C 23.81→1.016 ｜ 整幅C 6.62→0.877 ⇒ 平均 0.947 ⇒ amount 1.30×0.947=1.23",
   "split": 4.81,

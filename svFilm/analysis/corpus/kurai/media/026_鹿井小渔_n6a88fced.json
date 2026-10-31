@@ -201,7 +201,7 @@
   "diffusion_filter_bloom_intensity": 1.0,
   "diffusion_filter_bloom_size": 1.0,
   "film_stock": "kodak_gold_200",
-  "print_paper": "kodak_portra_endura"
+  "print_paper": "kodak_ultra_endura"
  },
  "display": {
   "preview_max_size": 640
@@ -392,15 +392,16 @@
    "cc_red_green": -1.5,
    "y": 4.0,
    "m": -1.5
-  }
+  },
+  "morph": "identity（未解：需前向模型；形状已用于选纸）"
  },
  "_derived": {
   "corpus": "鹿井",
   "base": "鹿井",
   "film": "kodak_gold_200",
-  "paper": "kodak_portra_endura",
+  "paper": "kodak_ultra_endura",
   "film_reason": "暗部 -7.8 CC ⇒ 蓝度分位 0.53；取中性黄滤片 Y=55.6（分位 0.51）的卷 kodak_gold_200",
-  "paper_reason": "黑端需 D≥2.23，设计配纸 kodak_portra_endura Dmax=2.46 够用",
+  "paper_reason": "黑端需 D≥2.228；形状 (toe/win 0.15, sh/win 0.37) 分位 (0.14, 0.59) ⇒ 最接近的纸 kodak_ultra_endura（σf/σm 1.21, σs/σm 1.40）",
   "amount": 1.47,
   "amount_reason": "脸C 26.56→1.134 ｜ 整幅C 8.49→1.125 ⇒ 平均 1.129 ⇒ amount 1.30×1.129=1.47",
   "split": 6.45,

@@ -73,26 +73,87 @@ def _required_D(card: dict):
     return round(-math.log10(y ** 3), 3)
 
 
-def pick_paper(film, card: dict) -> tuple:
-    """纸：先用卷的**设计配纸**；只有当这张卡的黑端密度超出它的 Dmax 时才换。
+def _paper_shape() -> dict:
+    """{纸名: (σ_fast/σ_mid, σ_slow/σ_mid)} —— 从 print profile 的
+    `density_curves_model` 读；层序按 **mu（阈值）** 排：mu 最小 = fast（负片的趾部层）。
 
-    ★ 依据：纸的 Dmax 是硬上限（`density_curves` 的最大密度）；
-      黑端被扫到 0 的卡（p5≈0）没有信息，不据此换纸。
+    这两个比值描述"纸的曲线形状"：fast 控制趾部、slow 控制肩部。
+    """
+    out = {}
+    for p in glob.glob(os.path.join(r'E:\spektrafilm\src\spektrafilm\data\profiles', '*.json')):
+        d = json.load(open(p, encoding='utf-8'))
+        info = d.get('info') or {}
+        if info.get('stage') != 'printing' or info.get('use') != 'still':
+            continue
+        model = (d.get('data') or {}).get('density_curves_model') or {}
+        mu = (model.get('centers') or [[]])[0]
+        sig = (model.get('sigmas') or [[]])[0]
+        if len(mu) < 3 or len(sig) < 3:
+            continue
+        o = sorted(range(3), key=lambda i: mu[i])
+        sf, sm, ss = float(sig[o[0]]), float(sig[o[1]]), float(sig[o[2]])
+        if sm:
+            out[info['stock']] = (round(sf / sm, 3), round(ss / sm, 3))
+    return out
+
+
+def _card_shape_ratio(card: dict):
+    """卡的形状比 (toe/contrast_win, shoulder/contrast_win)。"""
+    b = card.get('bands') or {}
+    toe, sh, win = b.get('toe'), b.get('shoulder'), b.get('contrast_win')
+    if not (toe and sh and win):
+        return None
+    t = 0.5 * (toe[0] + toe[1])
+    s = 0.5 * (sh[0] + sh[1])
+    w = 0.5 * (win[0] + win[1])
+    return (t / w, s / w) if w else None
+
+
+def _pct(xs, v):
+    if not xs:
+        return 0.5
+    lo, hi = min(xs), max(xs)
+    return (v - lo) / (hi - lo) if hi > lo else 0.5
+
+
+def pick_paper(film, card: dict, all_cards=None) -> tuple:
+    """纸：先满足黑端 Dmax，再按**形状分位**挑最像的那张。
+
+    · 硬约束：纸的 Dmax ≥ −log10(Y(p5))（黑端够不够印）
+    · 软匹配：卡的 (toe/win, shoulder/win) 与纸的 (σf/σm, σs/σm) 各按**分位**对齐
+      —— 两边单位不可通约（L* 间距 vs logE 层宽），所以只比"谁相对更宽"，
+      不比绝对值。这也是为什么**不能**拿形状去直接算 morph 的 γ（实测出来
+      1.2~4.2，全撞边界）。
     """
     papers = _papers()
+    shapes = _paper_shape()
     need = _required_D(card)
-    designed = film.target_print
-    if need is None:
-        return designed, '黑端无信息（p5≈0）⇒ 用设计配纸 %s' % designed
-    if designed in papers and papers[designed] + 1e-9 >= need:
-        return designed, ('黑端需 D≥%.2f，设计配纸 %s Dmax=%.2f 够用'
-                          % (need, designed, papers[designed]))
-    ok = [(v, k) for k, v in papers.items() if v + 1e-9 >= need]
-    if not ok:
+    cands = [k for k, v in papers.items() if need is None or v + 1e-9 >= need]
+    if not cands:
         best = max(papers.items(), key=lambda kv: kv[1])
-        return best[0], ('黑端需 D≥%.2f，没有纸够（最高 %s %.2f）⇒ 用它' % (need, best[0], best[1]))
-    v, k = min(ok)
-    return k, '黑端需 D≥%.2f，设计配纸不够 ⇒ 换 %s（Dmax %.2f）' % (need, k, v)
+        return best[0], '黑端需 D≥%s，没有纸够 ⇒ 用最厚的 %s（%.2f）' % (need, best[0], best[1])
+    cr = _card_shape_ratio(card)
+    if cr is None or not shapes:
+        return film.target_print if film.target_print in cands else cands[0], \
+            '缺形状带 ⇒ 用设计配纸/第一张够厚的'
+    cards = all_cards or [card]
+    ratios = [r for r in (_card_shape_ratio(c) for c in cards) if r]
+    ct, cs = _pct([r[0] for r in ratios], cr[0]), _pct([r[1] for r in ratios], cr[1])
+    cand_shapes = {k: shapes[k] for k in cands if k in shapes}
+    if not cand_shapes:
+        return cands[0], '候选中没有形状数据 ⇒ 取第一张'
+    ft = [v[0] for v in cand_shapes.values()]
+    fs = [v[1] for v in cand_shapes.values()]
+    best, best_d = None, 9e9
+    for k, (sf, ss) in cand_shapes.items():
+        d = abs(_pct(ft, sf) - ct) + abs(_pct(fs, ss) - cs)
+        if d < best_d:
+            best, best_d = k, d
+    return best, ('黑端需 D≥%s；形状 (toe/win %.2f, sh/win %.2f) 分位 (%.2f, %.2f) '
+                  '⇒ 最接近的纸 %s（σf/σm %.2f, σs/σm %.2f）'
+                  % (need if need is not None else '无', cr[0], cr[1], ct, cs,
+                     best, cand_shapes[best][0], cand_shapes[best][1]))
+
 _DB = r'E:\spektrafilm\src\spektrafilm\data\filters\neutral_print_filters.json'
 _REF_PAPER = 'kodak_portra_endura'
 _REF_ILLUM = 'TH-KG3'
@@ -162,7 +223,7 @@ def apply_all() -> dict:
         if film is None:
             out[name] = dict(ok=False, why=film_why)
             continue
-        paper, paper_why = pick_paper(film, c)
+        paper, paper_why = pick_paper(film, c, cards)
         block['simulation']['film_stock'] = film.name
         block['simulation']['print_paper'] = paper
         base_amt = float(block['couplers']['amount'])

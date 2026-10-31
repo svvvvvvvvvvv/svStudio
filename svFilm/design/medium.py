@@ -164,6 +164,10 @@ def apply_targets(card_name: str) -> str:
                                   m=sim['print_m_filter_shift'])
     block['simulation'] = sim
     block.pop('scanner', None)          # 旧写法留下的空壳，删掉免得再被误认
+    # ★ 形状：只用于**选纸**（toe/shoulder 分位 ↔ 纸的 σ 分位）。
+    #   直接换算成 morph 的 γ 会得出 1.2~4.2（全撞边界）——L* 间距与 logE 层宽
+    #   不可通约，必须靠前向模型（渲探针）才能解。在解出来之前，morph 保持 1.0。
+    tg['morph'] = 'identity（未解：需前向模型；形状已用于选纸）'
     block['_target'] = tg
     return save(card_name, block,
                 note='扫描端点/放大机滤片写进 simulation.*；其余目标见 _target')
