@@ -1,50 +1,19 @@
 {
-  "key": "C_DOWN_PER_UI",
-  "dose_ui": -20.0,
-  "n": 5,
-  "slope": 0.2697,
+  "law": "相对律：每 1 UI 改变当前彩度的 1.03%（= 百分比滑块的定义）",
+  "pct_per_ui": 1.03,
+  "dose_formula": "UI = (目标C / 当前C - 1) * 100 / 1.03",
+  "deprecated": {
+    "绝对斜率 C/UI": "0.21~0.43（随图变），换一张图就不成立 —— 已废弃，不许再用"
+  },
   "samples": [
-    {
-      "stem": "DSCF1231",
-      "c_before": 27.81,
-      "c_after": 22.15,
-      "dc": -5.67,
-      "dose": -20.0,
-      "slope": 0.2833
-    },
-    {
-      "stem": "DSCF1422",
-      "c_before": 26.02,
-      "c_after": 20.63,
-      "dc": -5.39,
-      "dose": -20.0,
-      "slope": 0.2697
-    },
-    {
-      "stem": "DSCF1772",
-      "c_before": 40.36,
-      "c_after": 31.86,
-      "dc": -8.5,
-      "dose": -20.0,
-      "slope": 0.425
-    },
-    {
-      "stem": "DSCF1526",
-      "c_before": 21.91,
-      "c_after": 17.43,
-      "dc": -4.48,
-      "dose": -20.0,
-      "slope": 0.2241
-    },
-    {
-      "stem": "DSCF1307",
-      "c_before": 20.34,
-      "c_after": 16.18,
-      "dc": -4.16,
-      "dose": -20.0,
-      "slope": 0.2079
-    }
+    {"stem": "DSCF1231", "c_before": 27.8, "c_after": 22.1, "dc": -5.67, "rel": -0.204, "pct_per_ui": 1.02},
+    {"stem": "DSCF1422", "c_before": 26.0, "c_after": 20.6, "dc": -5.39, "rel": -0.207, "pct_per_ui": 1.04},
+    {"stem": "DSCF1772", "c_before": 40.4, "c_after": 31.9, "dc": -8.50, "rel": -0.210, "pct_per_ui": 1.05},
+    {"stem": "DSCF1526", "c_before": 21.9, "c_after": 17.4, "dc": -4.48, "rel": -0.205, "pct_per_ui": 1.02},
+    {"stem": "DSCF1307", "c_before": 20.3, "c_after": 16.2, "dc": -4.16, "rel": -0.205, "pct_per_ui": 1.02}
   ],
+  "n": 5,
+  "dose_ui": -20.0,
   "date": "2026-10-31",
-  "note": "主体蒙版 LocalSaturation 一档 −20 UI 的实测；只量脸皮肤掩膜内的 Lab 中位"
+  "note": "一档 -20 UI 只动主体蒙版局部饱和；5 张的 rel 集中在 -0.204~-0.210（±1.5%），所以用比值而不是绝对值"
 }
