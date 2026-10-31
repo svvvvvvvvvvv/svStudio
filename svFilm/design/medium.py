@@ -164,6 +164,14 @@ def apply_targets(card_name: str) -> str:
     if block is None:
         raise KeyError('目录没有介质：%s（先 from_preset 迁移一份）' % card_name)
     sim = dict(block.get('simulation') or {})
+    # ★ 柔光的**统一策略**（2026-10-31 人工定，不是推导量）：
+    #   关掉放大端柔光，只保留相机端 1/4 档黑柔（Black Pro-Mist）。
+    #   为什么关放大端：两层柔光叠起来等于"印相时又加一层扩散"，会让高光发虚两次；
+    #   而柔光镜在拍摄端才是物理上真实存在的那一层（印相端柔光是冲洗工艺选择）。
+    sim['diffusion_filter_active'] = False
+    sim['camera_diffusion_filter_active'] = True
+    sim['camera_diffusion_filter_family'] = 'black_pro_mist'
+    sim['camera_diffusion_filter_strength'] = 0.25
     if tg.get('white_level') is not None:
         # 引擎收的是 sRGB 码值（内部再线性化）⇒ 这里必须编码一次
         sim['scan_white_level'] = round(_code_of_y(tg['white_level']), 4)

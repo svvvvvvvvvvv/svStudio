@@ -189,7 +189,7 @@
   "camera_diffusion_filter_halo_size": 1.0,
   "camera_diffusion_filter_bloom_intensity": 1.0,
   "camera_diffusion_filter_bloom_size": 1.0,
-  "diffusion_filter_active": true,
+  "diffusion_filter_active": false,
   "diffusion_filter_family": "black_pro_mist",
   "diffusion_filter_strength": 0.125,
   "diffusion_filter_spatial_scale": 1.0,
