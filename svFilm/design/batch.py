@@ -242,15 +242,35 @@ def _light_kind(p_engine, p_final):
 
 
 
-def measure_engine_dir(b: Batch, log=print) -> Dict[str, dict]:
+def measure_engine_dir(b: Batch, log=print, expect: Optional[Dict[str, str]] = None) -> Dict[str, dict]:
     """复用已经渲好的 ①（只重测，不重渲）。
 
     用途：只改 LR 段（颜色/白端/曲线）时，引擎那一步不用重跑 —— ① 只取决于卡的介质，
     介质没变就不该重渲（一次 4 分钟、还白白多一遍噪声）。
+
+    ★ `expect`（如 `{'card': ..., 'preset': ...}`）：和 `engine/_render.json` 比对，
+      不一致就抛。没有这道校验，换卡/换 amount 之后复用旧底片会**静默**算错整批。
     """
     import glob
+    import json
+    eng = b.sub('engine')
+    meta_p = os.path.join(eng, '_render.json')
+    meta = None
+    if os.path.isfile(meta_p):
+        try:
+            meta = json.load(open(meta_p, encoding='utf-8'))
+        except Exception:                                  # noqa: BLE001
+            meta = None
+    if expect:
+        if meta is None:
+            raise RuntimeError('复用被拒：找不到 %s（不知道这批 ① 是用什么渲的）' % meta_p)
+        for k, v in expect.items():
+            if v and meta.get(k) != v:
+                raise RuntimeError(
+                    '复用被拒：这批 ① 是 %s=%r 渲的，现在要 %r。'
+                    '换卡/换预设/改 amount 之后必须重渲。' % (k, meta.get(k), v))
     recs = {}
-    for p in sorted(glob.glob(os.path.join(b.sub('engine'), '*_engine.tif'))):
+    for p in sorted(glob.glob(os.path.join(eng, '*_engine.tif'))):
         st = os.path.basename(p)[:-len('_engine.tif')]
         if st not in b.stems:
             continue

@@ -64,12 +64,13 @@ def to_lrplans(plans: Dict[str, dict]) -> Dict[str, LRPlan]:
 
 
 def run(plans: Dict[str, dict], engine_dir: str, out_dir: str,
-        log=print) -> Dict[str, str]:
+        card: str = '', log=print) -> Dict[str, str]:
     """写 xmp → 导出 ③。返回 {stem: ③ 路径}。"""
     import os
     lrp = to_lrplans(plans)
     write_jobs(lrp, os.path.join(out_dir, 'xmp'),
-               manifest_extra=dict(card='004', step='56-6'))
+               # ★ 2026-10-31：这里以前写死 card='004'，作业单记的是错卡，回查会指错。
+               manifest_extra=dict(card=card or '?', step='lr-b'))
     pairs = []
     for stem in sorted(lrp):
         src = os.path.join(engine_dir, '%s_engine.tif' % stem)

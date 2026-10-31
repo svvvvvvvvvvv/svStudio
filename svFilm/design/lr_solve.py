@@ -50,14 +50,32 @@ ONE_STEP_UI = 10.0
 #   注意：HSL 橙/红**不用**（人已否：全局旋钮会连带改背景/衣服的橙红）。
 # 死区：原来"整条卡带都不动"（宽 7.8）看着就是没修；现在目标 = 带中点，
 #   容差 ±1.0 C（人拍板放宽 P1 的例外）。
-C_DOWN_PER_UI = 0.34       # C/UI（LocalSaturation 越负 → C 越低）
-C_UP_PER_UI = 0.05
+# ---------------------------------------------------------------- 肤色彩度（主体蒙版）
+# ★ 2026-10-31：斜率**不再手写**，从 `analysis/corpus/kurai/calib_sat.json` 读
+#   （2026-10-31 实测 n=5：一档 −20 UI，斜率 0.21~0.43，中位 0.27 C/UI）。
+#   复核四条 #2：n<5 不许当常数 ⇒ 没有标定就直接「方向 + 一档」，不瞎乘。
+#   注意：HSL 橙/红**不用**（人已否：全局旋钮会连带改背景/衣服的橙红）。
 C_DOWN_MAX_UI = 100.0
-C_UP_MAX_UI = 100.0
 C_BAND_TOL = 1.0
 H_BAND_TOL = 2.0           # 色相死区（Lab 度）
 L_BAND_TOL = 1.5           # 明度死区（L*）
 HUE_STEP_UI = 5.0          # 肤色色相半档（一档 10 UI ≈ 15~20°，太大）
+
+_CALIB_PATH = r'E:\svStudio\svFilm\analysis\corpus\kurai\calib_sat.json'
+
+
+def _sat_slope() -> tuple:
+    """(斜率 C/UI, n)。n<5 或读不到 ⇒ (None, n)，调用方退回「方向 + 一档」。"""
+    try:
+        import json
+        d = json.load(open(_CALIB_PATH, encoding='utf-8'))
+        n = int(d.get('n') or 0)
+        s = d.get('slope')
+        if n >= 5 and s:
+            return float(s), n
+        return None, n
+    except Exception:                                      # noqa: BLE001
+        return None, 0
 
 
 def _hi(band, default):
@@ -143,10 +161,17 @@ def grading_of(card: dict, rec: dict) -> Dict[str, float]:
         mid = 0.5 * (float(cb[0]) + float(cb[1]))
         d = mid - float(cv)
         if d < -C_BAND_TOL:
-            ui = max(-100.0, d / C_DOWN_PER_UI)
+            slope, n = _sat_slope()
+            if slope:
+                ui = max(-C_DOWN_MAX_UI, d / slope)
+                why = '剂量 = ΔC / %.3f（实测 n=%d）' % (slope, n)
+            else:
+                # 复核四条 #2：n<5 只进台账 ⇒ 不乘斜率，退回方向 + 一档
+                ui = -one
+                why = '没有合格标定（n=%d）⇒ 方向 + 一档' % n
             out['local_saturation'] = round(ui, 1)
-            notes.append('脸 C %.1f 高于带中点 %.1f ⇒ 主体蒙版降饱和 %+.0f UI（只压人）'
-                         % (float(cv), mid, out['local_saturation']))
+            notes.append('脸 C %.1f 高于带中点 %.1f ⇒ 主体蒙版降饱和 %+.0f UI（只压人；%s）'
+                         % (float(cv), mid, out['local_saturation'], why))
         else:
             notes.append('脸 C %.1f ≤ 带中点 %.1f ⇒ 不降饱和（再压会更灰）' % (float(cv), mid))
     # ★ 色相单独用半档（5 UI）：实测一档 10 UI 能挪 15~20°（1231 60°→43°），

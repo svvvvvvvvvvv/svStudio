@@ -85,6 +85,9 @@ class MatchCard:
     tag_conf: Dict[str, str] = field(default_factory=dict)
     samples: List[str] = field(default_factory=list)
     thin: bool = False        # 样本不足的卡（不进匹配，只留档）
+    # ★ 2026-10-31：语料名（鹿井/滨田/xhs）。卡 → 引擎 preset 的映射靠它，
+    #   不再按"第一个介质相同的 preset"猜（卡38 与 滨田预设 介质相同）。
+    corpus: str = ''
 
     def label(self) -> str:
         t = self.tags
@@ -230,7 +233,8 @@ def _from_v3() -> List['MatchCard']:
                              tags=dict(tg.get('tags') or {}),
                              tag_conf=dict(tg.get('conf') or {}),
                              samples=_abs_samples(c),
-                             thin=bool(c.get('thin'))))
+                             thin=bool(c.get('thin')),
+                             corpus=str(c.get('corpus') or '')))
     return out
 
 

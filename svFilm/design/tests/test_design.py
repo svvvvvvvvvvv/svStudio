@@ -786,8 +786,17 @@ def test_card_render_maps_medium_and_bounds():
                                     reference_for, safety_for)
     ok(bool(_preset_media()), '一个 preset 都没读到，介质映射无从谈起')
     c = MatchCard(name='x', stock='kodak_portra_400', paper='kodak_portra_endura',
+                  corpus='鹿井',
                   profile=dict(p95=90.0), spread=dict(p95=2.0))
     ok(preset_for(c) in _preset_media(), '映射出来的 preset 不存在：%s' % preset_for(c))
+    ok(preset_for(c) == '卡38', '鹿井语料必须映射到卡38，实际 %s' % preset_for(c))
+    # ★ 同介质的两张卡（卡38 1.3 / 滨田 0.65）不许按排序猜：没 corpus 必须抛
+    amb = MatchCard(name='z', stock='kodak_portra_400', paper='kodak_portra_endura')
+    try:
+        preset_for(amb)
+        ok(False, '同介质的多个 preset 必须抛，不许静默选一个')
+    except KeyError:
+        pass
     s = safety_for(c)
     ok(abs(s['p95_max'] - INVARIANT_P95_MAX) < 1e-9,
        '白端必须是不变量 %s，实际 %s（拿卡的分布当门 = 把场景当标准）'

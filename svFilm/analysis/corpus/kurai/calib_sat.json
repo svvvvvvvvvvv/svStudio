@@ -1,0 +1,50 @@
+{
+  "key": "C_DOWN_PER_UI",
+  "dose_ui": -20.0,
+  "n": 5,
+  "slope": 0.2697,
+  "samples": [
+    {
+      "stem": "DSCF1231",
+      "c_before": 27.81,
+      "c_after": 22.15,
+      "dc": -5.67,
+      "dose": -20.0,
+      "slope": 0.2833
+    },
+    {
+      "stem": "DSCF1422",
+      "c_before": 26.02,
+      "c_after": 20.63,
+      "dc": -5.39,
+      "dose": -20.0,
+      "slope": 0.2697
+    },
+    {
+      "stem": "DSCF1772",
+      "c_before": 40.36,
+      "c_after": 31.86,
+      "dc": -8.5,
+      "dose": -20.0,
+      "slope": 0.425
+    },
+    {
+      "stem": "DSCF1526",
+      "c_before": 21.91,
+      "c_after": 17.43,
+      "dc": -4.48,
+      "dose": -20.0,
+      "slope": 0.2241
+    },
+    {
+      "stem": "DSCF1307",
+      "c_before": 20.34,
+      "c_after": 16.18,
+      "dc": -4.16,
+      "dose": -20.0,
+      "slope": 0.2079
+    }
+  ],
+  "date": "2026-10-31",
+  "note": "主体蒙版 LocalSaturation 一档 −20 UI 的实测；只量脸皮肤掩膜内的 Lab 中位"
+}

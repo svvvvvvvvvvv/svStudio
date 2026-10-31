@@ -22,42 +22,65 @@ _PRESET_DIR = r'E:\svStudio\svFilm\svFilm\data\presets'
 # 这里只做映射；映射不上就抛，不许悄悄用默认卡（那会静默换掉整条链的介质）。
 _PRESET_CACHE: Dict[str, Tuple[str, str]] = {}
 
+# ★ 2026-10-31：卡 → preset 的**显式**映射。以前靠"遍历到第一个介质相同的"，
+#   而 卡38 与 滨田预设 介质**完全一样**（portra_400 + endura）、amount 却 1.3 vs 0.65；
+#   排序恰好让 卡38 先中。一旦 卡38 的 JSON 读不了（实测：被写出 BOM），就会**静默**
+#   换成滨田，整批发灰、无人报错。
+_CORPUS_PRESET = {'鹿井': '卡38', '滨田': '滨田预设', 'xhs': 'xhs预设'}
+
 
 def _preset_media() -> Dict[str, Tuple[str, str]]:
-    """{preset 名: (stock, paper)} —— 从 preset JSON 读，读不到就跳过。"""
+    """{preset 名: (stock, paper)} —— 从 preset JSON 读。
+
+    ★ 读不了**必须抛**（以前是 continue 跳过）：坏掉的那张会从介质表里消失，
+      `preset_for` 便静默匹配到另一张同介质的卡。
+    """
     if _PRESET_CACHE:
         return _PRESET_CACHE
     import json
-    try:
-        for name in sorted(os.listdir(_PRESET_DIR)):
-            p = os.path.join(_PRESET_DIR, name, 'preset.json')
-            if not os.path.isfile(p):
-                continue
-            try:
-                d = json.load(open(p, encoding='utf-8'))
-            except Exception:                              # noqa: BLE001
-                continue
-            sim = d.get('simulation') or {}
-            st, pp = sim.get('film_stock'), sim.get('print_paper')
-            if st and pp:
-                _PRESET_CACHE[name] = (st, pp)
-    except Exception:                                      # noqa: BLE001
-        pass
+    bad = []
+    for name in sorted(os.listdir(_PRESET_DIR)):
+        p = os.path.join(_PRESET_DIR, name, 'preset.json')
+        if not os.path.isfile(p):
+            continue
+        try:
+            d = json.load(open(p, encoding='utf-8'))
+        except Exception as e:                             # noqa: BLE001
+            bad.append('%s: %s' % (name, e))
+            continue
+        sim = d.get('simulation') or {}
+        st, pp = sim.get('film_stock'), sim.get('print_paper')
+        if st and pp:
+            _PRESET_CACHE[name] = (st, pp)
+    if bad:
+        raise RuntimeError(
+            '预设读不了（**不许静默跳过**，那会悄悄换掉整条链的介质）：\n  '
+            + '\n  '.join(bad))
     return _PRESET_CACHE
 
 
 def preset_for(card) -> str:
     """卡的介质 → preset 名。**映射不上就抛**，不许回退到默认卡。"""
+    media = _preset_media()
+    corpus = getattr(card, 'corpus', '') or ''
+    name = _CORPUS_PRESET.get(corpus)
+    if name:
+        if name not in media:
+            raise KeyError('语料「%s」该用 preset「%s」，但没读到（现有：%s）'
+                           % (corpus, name, '、'.join(sorted(media)) or '无'))
+        return name
     want = (getattr(card, 'stock', None), getattr(card, 'paper', None))
     if not all(want):
         raise KeyError('这张卡没有介质：%r' % (getattr(card, 'name', card),))
-    for name, media in _preset_media().items():
-        if media == want:
-            return name
-    raise KeyError('没有卷/纸为 %s + %s 的 preset（现有：%s）'
-                   % (want[0], want[1],
-                      '、'.join('%s=%s+%s' % (k, v[0], v[1])
-                                for k, v in _preset_media().items())))
+    hits = [n for n, m in media.items() if m == want]
+    if len(hits) == 1:
+        return hits[0]
+    if not hits:
+        raise KeyError('没有卷/纸为 %s + %s 的 preset（现有：%s）'
+                       % (want[0], want[1],
+                          '、'.join('%s=%s+%s' % (k, v[0], v[1]) for k, v in media.items())))
+    raise KeyError('有 %d 个 preset 用同一套介质（%s + %s）：%s ⇒ 卡必须显式带 corpus，'
+                   '不许按排序猜' % (len(hits), want[0], want[1], '、'.join(hits)))
 
 
 def _band(card, key: str, k: float = 0.95) -> Optional[Tuple[float, float]]:

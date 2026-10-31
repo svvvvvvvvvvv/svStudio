@@ -289,6 +289,7 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
                 _write_headroom(out_dir, stem, hr)
                 for m in msgs:
                     log(m)
+        _write_render_meta(out_dir, choice, preset_name, p95_max, black_max, out)
         return out
 
     for stem, raf in raf_paths.items():
@@ -298,7 +299,31 @@ def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
         _write_headroom(out_dir, stem, hr)
         for m in msgs:
             log(m)
+    _write_render_meta(out_dir, choice, preset_name, p95_max, black_max, out)
     return out
+
+
+def _write_render_meta(out_dir: str, choice, preset_name: str,
+                       p95_max: float, black_max: float, out: dict) -> str:
+    """把"这批 ① 是用什么渲的"写下来（供 --reuse 校验）。
+
+    ★ 2026-10-31：没有它，`--reuse` 只能看文件名 —— 卡/预设/amount 换了也照样复用，
+      实测踩过：一批 1.0 的底片被当成 1.3 用，整轮参数全错还没人报。
+    """
+    import json
+    import time
+    p = os.path.join(out_dir, '_render.json')
+    d = dict(card=getattr(choice.card, 'name', ''),
+             preset=preset_name,
+             corpus=getattr(choice.card, 'corpus', ''),
+             p95_max=float(p95_max), black_max=float(black_max),
+             n=len(out), stems=sorted(out),
+             ts=time.strftime('%Y-%m-%d %H:%M:%S'))
+    tmp = p + '.tmp'
+    with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
+        json.dump(d, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, p)
+    return p
 
 
 # ---------------------------------------------------------------- 单张渲染（串行/并行共用）

@@ -335,7 +335,7 @@ def cmd_run(a):
     if getattr(a, 'reuse', False):
         from .batch import measure_engine_dir
         print('  --reuse ⇒ 复用已渲的 ①（只重测，不重渲）')
-        recs = measure_engine_dir(b, log=print)
+        recs = measure_engine_dir(b, log=print, expect=dict(card=best.card.name))
         if not recs:
             print('  没有可复用的 ① ⇒ 退回重渲')
             recs = run_engine(b, best, limit=a.render_limit, log=print, skip=_skip)
@@ -406,7 +406,7 @@ def cmd_run(a):
     if a.export:
         print('\n[6/7] 出片：LR 出成片 ③ → 量 → 验收 → 目检（唯一驱动 LR 的一步）')
         try:
-            got = lr_run(plans, b.sub('engine'), b.out_dir, log=print)
+            got = lr_run(plans, b.sub('engine'), b.out_dir, card=card['name'], log=print)
             print(' ③ 成片 %d 张（一次算，一轮）' % len(got))
             # ★ 2026-10-31：`lr_run` 返回的是**路径**，验收要的是**测量记录**；
             #   旧代码把路径直接塞给 make_review，b.get('skin') 必崩。
@@ -452,6 +452,13 @@ def cmd_run(a):
         nok += 1 if r.ok else 0
     print('①→② 回归：%d/%d 通过' % (nok, len(plans)))
     print(limit_note())
+    # ★ 2026-10-31：不是 --push 的跑 = 重新起算，上一轮的推挡累计必须清掉，
+    #   否则下次 --push 会从一个过期基准继续加。
+    if not getattr(a, 'push', False):
+        _cp = os.path.join(b.out_dir, 'color_round.json')
+        if os.path.isfile(_cp):
+            os.remove(_cp)
+            print('  清掉上一轮的推挡累计（本次是重新起算）')
     print('\n产物：%s（engine/ 与 xmp/）' % b.out_dir)
 
 
