@@ -387,7 +387,7 @@
   "film_reason": "暗部 +4.8 CC ⇒ 蓝度分位 0.84；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥2.31，设计配纸 kodak_portra_endura Dmax=2.46 够用",
   "amount": 0.65,
-  "amount_reason": "同语料样本不足（n=1）⇒ 沿用 0.65",
+  "amount_reason": "样本不足（脸 n=1 / 整幅 n=1）⇒ 沿用 0.65",
   "split": 4.83,
   "shadow_cc": 4.8,
   "scene_fit": true,

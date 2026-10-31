@@ -11,11 +11,13 @@
 2) **纸**：黑端要求 Dmax ≥ −log10(Y(p5))；卷的设计配纸够就用它，不够才换更厚的纸。
    p5 ≈ 0（被扫描切平）⇒ 没有信息，直接用设计配纸。只用 `use == 'still'` 的 print profile。
 
-3) **amount**：按**颜色饱和度**——本卡脸 C 带中点 ÷ 同语料中位，等比缩放到语料标定值，
-   夹在 [0.6, 1.6]。依据：源码里 amount 是耦合矩阵的标量倍率（`couplers.py:126`），
-   正比于耦合强度；颜色浓度是它最直接的后果。用比值只需要一个锚点，
-   不需要"每单位 amount 值多少 C"那种没出处的斜率（手册那条 2.3 C/单位 已被否：
-   反解出来是 −1.8~7.5，69% 撞边界）。
+3) **amount**：按**颜色饱和度**——两个比值取平均，再乘语料标定值，夹 [0.6, 1.6]：
+   · 本卡脸 C 带中点 ÷ 同语料中位
+   · 本卡**整幅彩度**（背景+主体，`card_tone.overall_C`）÷ 同语料中位
+   为什么要整幅：`couplers.py:126` 里 amount 是**整幅**通道耦合的标量倍率，
+   只看脸会漏掉背景那一半。
+   为什么用比值：只需要一个锚点（语料标定值），不需要"每单位 amount 值多少 C"
+   （手册那条 2.3 C/单位 已否：反解 −1.8~7.5，69% 撞边界）。
 
 4) **中性滤片（WB）不用我们定**：引擎自带 `data/filters/neutral_print_filters.json`
    （8 纸 × 20 卷 × 照明），`digest_params` 按 (卷, 纸) 自动套 C/M/Y 中性值。
@@ -250,27 +252,39 @@ def _face_c_mid(name: str, cards=None):
     return 0.5 * (float(b[0]) + float(b[1])) if b else None
 
 
+def _overall_c(name: str):
+    """这张卡的**整幅彩度**（背景+主体）中位，来自 card_tone 的 overall_C。"""
+    tones = json.load(open(_TONE, encoding='utf-8'))
+    return ((tones.get(name) or {}).get('overall_C') or {}).get('med')
+
+
 def _amount_from_saturation(base: float, name: str, cards=None) -> tuple:
-    """amount 由**颜色饱和度**定：以语料标定值为锚，按"本卡脸 C / 同语料中位"等比缩放。
+    """amount 由**颜色饱和度**定：脸与整幅各算一半。
 
-    为什么用比值而不是绝对值：`amount` 在源码里是耦合矩阵的标量倍率
-    （`couplers.py:126 couplers_matrix *= amount`），正比于耦合强度；
-    颜色浓度是它最直接的可观测后果。用比值只需要一个锚点（语料已标定值），
-    不需要"每单位 amount 值多少 C"这种没出处的斜率。
+    · 脸：本卡脸 C 带中点 ÷ 同语料中位
+    · 整幅：本卡 overall_C 中位 ÷ 同语料中位（背景+主体，不只看脸）
+    两个比值取平均，乘语料标定值，夹 [0.6, 1.6]。
 
-    ⚠ 仍分不开"场景本来就艳"和"耦合剂强"——所以介质里标了 scene_fit。
+    依据：`couplers.py:126` 里 `couplers_matrix *= amount` —— amount 是**整幅**
+    通道耦合的倍率；只拿脸推会漏掉背景那一半。
+    仍分不开"场景本来就艳"与"耦合剂强"，所以介质里标 scene_fit。
     """
     cards = cards or json.load(open(_CARDS, encoding='utf-8'))['cards']
     corpus = next((c.get('corpus') for c in cards if c['name'] == name), '')
-    mine = _face_c_mid(name, cards)
-    if mine is None:
-        return base, '没有脸彩度带 ⇒ 沿用 %.2f' % base
-    xs = [x for x in (_face_c_mid(c['name'], cards) for c in cards
-                      if c.get('corpus') == corpus) if x is not None]
-    if len(xs) < 5:
-        return base, '同语料样本不足（n=%d）⇒ 沿用 %.2f' % (len(xs), base)
-    med = st.median(xs)
-    ratio = mine / med if med else 1.0
+    mine_f = _face_c_mid(name, cards)
+    mine_o = _overall_c(name)
+    xs_f = [x for x in (_face_c_mid(c['name'], cards) for c in cards
+                        if c.get('corpus') == corpus) if x is not None]
+    xs_o = [x for x in (_overall_c(c['name']) for c in cards
+                        if c.get('corpus') == corpus) if x is not None]
+    if (mine_f is None and mine_o is None) or len(xs_f) < 5 or len(xs_o) < 5:
+        return base, '样本不足（脸 n=%d / 整幅 n=%d）⇒ 沿用 %.2f' % (len(xs_f), len(xs_o), base)
+    rf = (mine_f / st.median(xs_f)) if mine_f else None
+    ro = (mine_o / st.median(xs_o)) if mine_o else None
+    rs = [r for r in (rf, ro) if r is not None]
+    ratio = sum(rs) / len(rs)
     amount = round(max(0.6, min(1.6, base * ratio)), 2)
-    return amount, ('脸 C %.2f / 同语料中位 %.2f = %.3f ⇒ amount %.2f×%.3f = %.2f（夹 0.6~1.6）'
-                    % (mine, med, ratio, base, ratio, amount))
+    return amount, ('脸C %.2f→%s ｜ 整幅C %.2f→%s ⇒ 平均 %.3f ⇒ amount %.2f×%.3f=%.2f'
+                    % (mine_f or 0, ('%.3f' % rf) if rf is not None else '—',
+                       mine_o or 0, ('%.3f' % ro) if ro is not None else '—',
+                       ratio, base, ratio, amount))

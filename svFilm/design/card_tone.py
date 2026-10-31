@@ -65,7 +65,7 @@ def build_card(card: dict) -> Optional[dict]:
     files = [p for p in _abs_samples(card) if os.path.isfile(p)]
     if not files:
         return None
-    sh, hi = [], []
+    sh, hi, overall = [], [], []
     for p in files:
         im = Image.open(p).convert('RGB')
         im.thumbnail((600, 600))
@@ -77,6 +77,12 @@ def build_card(card: dict) -> Optional[dict]:
             sh.append(zs)
         if zh:
             hi.append(zh)
+        # ★ 整幅彩度（背景 + 主体，不是只看脸）：C* = √(a²+b²) 的中位与 p75。
+        #   为什么要它：`couplers.amount` 在引擎里是**整幅通道耦合的倍率**
+        #   （couplers.py:126），只拿脸去推会漏掉背景那一半。
+        C = np.hypot(a, b)
+        overall.append([float(np.median(C)), float(np.percentile(C, 75)),
+                        float(np.percentile(C, 90))])
 
     def med(rows):
         if not rows:
@@ -88,6 +94,14 @@ def build_card(card: dict) -> Optional[dict]:
                     hsl_h=_hue_of(lab), n=len(rows))
 
     out = dict(shadow=med(sh), highlight=med(hi), n_images=len(files))
+    if overall:
+        arr = np.array(overall)
+        out['overall_C'] = dict(
+            med=round(float(np.median(arr[:, 0])), 2),
+            p75=round(float(np.median(arr[:, 1])), 2),
+            p90=round(float(np.median(arr[:, 2])), 2),
+            n=len(overall),
+        )
     if not out['shadow'] and not out['highlight']:
         return None
     return out

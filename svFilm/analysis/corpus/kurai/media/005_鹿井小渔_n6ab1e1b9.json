@@ -97,7 +97,7 @@
  },
  "couplers": {
   "active": true,
-  "amount": 1.28,
+  "amount": 1.14,
   "inhibition_samelayer": 1.0,
   "inhibition_interlayer": 1.0,
   "gamma_samelayer_rgb": [
@@ -386,8 +386,8 @@
   "paper": "kodak_portra_endura",
   "film_reason": "暗部 +2.2 CC ⇒ 蓝度分位 0.77；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
   "paper_reason": "黑端需 D≥1.90，设计配纸 kodak_portra_endura Dmax=2.46 够用",
-  "amount": 1.28,
-  "amount_reason": "脸 C 23.09 / 同语料中位 23.43 = 0.986 ⇒ amount 1.30×0.986 = 1.28（夹 0.6~1.6）",
+  "amount": 1.14,
+  "amount_reason": "脸C 23.09→0.986 ｜ 整幅C 5.81→0.770 ⇒ 平均 0.878 ⇒ amount 1.30×0.878=1.14",
   "split": 2.18,
   "shadow_cc": 2.2,
   "scene_fit": true,
