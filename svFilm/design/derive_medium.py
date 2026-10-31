@@ -171,6 +171,10 @@ def apply_all() -> dict:
                              film_reason=film_why, paper_reason=paper_why,
                              amount=amount, amount_reason=why,
                              split=split, shadow_cc=shadow_cc,
+                             # ★ 诚实标记：这是**按成片统计逐目录拟合**出来的，
+                             #   不是"这个摄影师真的用了这支卷"。场景差异与介质差异
+                             #   从打印端分不开（62 张同门卡会被分到 11 支卷）。
+                             scene_fit=True,
                              neutral_filters='engine database (neutral_print_filters.json)')
         save(name, b, note='卷按暗部色偏、纸按黑端密度、amount 按分色强度；中性滤片由引擎数据库给')
         out[name] = dict(ok=True, base=base_name, film=film.name, paper=paper,
@@ -180,7 +184,27 @@ def apply_all() -> dict:
     with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
         json.dump(out, fh, ensure_ascii=False, indent=1)
     os.replace(tmp, os.path.join(_ROOT, 'card_medium.json'))
+    _report(out)
     return out
+
+
+def _report(out: dict) -> str:
+    """出一张人看的表：每行 = 目录 → 卷+纸、amount、凭哪个量推的。"""
+    p = os.path.join(_ROOT, 'card_medium.md')
+    rows = ['# 每目录介质（按成片统计拟合，`scene_fit`）', '',
+            '> 卷/纸/amount 都是**逐目录**算的；但打印端分不开"场景"与"介质"，',
+            '> 所以这是"这张成片像哪套介质"，不是"摄影师真的用了这支卷"。', '',
+            '| 目录 | 卷 | 纸 | amount | 依据 |', '|---|---|---|---|---|']
+    for name, v in sorted(out.items()):
+        if not v.get('ok'):
+            continue
+        rows.append('| %s | %s | %s | %.2f | %s ｜ %s |'
+                    % (name, v['film'], v['paper'], v['amount'],
+                       v['film_reason'].replace('|', '/'),
+                       v['paper_reason'].replace('|', '/')))
+    with open(p, 'w', encoding='utf-8', newline='\n') as fh:
+        fh.write('\n'.join(rows) + '\n')
+    return p
 
 
 _TONE = os.path.join(_ROOT, 'card_tone.json')

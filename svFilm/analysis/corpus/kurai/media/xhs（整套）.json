@@ -391,6 +391,7 @@
   "amount_reason": "同语料样本不足（n=1）⇒ 沿用 1.20",
   "split": 0.81,
   "shadow_cc": 1.0,
+  "scene_fit": true,
   "neutral_filters": "engine database (neutral_print_filters.json)"
  }
 }

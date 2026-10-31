@@ -390,6 +390,7 @@
   "amount_reason": "分色强度 7.9 在同语料排 82% ⇒ amount 1.30×(0.85+0.30×0.82)=1.43",
   "split": 7.9,
   "shadow_cc": -8.6,
+  "scene_fit": true,
   "neutral_filters": "engine database (neutral_print_filters.json)"
  }
 }
