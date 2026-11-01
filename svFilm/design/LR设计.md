@@ -17,9 +17,9 @@
 
 | 残差 | 谁补 | 用什么 |
 |---|---|---|
-| **曝光 / 明暗** | LR | 人/脸最亮处细节 + 余量；引擎 subject-face 先落地 |
+| **曝光 / 明暗** | LR | 全局对齐 peer/hero 背景分布；人/脸做上限；白裙由人物蒙版 Highlights 压 |
 | **形状** | LR | 卡的 `toe/shoulder` 比例，套到本图锚点 |
-| **肤色** | LR | 蒙版里的 Point Color，按 C/L 关系给量 |
+| **肤色** | LR | Point Color 三轴（HueShift/LumScale/SatScale），在全局/局部之后算 |
 | **颜色** | LR | WB 定色相；冷暖/分色按卡的方向 |
 
 引擎管：卷/纸/颗粒/光晕/WB/PE/校准/HSL/色彩分级。  
@@ -62,14 +62,14 @@ peer 的取法：构图（景别、人占幅、脸位置）+ **连续光向量**
 
 ```
 WB（卡级）
-→ 曝光 / 明暗
+→ 全局曝光（peer/hero 背景分布）
 → 形状（曲线）
-→ 颜色 / 肤色
-→ 局部（脸/肤色窗）
+→ 肤色组（局部曝光 + Point Color 三轴）
+→ 白裙检查 → 过曝才压人物蒙版 Highlights
 → 细节（锐化/降噪/导出）
 ```
 
-先全局，后局部；局部补脸放在全局成立之后。
+先全局，后局部；肤色组先做，白裙检查放在肤色组之后。
 
 ---
 
@@ -83,15 +83,18 @@ WB（卡级）
 
 ### 5.2 曝光 / 明暗
 
-**LR 补曝光残差，目标来自人/脸最亮处细节 + 余量。**
+**LR 全局曝光对齐 peer/hero 的背景分布，不拿脸/单张中位当全局靶。**
 
-- 先看**人/脸**最亮处有没有细节、过曝没有、余量多少。
-- 有余量且整幅偏 → 小步提/收，提到“人身上最亮处刚好有细节”。
-- 人/脸已经过曝或没余量 → 全局曝光停住，转局部补脸。
-- **人/脸高光是硬底线；背景允许过曝，只记账。**
-- 引擎 subject-face 先落地；PE 只作基准；LR 只补残差。
-- 输入用：`person_p99`、`face_p99`、`person_clip_pct`、`parts.white.L_p99`；`img.clip_pct`/背景只做诊断。
-- 目标：人/脸最亮处刚好有细节；曝光步长由余量给，不用 p50/脸中位。
+- 目标：peer/hero 的 `bg.L_p10 / L_p90 / L_p95`；三个分位各算一个 EV，取平均。
+- 人/脸只做上限：`face_p99` / 皮肤 clip 决定正 EV 还能不能走；`person_p99` 含白裙，只做诊断。
+- **白裙允许先跟着全局亮**；不因为它压住全局曝光。
+- 全局之后先做肤色组（局部曝光 + Point Color 三轴），再检查白裙 `parts.white.L_p99`；
+  超过物理白点才用**人物蒙版 Highlights** 压回来。
+- **背景不忽略**：背景分布是全局靶；人/脸是硬上限，不是唯一服务对象。
+- 引擎 subject-face 只作 ① 起点；PE 只作基准；LR 用 peer/hero 背景分布把整体拉回规律。
+- 输入用：`bg.L_p10/L_p90/L_p95`、`face_p99`、皮肤 clip、`parts.white.L_p99`；`person_p99`/整幅 clip 只做诊断。
+- 没有 peer/hero 背景目标 ⇒ 保持 ① 起点；不用 p50/单张中位兜底。
+- 全局一步上限 0.7 档；剩余交局部/③ 目检。
 
 **Basic 四根（Highlights/Shadows/Whites/Blacks）**：默认 0，作为**通用修图**使用。  
 人明确要求通用修图时：agent 给**方向 + 一小步候选**，人确认后写入；依据物理端点/细节（头发暗部、皮肤暗部、白衫/人 clip、亮部氛围）；卡里的部位 L 只做诊断，`k(L)` 只做规划起点；剂量由 ③ 目检。
@@ -104,33 +107,51 @@ WB（卡级）
 
 ### 5.4 肤色 / 颜色
 
-**Point Color 的用途：肤色窗 + 只动肤色的微调。**
+**Point Color 做肤色窗 + 只动肤色的三轴微调：HueShift / LumScale / SatScale。**
 
 ```
-r0 = C0/L0（①）
-r* = C_card/L_card（卡/hero/peer）
-e  = r*/r0 − 1
-SatScale = 小步(e)，上限由卡/peer 与 ③ 定
+h0, L0, C0 = 全局/肤色局部之后的肤色
+h*, L*, C* = 卡/hero/peer 的肤色目标
+HueShift  = 小步(h* − h0)        # 修 WB 修不掉的逐图色相残差
+LumScale  = 小步(L* − L0)        # 修明度残差
+SatScale  = 小步(C*/L* ÷ C0/L0 − 1)  # 修 C/L 关系
 ```
 
-- 色票按这张脸的真实像素取样，作用域是肤色窗。
-- 色相归 WB；Point Color 只动肤色。
-- 肤色处理以肤色窗为界；白衫低饱和，保持在肤色窗之外。
-- 检查：肤色窗外的背景/白衫不动；背景被带偏就减 SatScale 或停。
+- 色票按这张脸的真实像素取样，作用域是肤色窗；三个量都在肤色窗内。
+- **不是“色相全归 WB、Point Color 只改饱和”**：WB 是卡级，修不了逐图 h/L 残差。
+- Point Color 在全局 + 局部肤色曝光之后算，不能用 ① 的原始 C/L 当基准。
+- 检查：肤色窗外的背景/白衫不动；白裙/背景被带偏就减剂量或停。
 
 颜色：
 
-- WB 定色相。
+- WB 定卡级色相；Point Color 只补肤色窗内的 h/L/C 残差。
 - 冷暖/分色取卡里**近中性**（C* ≤ 1.5）且方向在暖（20–70°）/冷（200–260°）的高光/暗部；场景色归场景。
 
 ### 5.5 局部
 
-- 蒙版优先 LR 原生人物/皮肤；当前 SDK 用 `subject + Point Color 肤色票` 收窄；SDK 支持 `facialSkin` 后换名。
-- 局部作用域是**肤色窗**；无 `skin_rgb`/肤色窗 ⇒ 停。
-- **局部余量用人/脸/肤色窗自己的 p99**；整幅 `headroom_ev` 只做诊断。
-- **补脸只抬**；超过脸部余量 → 先收高光/换光。
-- 一张卡一套蒙版策略；每帧按同一策略建组；蒙版位置按帧。
-- 检查：局部只落在肤色窗；白衫/背景保持不动；脸已经比目标亮就跳过。
+**两组局部修正，共用同一个人物选择；不是两个独立的人物 AI 蒙版。**
+
+```
+人物选择（People / subject）
+  ├─ 组 1：人物 ∩ 肤色 → LocalExposure + Point Color 三轴
+  └─ 组 2：人物整身 → LocalHighlights（白裙过曝时）
+```
+
+顺序固定：
+
+```text
+全局曝光/曲线
+→ 组 1 肤色（可能抬高人物）
+→ 再检测白裙 p99
+→ 过曝才建组 2，压人物蒙版 Highlights
+```
+
+- 白裙属于人物蒙版，**不单独圈白裙，也不建白色范围/第二个白裙蒙版**。
+- 白裙检查在肤色组之后；肤色组的局部曝光可能抬高人物，必须一起算进白裙预测。
+- 组 1 作用域是肤色窗；组 2 是人物整身，只压 Highlights，不用 Exposure/Whites。
+- 局部余量用人/脸/肤色窗自己的 p99；整幅 `headroom_ev` 只做诊断。
+- 补脸只抬；超过脸部余量 → 先收高光/换光。
+- 检查：组 1 不落在白衫/背景；组 2 只压白裙高光；脸已经比目标亮就跳过组 1。
 
 ### 5.6 细节
 
@@ -147,18 +168,18 @@ SatScale = 小步(e)，上限由卡/peer 与 ③ 定
 - **场景一致**：混光先拆；一张 plan 只属于一个场景/一张卡。
 - **脸/肤色可用**：检测在 1620；有脸/肤色窗才做肤色、局部；没有就跳过该层并记账。
 - **目标源清楚**：peer≥3 用 peer；否则 hero；否则卡；plan 写 `target_source` 和 `peer_ids`/`hero`。
-- **蒙版作用域**：subject + 肤色票；确认局部只覆盖肤色窗。
+- **蒙版作用域**：肤色组 = subject ∩ 肤色票；白裙组 = subject 整身 + Highlights；两组分开，不共用一个滑杆组。
 
 ### 6.2 每张 plan 记什么
 
 ```
 target_source: peer / hero / card
 peer_ids / hero
-exposure: step + reason（person_p99、face_p99、person_clip_pct）
+exposure: step + reason（bg.L_p10/L_p90/L_p95、face_p99、skin_clip）
 curve: anchors + toe/shoulder
 point_color: r0、r*、sat_scale、skin_window
-local: ev、face_p99、mask_coverage
-checks: person_clip、bg_clip（诊断）、curve_monotonic、mask_in_skin
+local: skin ev、PointColor H/L/S、white highlights、mask_coverage
+checks: skin_clip、bg_clip（诊断）、white_p99、curve_monotonic、mask_in_skin
 ```
 
 ③ 出片后只量诊断；批内一次算，人目检后才决定是否重出。
@@ -168,11 +189,12 @@ checks: person_clip、bg_clip（诊断）、curve_monotonic、mask_in_skin
 | 踩过的坑 | 现在的做法 |
 |---|---|
 | 旧 ① / 渲染凭证过期 | 核对 `_render.json` 的 `auto_exposure=subject-face`/PE 基准/WB；变就重渲；一次 ① 对应一份凭证 |
-| 曝光恒 0 | 0 只是 PE 基准下的一个结果；现在 subject-face 定 ① 落点，LR 只补残差 |
+| 曝光恒 0 | 0 只是 ① 起点；全局按 peer/hero 背景分布重算，不再只看脸 |
 | Basic 数字靶 | Basic 四根默认 0；parts 只诊断；通用修图只给方向 + 人确认 |
-| 局部用整幅 headroom | 用 `person_p99`/`face_p99`/肤色窗自己的余量；整幅只诊断 |
+| 局部用整幅 headroom | 肤色组用肤色窗自己的余量；白裙组用 white p99；整幅只诊断 |
 | 局部负值把脸压黑 | 补脸只抬；脸已经比目标亮就跳过 |
-| 局部漏到白衫/背景 | 作用域只留肤色窗；出片检查白衫/背景是否动 |
+| 白裙把全局卡死 | 全局只受 face/skin 限制；白裙先亮，肤色组之后查 white p99，过曝才压 Highlights |
+| 局部漏到白衫/背景 | 肤色组只留肤色窗；白裙组只压人物 Highlights；两组分开 |
 | 曲线相邻锚点 solarize | 锚点留间距、单调、端点不反折；solarize 只修该图曲线重出 |
 | 1080 小脸测丢 | 检测在 1620；无脸就跳过肤色/局部并记账 |
 | 批内混场景 | 先按场景拆批；一个场景一个参考 |
@@ -180,8 +202,8 @@ checks: person_clip、bg_clip（诊断）、curve_monotonic、mask_in_skin
 | 机器验收 | 物理只诊断；人看 Reference View + 整组并排 |
 | peer 退卡中位 | peer = 构图 + 连续光向量；peer<3 → hero 关系 → 卡关系 |
 | hero 不参与计算 | peer 不足时接 hero 的关系值（形状/face_over_bg/肤色 C/L/冷暖） |
-| Point Color 只当载体 | Point Color 同时做肤色窗和肤色微调；SatScale 按 C/L 关系 |
-| 白衫/背景被肤色带偏 | 肤色窗为界；背景/白衫动了就减量或停 |
+| Point Color 只当载体 | Point Color 同时做肤色窗和三轴微调：HueShift / LumScale / SatScale |
+| 白裙/背景被肤色带偏 | 肤色组只在肤色窗；白裙组只压人物 Highlights；动了就减量或停 |
 
 ### 6.4 缺输入时
 
