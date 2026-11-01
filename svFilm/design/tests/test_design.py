@@ -171,7 +171,8 @@ def test_wb_missing_is_reported():
 def test_tone_solve_fills_exposure_residual():
     rec = _rec(person_p99=80.0)
     out = tone_solve(rec, _card(), _target(p99=94.0), [])
-    assert 0.0 < out['ev'] <= 3.0, out
+    assert out['ev'] == 0.0
+    assert out['curve'], out
     assert all(abs(v) < 1e-9 for v in out['ui'].values()), out['ui']
 
 
@@ -186,7 +187,8 @@ def test_tone_solve_person_clip_stops_global():
 def test_tone_solve_background_clip_is_diagnostic_only():
     rec = _rec(img_clip=20.0, person_clip=0.0, person_p99=80.0)
     out = tone_solve(rec, _card(), _target(p99=90.0), [])
-    assert out['ev'] > 0.0, out
+    assert out['ev'] == 0.0, out
+    assert out['curve'], out
 
 
 def test_tone_solve_without_exposure_target_keeps_pe():
@@ -380,7 +382,6 @@ def test_plan_batch_peer_hero_order():
     assert plans['A'].target['source'] == 'peer'
     assert plans['B'].target['source'] == 'hero'
     assert plans['C'].target['source'] == 'hero'
-    assert plans['A'].exposure_ev > 0.0
 
 
 def test_plan_batch_card_fallback_without_hero():

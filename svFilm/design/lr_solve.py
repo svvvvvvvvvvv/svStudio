@@ -501,24 +501,12 @@ def tone_solve(rec: dict, card: dict, target: Optional[dict],
         return dict(ev=0.0, ui=ui, pred=dict(q), curve=None,
                     target=None, clipped=True)
 
-    ev = _dist_ev(rec, target)
-    if ev is None:
-        ledger.append('没有 peer/hero 的亮度分布 ⇒ 明暗保持起点')
-        return dict(ev=0.0, ui=ui, pred=dict(q), curve=None,
-                    target=None, clipped=False)
-    # Auto Tone 给 Basic；这里只做 Exposure + 分布曲线，不再解 5 根 slider。
-    face_cap = None
-    if face_p99 is not None:
-        room = ev_for_l(float(face_p99), PERSON_CEIL_L)
-        if room is not None:
-            face_cap = max(0.0, float(room))
-    if face_cap is not None and ev > face_cap:
-        ev = face_cap
-    pred = {k: l_after_ev(float(v), ev) for k, v in q.items()}
-    curve = _dist_curve(rec, target, ev)
     sh = shape_target(card, target)
-    ledger.append('分布 tone：EV %+.2f；Basic 由 LR Auto Tone；%s'
-                  % (ev, ('残差曲线 %d 点' % len(curve)) if curve else '残差曲线不动'))
+    ev = 0.0
+    pred = {k: float(v) for k, v in q.items()}
+    curve = curve_for(pred, sh, ledger) if sh else None
+    ledger.append('卡形状 tone：EV 0；曲线%s'
+                  % (('%d 点' % len(curve)) if curve else '不动'))
     return dict(ev=ev, ui=ui, pred=pred, curve=curve,
                 target=sh, clipped=False)
 
@@ -711,14 +699,13 @@ def local_white(plan: LRPlan, rec: dict, ledger: List[str]) -> bool:
 
 def _card_target(card: dict) -> dict:
     pts = (card or {}).get('points') or {}
-    dist = {k: _num(pts.get(k)) for k in ('p5', 'p25', 'p50', 'p75', 'p95')}
     skin = dict(L=_num(pts.get('face_L')), C=_num(pts.get('face_C')),
                 h=_num(pts.get('face_h')))
     rel = dict(face_over_bg=_num(pts.get('face_over_bg')),
                person_over_bg=_num(pts.get('person_over_bg')),
                warm_cool_b=_num(pts.get('warm_cool_b')))
     return dict(source='card', peer_n=0, shape=_card_shape(card) or {},
-                dist=dist, skin=skin, rel=rel, exposure={})
+                skin=skin, rel=rel, exposure={})
 
 
 def plan_batch(recs: Dict[str, dict], card: dict,
