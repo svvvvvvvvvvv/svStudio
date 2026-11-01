@@ -1,23 +1,16 @@
 # -*- coding: utf-8 -*-
-"""匹配页：把 §57 的 5 个候选做成**给人拍板**的一页（设计真源 §56 步 3）。
+"""内容匹配页：把**机内 JPG 内容匹配**的候选做成给人拍板的一页。
 
-这页只做三件事：**排序 · 给理由 · 给代价**。
-· 每张候选带**这套大师的成片样例**（人靠看图判"像不像"，不靠分数）
-· 分数是两条通道合成的（分面标签 κ 加权 + 数值画像 IQR 归一），并写明每条的出处
-· 不许系统代选；页面上不给"推荐"，只给 `--card <名字>`
+只做五件事：这批长什么样 · 候选卡全部作品 · 为什么像/不像 ·
+全部卡（按风格另选）· 人拍板。
+**没有 ①/①′**；选完卡才渲一次 ①。
 
-用法：
-    from design.matchpage import make_match_page
-    make_match_page(recs, out_dir)      # recs = ① 的测量
+页面不替你选：只给 `--card`/`--hero` 命令。
 """
 from __future__ import annotations
 
 import os
-import shutil
 from typing import Dict, List, Optional
-
-from .matchcard import (MAX_ABS_IQR, NUM_KEYS_RANK, NUM_KEYS_REPORT,
-                        SELFREF_KEYS, batch_profile, batch_tags, rank_top5)
 
 CSS = """
 :root{color-scheme:dark}
@@ -39,9 +32,6 @@ figure img{width:100%;height:auto;display:block;border-radius:8px;background:#00
 .grid figure{margin:0 0 10px;break-inside:avoid}
 .grid a{display:block;margin:0 0 8px;break-inside:avoid}
 @media(max-width:600px){.grid{columns:1}}
-.lab{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px;margin:0 0 6px}
-.lab .name{font-weight:600;color:#e8e6e1}
-.lab .num{color:#7f8b99;font-size:12px;font-variant-numeric:tabular-nums}
 .cap{color:#8f8b84;font-size:12.5px;margin:4px 0 0}
 .pick{background:#1b241c;border:1px solid #2c3d2e;border-radius:9px;padding:10px 12px;margin:12px 0 0;font-size:13px;color:#b9d3bd;word-break:break-all}
 .warn{color:#e8c08c}
@@ -59,6 +49,11 @@ figure img{width:100%;height:auto;display:block;border-radius:8px;background:#00
 .shot.on img{outline:3px solid #e0b34a;outline-offset:-3px}
 .shot.on .hint{display:block;background:#e0b34a;color:#1a1408}
 .shot .big{position:absolute;right:6px;top:6px;background:#000a;color:#cfcbc4;font-size:11px;padding:3px 6px;border-radius:6px;text-decoration:none}
+.allgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin:10px 0}
+.allcard{border:1px solid #2e2d2b;border-radius:9px;padding:6px;background:#191919}
+.allcard img{width:100%;height:auto;display:block;border-radius:6px;background:#000}
+.allcard .nm{font-size:12px;color:#cfcbc4;margin:6px 0 0;word-break:break-all}
+.allcard .pickbtn{width:100%;margin:6px 0 0;padding:6px 8px;font-size:12px}
 """
 
 JS = """
@@ -116,100 +111,97 @@ def _thumb(src: str, dst: str, width: int = 760, quality: int = 82) -> Optional[
         return None
 
 
-def _num(v, unit: str = '', nd: int = 1) -> str:
-    """数字 → 页面文本；量不到就是「—」（不拿 0 冒充真值）。"""
-    try:
-        return ('%.' + str(nd) + 'f') % float(v) + unit
-    except (TypeError, ValueError):
-        return '—'
+def make_content_page(batch: dict, hits: List[dict], jpg_paths: Dict[str, str],
+                      out_dir: str, title: str = '内容匹配 · 机内 JPG',
+                      all_cards: Optional[List[str]] = None,
+                      log=print) -> str:
+    """机内 JPG 内容匹配页：**没有 ①，也没有 ①′**。"""
+    from .matchcard import card_samples
 
-
-def make_match_page(recs: Dict[str, dict], out_dir: str,
-                    paths: Optional[Dict[str, str]] = None,
-                    k: int = 5, title: str = '匹配 · 挑一张卡',
-                    log=print) -> str:
-    """出匹配页。返回 html 路径。"""
-    hits = rank_top5(recs, k=k, paths=paths)
-    batch = batch_profile(recs)
-    btags = batch_tags(recs, paths)
     prev = os.path.join(out_dir, 'match', 'preview')
     os.makedirs(prev, exist_ok=True)
-
     h = ['<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8">',
          '<meta name="viewport" content="width=device-width, initial-scale=1">',
          '<title>%s</title><style>%s</style></head><body><div class="wrap">' % (title, CSS),
          '<h1>%s</h1>' % title,
-         '<p class="sub">%d 张 ① 的测量 → 两条通道合成 → 前 %d 个。<b>看样例图定</b>，别只看分数。</p>'
-         % (len(recs), k)]
+         '<p class="sub">只读机内 JPG 做内容匹配，<b>没有跑 ①′</b>；'
+         '选完卡才渲一次 ①。分数只用于排序，<b>看样片定</b>。</p>']
 
-    # ---- 这批长什么样
-    h.append('<div class="box"><h3>这批（从 ① 量出来）</h3>')
-    h.append('<div class="row"><div class="k">场景侧</div><div class="v">%s</div></div>'
-             % '、'.join('%s=%.2f' % (k2, batch[k2]) for k2 in ('sky', 'span') if k2 in batch))
-    h.append('<div class="row"><div class="k">分面标签</div><div class="v">%s</div></div>'
-             % ('、'.join('%s=%s' % kv for kv in btags.items()) or '（判不出）'))
-    h.append('<div class="row"><div class="k">另五维只报不比</div><div class="v">%s'
-             '（它们是<b>成片量</b>，① 还没过 LR，不同态 ⇒ 不参与排序）</div></div>'
-             % '、'.join('%s=%.1f' % (k2, batch[k2]) for k2 in NUM_KEYS_REPORT if k2 in batch))
+    cl = (batch.get('clothing') or {}) if isinstance(batch, dict) else {}
+    h.append('<div class="box"><h3>这批（从机内 JPG 读出来的内容）</h3>')
+    rows = [
+        ('场景', batch.get('scene')),
+        ('主体', batch.get('subject')),
+        ('服装类型', cl.get('type')),
+        ('服装色', cl.get('palette')),
+        ('图案', cl.get('pattern')),
+        ('轮廓', cl.get('silhouette')),
+        ('环境色', batch.get('palette')),
+        ('背景元素', '、'.join(batch.get('elements') or [])),
+        ('光位/光向量（仅诊断）', batch.get('light_note') or batch.get('light')),
+        ('置信/来源', '%s / %s' % (batch.get('confidence'), batch.get('source'))),
+    ]
+    for k, v in rows:
+        h.append('<div class="row"><div class="k">%s</div><div class="v">%s</div></div>'
+                 % (k, v if v not in (None, '', []) else '—（unknown，不进分数）'))
+    if batch.get('evidence'):
+        h.append('<div class="row"><div class="k">证据</div><div class="v">%s</div></div>'
+                 % batch['evidence'])
     h.append('</div>')
 
-    # ---- 这批 ① 原样（人要和卡的样片对着看，不然只能凭记忆比）
-    h.append('<div class="box"><h3>这批 ① 原样（%d 张，点开看大图）</h3>' % len(recs))
+    # ---- 这批机内 JPG 原样
+    h.append('<div class="box"><h3>这批机内 JPG（%d 张，点开看大图）</h3>' % len(jpg_paths))
     h.append('<div class="grid">')
-    ours = 0
-    engine_dir = os.path.join(out_dir, 'engine')
-    for st in sorted(recs):
-        r = recs[st]
-        p = os.path.join(engine_dir, r.get('file') or (st + '_engine.tif'))
-        if not os.path.isfile(p):
+    shown = 0
+    for stem, src in sorted(jpg_paths.items()):
+        if not os.path.isfile(src):
             continue
-        dst = os.path.join(prev, 'ours_%s.jpg' % st)
-        big = os.path.join(prev, 'ours_%s_1200.jpg' % st)
-        if _thumb(p, dst, width=480) and _thumb(p, big, width=1200):
-            ours += 1
-            # 点开看 1080 级 JPEG（① 是 16-bit TIF，浏览器打不开）
+        dst = os.path.join(prev, 'jpg_%s.jpg' % stem)
+        big = os.path.join(prev, 'jpg_%s_1200.jpg' % stem)
+        if _thumb(src, dst, width=480) and _thumb(src, big, width=1200):
+            shown += 1
             h.append('<figure><a href="preview/%s" target="_blank"><img loading="lazy" '
                      'src="preview/%s" alt="%s"></a>'
-                     '<figcaption class="cap">%s ｜ 脸 L %s ｜ 爆 %s ｜ 脸÷背景 %s</figcaption></figure>'
-                     % (os.path.basename(big), os.path.basename(dst), st,
-                        st, _num(r.get('face_L')),
-                        _num((r.get('img') or {}).get('clip_pct'), '%', 2),
-                        _num(r.get('face_over_bg'), '', 2)))
+                     '<figcaption class="cap">%s</figcaption></figure>'
+                     % (os.path.basename(big), os.path.basename(dst), stem, stem))
     h.append('</div>')
-    if not ours:
-        h.append('<p class="cap warn">这批 ① 的 TIF 没找到（页子要在 <out>/engine 旁边才带图）</p>')
-    h.append('</div>')
-
-    # ---- 判据说明（谁都能复核）
-    h.append('<div class="box"><h3>怎么算的（可复核）</h3>')
-    for a, b in [
-        ('数值通道', '只用场景侧 %s；每维用 64 张卡自己的 IQR 归一，**单维最多算 %s 个 IQR**（防近零离散度吃掉权重）'
-         % ('/'.join(NUM_KEYS_RANK), MAX_ABS_IQR)),
-        ('分面通道', '只用**有 κ** 的分面（背景/服装/色彩/构图）；权重 = κ。光分面没有 κ ⇒ 只做轻微降权'),
-        ('禁用维（自指）', '%s —— 它们是"当前基线卡"造出来的，比了是自指（§57.2）' % '/'.join(SELFREF_KEYS)),
-        ('不做的事', '不推荐、不代选；分数只用来排序，**好看不好看由你拍**'),
-        ('怎么选', '点候选下面的**任意一张样片** = 同时选定这张卡 + 把它当 hero（设计 §3.4 一次拍板两件事）；'
-                   '只点「选这张」= 选卡但不给 hero'),
-    ]:
-        h.append('<div class="row"><div class="k">%s</div><div class="v">%s</div></div>' % (a, b))
+    if not shown:
+        h.append('<p class="cap warn">这批 JPG 一张都没读到（路径问题）</p>')
     h.append('</div>')
 
     # ---- 候选
     for i, hit in enumerate(hits, 1):
-        c = hit['card']
-        prof = c.profile
-        h.append('<h2>%d) %s</h2>' % (i, c.name))
-        h.append('<p class="sub">分数 %.2f ｜ %s + %s ｜ n=%d 张 ｜ 分面：%s</p>'
-                 % (hit['score'], c.stock, c.paper, c.n,
-                    '、'.join('%s' % v for v in c.tags.values()) or '（无标签）'))
-        # ★ 设计 §3.4：**该目录下的全部作品，一张不少**（前 3 张不是这张卡的代表）。
-        #   缩略图长边 480 就够（手机上看），点开才出大图。
-        #   ★ 点某一张 = 同时选定这张卡 + 把它当 hero（设计：人一次拍板两件事）。
-        h.append('<p class="cap">点任意一张样片 = <b>选定这张卡</b>，并把它当 <b>hero</b>；'
+        c = hit.get('content') or {}
+        cl = c.get('clothing') or {}
+        h.append('<h2>%d) %s</h2>' % (i, hit['card']))
+        h.append('<p class="sub">内容不一致度 %.2f ｜ %s / %s ｜ 置信 %s ｜ 来源 %s%s</p>'
+                 % (hit.get('score', 0), c.get('scene'), c.get('palette'),
+                    hit.get('confidence'), hit.get('source'),
+                    (' ｜ variant：%s' % hit['variant']) if hit.get('variant') else ''))
+        h.append('<div class="box">')
+        for k, v in [('场景', c.get('scene')), ('主体', c.get('subject')),
+                     ('服装', '%s / %s / %s' % (cl.get('type'), cl.get('palette'),
+                                                cl.get('pattern'))),
+                     ('环境色', c.get('palette')),
+                     ('背景元素', '、'.join(c.get('elements') or [])),
+                     ('光位/光向量（仅诊断）', c.get('light_note') or c.get('light'))]:
+            h.append('<div class="row"><div class="k">%s</div><div class="v">%s</div></div>'
+                     % (k, v if v not in (None, '', []) else '—'))
+        if c.get('evidence'):
+            h.append('<div class="row"><div class="k">证据</div><div class="v">%s</div></div>'
+                     % c['evidence'])
+        h.append('</div>')
+        if hit.get('reason'):
+            h.append('<p class="cap">为什么像：%s</p>' % ' ｜ '.join(hit['reason']))
+        if hit.get('cost'):
+            h.append('<p class="cap warn">代价：%s</p>' % '；'.join(hit['cost']))
+        h.append('<p class="cap">点任意一张样片 = <b>选定这张卡</b>并把它当 <b>hero</b>；'
                  '只看不选就点右上「大图」。</p>')
         h.append('<div class="grid">')
         shown = 0
-        for s in c.samples:
+        for s in card_samples(hit['card']):
+            if not os.path.isfile(s):
+                continue
             dst = os.path.join(prev, '%02d_%s' % (i, os.path.basename(s)))
             if _thumb(s, dst, width=480):
                 shown += 1
@@ -219,23 +211,37 @@ def make_match_page(recs: Dict[str, dict], out_dir: str,
                          '<span class="hint">选它当 hero</span>'
                          '<a class="big" href="%s" target="_blank" onclick="event.stopPropagation()">大图</a>'
                          '</div>'
-                         % (c.name, s.replace('\\', '/'), os.path.basename(dst),
+                         % (hit['card'], s.replace('\\', '/'), os.path.basename(dst),
                             os.path.basename(s), href))
         h.append('</div>')
         if not shown:
-            h.append('<p class="cap warn">这张卡的 %d 张样片一张都没读到（路径/格式问题，不是画质）</p>'
-                     % len(c.samples))
-        h.append('<p class="cap">它的画像：脸 L %.1f ｜ C %.1f ｜ p50 %.1f ｜ p95 %.1f ｜ clip %.2f%%</p>'
-                 % (prof.get('L') or 0, prof.get('C') or 0, prof.get('p50') or 0,
-                    prof.get('p95') or 0, prof.get('clip') or 0))
-        if hit['reason']:
-            h.append('<p class="cap">为什么：%s</p>' % ' ｜ '.join(hit['reason']))
-        if hit['cost']:
-            h.append('<p class="cap warn">代价：%s</p>' % '；'.join(hit['cost']))
+            h.append('<p class="cap warn">这张卡的样片一张都没读到（路径/格式问题）</p>')
         h.append('<button class="pickbtn" data-card="%s" onclick="pick(this)">'
-                 '选这张 → %s</button>' % (c.name, c.name))
+                 '选这张 → %s</button>' % (hit['card'], hit['card']))
 
-    h.append('<p class="foot">这一页不替你选。5 个都不像 ⇒ 点下面的「都不是」，我按最接近的两张去做新卡。</p>')
+    if all_cards:
+        h.append('<h2>全部 %d 张卡（按风格另选）</h2>' % len(all_cards))
+        h.append('<p class="sub">内容候选之外，想按风格选也可以；'
+                 '点缩略图看大图，点「选这张」= 选卡（hero 可在下一步指定）。'
+                 'xhs/滨田是 mixed 卡，点开样片后再定 variant。</p>')
+        h.append('<div class="allgrid">')
+        for j, name in enumerate(all_cards):
+            samples = [s for s in card_samples(name) if os.path.isfile(s)]
+            if not samples:
+                continue
+            dst = os.path.join(prev, 'all_%02d.jpg' % j)
+            if not _thumb(samples[0], dst, width=360):
+                continue
+            href = 'file:///' + samples[0].replace('\\', '/')
+            h.append('<div class="allcard">'
+                     '<a href="%s" target="_blank"><img loading="lazy" src="preview/%s" alt="%s"></a>'
+                     '<div class="nm">%s</div>'
+                     '<button class="pickbtn" data-card="%s" onclick="pick(this)">选这张</button>'
+                     '</div>' % (href, os.path.basename(dst), name, name, name))
+        h.append('</div>')
+
+    h.append('<p class="foot">这一页不替你选。都不像 ⇒ 点下面「都不是」，换候选集/拆批；'
+             '不许硬选。选完卡才渲一次 ①，不再跑 ①′。</p>')
     h.append('<button class="pickbtn alt" onclick="pickNone()">都不是 · 换候选集</button>')
     h.append('<div class="pickbar" id="pickbar">'
              '<div class="who" id="pickwho"></div>'
@@ -245,8 +251,8 @@ def make_match_page(recs: Dict[str, dict], out_dir: str,
     h.append('</div></body></html>')
 
     os.makedirs(os.path.join(out_dir, 'match'), exist_ok=True)
-    out = os.path.join(out_dir, 'match', '匹配页.html')
+    out = os.path.join(out_dir, 'match', '内容匹配.html')
     with open(out, 'w', encoding='utf-8', newline='\n') as fh:
         fh.write('\n'.join(h))
-    log('匹配页：%s（%d 个候选）' % (out, len(hits)))
+    log('内容匹配页：%s（%d 个候选）' % (out, len(hits)))
     return out

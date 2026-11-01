@@ -20,12 +20,12 @@ import os
 import re
 from typing import Dict, List
 
-# 测量层的两个真源文件
+# 测量层的真源文件（**就是 design 这一套**；不再指向旧语料目录）
+_HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = [
-    r'E:\ds\photo\_corpus\kurai\full\measure_all.py',
-    r'E:\ds\photo\_corpus\kurai\full\skin_point.py',
-    # 必须带上：measure_all 的检测/对齐/缩放全在这里（换它 = 换尺子）
-    r'E:\ds\photo\_corpus\kurai\skin_v2\skin_v2.py',
+    os.path.join(_HERE, 'measure_all.py'),
+    os.path.join(_HERE, 'skin', 'face_mask.py'),
+    os.path.join(_HERE, 'skin', 'sampler.py'),
 ]
 
 

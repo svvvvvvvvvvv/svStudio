@@ -1,88 +1,35 @@
 # -*- coding: utf-8 -*-
-"""把 §56 步 6 的计划**执行**到 LR：LRPlan → XMP → 导出 ③。
+"""把 LRPlan **执行**到 LR：写 XMP 作业单 → 导出 ③。
 
-分工（§56）：这一步不含任何"算值"——算值在 `lr_solve`，能离线复算；
-这里只负责把算好的值搬进 LR 并出片。
+分工（`LR设计.md` §8）：
+  · 算值在 `lr_solve`（纯算，可离线复算）；
+  · 落盘在这里和 `lrsink`（XMP + 桥）；
+  · 这一步不含任何"算值"，也不判过/不过 —— 人目检才是验收。
 
-映射（写死，可查）：
-  ② 曝光      = 0（背景定曝光；本版不让全局为脸动）
-  ③ 白端      = 明暗 `down` ⇒ Whites2012 = −8（**一档最小步**，半可算只给方向）
-  ⑥ 曲线      = 本版**不动**（形状先记账；曲线 LUT 待接）
-  ⑦ 局部      = LocalExposure2012 = local_ev / 4（实测公式，§61.1）
+跑批只出一次 ①、一次 ③；**不迭代**（`LR设计.md` §3 / `纪律.md`）。
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+import os
+from typing import Dict
 
-from .lr import LRPlan
+from .lr_plan import LRPlan
 from .lrsink import apply_and_export, write_jobs
 
 
-
-def to_lrplans(plans: Dict[str, dict]) -> Dict[str, LRPlan]:
-    """`lr_solve.plan_batch` 的输出 → {stem: LRPlan}。"""
-    out: Dict[str, LRPlan] = {}
-    for stem, p in plans.items():
-        pl = p.get('plan') or {}
-        w = p.get('white') or {}
-        g = p.get('grading') or {}
-        plan = LRPlan(
-            exposure_ev=float(pl.get('exposure_ev') or 0.0),   # ② 白端（EV，文档单位）
-            # ★ 2026-10-31 接线：白端残差由 `white_end_plan` 只给一档（10 UI）
-            #   Whites 值；此前这里写死 0，导致"算出来但没写进去"（复核 4 的典型）。
-            #   `white_end_plan` 已经扣掉了 exposure_ev 的影响，不会与 ② 双算。
-            whites=float(w.get('whites_ui') or 0.0),
-            fill_ev=float(pl.get('local_ev') or 0.0),
-            # local_highlights 暂不启用：桥对 LocalHighlights2012 的**回读是 nil**，
-            #   '报 ok 但读不回来' = 不许信（老账）。改用'算好的上限'来防爆（见 lr_solve）。
-            local_shadows=float(pl.get('local_shadows') or 0.0),
-            local_highlights=float(pl.get('local_highlights') or 0.0),
-            curve=p.get('curve'),
-            saturation=float(g.get('saturation') or 0.0),
-            hue_orange=float(g.get('hue_orange') or 0.0),
-            sat_orange=float(g.get('sat_orange') or 0.0),
-            lum_orange=float(g.get('lum_orange') or 0.0),
-            vibrance=float(g.get('vibrance') or 0.0),
-            split_highlight_hue=float(g.get('split_highlight_hue') or 0.0),
-            split_highlight_sat=float(g.get('split_highlight_sat') or 0.0),
-            split_shadow_hue=float(g.get('split_shadow_hue') or 0.0),
-            split_shadow_sat=float(g.get('split_shadow_sat') or 0.0),
-            split_balance=float(g.get('split_balance') or 0.0),
-            local_saturation=float(g.get('local_saturation') or 0.0),
-            point_color_h=float(g.get('point_color_h') or 0.0),
-            point_color_s=float(g.get('point_color_s') or 0.0),
-            point_color_l=float(g.get('point_color_l') or 0.0),
-            point_color_range=float(g.get('point_color_range') or 0.0),
-            point_color_sat_scale=float(g.get('point_color_sat_scale') or 0.0),
-            point_color_sat_raw=float(g.get('point_color_sat_raw') or 0.0),
-            local_toning_hue=float(g.get('local_toning_hue') or 0.0),
-            local_toning_sat=float(g.get('local_toning_sat') or 0.0),
-            notes=dict(
-                curve=str(p.get('curve') or {}),
-                white_need=str(w.get('need')),
-                person_clip=str(w.get('person_clip')),
-                bg_clip=str(w.get('bg_clip')),
-                p95=str(w.get('p95')),
-            ),
-        )
-        out[stem] = plan
-    return out
-
-
-def run(plans: Dict[str, dict], engine_dir: str, out_dir: str,
-        card: str = '', log=print) -> Dict[str, str]:
-    """写 xmp → 导出 ③。返回 {stem: ③ 路径}。"""
-    import os
-    lrp = to_lrplans(plans)
-    write_jobs(lrp, os.path.join(out_dir, 'xmp'),
-               # ★ 2026-10-31：这里以前写死 card='004'，作业单记的是错卡，回查会指错。
-               manifest_extra=dict(card=card or '?', step='lr-b'))
+def run(plans: Dict[str, LRPlan], engine_dir: str, out_dir: str,
+        card: str = '', pe: float = None, log=print) -> Dict[str, str]:
+    """写 xmp → 驱动 LR 导出 ③。返回 {stem: ③ 路径}。"""
+    write_jobs(plans, os.path.join(out_dir, 'xmp'),
+               manifest_extra=dict(card=card or '?', step='lr-b',
+                                   print_exposure=pe))
     pairs = []
-    for stem in sorted(lrp):
+    for stem in sorted(plans):
         src = os.path.join(engine_dir, '%s_engine.tif' % stem)
         if os.path.isfile(src):
-            pairs.append((stem, src, lrp[stem]))
+            pairs.append((stem, src, plans[stem]))
         else:
             log('跳过（没有 ①）：%s' % stem)
-    log('导出 %d 张（%s → %s）' % (len(pairs), engine_dir, os.path.join(out_dir, 'final')))
+    log('导出 %d 张（%s → %s）' % (len(pairs), engine_dir,
+                                 os.path.join(out_dir, 'final')))
     return apply_and_export(pairs, os.path.join(out_dir, 'final'), log=log)

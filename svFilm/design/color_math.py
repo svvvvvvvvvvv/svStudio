@@ -4,14 +4,15 @@
 · Lab → XYZ → xy → CCT：McCamy 1992 近似式
       n = (x − 0.3320) / (0.1858 − y)
       CCT = 449n³ + 3525n² + 6823.3n + 5520.33
-· CIE 1960 UCS：u = 4x/(−2x+12y+3)，v = 6y/(−2x+12y+3)；Δuv = uv 到黑体轨迹的垂直距离
+· CIE 1960 UCS：u = 4x/(−2x+12y+3)，v = 6y/(−2x+12y+3)
+· Duv：uv 到 Planck 轨迹的**法向距离**；正 = 轨迹上方（偏绿），负 = 下方（偏品红/紫）
 · Lab → HSL：Lab → XYZ → 线性 sRGB → 伽马 → HSL（坐标变换，无拟合）
 
-用途：LR 的「温度/色调/HSL 色相」不再靠标定，直接由这几个公式算。
-注：Lightroom 温度滑杆对 RAW 是开尔文刻度（Adobe 公开量程 2000–50000K），
-    所以 CCT 差多少 K 就拨多少 K；色调用 Δuv 的符号定方向。
+用途：颜色关系的换算（CCT/Duv），不是“把成片白点当场景光”。
 """
 from __future__ import annotations
+
+import math
 
 import numpy as np
 
@@ -51,15 +52,40 @@ def uv1960(x: float, y: float) -> tuple:
     return (4.0 * x / d, 6.0 * y / d)
 
 
+def planckian_xy(T: float) -> tuple:
+    """Planck 轨迹的 CIE 1931 xy（Kim et al. 2002 近似，1667–25000K）。"""
+    T = max(1667.0, min(25000.0, float(T)))
+    if T <= 4000.0:
+        x = (-0.2661239e9 / T**3 - 0.2343589e6 / T**2
+             + 0.8776956e3 / T + 0.179910)
+    else:
+        x = (-3.0258469e9 / T**3 + 2.1070379e6 / T**2
+             + 0.2226347e3 / T + 0.240390)
+    if T <= 2222.0:
+        y = -1.1063814 * x**3 - 1.34811020 * x**2 + 2.18555832 * x - 0.20219683
+    elif T <= 4000.0:
+        y = -0.9549476 * x**3 - 1.37418593 * x**2 + 2.09137015 * x - 0.16748867
+    else:
+        y = 3.0817580 * x**3 - 5.87338670 * x**2 + 3.75112997 * x - 0.37001483
+    return (x, y)
+
+
 def duv_from_lab(lab) -> float:
-    """相对 D65 白点的 Δuv（正 = 偏品红/紫，负 = 偏绿）。"""
-    u, v = uv1960(*xyz_to_xy(lab_to_xyz(lab)))
-    u0, v0 = uv1960(0.3127, 0.3290)
-    return float(v - v0)
+    """CIE 1960 Duv：到 Planck 轨迹的**有符号法向距离**。
+
+    正 = 轨迹上方（偏绿）；负 = 轨迹下方（偏品红/紫）。
+    不是“相对 D65 的 v 差”——D65 自己的 Duv 约为 +0.003。
+    """
+    x, y = xyz_to_xy(lab_to_xyz(lab))
+    u, v = uv1960(x, y)
+    xp, yp = planckian_xy(cct_from_xy(x, y))
+    up, vp = uv1960(xp, yp)
+    d = math.hypot(u - up, v - vp)
+    return float(math.copysign(d, v - vp))
 
 
 def temp_shift_k(card_lab, ours_lab) -> float:
-    """目标 CCT − 当前 CCT（正 = 要更暖）。"""
+    """目标 CCT − 当前 CCT（只描述，不是 WB 设置）。"""
     return cct_from_lab(card_lab) - cct_from_lab(ours_lab)
 
 

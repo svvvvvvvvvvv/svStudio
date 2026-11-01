@@ -1,93 +1,47 @@
 # -*- coding: utf-8 -*-
 """命令行入口（设计层的"手"）。
 
-    python -m design.cli stocks                       # 卷/纸清单 + 三组阵营 + 逐卷规格
-    python -m design.cli check  <recs.json> --stage engine|final [--stem 正则]
-    python -m design.cli plan   <recs.json> [--stem 正则] [--intent k=v ...]
-    python -m design.cli curve  <recs.json> [--stem 正则] [--intent k=v ...]
-    python -m design.cli match  <recs.json> [--intent k=v ...] [--top 6]
-    python -m design.cli texture <stock> [--long 1080] [--format 36] [--diffusion off]
+    python -m design.cli stocks                       # 卷/纸清单
+    python -m design.cli cards                        # 卡清单
+    python -m design.cli match-jpg --raf <RAW目录> --out <输出目录>
+    python -m design.cli run --raf <RAW目录> --out <输出目录> [--content a.json]
+    python -m design.cli run --raf <RAW目录> --out <输出目录> --card <卡名> [--hero <样片>] [--export]
+    python -m design.cli page --out <输出目录>          # 重出内容匹配页（不渲不量）
+    python -m design.cli xmp  <①测量.json> --card <卡名> --out <输出目录>
+    python -m design.cli review <①测量.json> <③测量.json> --out <输出目录> --manifest <xmp/manifest.json>
+
+流程（`设计真源.md` §3）：
+    机内 JPG 匹配 → 人拍板卡/hero → 渲一次 ① → 逐片 peer → LR-B 计划
+    → 写 XMP（可选驱动 LR 出 ③）→ 目检页（人目检是唯一验收）
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
+import types
 
-from . import measure as M
-from .intent import Intent
-from .invariants import check_T, report
-from .lr import solve_curve, solve_one
-from .lrsink import apply_and_export, summary as xmp_summary, write_jobs
-from .stocks import registry
-from .matchcard import batch_profile, batch_tags, cards as match_cards
-from .matchpage import make_match_page
-from .states import limit_note, regression_curve
-from .batch import Batch, run_engine, build_review, estimate
-from .lr_solve import plan_batch, summary as lr_summary
+from .batch import Batch, run_engine, measure_tif, measure_engine_dir, build_review, estimate
+from .batch_guard import build as build_guard
+from .card_content import describe as describe_content
+from .contentmatch import match_jpgs
 from .lr_exec import run as lr_run
-from .texture import Style, plan_texture, warn as tex_warn
-from .flow import Choice, Offer, choose, describe
+from .lr_solve import plan_batch, summary as lr_summary
+from .matchcard import card_samples, cards as match_cards, raw_card
+from .matchpage import make_content_page
+from .peer import build as build_peers
+from .review import make_review
+from .lrsink import write_jobs, summary as xmp_summary
+from .stocks import registry
 
 
-def _intent(pairs):
-    """--intent 可以写多次，也可以一次写多个（逗号分隔）：--intent denser=0.6,softer=0.5"""
-    it = Intent()
-    for chunk in pairs or []:
-        for kv in chunk.split(','):
-            kv = kv.strip()
-            if not kv:
-                continue
-            k, v = kv.split('=')
-            setattr(it, k, float(v))
-    return it.clamp()
-
-
-def _median_headroom(recs):
-    """这批的余量中位（只作参考；余量不是上限，见 `纪律.md` 第 6 条）"""
-    import statistics as st
-    xs = [r.get('headroom_ev') for r in recs.values()
-          if isinstance(r.get('headroom_ev'), (int, float))]
-    return st.median(xs) if xs else None
-
-
-def _match_page(recs, it, out_html, batch_name='', samples=None):
-    """出匹配页（§56 步 3）。返回 (html 路径, None, None, None, '')。
-
-    ★ 页面上"该用哪张卡"**不给结论** —— 那由人拍板。
-    """
-    out_dir = os.path.dirname(out_html) if out_html else os.path.join(
-        getattr(it, 'out_dir', '.') or '.', 'match')
-    page = make_match_page(recs, os.path.dirname(out_dir) or '.',
-                           title='%s · 匹配五选一' % (batch_name or '这批'))
-    if out_html and os.path.abspath(page) != os.path.abspath(out_html):
-        try:
-            import shutil as _sh
-            _sh.copyfile(page, out_html)
-            page = out_html
-        except Exception:                                  # noqa: BLE001
-            pass
-    return page, None, None, None, ''
-
-
-def cmd_refs(a):
-    """这批最像哪几张匹配卡（§57）。**这不是靶**：只回答"像谁"，不给结论。"""
-    from .matchcard import rank_top5, shortlist
-    recs = M.load(a.recs)
-    if a.stem:
-        recs = M.only(recs, a.stem)
-    print('口径 sha = %s ｜ 本批 %d 张' % (M.measure_sha(), len(recs)))
-    print(shortlist(rank_top5(recs, k=a.top)))
-    print()
-    print('  ⚠ 这只是"最像哪一套"，不是靶；看样例图定，别只看分数。')
-
+# ---------------------------------------------------------------- 卡/卷
 
 def cmd_cards(a):
     cs = match_cards()
-    print('匹配卡 %d 张（一张 = 一套风格：介质 + 画像 + 分面 + 样片）' % len(cs))
+    print('卡 %d 张（一张 = 一个大师目录：介质 + 点值 + WB + PE + 样片）' % len(cs))
     for c in cs:
-        print('  %-28s %-18s %-20s n=%-3d %s'
-              % (c.name, c.stock, c.paper, c.n,
-                 '/'.join(str(v) for v in list(c.tags.values())[:3])))
+        print('  %-30s %-22s %-22s n=%-3d' % (c.name, c.stock, c.paper, c.n))
 
 
 def cmd_stocks(a):
@@ -99,112 +53,40 @@ def cmd_stocks(a):
             print('  ' + str(s))
 
 
-def cmd_check(a):
-    recs = M.load(a.recs)
-    if a.stem:
-        recs = M.only(recs, a.stem)
-    print('口径 sha = %s ｜ %d 张' % (M.measure_sha(), len(recs)))
-    bad = 0
-    for name, rec in recs.items():
-        r = check_T(rec, stage=a.stage)
-        if not r.ok:
-            bad += 1
-            if bad <= a.show:
-                print('\n%s' % name)
-                print(report(r))
-    print('\n结论：%d/%d 张破了不变量' % (bad, len(recs)))
-    if bad == 0:
-        print('  ✓ 全过')
+# ---------------------------------------------------------------- 匹配
+
+def cmd_match_jpg(a):
+    """机内 JPG 内容匹配：**不渲 ①′**，只读 RAW 内嵌 JPG。"""
+    res = match_jpgs(a.raf, a.out, content_path=a.content, topn=a.top, limit=a.limit)
+    print('\n【内容匹配】前 %d 个候选（看样片定，别只看分数）：' % len(res['hits']))
+    print(describe_content(res['hits']))
+    print('\n这批内容：%s' % res['batch'].get('evidence'))
+    print('内容匹配页：%s' % res['page'])
+    print('看完回我：--card <名字> --hero <样片>')
 
 
-def cmd_plan(a):
-    recs = M.load(a.recs)
-    if a.headroom_dir:
-        # 引擎渲完写的 sidecar：这张底片还能抬几档（没有它，预算判断就只剩白端一道）
-        import glob
-        for name, rec in recs.items():
-            st = name.split('_')[0]
-            p = os.path.join(a.headroom_dir, st + '_headroom.json')
-            if os.path.isfile(p):
-                import json as _j
-                try:
-                    j = _j.load(open(p, encoding='utf-8'))
-                    rec['headroom_ev'] = float(j['headroom_ev'])
-                    # ★ 余量可不可信，一起带进去（降白端换来的余量是零和，见 flow 常数区）
-                    if 'valid' in j:
-                        rec['headroom_valid'] = bool(j['valid'])
-                        rec['headroom_why'] = str(j.get('why') or '')
-                except Exception:
-                    pass
-    if a.stem:
-        recs = M.only(recs, a.stem)
-    else:
-        # 默认只看**引擎那一态**：`_sim.png` 是仿真预览，混进来会把同一张图算两遍
-        recs = M.only(recs, r'_engine\.tif$')
-    it = _intent(a.intent)
-    print('口径 sha = %s ｜ %d 张 ｜ %s' % (M.measure_sha(), len(recs), it.describe()))
-    for name, rec in list(recs.items())[:a.show]:
-        p = solve_one(rec, intent=it)
-        print('\n%s' % name)
-        print('  看哪里=%s' % p.notes.get('lookat'))
-        print('  曝光  %+.2f EV ｜ %s' % (p.exposure_ev, p.notes.get('exposure', '')))
-        if p.notes.get('exposure_debt'):
-            print('  欠账  %s' % p.notes['exposure_debt'])
-        if p.notes.get('after_ev'):
-            print('  ①\'   %s' % p.notes['after_ev'])
-        print('  收白  %+.0f ｜ %s' % (p.highlights, p.notes.get('highlights') or '不动'))
-        if p.notes.get('highlight_verify'):
-            print('  待验  %s' % p.notes['highlight_verify'])
-        if p.notes.get('highlight_debt'):
-            print('  欠账  %s' % p.notes['highlight_debt'])
-        print('  曲线  %s' % p.notes.get('curve'))
+def cmd_page(a):
+    """只重出内容匹配页：不渲、不量、不驱动 LR。"""
+    mp = os.path.join(a.out, 'match')
+    doc_p = os.path.join(mp, 'content_match.json')
+    if not os.path.isfile(doc_p):
+        print('没有内容匹配记录：%s' % doc_p)
+        return
+    doc = json.load(open(doc_p, encoding='utf-8'))
+    jpgs = {}
+    for f in sorted(os.listdir(os.path.join(a.out, 'jpg'))):
+        if f.lower().endswith(('.jpg', '.jpeg')):
+            jpgs[os.path.splitext(f)[0]] = os.path.join(a.out, 'jpg', f)
+    from . import card_content
+    page = make_content_page(doc.get('batch_content') or {}, doc.get('hits') or [],
+                             jpgs, a.out, title=a.title or doc.get('batch', '内容匹配'),
+                             all_cards=sorted(card_content.load().keys()))
+    print('内容匹配页：%s' % page)
 
 
-def cmd_curve(a):
-    recs = M.load(a.recs)
-    if a.stem:
-        recs = M.only(recs, a.stem)
-    it = _intent(a.intent)
-    for name, rec in list(recs.items())[:a.show]:
-        pts, info = solve_curve(rec, intent=it, budget=a.budget)
-        print('\n%s' % name)
-        print('  分位 %s' % {k: round(v, 1) for k, v in (info.get('src') or {}).items()})
-        print('  修正 %s ｜ 最大位移 %.2f'
-              % (info.get('fixed') or info.get('why'), info.get('max_abs_delta') or 0))
-        if info.get('unmet'):
-            print('  ⚠ 预算内修不掉：%s ⇒ 这不是曲线的活，回引擎要余量（T0）'
-                  % info['unmet'])
-        print('  曲线 %s' % ('不需要' if pts is None else '%d 点' % len(pts)))
-
-
-def cmd_match(a):
-    recs = M.load(a.recs)
-    if a.stem:
-        recs = M.only(recs, a.stem)
-    else:
-        recs = M.only(recs, r'_engine\.tif$')
-    it = _intent(a.intent)
-    print('口径 sha = %s ｜ %d 张' % (M.measure_sha(), len(recs)))
-    print(match_report(registry(), need_from_batch(recs, it), topn=a.top))
-    if a.out:
-        _, hits, offer, _, _ = _match_page(recs, it, os.path.join(a.out, '选卡.html'),
-                                           batch_name=os.path.basename(os.path.normpath(a.out)))
-        print('\n最像的 3 套：')
-        for h in hits[:3]:
-            print('  ' + str(h))
-        print('\n可选卡（你定）：')
-        for ch in offer.choices:
-            print('  %.2f  %s' % (ch.hit.score, ch.card.label()))
-        print('\n选卡页：%s' % os.path.join(a.out, '选卡.html'))
-
+# ---------------------------------------------------------------- 端到端
 
 def _resolve_hero(card_name: str, hero: str) -> str:
-    """`--hero` → 卡样片的绝对路径；不属于这张卡就返回 ''（不静默接受）。
-
-    hero 只做目检参考（设计 §4.1：A 不拿 hero 做拟合），所以这里只校验
-    "是不是这张卡目录下的样片"，不做别的。
-    """
-    from .matchcard import card_samples
     samples = [os.path.normpath(p) for p in card_samples(card_name)]
     if not samples:
         return ''
@@ -215,366 +97,196 @@ def _resolve_hero(card_name: str, hero: str) -> str:
     return hits[0] if len(hits) == 1 else ''
 
 
-def cmd_page(a):
-    """只出选卡页：不渲、不算、不驱动 LR —— 把 <out>/engine/*.tif 重新量一遍再排版。
-
-    为什么要单独一条：`run` 停在「人选卡」那一步时，测量只在内存里，
-    页子重出一次就得整批重渲。人要看「这批 ① vs 卡的样片」对着选，
-    这条命令只花测量钱（约 1~2 秒/张）。
-    """
-    import glob
-    from .batch import measure_tif
-    eng = os.path.join(a.out, 'engine')
-    recs = {}
-    for p in sorted(glob.glob(os.path.join(eng, '*_engine.tif'))):
-        st = os.path.basename(p)[:-len('_engine.tif')]
-        r = measure_tif(p)
-        r['file'] = os.path.basename(p)
-        recs[st] = r
-        print('  量 %s ｜ 脸 L %s ｜ 爆 %s%%'
-              % (st, r.get('face_L'), (r.get('img') or {}).get('clip_pct')))
-    if not recs:
-        print('没有 ①：%s' % eng)
-        return
-    print('量完 %d 张 ｜ 口径 sha = %s' % (len(recs), M.measure_sha()))
-    page = make_match_page(recs, a.out, title=a.title or '匹配 · 挑一张卡')
-    print('匹配页：%s' % page)
+def _plans_from_manifest(path: str) -> dict:
+    """XMP manifest → {stem: 轻量 plan}（只给 review 页显示用）。"""
+    doc = json.load(open(path, encoding='utf-8'))
+    out = {}
+    for it in doc.get('items') or []:
+        wb = it.get('wb') or {}
+        basic = it.get('basic') or {}
+        pc = it.get('point_color') or {}
+        loc = it.get('local') or {}
+        out[it['stem']] = types.SimpleNamespace(
+            wb=types.SimpleNamespace(card_white=wb.get('card_white'),
+                                     note=wb.get('note') or ''),
+            exposure_ev=basic.get('exposure_ev') or 0.0,
+            contrast=basic.get('contrast') or 0.0,
+            highlights=basic.get('highlights') or 0.0,
+            shadows=basic.get('shadows') or 0.0,
+            whites=basic.get('whites') or 0.0,
+            blacks=basic.get('blacks') or 0.0,
+            point_color=types.SimpleNamespace(**pc) if pc else None,
+            local=types.SimpleNamespace(**loc) if loc else None,
+            curve=[None] * int(it.get('curve_points') or 0),
+            card_dev=it.get('card_dev') or {})
+    return out
 
 
 def cmd_run(a):
-    """端到端七步：试点 → 匹配选卡 → 整批渲+量① → LR 计划+XMP → 出③+量+验收+目检 → 回归。
-
-    前五步不碰 LR；**只有第 6 步（出 ③ 成片）才驱动 LR**（`--export` 打开）。"""
+    """端到端：匹配（或指定卡）→ 渲一次 ① → peer → LR 计划 →（可选）③。"""
     b = Batch.of(a.raf, a.out, limit=a.limit)
     print('批次 %s：%d 张 RAW ｜ %s' % (b.name, len(b.stems), estimate(len(b.stems))))
-    it = _intent(a.intent)
-    if it.describe() != '意图：无（只守不变量）':
-        print(it.describe())
+    by_name = {c.name: c for c in match_cards()}
 
-    use_card = bool(getattr(a, 'card', ''))
-    recs0 = {}
-    offer = None
-    _tb = {c.name: c for c in match_cards()}
-    from .texture import plan_texture as _plan_tex
-    import types
-
-    if use_card:
-        # ★ 卡由人定 ⇒ 不再试点、不再匹配（省掉两遍渲）。选卡页只在没指定卡时才有意义。
-        cc = _tb.get(a.card)
-        if cc is None:
-            print('没有这张卡：%s（有 %d 张，例如：%s）'
-                  % (a.card, len(_tb), ' / '.join(sorted(_tb)[:3])))
+    if not a.card:
+        # 匹配 A：机内 JPG，不渲任何东西；停在等人拍板
+        print('\n[1/3] 机内 JPG 内容匹配（不跑 ①′）')
+        try:
+            res = match_jpgs(a.raf, b.out_dir, content_path=a.content,
+                             topn=5, limit=a.limit, log=print)
+        except Exception as ex:                            # noqa: BLE001
+            print('  内容匹配失败：%s' % ex)
+            print('  ⇒ 停在这里，不退回基线渲染（设计：不单独跑一次）')
             return
-        offer = Offer(choices=[Choice(
-            hit=types.SimpleNamespace(card=cc, score=0.0, why='人工指定，不经匹配'),
-            texture=_plan_tex(cc.stock, cc.paper, long_side=1080))])
-        print('\n[1/7] 卡已指定 ⇒ **跳过试点与匹配**（省掉两遍渲）')
-    else:
-        # ★ §56 步 1：**整批渲完**再匹配（不是试点 2 张）。
-        #   2 张的"中位"就是那 2 张；全批才有分布，匹配才有分辨力。
-        print('\n[1/7] 整批渲（用基线卡），再拿全批测量去匹配')
-        _base = sorted(c.name for c in match_cards())[0]
-        from .medium import baseline_medium
-        _bch = Choice(hit=types.SimpleNamespace(card=_tb[_base], score=0.0),
-                      texture=_plan_tex(_tb[_base].stock, _tb[_base].paper),
-                      medium=baseline_medium())
-        recs0 = run_engine(b, _bch, limit=a.render_limit, log=print)
-
-        print('\n[2/7] 用全批 %d 张的测量算匹配' % len(recs0))
-        offer = choose(recs0, it, topn=5)
-        print(describe(offer))
-
-        print('\n[3/7] 出匹配页')
-        tb = batch_profile(recs0)
-        print('  本批：%s ｜ 分面：%s'
-              % ('、'.join('%s=%.1f' % (k, v) for k, v in tb.items() if k in ('sky', 'span')),
-                 '、'.join('%s=%s' % kv for kv in batch_tags(recs0).items()) or '（判不出）'))
-        page = make_match_page(recs0, b.out_dir,
-                               title='%s · 匹配五选一' % b.name)
-        print('  匹配页：%s' % page)
-        print('\n[4/7] **停在这里等你拍板**（不自动往下走）')
+        print('\n[2/3] 这批内容：%s' % res['batch'].get('evidence'))
+        print(describe_content(res['hits']))
+        print('\n[3/3] **停在这里等你拍板**（不自动往下走）')
+        print('  内容匹配页：%s' % res['page'])
         print('  看完回我：--card <名字> --hero <样片>')
         return
 
-    best = offer.best()
-    if best is None:
-        print('没有可用卡 ⇒ 停'); return
-    print('\n选中：%s' % best.card.label())
-
-    # ★ 设计 §3.4：人选卡时**同时**指定 hero（从这张卡的全部样片里点一张）。
-    #   hero 只进目检页做对照，不进求解（§4.1：A 不拿 hero 做拟合）。
-    b.card = best.card.name
-    if getattr(a, 'hero', ''):
+    card_mc = by_name.get(a.card)
+    if card_mc is None:
+        print('没有这张卡：%s（有 %d 张）' % (a.card, len(by_name)))
+        return
+    print('\n卡：%s ｜ 介质 %s + %s' % (card_mc.name, card_mc.stock, card_mc.paper))
+    b.card = card_mc.name
+    if a.hero:
         hero = _resolve_hero(b.card, a.hero)
         if not hero:
-            from .matchcard import card_samples
-            print('hero 不属于这张卡：%s' % a.hero)
-            print('  这张卡的样片（%d 张），例如：%s'
-                  % (len(card_samples(b.card)),
-                     '、'.join(os.path.basename(p) for p in card_samples(b.card)[:3])))
+            print('hero 不属于这张卡：%s（例如 %s）'
+                  % (a.hero, '、'.join(os.path.basename(p)
+                                       for p in card_samples(b.card)[:3])))
             return
         b.hero = hero
-        print('hero：%s' % os.path.basename(hero))
-    else:
-        print('hero：没指定（目检页就没有 look 参考；设计上这一步由人一起拍板）')
-    print('批次元数据：%s' % b.write_meta(intent=it.describe()))
+        print('hero：%s（只做目检参考，不进求解）' % os.path.basename(hero))
+    print('批次元数据：%s' % b.write_meta())
 
-    print('\n[4/7] 整批渲 + 量（①）')
-    # ★ 2026-10-31：基线 ①′ 用的是默认配对介质，和选中卡的介质不同 ⇒ **不能复用**。
-    _skip = []
-    if getattr(a, 'reuse', False):
-        from .batch import measure_engine_dir
-        from .card_render import medium_of as _med_of
-        _m = _med_of(best.card)
-        _sim = _m.get('simulation') or {}
-        _expect = dict(
-            card=best.card.name,
-            medium='%s + %s' % (_sim.get('film_stock'), _sim.get('print_paper')),
-            print_exposure=float(_sim.get('print_exposure') or 0.0),
-            amount=float((_m.get('couplers') or {}).get('amount') or 0.0))
-        print('  --reuse ⇒ 复用已渲的 ①（只重测，不重渲）')
-        recs = measure_engine_dir(b, log=print, expect=_expect)
-        if not recs:
-            print('  没有可复用的 ① ⇒ 退回重渲')
-            recs = run_engine(b, best, limit=a.render_limit, log=print, skip=_skip)
-    else:
-        recs = run_engine(b, best, limit=a.render_limit, log=print, skip=_skip)
-    if not recs:
-        print('整批无一有效 ⇒ 停'); return
-
-    print('\n[5/7] LR 计划（§6B 七步全开，照卡求解）')
-    # ★ 2026-10-30：`plan_batch` 要的是**原样卡字典**（带 lo/hi），不是
-    #   `MatchCard`（只有中点 + spread）。这里按名字回查 cards_v5。
-    from .matchcard import raw_card
-    card = raw_card(best.card.name)
-    if card is None:
-        print('找不到卡的原样数据（cards_v5）：%s' % best.card.name); return
-    # ★ A 段必须批级一次：先算全批中位 → 一条曲线 + 一套颜色，再逐图 B。
-    from .batch_grade import build as build_batch_grade
-    bg = build_batch_grade(recs, card)
-    for line in bg.get('ledger') or []:
-        print('  ' + line)
-    plans = plan_batch(recs, card, batch=bg)
-    print(lr_summary(plans, card['name']))
-
-    # ★ 2026-10-31「推一档」：滑块没有公开刻度，只能一轮一档。但**光重跑没用**——
-    #   参数是按 ① 算的，① 永远不变，重跑只会算出同一组数。
-    #   所以这里把每一轮当成"增量"：量**上一轮的 ③** → 算这一轮该推多少 → 和上轮累加。
-    if getattr(a, 'push', False):
-        import json as _json
-        from .batch import measure_tif as _mt
-        from .review import _find_tif as _ft
-        from .lr_solve import grading_of as _grading_of
-        cpath = os.path.join(b.out_dir, 'color_round.json')
-        prev = {}
-        if os.path.isfile(cpath):
-            prev = _json.load(open(cpath, encoding='utf-8'))
-        nxt = {}
-        for st, p in plans.items():
-            src = _ft(b.sub('final'), st)
-            rec = _mt(src) if src else recs.get(st)
-            step = _grading_of(card, rec) if rec else {}
-            # 上一轮的累计剂量：有记录用记录；**第一次**就用"本轮刚算出来的那组"，
-            # 因为现在这版 ③ 正是它产出的（否则第一次 --push 会原地踏步）。
-            base = prev.get(st) or dict(p.get('grading') or {})
-            cur = dict(base)
-            for k in ('hue_orange', 'sat_orange', 'lum_orange'):
-                v = float(base.get(k, 0.0)) + float(step.get(k, 0.0))
-                cur[k] = round(max(-100.0, min(100.0, v)), 1)
-            # 分色不累加：它是"跟着卡"的固定一档，不靠轮次加码
-            for k in ('split_shadow_hue', 'split_shadow_sat',
-                      'split_highlight_hue', 'split_highlight_sat'):
-                if step.get(k):
-                    cur[k] = float(step[k])
-            nxt[st] = cur
-            g = dict(p.get('grading') or {})
-            g.update(cur)
-            p['grading'] = g
-        tmp = cpath + '.tmp'
-        with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
-            _json.dump(nxt, fh, ensure_ascii=False, indent=2)
-        os.replace(tmp, cpath)
-        print('  推一档：上轮 + 本轮 → 累计写入 %s' % cpath)
-
-    reviewed = None
-    if a.export:
-        print('\n[6/7] 出片：LR 出成片 ③ → 量 → 验收 → 目检（唯一驱动 LR 的一步）')
+    print('\n[1/4] 渲 ①（一次；只吃这个目录的介质 + PE）')
+    if a.reuse:
+        from .card_render import medium_of
+        m = medium_of(card_mc)
+        sim = m.get('simulation') or {}
+        cw = card_mc.wb or {}
+        mw = m.get('wb') or {}
+        use = cw if (cw.get('temperature') is not None
+                     and cw.get('tint') is not None) else mw
+        expect = dict(card=card_mc.name,
+                      medium='%s + %s' % (sim.get('film_stock'), sim.get('print_paper')),
+                      print_exposure=float(sim.get('print_exposure') or 0.0),
+                      wb=('custom' if use.get('temperature') is not None
+                          and use.get('tint') is not None else 'as_shot'),
+                      wb_temperature=float(use.get('temperature') or 0.0),
+                      wb_tint=float(use.get('tint') or 1.0),
+                      wb_calibrated=False,
+                      amount=float((m.get('couplers') or {}).get('amount') or 0.0))
+        print('  --reuse ⇒ 复用已渲的 ①（只重测）')
         try:
-            got = lr_run(plans, b.sub('engine'), b.out_dir, card=card['name'], log=print)
-            print(' ③ 成片 %d 张（一次算，一轮）' % len(got))
-            # ★ 2026-10-31：`lr_run` 返回的是**路径**，验收要的是**测量记录**；
-            #   旧代码把路径直接塞给 make_review，b.get('skin') 必崩。
-            from .batch import measure_tif as _measure_tif
-            recs3 = {}
-            for _st, _p in got.items():
-                _r = _measure_tif(_p)
-                _r['file'] = os.path.basename(_p)
-                recs3[_st] = _r
-            # ★ 2026-10-31：review 要 LRPlan（对象），不是 plan_batch 的 dict；
-            #   传 dict 会让 getattr(...,0) 全变 0，S1 脸残差误判。
-            from .lr_exec import to_lrplans as _to_lrplans
-            reviewed = build_review(b, recs, _to_lrplans(plans), recs3,
-                                    light=getattr(a, 'light', None), log=print)
-            print(' 物理底线：%d/%d 张（脸/背景/曲线只报告）' % (reviewed['ok'], reviewed['n']))
-            print(' 目检：%s' % reviewed['html'])
-        except Exception as e:
-            print(' ! LR 出片失败：%s' % str(e)[:160])
-            print('   （LR 没启动？桥不通只会挡"出片"这一步；算值与作业单不受影响）')
+            recs = measure_engine_dir(b, log=print, expect=expect)
+        except Exception as ex:                            # noqa: BLE001
+            print('  复用被拒：%s' % str(ex)[:160])
+            print('  ⇒ 退回重渲（介质/WB/amount 变了，旧 ① 不能复用）')
+            recs = {}
+        if not recs:
+            recs = run_engine(b, card_mc, limit=a.render_limit, log=print)
+    else:
+        recs = run_engine(b, card_mc, limit=a.render_limit, log=print)
+    if not recs:
+        print('整批无一有效 ⇒ 停')
+        return
 
-    print('\n[7/7] ①→② 曲线回归（不用 LR 的便宜检查）')
-    nok = 0
-    # ★ 2026-10-30：这里原先遍历 `out['plans']`，而 `out` 在这个函数里根本没定义
-    #   （`plan.curve` 也不存在于 dict）⇒ 全链走到第 7 步必崩。改成 `plan_batch`
-    #   的实际输出：curve 是 16 点 LUT（`p['curve']`）。
-    for st, p in plans.items():
-        import os as _os
-        import numpy as _np
-        from PIL import Image as _I
-        pth = _os.path.join(b.sub('engine'), st + '_engine.tif')
-        if not _os.path.isfile(pth):
-            continue
-        disp = _np.asarray(_I.open(pth).convert('RGB'), _np.float64) / 255.0
-        plan_curve = p.get('curve')
-        deltas = None
-        if plan_curve:
-            from .curve import displacement
-            img = (recs.get(st) or {}).get('img') or {}
-            Ls = [img.get('p%d' % k) for k in (5, 25, 50, 75, 95)]
-            ds = displacement(plan_curve, [v for v in Ls if isinstance(v, (int, float))])
-            deltas = {'%d' % k: v for k, v in zip((5, 25, 50, 75, 95), ds)}
-        r = regression_curve(disp, plan_curve, curve_deltas=deltas)
-        nok += 1 if r.ok else 0
-    print('①→② 回归：%d/%d 通过' % (nok, len(plans)))
-    print(limit_note())
-    # ★ 2026-10-31：不是 --push 的跑 = 重新起算，上一轮的推挡累计必须清掉，
-    #   否则下次 --push 会从一个过期基准继续加。
-    if not getattr(a, 'push', False):
-        _cp = os.path.join(b.out_dir, 'color_round.json')
-        if os.path.isfile(_cp):
-            os.remove(_cp)
-            print('  清掉上一轮的推挡累计（本次是重新起算）')
+    print('\n[2/4] LR-A 批级护栏（只报告）')
+    card = raw_card(card_mc.name)
+    if card is None:
+        print('找不到卡的原样数据：%s' % card_mc.name)
+        return
+    guard = build_guard(recs, card)
+    for line in guard.get('ledger') or []:
+        print('  ' + line)
+
+    print('\n[3/4] 逐片 peer（同构图 + 同场景/背景；光位只诊断）')
+    peers = build_peers(recs, card_mc.name, log=print)
+    if peers:
+        got = sum(1 for v in peers.values() if v.get('peer_n'))
+        print('  %d/%d 张找到 peer 目标' % (got, len(peers)))
+    else:
+        print('  ! 没有 per-photo 测量 ⇒ 回退卡点值（记账）')
+    plans = plan_batch(recs, card, peer_targets=peers, log=print)
+    print(lr_summary(plans, card['name'], pe=card.get('pe')))
+
+    if a.export:
+        print('\n[4/4] 出片：LR 出 ③ → 量 → 目检页（唯一驱动 LR 的一步）')
+        try:
+            got = lr_run(plans, b.sub('engine'), b.out_dir, card=card['name'],
+                         pe=card.get('pe'), log=print)
+            print(' ③ 成片 %d 张' % len(got))
+            recs3 = {}
+            for st, p in got.items():
+                r = measure_tif(p)
+                r['file'] = os.path.basename(p)
+                recs3[st] = r
+            out = build_review(b, recs, plans, recs3, log=print)
+            print(' 目检：%s' % out['html'])
+        except Exception as e:                             # noqa: BLE001
+            print(' ! LR 出片失败：%s' % str(e)[:200])
+            print('   （算值与 XMP 作业单不受影响；LR 没启动只会挡"出片"）')
+    else:
+        print('\n（没给 --export ⇒ 只算计划、不驱动 LR；给 --export 才出 ③）')
+
     print('\n产物：%s（engine/ 与 xmp/）' % b.out_dir)
 
 
-def cmd_review(a):
-    """验收 + 目检页：拿 ① 与 ③ 的**测量**对比，出一页能看的图。
+# ---------------------------------------------------------------- 只写作业单 / 目检
 
-    不驱动 LR、不改参数。③ 的量从哪来都行（真出片 / 历史 run 的测量文件）。
-    参数优先读 `--manifest`（LR 作业单里记的实际值）；没有就按当前代码重算一遍。
-    """
-    import json
-    import types
-    from .review import by_stem, make_review
-
-    r1 = M.load_all(a.recs1)
-    r3 = M.load_all(a.recs3)
-    if a.stem:
-        r1, r3 = M.only(r1, a.stem), M.only(r3, a.stem)
-
-    plans = {}
-    if a.manifest and os.path.isfile(a.manifest):
-        man = json.load(open(a.manifest, encoding='utf-8'))
-        for it in man.get('items') or []:
-            plans[it['stem']] = types.SimpleNamespace(
-                exposure_ev=it.get('exposure_ev') or 0.0,
-                highlights=it.get('highlights') or 0.0,
-                saturation=it.get('saturation') or 0.0,
-                point_color=it.get('point_color'),
-                curve=None)
-        print('参数来源：%s（%d 张）' % (os.path.basename(a.manifest), len(plans)))
-    if not plans:
-        for st, rec in by_stem(r1).items():
-            plans[st] = solve_one(rec, log=lambda *_: None)
-        print('参数来源：按当前代码重算（%d 张）' % len(plans))
-
-    um = {}
-    if getattr(a, 'urls', ''):
-        um = json.load(open(a.urls, encoding='utf-8'))
-        print('用托管直链：%d 条' % len(um))
-    out = make_review(r1, r3, plans, a.out, tif_1_dir=a.tif1, tif_3_dir=a.tif3,
-                      title=a.title, ev_known=bool(a.manifest), url_map=um, log=print)
-    print('\n物理底线：%d/%d（T4/T5/S1/S3 只报告；过不过由你目检）' % (out['ok'], out['n']))
-    for r in out['rows']:
-        print('  %-10s %s' % (r['stem'], r['verdict']))
-        print('             %s%s' % (r['values'], r['note']))
-    print('\n目检页：%s' % out['html'])
-
-
-def cmd_states(a):
-    """对一批 ① TIF：解出曲线 -> 整幅过曲线 -> 跑 ①→② 回归检查（**不用 LR**）。"""
-    import os
-    import numpy as np
-    from PIL import Image
-    recs = M.load(a.recs)
-    if a.stem:
-        recs = M.only(recs, a.stem)
-    it = _intent(a.intent)
-    print('口径 sha = %s ｜ %d 张 ｜ %s' % (M.measure_sha(), len(recs), it.describe()))
-    tif_dir = a.tifs
-    nok = 0
-    for name, rec in recs.items():
-        stem = name.replace('\\', '/').split('/')[-1].split('.')[0]
-        path = os.path.join(tif_dir, name)
-        if not os.path.isfile(path):
-            path = os.path.join(tif_dir, stem + '.tif')
-        if not os.path.isfile(path):
-            continue
-        plan = solve_one(rec, intent=it, log=lambda *_: None)
-        disp = np.asarray(Image.open(path).convert('RGB'), np.float64) / 255.0
-        deltas = None
-        if plan.curve:
-            # 位移要**从曲线本身**算（用 src 对 src 去 plan_curve 只会得到 0）
-            from .curve import displacement
-            img = rec.get('img') or {}
-            Ls = [img.get('p%d' % k) for k in (5, 25, 50, 75, 95)]
-            ds = displacement(plan.curve, [v for v in Ls if isinstance(v, (int, float))])
-            deltas = {'%d' % k: v for k, v in zip((5, 25, 50, 75, 95), ds)}
-        r = regression_curve(disp, plan.curve, curve_deltas=deltas, budget=a.budget)
-        nok += 1 if r.ok else 0
-        if a.show > 0:
-            print('\n%s（曲线 %s 点）' % (stem, len(plan.curve or [])))
-            print(r.report())
-            a.show -= 1
-    print('\n①→② 回归：%d/%d 通过' % (nok, len(recs)))
-    print(limit_note())
+def _load_recs(path: str) -> dict:
+    doc = json.load(open(path, encoding='utf-8'))
+    rows = doc.get('per_image') if isinstance(doc, dict) else doc
+    if isinstance(rows, list):
+        out = {}
+        for r in rows:
+            st = os.path.basename(str(r.get('file') or ''))
+            for cut in ('_engine.tif', '_final.tif', '_xmp.tif', '_sim.png',
+                        '.tif', '.tiff', '.jpg', '.jpeg', '.png'):
+                if st.lower().endswith(cut):
+                    st = st[:-len(cut)]
+                    break
+            if '_' in st:
+                st = st.split('_')[0]
+            out[st] = r
+        return out
+    return dict(rows or {})
 
 
 def cmd_xmp(a):
-    """把一批图的 LRPlan 落成 XMP 作业单（**不驱动 LR**）。"""
-    recs = M.load(a.recs)
-    if a.stem:
-        recs = M.only(recs, a.stem)
-    it = _intent(a.intent)
-    plans = {}
-    for name, rec in recs.items():
-        stem = name.replace('\\', '/').split('/')[-1].split('.')[0]
-        plans[stem] = solve_one(rec, intent=it, log=lambda *_: None)
-    mf = write_jobs(plans, a.out, manifest_extra=dict(intent=it.as_dict(),
-                                                      source=a.recs))
-    print('口径 sha = %s ｜ %d 张 ｜ %s' % (M.measure_sha(), len(recs), it.describe()))
+    """① 测量 + 卡 → LRPlan → XMP 作业单（不驱动 LR）。"""
+    recs = _load_recs(a.recs)
+    card = raw_card(a.card)
+    if card is None:
+        print('没有这张卡：%s' % a.card)
+        return
+    peers = {}
+    if a.peers:
+        peers = json.load(open(a.peers, encoding='utf-8'))
+    plans = plan_batch(recs, card, peer_targets=peers, log=print)
+    print(lr_summary(plans, card['name'], pe=card.get('pe')))
+    mf = write_jobs(plans, a.out, manifest_extra=dict(card=card['name'], step='xmp',
+                                                      print_exposure=card.get('pe')))
+    print()
     print(xmp_summary(mf))
     print('输出：%s' % a.out)
 
 
-def cmd_flow(a):
-    recs = M.load(a.recs)
-    if a.stem:
-        recs = M.only(recs, a.stem)
-    it = _intent(a.intent)
-    print('口径 sha = %s ｜ %d 张 ｜ %s' % (M.measure_sha(), len(recs), it.describe()))
-    tb = {c.name: c for c in match_cards()}
-    print('现有卡 %d 张：%s' % (len(tb), ', '.join(c.label() for c in tb.values())))
-    print()
-    print(describe(choose(recs, it, topn=a.top)))
-
-
-def cmd_texture(a):
-    st = Style(format_mm=a.format, diffusion=a.diffusion)
-    p = plan_texture(a.stock, a.paper or '', long_side=a.long, style=st)
-    print('== %s ｜ 长边 %d ==' % (a.stock, a.long))
-    print(p)
-    print()
-    print(tex_warn(p, long_side=a.long))
+def cmd_review(a):
+    """①/③ 测量 + manifest → 目检页（**不判过/不过**）。"""
+    r1 = _load_recs(a.recs1)
+    r3 = _load_recs(a.recs3)
+    plans = _plans_from_manifest(a.manifest) if a.manifest else \
+        {st: types.SimpleNamespace() for st in r3}
+    um = json.load(open(a.urls, encoding='utf-8')) if a.urls else {}
+    out = make_review(r1, r3, plans, a.out, tif_1_dir=a.tif1, tif_3_dir=a.tif3,
+                      title=a.title, url_map=um, hero=a.hero, log=print)
+    print('\n目检页：%s（%d 张）' % (out['html'], out['n']))
+    print('机器只出片 + 测量；过不过由你目检。')
 
 
 def main(argv=None):
@@ -584,88 +296,44 @@ def main(argv=None):
     sub.add_parser('stocks').set_defaults(fn=cmd_stocks)
     sub.add_parser('cards').set_defaults(fn=cmd_cards)
 
-    p = sub.add_parser('refs'); p.set_defaults(fn=cmd_refs)
-    p.add_argument('recs'); p.add_argument('--stem', default='')
-    p.add_argument('--top', type=int, default=8)
-
-    p = sub.add_parser('check'); p.set_defaults(fn=cmd_check)
-    p.add_argument('recs'); p.add_argument('--stage', default='engine',
-                                           choices=['engine', 'final'])
-    p.add_argument('--stem', default=''); p.add_argument('--show', type=int, default=3)
-
-    p = sub.add_parser('plan'); p.set_defaults(fn=cmd_plan)
-    p.add_argument('recs'); p.add_argument('--stem', default='')
-    p.add_argument('--show', type=int, default=3)
-    p.add_argument('--headroom-dir', default='',
-                   help='引擎片目录（读 *_headroom.json 补"还能抬几档"）')
-    p.add_argument('--intent', action='append', help='例: brighter=0.3')
-
-    p = sub.add_parser('curve'); p.set_defaults(fn=cmd_curve)
-    p.add_argument('recs'); p.add_argument('--stem', default='')
-    p.add_argument('--budget', type=float, default=3.0)
-    p.add_argument('--show', type=int, default=3)
-    p.add_argument('--intent', action='append')
-
-    p = sub.add_parser('match'); p.set_defaults(fn=cmd_match)
-    p.add_argument('recs'); p.add_argument('--stem', default='')
-    p.add_argument('--top', type=int, default=6)
-    p.add_argument('--intent', action='append')
-    p.add_argument('--out', default='', help='出选卡页（选卡.html）到这里')
+    p = sub.add_parser('match-jpg'); p.set_defaults(fn=cmd_match_jpg)
+    p.add_argument('--raf', required=True, help='RAW 目录')
+    p.add_argument('--out', required=True, help='输出目录（写 jpg/、match/）')
+    p.add_argument('--content', default='', help='batch_content JSON（人给场景/服装）')
+    p.add_argument('--top', type=int, default=10)
+    p.add_argument('--limit', type=int, default=0, help='只跑前几张（试跑用）')
 
     p = sub.add_parser('page'); p.set_defaults(fn=cmd_page)
-    p.add_argument('--out', required=True, help='批次输出目录（含 engine/）')
-    p.add_argument('--title', default='', help='页面标题')
+    p.add_argument('--out', required=True)
+    p.add_argument('--title', default='')
 
     p = sub.add_parser('run'); p.set_defaults(fn=cmd_run)
     p.add_argument('--raf', required=True, help='RAW 目录')
     p.add_argument('--out', required=True, help='输出目录')
     p.add_argument('--limit', type=int, default=0, help='本批最多几张 RAW')
     p.add_argument('--render-limit', type=int, default=0, help='只渲前几张（试跑用）')
-    p.add_argument('--intent', action='append')
-    p.add_argument('--card', default='', help='手动指定卡名（跳过匹配排序）')
-    p.add_argument('--hero', default='', help='hero 样片（卡的样片路径或文件名；只做目检参考）')
-    p.add_argument('--export', action='store_true', help='用 LR 导出 ③（要 LR 在跑）')
-    p.add_argument('--reuse', action='store_true',
-                   help='复用已渲好的 ①（只重跑 LR 段；介质没变时用）')
-    p.add_argument('--push', action='store_true',
-                   help='推一档：量上一轮 ③，把这一轮的剂量累加上去')
-    p.add_argument('--rounds', type=int, default=2, help='③ 出片最多几轮（收白按脸进退）')
-    p.add_argument('--light', default='auto', choices=['backlit', 'frontlit', 'auto', 'none'],
-                   help='这批的光位由人给；不给=unknown（逆光才做的动作都不触发）')
-
-    p = sub.add_parser('review'); p.set_defaults(fn=cmd_review)
-    p.add_argument('recs1', help='① 的测量（measure_all 输出）')
-    p.add_argument('recs3', help='③ 的测量')
-    p.add_argument('--out', required=True, help='目检页输出目录')
-    p.add_argument('--tif1', default='', help='① 的 tif 目录（出图用）')
-    p.add_argument('--tif3', default='', help='③ 的 tif 目录（出图用）')
-    p.add_argument('--manifest', default='', help='LR 作业单 manifest.json（读实际参数）')
-    p.add_argument('--urls', default='', help='图片直链 json（{本地文件名: url}），手机端页面用')
-    p.add_argument('--stem', default='')
-    p.add_argument('--title', default='成片目检')
-
-    p = sub.add_parser('states'); p.set_defaults(fn=cmd_states)
-    p.add_argument('recs'); p.add_argument('--tifs', required=True)
-    p.add_argument('--stem', default='')
-    p.add_argument('--budget', type=float, default=3.0)
-    p.add_argument('--show', type=int, default=2)
-    p.add_argument('--intent', action='append')
+    p.add_argument('--card', default='', help='人拍板的卡名（不给则只做内容匹配）')
+    p.add_argument('--content', default='', help='batch_content JSON（匹配用）')
+    p.add_argument('--hero', default='', help='hero 样片（只做目检参考）')
+    p.add_argument('--export', action='store_true', help='用 LR 出 ③（要 LR 在跑）')
+    p.add_argument('--reuse', action='store_true', help='复用已渲好的 ①（只重测）')
 
     p = sub.add_parser('xmp'); p.set_defaults(fn=cmd_xmp)
-    p.add_argument('recs'); p.add_argument('--out', required=True)
-    p.add_argument('--stem', default='')
-    p.add_argument('--intent', action='append')
+    p.add_argument('recs', help='① 的测量 JSON（measure_all 的 per_image）')
+    p.add_argument('--card', required=True)
+    p.add_argument('--out', required=True)
+    p.add_argument('--peers', default='', help='peer.build 的输出 JSON（可选）')
 
-    p = sub.add_parser('flow'); p.set_defaults(fn=cmd_flow)
-    p.add_argument('recs'); p.add_argument('--stem', default='')
-    p.add_argument('--top', type=int, default=5)
-    p.add_argument('--intent', action='append')
-
-    p = sub.add_parser('texture'); p.set_defaults(fn=cmd_texture)
-    p.add_argument('stock'); p.add_argument('--paper', default='')
-    p.add_argument('--long', type=int, default=1080)
-    p.add_argument('--format', type=float, default=36.0)
-    p.add_argument('--diffusion', default='off')
+    p = sub.add_parser('review'); p.set_defaults(fn=cmd_review)
+    p.add_argument('recs1', help='① 的测量 JSON')
+    p.add_argument('recs3', help='③ 的测量 JSON')
+    p.add_argument('--out', required=True)
+    p.add_argument('--tif1', default='', help='① 的 tif 目录')
+    p.add_argument('--tif3', default='', help='③ 的 tif 目录')
+    p.add_argument('--manifest', default='', help='XMP 作业单 manifest.json')
+    p.add_argument('--urls', default='', help='图片直链 json（手机端）')
+    p.add_argument('--hero', default='', help='hero 样片')
+    p.add_argument('--title', default='成片目检')
 
     a = ap.parse_args(argv)
     a.fn(a)

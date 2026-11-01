@@ -33,7 +33,7 @@ import os
 import statistics as st
 
 _ROOT = r'E:\svStudio\svFilm\analysis\corpus\kurai'
-_CARDS = os.path.join(_ROOT, 'cards_v5.json')
+_CARDS = os.path.join(_ROOT, 'cards_v6.json')
 _BASE = r'E:\svStudio\svFilm\analysis\corpus\kurai\medium_base'
 
 # 每个语料的**基线介质**（已从旧 preset 一次性冻结成 medium_base/<语料>.json）。

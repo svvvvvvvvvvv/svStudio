@@ -1,23 +1,14 @@
 # -*- coding: utf-8 -*-
-"""批次：从 RAW 目录一路跑到 XMP 作业单。**不驱动 LR**。
+"""批次：RAW 目录 → 一次 ① 渲染 + 交付域测量。**不驱动 LR**。
 
-这一段存在的理由（预检发现的三个拦路石）：
-  1. **鸡生蛋**：选卡要 ① 的测量，可批次开始时只有 RAW
-     ⇒ 先拿现有卡渲 2 张"试点"，用它们的**场景侧量**（天空/爆白/光比）算需求。
-       试点卡的风格不会污染这个判断 —— 因为需求只用场景量，不用颜色偏差。
-  2. 渲完不会自动量 ⇒ 这里渲完立刻量。
-  3. 没有批次清单 ⇒ 这里从目录生成。
-
-流程：
+v0.3 流程（`设计真源.md` §3）：
     b = Batch.of(raf_dir, out_dir)
-    recs0 = run_engine(b, baseline_choice)   # 基线 ①′（整批）
-    offer = choose(recs0, intent)            # 选卡
-    recs  = run_engine(b, offer.best())      # 整批渲 -> ①
-    plans = lr_solve.plan_batch(recs, card)  # LR 计划
-    jobs  = write_jobs(plans, out_dir)       # XMP 作业单
-
-用法：
-    from design.batch import Batch, pilot, run_engine
+    res = contentmatch.match_jpgs(...)      # 匹配 A：机内 JPG，不渲 ①′
+    # 人拍板 card / hero
+    recs  = run_engine(b, card)             # 只渲一次 ①（交付尺寸）
+    peers = peer.build(recs, card)          # 同构图/同场景 peer
+    plans = lr_solve.plan_batch(recs, card, peers)
+    jobs  = lrsink.write_jobs(plans, out_dir)   # XMP 作业单
 """
 from __future__ import annotations
 
@@ -27,9 +18,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
-from . import measure as M
-from .flow import Choice, choose, render_card
-from .lrsink import write_jobs
+from .flow import render_card
 
 RAW_EXT = ('*.RAF', '*.raf', '*.NEF', '*.CR2', '*.CR3', '*.ARW', '*.DNG')
 
@@ -58,7 +47,7 @@ class Batch:
         return cls(name=name, raf_dir=raf_dir, out_dir=out_dir, stems=stems)
 
     def write_meta(self, **kv) -> str:
-        """批次元数据（card / hero / intent …）落到 `<out>/batch.json`。
+        """批次元数据（card / hero …）落到 `<out>/batch.json`。
 
         原子写：先写临时文件再替换（纪律：改 JSON 要原子写，别写半个文件）。
         """
@@ -94,35 +83,89 @@ class Batch:
 
 # ---------------------------------------------------------------- 测量
 
-def measure_tif(path: str, with_bg: bool = True, fixed_xy=None) -> dict:
-    """渲出来的 TIF 立刻量。
+# 交付域（`测量设计.md` §1.1）：sRGB / 长边 1080。
+# 与卡比对的量必须在这个域里量；16bit TIF 只用于物理底线（死白/p1）。
+DELIVERY_LONG = 1080
 
-    `with_bg=True` 是**必须的**（2026-10-29 真跑发现）：没有背景就**没有 `light_ratio`**，
-    `light_state()` 永远返回 unknown ⇒ 逆光补偿、光位提示全是死的。
-    代价很小（9 张量背景约 1 秒/张）。
+
+def _delivery_copy(path: str) -> str:
+    """TIF/大图 → sRGB / 长边 1080 的交付域副本（测量用）。
+
+    ★ 存 PNG 而不是 JPEG：交付域的关键是 **sRGB + 1080**；JPEG 压缩噪声会让
+      YuNet 在小脸上误检（实测 DSCF2500：1080 JPEG 把右上角空调外机当成脸，
+      box 185×234；同一像素的 1080 PNG 检出正确的人脸 60×82）。
+      测量要的是"同一工件、同一分辨率"，不是"再加一层压缩噪声"。
     """
-    import sys
-    P = r'E:\svStudio\svFilm\analysis\corpus\kurai'
-    if P not in sys.path:
-        sys.path.insert(0, P)
-    # ★ 2026-10-31：measure_all 依赖已删的 skin_v2/person_masks，生产改用自包含的
-    #   measure_v7（design.skin + mediapipe）。这里把 v7 的扁平字段补成旧接口
-    #   同时保留的嵌套形状，plan_batch 和 review 都能吃。
-    import measure_v7 as MA
-    rec = MA.measure_one(path)
-    rec.setdefault('skin', dict(
-        L=rec.get('face_L'), C=rec.get('face_C'), h=rec.get('face_h'),
-        b=rec.get('face_b'), p5=rec.get('face_p5'), p95=rec.get('face_p95'),
-        p99=rec.get('face_p99'), px=rec.get('face_px')))
-    rec.setdefault('person', dict(
-        L=rec.get('person_L'), p95=rec.get('person_p95'),
-        p99=rec.get('person_p99'), px=rec.get('person_px'),
-        clip_pct=rec.get('person_clip_pct')))
-    rec.setdefault('bg', dict(
-        L=rec.get('bg_L'), L_p90=rec.get('bg_L_p90'),
-        L_p95=rec.get('bg_L_p95'), px=rec.get('bg_px')))
-    # 引擎渲完会写一张 sidecar：这张底片还能抬几档
+    import hashlib
+    import tempfile
+    from PIL import Image
+    st = os.stat(path)
+    key = hashlib.sha1(('%s|%d|%d' % (os.path.abspath(path), st.st_mtime_ns,
+                                      st.st_size)).encode('utf-8')).hexdigest()[:16]
+    root = os.path.join(tempfile.gettempdir(), 'svfilm_delivery')
+    os.makedirs(root, exist_ok=True)
+    dst = os.path.join(root, key + '.png')
+    if os.path.isfile(dst):
+        return dst
+    im = Image.open(path).convert('RGB')
+    k = DELIVERY_LONG / float(max(im.size))
+    if k < 1.0:
+        im = im.resize((max(1, round(im.width * k)), max(1, round(im.height * k))),
+                       Image.LANCZOS)
+    tmp = dst + '.tmp'
+    im.save(tmp, 'PNG')
+    os.replace(tmp, dst)
+    return dst
+
+
+def measure_tif(path: str) -> dict:
+    """量一张出片 —— **统一用 design.measure_all 一把尺子 + 交付域副本**。
+
+    ★ 2026-11-01 v0.3：与卡比对的量必须在交付域（sRGB/1080）量；
+      直接量 2048 的 16bit TIF 与大师的 1080 JPEG 不是同一工件。
+    """
     import json
+    from .measure_all import measure_one as _measure
+    rec = _measure(_delivery_copy(path))
+    rec['file'] = os.path.basename(path)
+    if rec.get('err'):
+        return rec
+    sk = rec.get('skin') or {}
+    ps = rec.get('person') or {}
+    bg = rec.get('bg') or {}
+    face = rec.get('face') or {}
+    # 扁平别名（给 plan/peer 的接口）
+    rec['face_L'] = sk.get('L')
+    rec['face_C'] = sk.get('C')
+    rec['face_h'] = sk.get('h')
+    rec['face_b'] = sk.get('b')
+    rec['person_L'] = ps.get('L')
+    rec['bg_L'] = bg.get('L')
+    rec['bg_L_p90'] = bg.get('L_p90')
+    rec['bg_L_p95'] = bg.get('L_p95')
+    rec['face_px'] = face.get('n')
+    rec['person_px'] = int(ps.get('share', 0) * (rec.get('meta', {}).get('orig', [1, 1])[0]
+                                                  * rec.get('meta', {}).get('orig', [1, 1])[1]))
+    rec['bg_px'] = bg.get('n')
+    rec['n_px'] = (rec.get('meta', {}).get('orig', [1, 1])[0]
+                   * rec.get('meta', {}).get('orig', [1, 1])[1])
+    rec['face_p5'] = rec.get('face_p5')
+    rec['face_p95'] = rec.get('face_p95')
+    rec['face_p99'] = rec.get('face_p99')
+    rec['person_p95'] = rec.get('person_p95')
+    rec['person_p99'] = rec.get('person_p99')
+    rec['person_clip_pct'] = ps.get('clip_pct')
+    rec['face_over_bg'] = (round(float(sk['L']) / float(bg['L']), 3)
+                           if sk.get('L') and bg.get('L') else None)
+    rec['person_over_bg'] = (round(float(ps['L']) / float(bg['L']), 3)
+                             if ps.get('L') and bg.get('L') else None)
+    rec['skin'] = dict(sk, p5=rec.get('face_p5'), p95=rec.get('face_p95'),
+                       p99=rec.get('face_p99'), px=face.get('n'))
+    rec['person'] = dict(ps, p95=rec.get('person_p95'), p99=rec.get('person_p99'),
+                         px=rec.get('person_px'),
+                         clip_pct=rec.get('person_clip_pct'))
+    rec['bg'] = dict(bg)
+    # 引擎渲完会写一张 sidecar：这张底片还能抬几档
     side = path.replace('_engine.tif', '_headroom.json')
     if os.path.isfile(side):
         try:
@@ -134,12 +177,9 @@ def measure_tif(path: str, with_bg: bool = True, fixed_xy=None) -> dict:
 
 # ---------------------------------------------------------------- 整批
 
-def run_engine(b: Batch, choice: Choice, measure_fn=None, limit: int = 0,
+def run_engine(b: Batch, card, measure_fn=None, limit: int = 0,
                skip: Optional[List[str]] = None, log=print) -> Dict[str, dict]:
-    """整批渲 + 立刻量，返回 ① 的记录。
-
-    skip：试点已经渲过的 stem（同卡同参数，不必重渲；但要重新量）。
-    """
+    """整批渲 + 立刻量（交付域），返回 ① 的记录。"""
     stems = b.stems[:limit] if limit else b.stems
     if skip:
         stems = [s for s in stems if s not in set(skip)]
@@ -147,15 +187,13 @@ def run_engine(b: Batch, choice: Choice, measure_fn=None, limit: int = 0,
     if not paths:
         raise RuntimeError('没有匹配到 RAW：%s' % b.raf_dir)
     t0 = time.time()
-    tifs = render_card(choice, paths, b.sub('engine'), log=log)
+    tifs = render_card(card, paths, b.sub('engine'), log=log)
     mf = measure_fn or measure_tif
     recs = {}
     for st, p in tifs.items():
         r = mf(p)
         r['file'] = os.path.basename(p)
-        # ★ **没脸的图也要留着**（10-29 真跑发现 DSCF1726 整张被漏掉）：
-        #   `pick_lookat` 会给它"整幅 + 弃权 0 档"，照样出片；
-        #   在这里按皮肤过滤 = 这张图干脆没有 LR 计划、也就不出 ③。
+        # ★ 没脸的图也要留着（照样出片；只在 LR 计划里记账"缺脸"）
         recs[st] = r
     dt = time.time() - t0
     log('整批：%d 张渲完，%d 张有效，%.0f 秒（%.0f 秒/张）'
@@ -163,36 +201,14 @@ def run_engine(b: Batch, choice: Choice, measure_fn=None, limit: int = 0,
     return recs
 
 
-def _light_kind(p_engine, p_final):
-    """光位：先 **light_probe**（成片口径），拿不到再退回 `light_state`。
-
-    为什么换：`light_state` 只判得清极端情况（dark≥0.35 且 gap≥12，或 gap≥35），
-    中间一律 unknown ⇒ 今天这批 10 张只判出 4 张，补光档因此几乎不触发。
-    `light_probe` 用的是"脸上梯度 + 近邻背景 + 发丝"三个量，10-29 三百张目检过。
-    """
-    try:
-        import light_probe as LP
-        # ★ 只看 **①**（我们还没动手的那张）：光位必须**前馈**。
-        #   拿 ③ 判就是"改完再看自己改得对不对"，会自己跟自己反馈（手册那条振荡）。
-        for p in (p_engine, p_final):
-            if p and os.path.isfile(p):
-                k, _, _, _ = LP.classify(LP.probe(p))
-                if k and k != 'unknown':
-                    return k
-    except Exception:                                      # noqa: BLE001
-        pass
-    return 'unknown'
-
-
-
 def measure_engine_dir(b: Batch, log=print, expect: Optional[Dict[str, str]] = None) -> Dict[str, dict]:
     """复用已经渲好的 ①（只重测，不重渲）。
 
     用途：只改 LR 段（颜色/白端/曲线）时，引擎那一步不用重跑 —— ① 只取决于卡的介质，
-    介质没变就不该重渲（一次 4 分钟、还白白多一遍噪声）。
+    介质没变就不该重渲（一次几分钟，还白白多一遍噪声）。
 
-    ★ `expect`（如 `{'card': ..., 'preset': ...}`）：和 `engine/_render.json` 比对，
-      不一致就抛。没有这道校验，换卡/换 amount 之后复用旧底片会**静默**算错整批。
+    ★ `expect`（如 `{'card': ..., 'wb': 'as_shot', 'wb_calibrated': True}`）：和 `engine/_render.json` 比对，
+      不一致就抛。没有这道校验，换卡/改 WB/改 amount 之后复用旧底片会**静默**算错整批。
     """
     import glob
     import json
@@ -211,7 +227,7 @@ def measure_engine_dir(b: Batch, log=print, expect: Optional[Dict[str, str]] = N
             if v and meta.get(k) != v:
                 raise RuntimeError(
                     '复用被拒：这批 ① 是 %s=%r 渲的，现在要 %r。'
-                    '换卡/换预设/改 amount 之后必须重渲。' % (k, meta.get(k), v))
+                    '换卡/改 WB/改 amount 之后必须重渲。' % (k, meta.get(k), v))
     recs = {}
     for p in sorted(glob.glob(os.path.join(eng, '*_engine.tif'))):
         st = os.path.basename(p)[:-len('_engine.tif')]
@@ -225,15 +241,14 @@ def measure_engine_dir(b: Batch, log=print, expect: Optional[Dict[str, str]] = N
 
 
 def build_review(b: Batch, recs: Dict[str, dict], plans: Dict[str, object],
-                 recs3: Dict[str, dict], light: Optional[str] = None,
-                 log=print) -> Dict[str, object]:
-    """验收 + 目检页（G2/G3）。逻辑在 `review.make_review`（不依赖 Batch，能单独用）。"""
+                 recs3: Dict[str, dict], log=print) -> Dict[str, object]:
+    """出目检页（**不判过/不过**）。逻辑在 `review.make_review`（不依赖 Batch）。"""
     from .review import make_review
     return make_review(recs, recs3, plans, b.out_dir,
                        tif_1_dir=b.sub('engine'), tif_3_dir=b.sub('final'),
-                       title='%s · 成片目检' % b.name, light=light, hero=b.hero, log=log)
+                       title='%s · 成片目检' % b.name, hero=b.hero, log=log)
 
-def estimate(n: int, per_image_s: float = 25.0) -> str:
-    """给个时间预估（渲一张要跑两次 headroom 解，约 22~30 秒）。"""
+def estimate(n: int, per_image_s: float = 8.0) -> str:
+    """给个时间预估（1080 交付尺寸，约 5~10 秒/张）。"""
     t = n * per_image_s
     return '%d 张 ≈ %.0f 秒（%.1f 分）' % (n, t, t / 60.0)

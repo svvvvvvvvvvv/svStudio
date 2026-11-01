@@ -75,7 +75,7 @@ def apply_all_pe() -> dict:
 
     from .medium import load, save
     root = r'E:\svStudio\svFilm\analysis\corpus\kurai'
-    cards = json.load(open(os.path.join(root, 'cards_v5.json'), encoding='utf-8'))['cards']
+    cards = json.load(open(os.path.join(root, 'cards_v6.json'), encoding='utf-8'))['cards']
     out = {}
     for c in cards:
         name = c['name']

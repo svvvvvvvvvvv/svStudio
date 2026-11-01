@@ -1,1069 +1,337 @@
 # -*- coding: utf-8 -*-
-"""单元测试：把**纯函数**的判据钉住（不碰渲染、不碰 LR）。
-
-为什么要它（自审 P3-5）：
-  · 不变量判定、曲线插值、可行性判断都是纯函数，最容易在重构中悄悄坏；
-  · 它们又恰好是"错了会让整套结论偏掉"的那一层。
+"""设计层单测：**纯函数，不渲图、不碰 LR**。
 
 跑：
-    python -m pytest design/tests -q        （若装了 pytest）
-    python design/tests/test_design.py      （直接跑也行）
+    & $py -X utf8 design/tests/test_design.py
+
+覆盖 v0.3 的链：
+  · 色度学 / 曲线（定义式）
+  · WB 卡级（引擎解码层）
+  · 明暗目标（形状锚在 ① 的 p50；卡/批不匹配要报）
+  · Basic 滑杆（实测一阶响应；削顶不动）
+  · 肤色（蒙版里的 Point Color）+ 分色
+  · LRPlan/XMP（WB 不写 XMP）
+  · 目检页（没有机器过/不过）
 """
 from __future__ import annotations
 
-import json
 import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from design.curve import _fit_points, _pchip, apply_curve_rgb, displacement, plan_curve
-from design.invariants import T0, check_T
-from design.lr import eval_slope, ev_for_dL
+from design import lr_response as R
+from design.batch_guard import build as guard_build
+from design.color_math import cct_from_lab, duv_from_lab
+from design.curve import grid16
+from design.curve_design import apply_lut, curve_from_quantiles
+from design.lr_plan import LRPlan, Local, PointColor, WhiteBalance
+from design.lr_solve import (anchor_target, basic_tone, grading, plan_batch,
+                             skin_target, summary, tone_target, wb_of)
+from design.lrsink import diagnostic, plan_to_xmp
+from design.photometry import code_to_l, ev_for_l, l_after_ev, l_to_code, l_to_y, y_to_l
+from design.review import contact_sheet, make_review
+
+
+# ---------------------------------------------------------------- 小工具
+
+def _rec(p5=10, p25=25, p50=50, p75=75, p95=90, p99=95, face_L=50, face_C=15,
+         face_h=45, clip=0.0, person_clip=0.0, wc=0.0, rgb=(210, 160, 130)):
+    return dict(
+        img=dict(p5=p5, p25=p25, p50=p50, p75=p75, p95=p95, p99=p99,
+                 contrast=p95 - p5, clip_pct=clip),
+        skin=dict(L=face_L, C=face_C, h=face_h, b=18.0),
+        skin_rgb=list(rgb),
+        person=dict(clip_pct=person_clip, L=face_L),
+        bg=dict(L=40.0, L_p90=60.0),
+        white_point=dict(n=5000, a=-1.0, b=-2.0, C=2.2, L_thr=93.0),
+        warm_cool_b=wc)
+
+
+def _card(**kw):
+    c = dict(name='T_card', points=dict(
+        p5=6.0, p25=18.0, p50=45.0, p75=75.0, p95=94.0, contrast=88.0,
+        face_L=60.0, face_C=20.0, face_h=55.0, toe=12.0, shoulder=18.0,
+        contrast_win=60.0, skew=0.35, warm_cool_b=1.0), bands={}, samples=[])
+    c.update(kw)
+    return c
+
+
+# ---------------------------------------------------------------- 色度学 / 曲线
+
+def test_photometry_roundtrip():
+    for L in (0.0, 5.0, 18.0, 50.0, 82.0, 100.0):
+        assert abs(y_to_l(l_to_y(L)) - L) < 1e-9
+        assert abs(code_to_l(l_to_code(L)) - L) < 0.05
+
+
+def test_ev_exact():
+    for L in (20.0, 50.0, 80.0):
+        L1 = l_after_ev(L, 0.7)
+        assert abs(ev_for_l(L, L1) - 0.7) < 1e-9
+    assert abs(l_after_ev(50.0, 0.0) - 50.0) < 1e-9
+
+
+def test_cct_neutral_is_6500():
+    assert abs(cct_from_lab([95.0, 0.0, 0.0]) - 6500.0) < 120.0
+
+
+def test_duv_is_distance_to_planckian_locus():
+    # D65 自己不是 Duv=0；它在轨迹上方（正=绿）
+    d0 = duv_from_lab([95.0, 0.0, 0.0])
+    assert 0.002 < d0 < 0.005
+    # 加一点品红（a 正、b 负）⇒ Duv 下降
+    assert duv_from_lab([95.0, 0.5, -0.5]) < d0
+    # 加一点绿（a 负）⇒ Duv 上升
+    assert duv_from_lab([95.0, -1.0, 0.0]) > d0
+
+
+def test_grid16_contains_anchor_codes():
+    g = grid16([12.0, 119.0, 250.0])
+    assert len(g) == 16 and g[0] == 0.0 and g[-1] == 255.0
+    for a in (12.0, 119.0, 250.0):
+        assert a in g, (a, g)
+
 
+def test_curve_keeps_p50_and_is_monotone():
+    q = dict(p5=8.0, p25=30.0, p50=55.0, p75=80.0, p95=95.0)
+    shape = dict(toe=12.0, contrast_win=50.0, shoulder=15.0)
+    pts = curve_from_quantiles(q, shape, p95_cap=94.0)
+    assert pts and len(pts) == 16
+    ys = [y for _, y in pts]
+    assert all(ys[i] <= ys[i + 1] for i in range(len(ys) - 1))
+    assert abs(apply_lut(pts, 55.0) - 55.0) < 1.0
+    assert abs(apply_lut(pts, 0.0)) < 1e-6
+    assert abs(apply_lut(pts, 100.0) - 100.0) < 1e-6
+
+
+# ---------------------------------------------------------------- 目标（形状锚定）
+
+def test_peer_shape_target():
+    peer = dict(peer_n=3, shape=dict(toe=10.0, shoulder=14.0, p95=94.0,
+                                    contrast_win=60.0),
+                rel=dict(p50=45.0, p95=94.0, contrast=88.0, warm_cool_b=1.0),
+                skin=dict(L=60.0, C=20.0, h=55.0))
+    t = tone_target(peer, _card())
+    assert t and t['source'] == 'peer'
+    assert abs(t['contrast'] - 88.0) < 1e-6
+    assert abs(t['skew'] - (45.0 - (94.0 - 88.0)) / 88.0) < 1e-6
+
+
+def test_anchor_uses_own_p50():
+    t = anchor_target(dict(contrast=80.0, skew=0.4, toe=10.0, shoulder=14.0),
+                      50.0)
+    assert t and abs(t['q50'] - 50.0) < 1e-9
+    assert abs(t['q5'] - (50.0 - 0.4 * 80.0)) < 1e-9
+    assert t['q5'] < t['q25'] < t['q50'] < t['q75'] < t['q95']
+
+
+def test_anchor_reports_mismatch():
+    led = []
+    assert anchor_target(dict(contrast=88.0, skew=0.35, toe=12.0, shoulder=18.0),
+                         65.0, led) is None
+    assert any('卡/批不匹配' in x for x in led), led
+
+
+def test_skin_target_falls_back_to_card():
+    s = skin_target({}, _card())
+    assert abs(s['skin']['L'] - 60.0) < 1e-9
+    assert abs(s['warm_cool_b'] - 1.0) < 1e-9
+
+
+# ---------------------------------------------------------------- WB（as-shot + 白点目标）
+
+def test_wb_is_card_level_not_white_point():
+    card = _card(wb=dict(cast=dict(a=-1.0, b=0.5),
+                         white_point=dict(L=94.0, a=-1.0, b=0.0, C=1.0),
+                         duv=0.0005))
+    wb = wb_of(card, {'a': _rec()})
+    assert not wb.is_set()          # 不落开尔文
+    assert wb.card_white is None    # 白点不再当目标
+    assert 'cast' in wb.note and '不驱动' in wb.note
+
+
+def test_wb_missing_is_reported():
+    led = []
+    wb = wb_of(_card(), {'a': _rec()}, led)
+    assert not wb.is_set()
+    assert any('无 cast' in x for x in led), led
+
+
+# ---------------------------------------------------------------- Basic（实测响应）
+
+def test_slider_domain():
+    assert R.slider_for_delta('contrast', 50.0, 0.2) is not None
+    assert R.slider_for_delta('contrast', 5.0, 0.2) is None      # L 域外
+    assert R.slider_for_delta('contrast', 50.0, 99.0) is None    # 超过 ±50
+
+
+def test_basic_tone_moves_shape():
+    rec = _rec(p5=8, p25=20, p50=50, p75=80, p95=92)
+    t = anchor_target(dict(contrast=80.0, skew=0.5, toe=20.0, shoulder=20.0),
+                      50.0)
+    assert t and abs((t['q75'] - t['q25']) - 40.0) < 1e-9
+    out = basic_tone(rec, t, [])
+    ui = out['ui']
+    assert any(abs(v) > 1e-9 for v in ui.values()), ui
+    before = abs(60.0 - 40.0)
+    after = abs((out['pred']['p75'] - out['pred']['p25']) - 40.0)
+    assert after <= before + 1e-6
+
+
+def test_basic_tone_skips_when_clipped():
+    rec = _rec(person_clip=3.0)
+    t = anchor_target(dict(contrast=80.0, skew=0.4, toe=10.0, shoulder=14.0), 50.0)
+    out = basic_tone(rec, t, [])
+    assert all(abs(v) < 1e-9 for v in out['ui'].values()), out['ui']
+    assert out['pred']['p50'] == rec['img']['p50']
+
+
+def test_basic_tone_skips_without_target():
+    out = basic_tone(_rec(), None, [])
+    assert all(abs(v) < 1e-9 for v in out['ui'].values())
+
+
+# ---------------------------------------------------------------- 肤色 / 分色
+
+def test_grading_point_color():
+    # C/L: 12/50=0.24 → 目标 18/55=0.327 ⇒ SatScale +0.364（SDK -1..1 连续）
+    rec = _rec(face_L=50.0, face_C=12.0, face_h=40.0)
+    t = dict(skin=dict(L=55.0, C=18.0, h=46.0), warm_cool_b=0.0)
+    g = grading(_card(), rec, t, [])
+    pc = g['point_color']
+    assert pc and pc.is_set()
+    assert abs(pc.sat_scale - 0.364) < 1e-9, pc.sat_scale
+    assert pc.sat_scale > 0
+    # 反向：目标更灰 ⇒ 负 SatScale
+    g2 = grading(_card(), rec, dict(skin=dict(L=55.0, C=8.0, h=46.0),
+                                    warm_cool_b=0.0), [])
+    assert abs(g2['point_color'].sat_scale + 0.394) < 1e-9
+
+
+def test_grading_split_direction():
+    # 近中性的暖/冷高光/暗部 ⇒ 分色按卡方向
+    rec = _rec(wc=-5.0)
+    card = _card(tone=dict(shadow=dict(lab=[10.0, -0.4, 0.3], hsl_h=210.0),
+                           highlight=dict(lab=[90.0, 0.4, 0.3], hsl_h=40.0)))
+    t = dict(skin=dict(L=50.0, C=15.0, h=45.0), warm_cool_b=1.0)
+    g = grading(card, rec, t, [])
+    sp = g['split']
+    assert sp and sp['highlight_hue'] == 40.0 and sp['shadow_hue'] == 210.0
+    assert sp['shadow_sat'] > 0 and sp['highlight_sat'] > 0
+
+
+def test_grading_split_skips_scene_colour():
+    # 高光是树叶绿（C=2.67/h=99）⇒ 场景色，不做全局分色
+    rec = _rec(wc=3.0)
+    card = _card(tone=dict(shadow=dict(lab=[13.3, -0.11, 0.76], hsl_h=46.3),
+                           highlight=dict(lab=[92.1, -1.86, 1.92], hsl_h=98.9)))
+    t = dict(skin=dict(L=58.0, C=21.0, h=58.0), warm_cool_b=1.0)
+    g = grading(card, rec, t, [])
+    assert g['split']['highlight_sat'] == 0.0
+    assert g['split']['shadow_sat'] == 0.0
+
+
+# ---------------------------------------------------------------- 计划 / XMP
+
+def _plan_example():
+    p = LRPlan()
+    p.wb = WhiteBalance(temperature=6464.0, note='card')
+    p.contrast = -12.0
+    p.highlights = -8.0
+    p.point_color = PointColor(h=0.08, s=0.35, l=0.6, range=0.5,
+                               sat_scale=0.05, rgb=[210, 160, 130])
+    p.local = Local(exposure_ev=0.4)
+    p.curve = [(0, 0), (16, 16), (255, 255)]
+    return p
+
+
+def test_plan_xmp_has_no_wb_and_has_basic():
+    p = _plan_example()
+    sc = p.as_xmp_scalars()
+    assert sc['Contrast2012'] == -12.0
+    assert 'HueAdjustmentOrange' not in sc
+    assert 'WhiteBalance' not in sc and 'Temperature' not in sc
+    xmp = plan_to_xmp(p)
+    assert diagnostic(xmp)['ok'], diagnostic(xmp)
+    assert 'AlreadyApplied="False"' in xmp and 'WhiteBalance="As Shot"' in xmp
+    assert 'ToneCurveName2012="Custom"' in xmp
+
+
+def test_summary_mentions_all_sections():
+    plans = {'A': _plan_example()}
+    text = summary(plans, 'T_card', pe=1.1)
+    for word in ('WB', 'PE', '明暗', '肤色', '分色', '局部', '卡偏差'):
+        assert word in text, word
+
+
+def test_plan_batch_end_to_end():
+    recs = {'A': _rec(p5=12, p25=28, p50=52, p75=78, p95=92),
+            'B': _rec(p5=8, p25=22, p50=48, p75=72, p95=88, person_clip=2.0)}
+    card = _card(wb=dict(white_point=dict(L=94.0, a=-1.0, b=1.0),
+                         cct_look=6464.0, duv=0.0,
+                         temperature=7764.0, tint=1.06))
+    peers = {'A': dict(peer_n=3, shape=dict(toe=18.0, shoulder=22.0, p95=94.0),
+                       rel=dict(p50=45.0, p95=94.0, contrast=90.0,
+                                warm_cool_b=1.0),
+                       skin=dict(L=58.0, C=19.0, h=55.0)),
+             'B': dict(peer_n=0, shape={}, rel={}, skin={})}
+    plans = plan_batch(recs, card, peers, log=lambda *_: None)
+    assert set(plans) == {'A', 'B'}
+    assert plans['A'].wb.note
+    assert plans['A'].point_color.is_set()
+    assert abs(plans['B'].contrast) < 1e-9 and abs(plans['B'].highlights) < 1e-9
+
+
+# ---------------------------------------------------------------- 批级护栏
+
+def test_batch_guard_reports_not_judges():
+    recs = {'A': _rec(), 'B': _rec(p50=52), 'C': _rec(p50=48), 'D': _rec(p50=51)}
+    g = guard_build(recs, _card())
+    assert g['n'] == 4 and 'curve' not in g
+    assert any('离散度' in x for x in g['ledger'])
+
+
+# ---------------------------------------------------------------- 目检页（不判过/不过）
+
+def test_review_page_has_no_verdict():
+    a = _rec(face_L=50)
+    b = _rec(face_L=58)
+    plans = {'A': _plan_example()}
+    out = make_review({'A': a}, {'A': b}, plans,
+                      os.path.join(os.environ.get('TEMP', '.'), 'sv_test_review'),
+                      log=lambda *_: None)
+    html = open(out['html'], encoding='utf-8').read()
+    assert '人目检' in html
+    for bad in ('硬门', '软门', '✓ 全过', '结论：'):
+        assert bad not in html, bad
+    assert out['n'] == 1 and 'ok' not in out
+
+
+def test_contact_sheet_rows():
+    html = contact_sheet([dict(stem='A', values='曝光 +0.0', note='脸 50→58',
+                               diag='p50 偏差 +1.0')],
+                         os.path.join(os.environ.get('TEMP', '.'), 'sv_test_sheet.html'),
+                         '目检', sub='1 张')
+    assert html.endswith('.html')
 
-# ---------------------------------------------------------------- 基本断言
-
-def same(a, b, msg=''):
-    assert a == b, '%r != %r %s' % (a, b, msg)
-
-
-def eq(a, b, tol=1e-9):
-    assert abs(a - b) <= tol, '%r != %r (tol %r)' % (a, b, tol)
-
-
-def ok(cond, msg):
-    assert cond, msg
-
-
-# ---------------------------------------------------------------- CIELAB 斜率
-
-def test_lab_slope():
-    """导数 = ln2/3·(L+16)（CIELAB 定义）；**跨档必须用精确反解**。
-
-    2026-10-30：旧断言要求 `ev_for_dL = ΔL/斜率`。那是把导数当割线：
-    L*=70→80 实际 0.476 档，线性式给 0.503（高 5.7%）。现在两者分开钉：
-    导数用公式、跨档用 `photometry.ev_for_l` 的 Y 比反解。
-    """
-    from design.photometry import l_after_ev
-    eq(eval_slope(50), 0.23104906018664842 * 66, 1e-9)
-    eq(eval_slope(70), 0.23104906018664842 * 86, 1e-9)
-    # 提 10 L* 在 L=70 处：精确 0.476 档（不是 0.503）
-    ok(abs(ev_for_dL(10, 70) - 0.4761) < 0.002, 'L70 提 10 L* 应约 0.476 档，实得 %.4f'
-       % ev_for_dL(10, 70))
-    eq(l_after_ev(70.0, ev_for_dL(10, 70)), 80.0, 1e-9)
-    ok(ev_for_dL(10, 70) < 10 / (0.2310 * 86) - 0.02,
-       '精确式应明显小于线性式：%.4f vs %.4f' % (ev_for_dL(10, 70), 10 / (0.2310 * 86)))
-
-
-# ---------------------------------------------------------------- PCHIP
-
-def test_pchip_monotone():
-    """单调数据上不许过冲（普通三次样条会）。"""
-    xs = [0.0, 10.0, 20.0, 30.0]
-    ys = [0.0, 1.0, 1.0, 2.0]
-    q = _pchip(xs, ys, [i * 0.5 for i in range(61)])
-    for i in range(1, len(q)):
-        ok(q[i] >= q[i - 1] - 1e-9, 'PCHIP 在单调数据上出现下降：%.4f -> %.4f'
-           % (q[i - 1], q[i]))
-
-
-def test_fit_points_contains_anchors():
-    """★ 16 点采样必须**包含锚点位置**：均匀网格会漏掉高光锚点，修正在 LUT 里被抹掉。"""
-    pairs = [(0, 0), (92, 92), (187, 187), (230, 230), (250, 246), (254, 246), (255, 255)]
-    pts = _fit_points(pairs)
-    eq(len(pts), 16)
-    xs = [p[0] for p in pts]
-    for x in (92, 187, 230, 250, 254):
-        ok(x in xs, '锚点 %d 没进 16 点网格：%s' % (x, xs))
-    ys = [p[1] for p in pts]
-    for i in range(1, len(ys)):
-        ok(ys[i] >= ys[i - 1], '曲线不单调')
-
-
-def test_plan_curve_budget():
-    """超预算的位移要被钳到预算内，并报出"给不到的部分"。"""
-    src = {'5': 36.0, '25': 73.0, '50': 90.0, '75': 98.0, '95': 99.5}
-    dst = dict(src)
-    dst['95'] = 80.0                      # 要压 19.5 L*，预算只有 3
-    pts, info = plan_curve(src, dst, budget=3.0)
-    ok(abs(info['max_abs_delta']) <= 3.0 + 1e-6,
-       '位移超预算没被钳：%s' % info['max_abs_delta'])
-    ok(info['need_unmet'].get('95'), '应报出 95 锚点给不到')
-
-
-def test_apply_curve_rgb_identity():
-    """空曲线 = 恒等。"""
-    rgb = (0.792, 0.698, 0.686)
-    out = apply_curve_rgb(rgb, [])
-    for a, b in zip(rgb, out):
-        eq(a, b, 1e-9)
-
-
-def test_displacement_zero():
-    """恒等曲线处处位移为 0。"""
-    pts = [(i * 17, i * 17) for i in range(16)]
-    for d in displacement(pts, [25.0, 50.0, 75.0]):
-        ok(abs(d) <= 0.5, '恒等曲线应无位移，实得 %r' % d)
-
-
-# ---------------------------------------------------------------- 不变量
-
-def _rec(**kw):
-    base = dict(img=dict(p1=8.0, p5=8.0, p95=90.0, p99=95.0, clip_pct=0.1,
-                         p50=60.0, contrast=80.0),
-                white_point=dict(a=0.0, b=1.0),
-                skin=dict(L=70.0, C=18.0, h=55.0))
-    base.update(kw)
-    return base
-
-
-def test_T0_pass():
-    r = check_T(_rec(), stage='engine')
-    ok(r.ok, '基准片应通过：%s' % [i.name for i in r.failures()])
-
-
-def test_T0_highlight():
-    bad = _rec(img=dict(p1=8.0, p5=8.0, p95=97.0, p99=99.0, clip_pct=0.1,
-                        p50=60.0, contrast=80.0))
-    names = [i.name for i in check_T(bad, stage='engine').failures()]
-    ok('T0-p95' in names, 'p95=97 应判超：%s' % names)
-
-
-def test_T0_clip():
-    bad = _rec(img=dict(p1=8.0, p5=8.0, p95=90.0, p99=99.0, clip_pct=3.0,
-                        p50=60.0, contrast=80.0))
-    names = [i.name for i in check_T(bad, stage='engine').failures()]
-    ok('T0-clip' in names, 'clip=3%% 应判超：%s' % names)
-
-
-def test_T0_thresholds_from_masters():
-    """阈值是**区间**（来自大师实测），不是靶：p95 上沿 93、clip 0.5、p1 1.0。"""
-    eq(T0['p95_max'], 93.0)
-    eq(T0['clip_max'], 0.5)
-    eq(T0['p1_min'], 1.0)
-
-
-# ---------------------------------------------------------------- 可行性
-
-# ---------------------------------------------------------------- LR：以人为本
-# 钉住 2026-10-29 补的四件事（H2 降级链 / L1 脸是约束 / H3 两道预算 / H4 光位）
-
-def _lr_rec(**kw):
-    """① 的一份测量（够 LR 那几步用）。默认：脸在区内、余量 0、不爆、顺光。"""
-    base = dict(img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
-                         p95=96.0, p99=99.9, clip_pct=0.2, contrast=90.0),
-                skin=dict(L=70.0, C=18.0, h=55.0, rgb=[0.6, 0.45, 0.34]),
-                headroom_ev=0.0, light_ratio=1.5,
-                face_w_native=120.0, face_mask_share=0.03)
-    base.update(kw)
-    return base
-
-
-def test_lookat_face():
-    from design.lr import pick_lookat
-    la = pick_lookat(_lr_rec())
-    eq_str = la.kind
-    ok(eq_str == 'face' and la.source == 'skin.L', '有脸够大应看脸：%s' % la)
-
-
-def test_lookat_small_face_degrades_with_reason():
-    """脸太小 ⇒ 降级整幅，并且**写明人读数没接**（不假装有 person 档）。"""
-    from design.lr import pick_lookat
-    la = pick_lookat(_lr_rec(face_w_native=12.0))
-    ok(la.kind == 'matrix', '脸太小应降级整幅：%s' % la)
-    ok('人的读数测量层还没接' in la.why, '降级必须写理由：%s' % la.why)
-
-
-def test_lookat_no_face_gives_up():
-    """没脸 ⇒ 整幅且**弃权**（整幅落点没有不变量），不许静默算一个落点。"""
-    from design.lr import pick_lookat, solve_exposure
-    rec = _lr_rec(skin=dict(L=None, C=None, h=None), face_w_native=0.0,
-                  face_mask_share=0.0)
-    la = pick_lookat(rec)
-    ok(la.kind == 'matrix', la)
-    ex = solve_exposure(rec)
-    eq(ex.ev, 0.0, 1e-9)
-    ok('弃权' in ex.why, '弃权要写出来：%s' % ex.why)
-
-
-def test_exposure_face_in_zone_does_nothing():
-    """★ 脸在 55~85 内 ⇒ 0 档。这是「脸是约束不是目标」（§28 L1）。"""
-    from design.lr import solve_exposure
-    for L in (56.0, 70.0, 84.0):
-        ex = solve_exposure(_lr_rec(skin=dict(L=L, C=18.0, h=55.0)))
-        eq(ex.ev, 0.0, 1e-9)
-        eq(ex.want_ev, 0.0, 1e-9)
-
-
-def test_exposure_low_face_targets_zone_not_72():
-    """脸低于下界 ⇒ 推到「下界 + 落点容差」，**不是推到 72**，也不是贴边。"""
-    from design.lr import LAND_TOL_L, solve_exposure
-    from design.photometry import l_after_ev
-    ex = solve_exposure(_lr_rec(skin=dict(L=45.0, C=18.0, h=55.0),
-                                headroom_ev=5.0))
-    ok(ex.want_ev > 0.2, 'L45 应要提亮：%s' % ex.want_ev)
-    newL = l_after_ev(45.0, ex.want_ev)
-    ok(abs(newL - (55.0 + LAND_TOL_L)) < 0.6,
-       '应推到 %.1f（下界+容差），实际 %.1f' % (55.0 + LAND_TOL_L, newL))
-    ok(newL < 65.0, '不该往 72 追')
-
-
-def test_land_tolerance_covers_measured_error():
-    """★ 落点容差必须 ≥ 实测落点误差 —— 否则贴边、误差一来就掉出区。
-
-    2026-10-29 真跑 n=5：|残差| 中位 0.92 / P90 2.30 / 最大 **2.88**
-    （DSCF1627：给 +0.88 档，模型 56.5，实测 54.2 ⇒ 差 0.8 没进区）。
-    """
-    from design.lr import LAND_TOL_L
-    ok(LAND_TOL_L >= 2.88, '容差 %.1f < 实测最大误差 2.88 ⇒ 会重犯贴边的错' % LAND_TOL_L)
-    ok(LAND_TOL_L <= 6.0, '容差 %.1f 太大，会把脸一路推到区间中上段' % LAND_TOL_L)
-
-
-def test_exposure_backlit_uses_its_own_zone():
-    """A 方案（2026-10-29）：逆光**换一套区间**（45~70），不额外往亮推。
-
-    依据：目录卡逆光片的脸 L 中位只有 50.4（P10~P90 42~58），
-    比顺光的 77.8 暗 27 格 —— 逆光不是"把脸提亮"，是"脸暗、彩度高、留轮廓光"。
-    """
-    from design.lr import LAND_TOL_L, T4_BACKLIT, solve_exposure
-    # 逆光：脸 46.8 已在 45~70 内 ⇒ 不动
-    ex = solve_exposure(_lr_rec(skin=dict(L=46.8, C=18.0, h=55.0)), light='backlit')
-    eq(ex.want_ev, 0.0, 1e-9)
-    # 逆光：脸 43.7 低于 45 ⇒ 只推到 45+容差
-    from design.photometry import l_after_ev
-    ex2 = solve_exposure(_lr_rec(skin=dict(L=43.7, C=18.0, h=55.0)), light='backlit')
-    L2 = l_after_ev(43.7, ex2.want_ev)
-    ok(abs(L2 - (T4_BACKLIT['L_lo'] + LAND_TOL_L)) < 0.6, '逆光目标 %.1f' % L2)
-    # 同一张脸按顺光判，就要提到 58.5 —— 两套区间真的不同
-    ex3 = solve_exposure(_lr_rec(skin=dict(L=43.7, C=18.0, h=55.0)), light='frontlit')
-    ok(ex3.want_ev > ex2.want_ev + 0.3, '顺光该提更多：%.2f vs %.2f' % (ex3.want_ev, ex2.want_ev))
-
-
-def test_exposure_headroom_is_not_a_cap():
-    """★★ 引擎余量**不再**充当曝光上限（§19 分工：曝光归 LR）。
-
-    旧行为是"两道预算取小"（余量 0.2 / 白端 0.1 ⇒ 只给 0.1，还记欠账）。
-    新行为：脸要 +0.8 就给 +0.8；引擎余量只作记录，越过白平台的那截
-    **写明交给 ③ Highlights 收白**，不在这里砍。
-    """
-    from design.lr import solve_exposure
-    from design.photometry import ev_to_white
-    rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.2,
-                  img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
-                           p95=97.5, p99=99.9, clip_pct=0.2, contrast=90.0))
-    ex = solve_exposure(rec)
-    # 2026-10-30：白端距离改用精确反解（原来拿斜率乘，97.5 处差 1% 量级）
-    cap_w = ev_to_white(97.5)
-    ok(abs(ex.cap_white - cap_w) < 1e-9, 'p95 到白平台的距离算错：%s' % ex.cap_white)
-    eq(ex.cap_headroom, 0.2)                       # 只记录
-    eq(ex.ev, ex.want_ev)                          # 给满，不被两道预算砍
-    ok(ex.ev > 0.5, '脸 L45 至少要 +0.5 档：%.3f' % ex.ev)
-    ok(ex.ev > ex.cap_white, '本例白端近 ⇒ 必然越过白平台')
-    ok('收白' in ex.why and '③' in ex.why, '越过白平台必须点明交给 ③：%s' % ex.why)
-    eq(ex.debt_ev, 0.0)                            # 欠账不在 ② 记，在 ③ 收白收不回时记
-
-
-def test_exposure_overruns_white_but_hands_over():
-    """曝光可以越过白平台 —— 但**必须写明这一截交给 ③**；没越过就不许瞎报收白。"""
-    from design.lr import solve_exposure
-    for p95 in (98.0, 97.0, 90.0, 60.0):
-        rec = _lr_rec(skin=dict(L=40.0, C=18.0, h=55.0), headroom_ev=0.0,
-                      img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
-                               p95=p95, p99=99.9, clip_pct=0.2, contrast=90.0))
-        ex = solve_exposure(rec)
-        eq(ex.ev, ex.want_ev)                      # 任何 p95 都不砍曝光
-        over = ex.ev - ex.cap_white
-        if over > 1e-9:
-            ok('收白' in ex.why, 'p95=%.1f 越过 %.2f 档 ⇒ 要点明收白：%s'
-               % (p95, over, ex.why))
-        else:
-            ok('收白' not in ex.why, 'p95=%.1f 没越过（余 %.2f 档）⇒ 不该报收白：%s'
-               % (p95, -over, ex.why))
-
-
-def test_light_state_comes_from_person():
-    """★ 光位**由人给**，不由测量猜（两种自动判据都出过反例，10-29）。
-
-    反例1：脸÷背景中位 ⇒ 1608（真逆光）被算成顺光（逆光时背景中位落在暗部）。
-    反例2：脸 vs 背景亮部 p90 ⇒ 1307（脸被太阳直照）被算成逆光（画面里有天空）。
-    """
-    from design.lr import light_state
-    rec = dict(skin=dict(L=47.0), light_ratio=0.9, face_dark_share40=0.56,
-               bg=dict(L=29.0, L_p90=71.5, L_p10=9.0))
-    same(light_state(dict(rec)), 'unknown')        # 不给人 ⇒ 不猜
-    same(light_state(dict(rec), given='backlit'), 'backlit')
-    same(light_state(dict(rec), given='frontlit'), 'frontlit')
-    # 明确要求自动时才用近似判据，并把旁证记下来
-    r2 = dict(rec)
-    same(light_state(r2, given='auto'), 'backlit')
-    ok(abs(r2['light_gap'] - 24.5) < 0.3, '要记旁证 gap：%s' % r2.get('light_gap'))
-    # 双区统计的反例回归：脸亮、脸内几乎没有暗部 ⇒ 顺光（1307 那种）
-    r3 = dict(rec, skin=dict(L=73.5), face_dark_share40=0.17,
-              bg=dict(L=61.8, L_p90=90.8, L_p10=7.7))
-    same(light_state(r3, given='auto'), 'unknown')   # 中间地带：宁可 unknown
-    r4 = dict(rec, skin=dict(L=78.8), face_dark_share40=0.10,
-              bg=dict(L=56.8, L_p90=87.0, L_p10=7.0))
-    same(light_state(r4, given='auto'), 'frontlit')
-
-
-def test_backlit_note():
-    """逆光：理由里要写明"提完必须预备收白"（逆光 = 提曝光 + 收白 两步）。"""
-    from design.lr import solve_exposure
-    # 逆光区 45~70：脸 43 出区 ⇒ 会提；提完若越过白平台就交给 ③
-    ex = solve_exposure(_lr_rec(skin=dict(L=43.0, C=18.0, h=55.0),
-                                headroom_ev=0.0), light='backlit')
-    ok('逆光' in ex.why or '收白' in ex.why, '逆光说明缺：%s' % ex.why)
-
-
-def test_after_ev_hue_invariant():
-    """曝光是线性增益 ⇒ 色相不动、L 按 CIELAB **精确闭式**走。"""
-    from design.expose import after_ev
-    from design.photometry import l_after_ev
-    rec = _lr_rec(skin=dict(L=50.0, C=18.0, h=55.0))
-    p = after_ev(rec, 0.5)
-    eq(p['pred']['skin']['h'], 55.0, 1e-9)
-    eq(p['pred']['skin']['L'], l_after_ev(50.0, 0.5), 1e-6)
-    ok(abs(p['pred']['skin']['L'] - (50.0 + 0.5 * eval_slope(50.0))) > 0.3,
-       '半步就该和线性式分开（精确 %.2f vs 线性 %.2f）'
-       % (l_after_ev(50.0, 0.5), 50.0 + 0.5 * eval_slope(50.0)))
-
-
-def test_after_ev_clip_lower_bound():
-    """分位被推出 100 ⇒ 爆白**下界**至少那么多（不等式，不是模型）。"""
-    from design.expose import after_ev
-    rec = _lr_rec(img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
-                           p95=98.0, p99=99.9, clip_pct=0.1, contrast=90.0))
-    p = after_ev(rec, 0.2)
-    ok(p['clip_lb'] >= 5.0, 'p95 推过 100 应给 ≥5%% 的下界：%s' % p['clip_lb'])
-    q = after_ev(rec, 0.0)
-    ok(q['clip_lb'] <= 0.11, '不推就不该编出爆白：%s' % q['clip_lb'])
-
-
-def test_after_ev_budget():
-    """超引擎余量 ⇒ over_ev 记出来，并要求 ③ 验 clip。"""
-    from design.expose import after_ev
-    rec = _lr_rec(headroom_ev=0.0)
-    p = after_ev(rec, 0.4)
-    ok(not p['in_budget'] and abs(p['over_ev'] - 0.4) < 1e-6, p)
-    ok(any('验 clip' in n for n in p['notes']), '要写明待验收：%s' % p['notes'])
-
-
-def test_highlights_judged_after_exposure():
-    """收白要在 ①'（提完曝光之后）上判 —— 不能拿 ① 的旧数先收。"""
-    from design.expose import after_ev
-    from design.lr import solve_highlights
-    rec = _lr_rec(img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
-                           p95=97.8, p99=99.9, clip_pct=0.1, contrast=90.0),
-                  headroom_ev=0.0)
-    quiet = after_ev(rec, 0.0)
-    hv0, _ = solve_highlights(quiet)
-    eq(hv0, 0.0, 1e-9)                      # 不提就不该压
-    loud = after_ev(rec, 0.5)               # 提了 ⇒ 上端被推爆
-    hv1, note = solve_highlights(loud)
-    ok(hv1 < 0, '提爆了就该收白：%s' % hv1)
-    ok('对分' in (note or ''), '要写明这是搜索起点、不是算出来的幅度：%s' % note)
-    ok('脸' in (note or ''), '要写明停止条件是脸：%s' % note)
-    ok(loud['white_over_L'] > 0, '要量出上端过了多少 L*：%s' % loud)
-
-
-def test_next_highlights_ladder():
-    """③ 的阶梯：不达标 ⇒ 加大；压过头 ⇒ 回退；吃到尽头 ⇒ 接受（不回引擎）。"""
-    from design.lr import HL_END, HL_SEARCH_MID, next_highlights
-    # 仍超 ⇒ 往尽头走
-    v, why = next_highlights(HL_SEARCH_MID, 8.0)
-    ok(v is not None and v < HL_SEARCH_MID, '压得不够应加大：%s %s' % (v, why))
-    # 一路对分下去：−50 → −75 → −87.5 → −100
-    v2, why2 = next_highlights(-75.0, 8.0)
-    ok(v2 is not None and v2 < -75.0, '继续加大：%s %s' % (v2, why2))
-    v2b, _ = next_highlights(v2, 8.0)
-    eq(v2b, HL_END)
-    # 尽头仍不达标 ⇒ **接受背景过曝**，不许再说"回引擎"
-    v3, why3 = next_highlights(HL_END, 8.0)
-    ok(v3 is None, '尽头就不该再动：%s' % v3)
-    ok('接受' in why3 and '回引擎' not in why3, '尽头应接受背景爆，不再回引擎：%s' % why3)
-    # 压过头（没脸读数时的降级判据）⇒ 回退
-    v4, why4 = next_highlights(HL_SEARCH_MID, 0.0, p95_after=88.0, p95_before=95.0)
-    ok(v4 is not None and abs(v4) < abs(HL_SEARCH_MID), '压过头应回退：%s' % v4)
-    # 达标 ⇒ 不动
-    v5, _ = next_highlights(HL_SEARCH_MID, 0.3, p95_after=95.0, p95_before=95.0)
-    ok(v5 is None, '达标就不该再动：%s' % v5)
-
-
-def test_next_highlights_face_has_priority():
-    """★★ 脸优先：收白把脸压暗超过 1 L* ⇒ **回退**，哪怕背景还爆着。
-
-    回引擎那条出口已删：回引擎只会整幅压暗 = 拿脸换背景，与优先级相反。
-    """
-    from design.lr import HL_SEARCH_MID, next_highlights
-    # 脸掉 2.4 L*，背景还爆 ⇒ 回退（不是"停着不动"，不动等于默认接受脸已经暗了）
-    v, why = next_highlights(HL_SEARCH_MID, 9.0, face_after=62.0, face_before=64.4)
-    ok(v is not None and abs(v) < abs(HL_SEARCH_MID), '脸掉了应回退：%s' % v)
-    ok('脸' in why and '回退' in why, '要说清是脸的原因：%s' % why)
-    # 脸只掉 0.4 L*（噪声内）⇒ 可以继续
-    v2, why2 = next_highlights(HL_SEARCH_MID, 9.0, face_after=64.0, face_before=64.4)
-    ok(v2 is not None and v2 < HL_SEARCH_MID, '脸没掉就能继续：%s %s' % (v2, why2))
-    # 回退到最小步长以内 ⇒ 直接归零
-    v3, why3 = next_highlights(-10.0, 9.0, face_after=60.0, face_before=64.0)
-    eq(v3, 0.0)
-    ok('归零' in why3, why3)
-
-
-def test_highlights_face_blown_is_not_background_debt():
-    """脸贴顶 = 主体丢了（单列）；背景爆 = 取舍（可接受）。别混。"""
-    from design.expose import after_ev
-    from design.lr import solve_highlights
-    rec = _lr_rec(skin=dict(L=99.4, C=10.0, h=55.0), headroom_ev=0.0,
-                  img=dict(p1=8.0, p5=12.0, p25=30.0, p50=60.0, p75=85.0,
-                           p95=99.0, p99=99.9, clip_pct=6.0, contrast=87.0))
-    _, note = solve_highlights(after_ev(rec, 0.0))
-    ok('主体丢了' in (note or ''), '脸贴顶要单列：%s' % note)
-    rec2 = _lr_rec(skin=dict(L=70.0, C=12.0, h=55.0), headroom_ev=0.0,
-                   img=dict(p1=8.0, p5=12.0, p25=30.0, p50=60.0, p75=85.0,
-                            p95=99.0, p99=99.9, clip_pct=6.0, contrast=87.0))
-    _, note2 = solve_highlights(after_ev(rec2, 0.0))
-    ok('主体丢了' not in (note2 or ''), '脸没顶就不该说主体丢：%s' % note2)
-    ok('可接受' in (note2 or ''), '背景爆应写成取舍：%s' % note2)
-
-
-def test_curve_never_fixes_clip_in_lr_chain():
-    """★ §33：爆白只归 ③ Highlights，曲线**不许**再压一次肩部。
-
-    旧实现里这个分支是"碰巧没触发"（`after_ev` 的 pred 里没有 `clip_pct`），
-    那是碰巧对；现在显式关掉，防止有人"修好"它之后两处同时压。
-    """
-    from design.lr import solve_curve
-    rec = _lr_rec(img=dict(p1=12.0, p5=20.0, p25=40.0, p50=60.0, p75=80.0,
-                           p95=99.5, p99=99.9, clip_pct=18.0, contrast=79.5))
-    pts, info = solve_curve(rec, allow_clip=False)
-    ok(pts is None, '爆白时曲线不该动（交给 ③）：%s' % info)
-    pts2, info2 = solve_curve(rec, allow_clip=True)      # 独立工具（cli curve）仍可压
-    ok(pts2 is not None and '压白端' in str(info2.get('fixed')), info2)
-
-
-def test_solve_one_order():
-    """整条链 §31 ②→③：**② 不再为脸动全局曝光**（10-29 晚改，旧断言按新行为重写）。
-
-    旧行为（已废）：脸低 ⇒ ② 把曝光给满，背景陪葬。
-    新行为：② 恒 0（背景由引擎定），③ 仍然在 ① 上判收白；脸的亮度交给 ⑥ 的
-            `fill_ev`（主体蒙版），而 `solve_one` 只出**第一版**计划 ⇒ 这里 fill_ev 还是 0。
-    """
-    from design.lr import solve_one
-    rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.0)
-    plan = solve_one(rec, light='frontlit', log=lambda *_: None)
-    same(plan.exposure_ev, 0.0, '② 不许再为脸动全局曝光：%s' % plan.exposure_ev)
-    ok('不动全局曝光' in plan.notes.get('exposure', ''),
-       '② 改口的原因要落进 notes：%s' % plan.notes.get('exposure'))
-    ok('补光' in plan.notes.get('exposure', ''),
-       '要说清脸改由谁负责：%s' % plan.notes.get('exposure'))
-    same(plan.fill_ev, 0.0, 'solve_one 只出第一版（补光由 run_final 按出片量算）')
-    ok('顺光' in plan.notes.get('light', '') or 'frontlit' in plan.notes.get('lookat', ''),
-       '光位（或旁证）要落进 notes：%s' % plan.notes)
-
-
-# ---------------------------------------------------------------- 余量的可信性（10-29 实测钉住）
-
-def _disp_with_ceiling(top_l, n=4000):
-    """造一张**上端被硬切在 top_l** 的灰阶图（模拟 scan_white_level < 1）。"""
-    import numpy as np
-    # 显示码从 0 线性排到"天花对应的码"，全部是中性灰 ⇒ L* 最高就是 top_l
-    y = ((top_l + 16.0) / 116.0) ** 3
-    u = 1.055 * (y ** (1 / 2.4)) - 0.055 if y > 0.0031308 else y * 12.92
-    ramp = np.linspace(0.0, u, n)
-    return np.repeat(ramp[:, None], 3, axis=1).reshape(n, 1, 3)
-
-
-def test_headroom_report_marks_cut_ceiling_invalid():
-    """★★★ 降白端换来的"余量"必须被判为不可信 —— 它是恒等式，不是收益。
-
-    2026-10-29 实测：scan_white_level 1.0→0.95 ⇒ 天花 L*100→95.5，
-    报出来的余量 10/10 吻合 −log2(Y(天花))，差的只是取整；
-    代价是中位 4.65% 的像素被从 ≥96 压到 95.5 以下（直方图 96+ 段精确归零）。
-    """
-    from design.flow import headroom_report
-    bad = headroom_report(_disp_with_ceiling(95.5), white_level=0.95)
-    ok(bad['valid'] is False, '天花 95.5 应判不可信：%s' % bad)
-    ok(bad['ceiling_L'] < 96.0, '天花应量到 95.5 附近：%s' % bad['ceiling_L'])
-    # 恒等式：报的余量 ≈ 砍掉的高度
-    ok(abs(bad['headroom_ev'] - bad['tautology_ev']) <= 0.06,
-       '余量应≈砍掉的高度（恒等式）：ev=%s 预言=%s' % (bad['headroom_ev'], bad['tautology_ev']))
-    ok('scan_white_level' in bad['why'], '话要说清是谁砍的：%s' % bad['why'])
-
-
-def test_headroom_report_accepts_full_ceiling():
-    """天花在 100 附近 ⇒ 余量可信，且恒等式预言值应为 0（没被砍）。"""
-    from design.flow import headroom_report
-    good = headroom_report(_disp_with_ceiling(99.7), white_level=1.0)
-    ok(good['valid'] is True, '天花 99.7 应判可信：%s' % good)
-    ok(good['tautology_ev'] < 0.02, '没砍过 ⇒ 预言余量应≈0：%s' % good['tautology_ev'])
-
-
-def test_headroom_report_low_key_is_not_cut():
-    """★ 低反差图不是"被砍"：白端是 1.0 时天花低只说明这张上端到不了顶。
-
-    实测反例：DSCF1726 白端=1.0 但天花只有 L*98.4、DSCF1289 99.25、DSCF1608 99.35。
-    若拿"天花 <99.5 就算砍"当判据，这三张会全成误报。
-    反之白端一旦 <1，余量就被那条线限住（与图像内容无关），所以只按白端判。
-    """
-    from design.flow import _code_to_L, headroom_report
-    ok(_code_to_L(1.0) > 99.9, '白端 1.0 的预期天花应≈100：%s' % _code_to_L(1.0))
-    ok(_code_to_L(0.95) < 96.0, '白端 0.95 的预期天花应≈95.5：%s' % _code_to_L(0.95))
-    low = headroom_report(_disp_with_ceiling(93.0), white_level=1.0)
-    ok(low['valid'] is True, '白端=1.0 的暗图不该判被砍：%s' % low['why'])
-    # 同一张图，白端设成 0.95 就必须判不可信（说明问题在锯子，不在图）
-    same = headroom_report(_disp_with_ceiling(93.0), white_level=0.95)
-    ok(same['valid'] is False, '白端=0.95 时余量必须判不可信：%s' % same['why'])
-
-
-def test_exposure_invalid_headroom_is_only_recorded():
-    """★ 余量不可信 **不再拦 LR 曝光** —— 那是引擎的事（§21 中灰归一就是余量机制）。
-
-    `headroom_valid=False` 只说明"引擎那边天花被砍了"，与"脸该不该提"无关。
-    旧行为是拒算 + 让脸留在区外，等于拿引擎的账卡死 LR 的活。
-    """
-    from design.lr import solve_exposure
-    rec = _lr_rec(skin=dict(L=45.0, C=18.0, h=55.0), headroom_ev=0.15,
-                  headroom_valid=False, headroom_why='天花只有 L*95.5',
-                  img=dict(p1=5.0, p5=6.0, p25=17.0, p50=45.0, p75=77.0,
-                           p95=92.0, p99=95.0, clip_pct=0.0, contrast=90.0))
-    ex = solve_exposure(rec)
-    ok(ex.ev > 0.5, '余量不可信不该让脸提不起来：%s' % ex.ev)
-    eq(ex.ev, ex.want_ev)
-    ok('拒算' not in ex.why, '不该再拒算：%s' % ex.why)
-    eq(ex.cap_headroom, 0.15)                  # 读数照样记下来（报告要用）
-
-
-
-# ---------------------------------------------------------------- ③ 的验收与目检（G1/G2/G3）
-
-def _p3(ev=0.0, curve=None):
-    class _P:
-        exposure_ev = ev
-    _P.curve = curve
-    return _P()
-
-
-def test_verify_face_first():
-    """硬门只看脸与"有没有把脸改坏"；背景爆只进软门。"""
-    from design.review import verify
-    r1 = dict(img=dict(p1=5.0, clip_pct=0.2), skin=dict(L=62.0, C=14.0))
-    # ③ 脸没动、背景更爆 ⇒ 硬门全过，clip 落软门
-    v = verify(r1, dict(img=dict(p1=5.0, clip_pct=9.0), skin=dict(L=62.4, C=14.0)), _p3())
-    ok(v['ok'], '脸没动就该过硬门：%s' % v['hard'])
-    ok(any((not x[1]) for x in v['soft']), '背景爆要进软门：%s' % v['soft'])
-    # ③ 把脸压暗 2 L* ⇒ S1 残差只报告（T4/T5/S1 不再当硬门）
-    v2 = verify(r1, dict(img=dict(p1=5.0, clip_pct=1.0), skin=dict(L=60.0, C=14.0)), _p3())
-    ok(any(x[0].startswith('S1') and not x[1] for x in v2['soft']), v2['soft'])
-    # 脸出区 ⇒ T4 只报告
-    v3 = verify(r1, dict(img=dict(p1=5.0, clip_pct=1.0), skin=dict(L=50.0, C=14.0)), _p3())
-    ok(any(x[0].startswith('T4') and not x[1] for x in v3['soft']), v3['soft'])
-
-
-def test_verify_exposure_move_is_not_a_violation():
-    """曝光本来就该改脸的亮度：位移等于曝光该带来的量 ⇒ 不算违规。"""
-    from design.review import verify
-    from design.photometry import l_after_ev
-    r1 = dict(img=dict(p1=5.0, clip_pct=0.2), skin=dict(L=50.0, C=14.0))
-    ev = 0.8
-    L3 = l_after_ev(50.0, ev)
-    v = verify(r1, dict(img=dict(p1=5.0, clip_pct=0.3), skin=dict(L=L3, C=14.0)), _p3(ev))
-    ok(all(x[1] for x in v['hard']), '曝光带来的位移不该破门：%s' % v['hard'])
-
-
-def test_verify_does_not_punish_engine_leftovers():
-    """① 本身就堵黑/白点偏 ⇒ 只要求 ③ **不比 ① 更差**（不许拿引擎的账罚 LR）。"""
-    from design.review import verify
-    r1 = dict(img=dict(p1=0.8, clip_pct=0.2), skin=dict(L=60.0, C=14.0),
-              white_point=dict(a=3.0, b=1.0))
-    ok3 = dict(img=dict(p1=0.9, clip_pct=0.2), skin=dict(L=60.0, C=14.0),
-               white_point=dict(a=3.2, b=1.0))
-    v = verify(r1, ok3, _p3())
-    ok(all(x[1] for x in v['hard']), '① 的旧账不该算在 ③ 头上：%s' % v['hard'])
-    ok(any(x[0].startswith('T3') and x[1] for x in v['soft']), '白点要看"相对位移"（报告）')
-    # 但 ③ 把 ① 的窟窿捅更大就要罚
-    worse = dict(img=dict(p1=0.2, clip_pct=0.2), skin=dict(L=60.0, C=14.0),
-                 white_point=dict(a=3.0, b=1.0))
-    v2 = verify(r1, worse, _p3())
-    ok(any(x[0].startswith('T2') and not x[1] for x in v2['hard']), v2['hard'])
-    # 白点被 LR 挪走 > 2 只报告
-    moved = dict(img=dict(p1=0.9, clip_pct=0.2), skin=dict(L=60.0, C=14.0),
-                 white_point=dict(a=6.0, b=1.0))
-    v3 = verify(r1, moved, _p3())
-    ok(any(x[0].startswith('T3') and not x[1] for x in v3['soft']), v3['soft'])
-
-
-def test_match_sheet_is_a_decision_page():
-    """选卡页要能让人做决定：像哪套 / 缺口关不关得掉 / 每张卡的代价，三样缺一不可。"""
-    import os as _os
-    import tempfile
-    import types
-    from design.review import match_sheet
-
-    def _card(name, stock, paper, rms, amount, fmt):
-        return types.SimpleNamespace(
-            name=name, stock=stock, paper=paper,
-            texture=dict(rms_granularity=(rms, rms, rms)),
-            style=dict(amount=amount, film_format_mm=fmt, diffusion='off'),
-            safety=dict(p95_max=96.0), label=lambda: '%s（%s + %s）' % (name, stock, paper))
-
-    def _choice(c, score):
-        hit = types.SimpleNamespace(card=c, score=score, contrib=dict(shoulder=0.1),
-                                   top=lambda k=2: [('shoulder', 0.1)])
-        return types.SimpleNamespace(card=c, hit=hit)
-
-    c1 = _card('卡A', 'gold_200', 'endura', 10.0, 1.2, 36)
-    c2 = _card('卡B', 'portra_400', 'endura', 21.0, 1.3, 35)
-    c3 = _card('卡C', 'portra_400', 'endura', 9.0, 0.65, 70)
-    offer = types.SimpleNamespace(choices=[_choice(c1, 0.14), _choice(c2, 0.0), _choice(c3, 0.0)],
-                                  new_card_candidates=['vision3_250d'])
-    ref = types.SimpleNamespace(label=lambda: '鹿井/001', n=18, diff={'L': 8.0, 'C': -12.4})
-    hit = types.SimpleNamespace(score=2.82, ref=ref, diff=ref.diff)
-
-    d = tempfile.mkdtemp()
-    p = _os.path.join(d, '选卡.html')
-    match_sheet('测批', dict(L=77.3, C=8.5, h=27.9, p50=59.0, p95=96.6), [hit], offer,
-                gap_rows=['C 缺口 +12.4 ⇒ 不可达'], gap_verdict='换卷/换纸', out_html=p,
-                n_img=9, caliber='abc123')
-    html = open(p, encoding='utf-8').read()
-    ok('<table' not in html, '不许用 table')
-    ok('这批画像' in html and '77.3' in html, '要给出这批画像')
-    ok('最像哪一套' in html and '鹿井/001' in html, '要给出最像哪套')
-    ok('缺口' in html, '要给出缺口可达性')
-    ok('卡B' in html and '卡C' in html, '三张卡都要在')
-    ok('同卷同纸' in html, '同卷同纸必须点出来（否则分数会骗人）')
-    ok('rms 21.0→9.0' in html or 'rms 9.0→21.0' in html, '要把真正的差别摆出来：质感档')
-    ok('--card' in html, '要告诉人怎么把它选回去')
-    ok('建议' not in html and '推荐' not in html, '页面上不许替他做决定')
-
-
-def test_contact_sheet_layout():
-    """目检页：一图一行、占满宽、不放 <table>。"""
-    import os as _os
-    import tempfile
-    from design.review import contact_sheet
-    d = tempfile.mkdtemp()
-    p = _os.path.join(d, '目检.html')
-    rows = [dict(stem='A', final_jpg='preview/A_3.jpg', engine_jpg='preview/A_1.jpg',
-                 values='曝光 +0.2 ｜ 收白 -50', note='脸 L 62.0 → 62.3 ｜ clip 5% → 1%',
-                 verdict='✓ 全过'),
-            dict(stem='B', final_jpg='preview/B_3.jpg', engine_jpg=None,
-                 values='曝光 +0.0', note='', verdict='硬门破 1：T4 脸L')]
-    contact_sheet(rows, p, title='测试', sub='副标题')
-    html = open(p, encoding='utf-8').read()
-    ok('<table' not in html, '不许用 table（会撑破手机屏）')
-    ok(html.count('<figure>') == 2, '一张图一节')
-    ok('preview/A_3.jpg' in html and 'preview/B_3.jpg' in html, '图要引到')
-    ok('看① 引擎底片' in html, '① 底片要能展开看')
-    ok(html.count('<img') == 3, '两张成片 + 一张①')
-
-
-# ---------------------------------------------------------------- runner
-def test_texture_overrides_are_runtime_paths():
-    """质感计划 → overrides：键必须是**运行时属性路径**，且**默认不动 grain.blur**。
-
-    为什么钉这条：
-      ① `render_safe` 原来一个参数都不传，`plan_texture()` 算完就扔（"算值不落地"）。
-      ② `grain.blur` **糊的是整张密度场**（`apply_grain` 返回的就是密度场）——
-         10-29 晚拿它当"团径旋钮"调到 0.15% 画面宽，整批 ① 的梯度掉到 0.58、
-         高频 RMS 掉到 0.28，肉眼"全糊"。而且当时只看 p95（几乎不变）就放行。
-         ⇒ 所以默认**不许**动它；要动必须显式传 clump_frac，并且先开 mult_usm 用梯度验收。
-    """
-    from design.texture import CLUMP_FRAC_DEFAULT, REF_LONG_SIDE, Style, plan_texture, to_overrides
-    p = plan_texture('kodak_gold_200', 'kodak_portra_endura', long_side=2048, style=Style())
-    ov = to_overrides(p, long_side=2048)
-    ok('film_render.grain.blur' not in ov,
-       '默认不许动 grain.blur（它糊整幅）：%s' % list(ov))
-    ok(ov.get('print_render.glare.active') is False, 'glare 必须关（不可复现）')
-    ok('film_render.grain.rms_granularity' not in ov,
-       'rms 不在这步动 —— 团径与幅度要分开验')
-    # 显式传才写；换算仍是"画面比 × 基准长边"
-    ov2 = to_overrides(p, long_side=2048, clump_frac=CLUMP_FRAC_DEFAULT)
-    eq(float(ov2['film_render.grain.blur']),
-       round(CLUMP_FRAC_DEFAULT * REF_LONG_SIDE, 3), 1e-3)
-    # 传了 boost 才写 boost
-    ov3 = to_overrides(p, long_side=2048, boost_ev=1.0)
-    eq(float(ov3['film_render.halation.boost_ev']), 1.0, 1e-9)
-
-
-# ---------------------------------------------------------------- 匹配卡与匹配算法（§48/§55/§57）
-
-def test_matchcard_red_lines():
-    """§57.2 的红线：自指维（肤色/暖冷）**永远**不许进数值排序；单维要截断。
-
-    为什么钉这条：'越比越像基线卡' 在代码里只靠一个元组守着；
-    删掉或改名就会静默复发，而它坏了不会报错，只会让匹配偏向基线卡。
-    """
-    from design.matchcard import (MAX_ABS_IQR, NUM_KEYS_RANK, SELFREF_KEYS,
-                                  MatchCard, _num_distance)
-    ok(not (set(NUM_KEYS_RANK) & set(SELFREF_KEYS)),
-       '自指维混进了排序：%s' % (set(NUM_KEYS_RANK) & set(SELFREF_KEYS)))
-    for k in ('L', 'C', 'h', 'wc'):
-        ok(k not in NUM_KEYS_RANK, '%s 是自指维，不许进排序' % k)
-    c = MatchCard(name='x', profile=dict(sky=0.0, span=50.0))
-    _, dd = _num_distance(dict(sky=0.5, span=50.0), c, dict(sky=1e-6, span=100.0))
-    ok(abs(dd['sky']) <= MAX_ABS_IQR + 1e-9,
-       '近零离散度的维度必须截断到 %s 个 IQR，实际 %s' % (MAX_ABS_IQR, dd['sky']))
-
-
-def test_matchcard_one_set_per_card():
-    """§63：**一个目录 = 一张卡**（鹿井逐目录；滨田/小红书各一整套）。"""
-    from design.matchcard import cards
-    cs = cards()
-    ok(len(cs) >= 50, '参与匹配的卡太少：%d（薄卡已按 §65.4 过滤）' % len(cs))
-    names = [c.name for c in cs]
-    ok(len(set(names)) == len(names), '卡名有重复（顶层的散图会撞名）：%s'
-       % [n for n in names if names.count(n) > 1][:3])
-    whole = [c for c in cs if '整套' in c.name]
-    ok(len(whole) >= 2, '滨田/小红书应该各有一张整套卡，实际 %d' % len(whole))
-
-def test_match_sheet_is_a_decision_page():
-    """选卡页要能让人做决定：像哪套 / 缺口关不关得掉 / 每张卡的代价，三样缺一不可。"""
-    import os as _os
-    import tempfile
-    import types
-    from design.review import match_sheet
-
-    def _card(name, stock, paper, rms, amount, fmt):
-        return types.SimpleNamespace(
-            name=name, stock=stock, paper=paper,
-            texture=dict(rms_granularity=(rms, rms, rms)),
-            style=dict(amount=amount, film_format_mm=fmt, diffusion='off'),
-            safety=dict(p95_max=96.0), label=lambda: '%s（%s + %s）' % (name, stock, paper))
-
-    def _choice(c, score):
-        hit = types.SimpleNamespace(card=c, score=score, contrib=dict(shoulder=0.1),
-                                   top=lambda k=2: [('shoulder', 0.1)])
-        return types.SimpleNamespace(card=c, hit=hit)
-
-    c1 = _card('卡A', 'gold_200', 'endura', 10.0, 1.2, 36)
-    c2 = _card('卡B', 'portra_400', 'endura', 21.0, 1.3, 35)
-    c3 = _card('卡C', 'portra_400', 'endura', 9.0, 0.65, 70)
-    offer = types.SimpleNamespace(choices=[_choice(c1, 0.14), _choice(c2, 0.0), _choice(c3, 0.0)],
-                                  new_card_candidates=['vision3_250d'])
-    ref = types.SimpleNamespace(label=lambda: '鹿井/001', n=18, diff={'L': 8.0, 'C': -12.4})
-    hit = types.SimpleNamespace(score=2.82, ref=ref, diff=ref.diff)
-
-    d = tempfile.mkdtemp()
-    p = _os.path.join(d, '选卡.html')
-    match_sheet('测批', dict(L=77.3, C=8.5, h=27.9, p50=59.0, p95=96.6), [hit], offer,
-                gap_rows=['C 缺口 +12.4 ⇒ 不可达'], gap_verdict='换卷/换纸', out_html=p,
-                n_img=9, caliber='abc123')
-    html = open(p, encoding='utf-8').read()
-    ok('<table' not in html, '不许用 table')
-    ok('这批画像' in html and '77.3' in html, '要给出这批画像')
-    ok('最像哪一套' in html and '鹿井/001' in html, '要给出最像哪套')
-    ok('缺口' in html, '要给出缺口可达性')
-    ok('卡B' in html and '卡C' in html, '三张卡都要在')
-    ok('同卷同纸' in html, '同卷同纸必须点出来（否则分数会骗人）')
-    ok('rms 21.0→9.0' in html or 'rms 9.0→21.0' in html, '要把真正的差别摆出来：质感档')
-    ok('--card' in html, '要告诉人怎么把它选回去')
-    ok('建议' not in html and '推荐' not in html, '页面上不许替他做决定')
-
-
-def test_point_color_no_longer_compensates_backlit():
-    """★ 2026-10-30 改为反向断言：逆光**不再**用点颜色补彩度。
-
-    为什么改（设计沿革 §B4）：① 那个补偿挂在错的光位判据上；
-    ② "提亮稀释彩度"该用 HSL 橙色补；点颜色只动肤色 ⇒ 边缘割裂。
-    所以现在：逆光与顺光的点颜色彩度必须**完全一致**。
-    """
-    from design.lr import solve_point_color
-    rec = dict(skin=dict(C=20.0, L=60.0, h=55.0))
-    a = solve_point_color(rec, backlit=False)
-    b = solve_point_color(rec, backlit=True)
-    eq(b['scale'], a['scale'])
-    ok(abs(a['lum']) < 1e-9 and abs(b['lum']) < 1e-9, '没有脸差额就不动亮度')
-
-
-# ---------------------------------------------------------------- 匹配卡 → 能渲的那一份（§20/§48）
-
-
-def test_card_render_maps_medium_and_bounds():
-    """卡要带出**它自己的介质块**（不是"选一个预设"）；数值只做参考。"""
-    from design.matchcard import MatchCard
-    from design.card_render import medium_of, reference_for
-    c = MatchCard(name='001_鹿井小渔_n66f7fa31', stock='kodak_portra_400',
-                  paper='kodak_portra_endura', corpus='鹿井',
-                  profile=dict(p95=90.0), spread=dict(p95=2.0))
-    m = medium_of(c)
-    ok(bool(m.get('simulation', {}).get('film_stock')), '介质块里没有卷：%r' % (m.get('simulation'),))
-    ok(bool(m.get('simulation', {}).get('print_paper')), '介质块里没有纸')
-    # ★ 目录没有再没有介质：读不到必须抛（不许回退、不许猜）
-    bad = MatchCard(name='没有这个目录', stock='kodak_portra_400', paper='kodak_portra_endura')
-    try:
-        medium_of(bad)
-        ok(False, '没有介质的目录却返回了介质（会静默用默认值）')
-    except KeyError:
-        pass
-    r = reference_for(c)
-    ok(r.get('p95') == 90.0, '卡的 p95 要留在参考里，实际 %s' % r.get('p95'))
-
-
-def test_reference_differs_but_no_engine_gate():
-    """参考随卡变；**引擎不再拿 p95/black 当门**（门已删）。"""
-    from design.matchcard import MatchCard
-    from design.card_render import reference_for
-    a = MatchCard(name='a', profile=dict(p95=88.0), spread=dict(p95=1.0))
-    b = MatchCard(name='b', profile=dict(p95=96.0), spread=dict(p95=1.0))
-    ok(reference_for(a)['p95'] != reference_for(b)['p95'],
-       '参考应该随卡变：%s vs %s' % (reference_for(a)['p95'], reference_for(b)['p95']))
-    ok(reference_for(a)['p95'] != reference_for(b)['p95'], '参考应该随卡变')
-
-def test_eval_slope_is_not_a_constant():
-    """每档抬多少 L* 随起点变（`0.231·(L+16)`）——钉住"不许当常数用"。"""
-    from design.solver import eval_slope
-    ok(abs(eval_slope(20) - 8.32) < 0.02, 'L=20 的斜率 %s' % eval_slope(20))
-    ok(abs(eval_slope(50) - 15.25) < 0.02, 'L=50 的斜率 %s' % eval_slope(50))
-    ok(eval_slope(80) > eval_slope(50) > eval_slope(20), '斜率必须随 L 单调增')
-
-
-def test_ev_to_reach_roundtrip():
-    """反解出的 EV 打回去要落回带边（CIELAB 立方根段的精确式）。"""
-    from design.solver import ev_to_reach
-    for cur, band in ((45.0, (55.0, 70.0)), (80.0, (55.0, 70.0)), (60.0, (55.0, 70.0))):
-        ev = ev_to_reach(cur, band)
-        if cur < band[0]:
-            back = (cur + 16.0) * 2 ** (ev / 3.0) - 16.0
-            ok(abs(back - band[0]) < 0.05, '%s 打进带边结果 %s' % (cur, back))
-        elif cur > band[1]:
-            back = (cur + 16.0) * 2 ** (ev / 3.0) - 16.0
-            ok(abs(back - band[1]) < 0.05, '%s 打进带边结果 %s' % (cur, back))
-        else:
-            ok(ev == 0.0, '带内不该动：%s' % ev)
-
-
-def test_ev_exact_vs_linear():
-    """精确式与设计里的线性式（ΔL/slope）在小步长时要接近，大步长会分开。"""
-    from design.solver import ev_to_reach, ev_to_reach_linear
-    small = ev_to_reach(52.0, (55.0, 70.0))
-    lin = ev_to_reach_linear(52.0, (55.0, 70.0))
-    ok(abs(small - lin) < 0.02, '小步长两者应接近：%s vs %s' % (small, lin))
-    big = ev_to_reach(20.0, (60.0, 80.0))
-    lin_big = ev_to_reach_linear(20.0, (60.0, 80.0))
-    ok(abs(big - lin_big) > 0.05, '大步长两者应分开：%s vs %s' % (big, lin_big))
-
-
-def test_local_exposure_scale():
-    """局部曝光写进 LR 的值 = EV/4（§61.1 ③，已验三档）。"""
-    from design.solver import local_exposure_for
-    ok(abs(local_exposure_for(0.8) - 0.2) < 1e-9, 'EV 0.8 ⇒ %s' % local_exposure_for(0.8))
-    ok(abs(local_exposure_for(-0.4) + 0.1) < 1e-9, 'EV -0.4 ⇒ %s' % local_exposure_for(-0.4))
-
-
-def test_curve_budget_is_respected():
-    """曲线每项位移 ≤ 预算；超了要记账，不许加宽预算（S5）。"""
-    from design.solver import curve_shifts
-    shifts, led = curve_shifts(dict(shoulder=12.0), dict(shoulder=(2.0, 6.0)), budget=3.0)
-    ok(abs(shifts['shoulder']) <= 3.0 + 1e-9, '超预算没截断：%s' % shifts)
-    ok(led and led[0].layer == 'curve', '超预算必须记账')
-    ok('撞曲线预算' in led[0].action, '账里要写清为什么：%s' % led[0].action)
-
-
-def test_solve_pass_boundaries():
-    """§38 的边界：② 曝光只为整幅；脸的账归 ⑦，不许进曝光。"""
-    from design.solver import solve_pass
-    plan = solve_pass(
-        dict(p50=43.0, face_L=45.0,
-             shape=dict(shoulder=8.0), person_L=44.0),
-        dict(p50=(45.0, 58.0), face_L=(55.0, 70.0),
-             person_med=(48.0, 62.0), shape=dict(shoulder=(2.0, 6.0))))
-    ok(plan.exposure_ev > 0, 'p50 在带下 ⇒ 曝光要往上：%s' % plan.exposure_ev)
-    ok(abs(plan.local_exposure - plan.local_ev / 4.0) < 1e-9, '局部曝光刻度错')
-    dims = [e.dim for e in plan.ledger]
-    ok('p50' in dims, '整幅出界要记账')
-    ok('face_L' in dims, '脸出界要记账')
-    face_entry = [e for e in plan.ledger if e.dim == 'face_L'][0]
-    ok(face_entry.layer == 'local', '脸的账必须归 local（⑦），实际 %s' % face_entry.layer)
-
-# ---------------------------------------------------------------- 肤色口径（design/skin）
-
-def test_skin_ita_is_monotonic():
-    """ITA° 随 L* 增大而增大、随 |b*| 增大而减小（文献定义直接对拍）。"""
-    from design.skin import ita
-    ok(ita(60, 20) > ita(50, 20) > ita(40, 20), 'L* 越大 ITA 越大')
-    ok(ita(55, 20) > ita(55, 28), '|b*| 越大 ITA 越小')
-    ok(abs(ita(50, 20)) < 1e-6, 'L*=50 ⇒ ITA=0')
-    ok(ita(60, 20) > 0 and ita(40, 20) < 0, 'ITA 的符号要跟着 L*−50 走')
-
-
-def test_skin_ita_classes():
-    """ITA 分级的边界（文献常用 55/41/28/10/−30）。"""
-    from design.skin import ita_class
-    for v, want in ((70, 'very_light'), (50, 'light'), (35, 'intermediate'),
-                    (20, 'tan'), (0, 'brown'), (-40, 'dark')):
-        ok(ita_class(v) == want, 'ITA %.0f 应判 %s，实际 %s' % (v, want, ita_class(v)))
-
-
-def test_skin_caliber_constants_are_documented():
-    """口径常量必须集中在包内且可读（防"到处各写一个 0.15"）。"""
-    from design.skin import (DARK_PCT, MIN_PX, OFF_X, R_ROI, SPEC_PCT)
-    ok(0.0 < R_ROI < 0.35, 'ROI 半径不合理：%s' % R_ROI)
-    ok(0.0 < OFF_X < 0.4, '外移量不合理：%s' % OFF_X)
-    ok(0.0 < DARK_PCT < SPEC_PCT < 100.0, '剔除分位不成立：%s / %s' % (DARK_PCT, SPEC_PCT))
-    ok(MIN_PX >= 100, '样本门太低：%s' % MIN_PX)
 
 def main():
-    import traceback
-    tests = [(n, f) for n, f in sorted(globals().items())
-             if n.startswith('test_') and callable(f)]
+    tests = [(k, v) for k, v in sorted(globals().items())
+             if k.startswith('test_') and callable(v)]
     bad = 0
     for name, fn in tests:
         try:
             fn()
             print('  ✓ %s' % name)
-        except Exception:
+        except Exception as e:                             # noqa: BLE001
             bad += 1
-            print('  ✗ %s' % name)
+            import traceback
+            print('  ✗ %s：%s' % (name, e))
             traceback.print_exc()
     print('\n%d/%d 通过' % (len(tests) - bad, len(tests)))
     return 1 if bad else 0
 
 
-# ---------------------------------------------------------------- 2026-10-30 晚：轮廓光 / 颜色锚
-
-def test_predicted_rim_blames_lift_only_when_present():
-    """轮廓光预测：**提亮前就为 0 的，不许归咎于提亮**（1608 就是这种）。"""
-    from design.formula import predicted_rim
-    dark = dict(L_p10=4.2, L_p25=5.1, L_p50=8.1, L_p75=11.8, L_p90=15.7)
-    r = predicted_rim(dark, 39.6, 8.0)
-    same(r['ratio'], None)
-    ok(r['judged'] is False, '本来就没亮边，不该判"提亮吃掉了"')
-    bright = dict(L_p10=6.9, L_p25=9.1, L_p50=27.3, L_p75=50.0, L_p90=69.8)
-    ok(predicted_rim(bright, 39.0, 10.0)['judged'] is True, '提 10 档应判定吃掉亮边')
-    ok(predicted_rim(bright, 39.0, 2.0)['judged'] is False, '提 2 档不该判')
-
-
-def test_neutral_anchor_needs_enough_neutral_area():
-    """颜色锚：中性面不足 ⇒ 锚不可信，只做保守修正（不许硬归零 b*）。"""
-    from design.formula import neutral_anchor
-    ok(neutral_anchor(dict(neutral=dict(share=0.21, a=-0.1, b=0.3, n=9000)))['ok'] is True,
-       '20% 中性面应可用')
-    bad = neutral_anchor(dict(neutral=dict(share=0.01)))
-    ok(bad['ok'] is False and bad['b'] is None, '1% 中性面不该给出 b* 目标')
-
-
-# ---------------------------------------------------------------- 2026-10-30 晚：精确色度学 / 色调模型
-
-def test_photometry_roundtrip():
-    """L*→Y→L*、L*→码→L* 必须闭合（标准定义，不是拟合）。"""
-    from design.photometry import code_to_l, l_to_code, l_to_y, y_to_l
-    for L in (0.0, 5.0, 8.0, 20.0, 50.0, 80.0, 100.0):
-        eq(y_to_l(l_to_y(L)), L, 1e-9)
-        eq(code_to_l(l_to_code(L)), L, 1e-6)
-    # 单调：L 增 ⇒ 码增
-    codes = [l_to_code(v) for v in (0, 10, 30, 50, 70, 90, 100)]
-    for a, b in zip(codes, codes[1:]):
-        ok(b > a, 'L*→码不单调：%s' % codes)
-
-
-def test_photometry_ev_exact_closed_form():
-    """跨档用闭式 L'=2^(EV/3)(L+16)−16；反解必须回到原值。"""
-    from design.photometry import (ev_for_l, l_after_ev,
-                                   l_after_ev_closed)
-    eq(l_after_ev(50.0, 1.0), 67.15478929306163, 1e-9)
-    ok(abs(l_after_ev(50.0, 1.0) - (50.0 + 15.25)) > 1.8,
-       '1 档在 L50 应比"斜率×档"多约 1.9（实际 %.2f）' % l_after_ev(50.0, 1.0))
-    for L in (20.0, 50.0, 70.0):
-        eq(l_after_ev(L, 1.0), l_after_ev_closed(L, 1.0), 1e-9)
-        eq(ev_for_l(L, l_after_ev(L, 0.7)), 0.7, 1e-9)
-    eq(l_after_ev(50.0, -1.0), 36.38423471495059, 1e-9)
-
-
-def test_photometry_code_is_not_linear_in_lstar():
-    """L* 与显示码不是线性：L*=50 的码 ≈119，不是 127.5。"""
-    from design.curve import code_to_lstar, lstar_to_code
-    from design.photometry import l_to_code
-    ok(abs(l_to_code(50.0) - 118.9) < 1.0, 'L50 的码应约 119，实得 %.2f'
-       % l_to_code(50.0))
-    ok(abs(l_to_code(50.0) - 127.5) > 5.0, 'L50 不许再用 127.5 这个线性映射')
-    # 16 点曲线写的是整数码 ⇒ 往返误差上限约半码（≈0.15 L*），不是零
-    for L in (5.0, 25.0, 50.0, 75.0, 95.0):
-        eq(code_to_lstar(lstar_to_code(L)), L, 0.2)
-
-
-def test_after_ev_quantile_is_exact_map():
-    """分位数与单调映射可交换：提亮后的 p95 = p95 的精确映射。"""
-    from design.expose import after_ev
-    from design.photometry import l_after_ev
-    rec = _lr_rec(img=dict(p5=10.0, p25=30.0, p50=50.0, p75=70.0, p95=85.0,
-                           p99=92.0, clip_pct=0.0, contrast=75.0))
-    p = after_ev(rec, 0.8)
-    eq(p['pred']['img']['p95'], l_after_ev(85.0, 0.8), 1e-9)
-    eq(p['pred']['img']['p99'], l_after_ev(92.0, 0.8), 1e-9)
-
-
-def test_curve_p95_cap_is_not_dead():
-    """卡的 p95 上沿是**硬上限**：旧式 min(cand, max(cap, cand, …)) 恒等 ⇒ 死参数。"""
-    from design.curve_design import apply_lut, curve_from_quantiles
-    q = dict(p5=5.0, p25=20.0, p50=50.0, p75=80.0, p95=99.0)
-    shape = dict(toe=15.0, contrast_win=60.0, shoulder=19.0, skew=0.5)
-    capped = curve_from_quantiles(q, shape, p95_cap=96.0)
-    ok(capped is not None, '曲线没造出来')
-    got = apply_lut(capped, 99.0)
-    ok(got <= 96.6, 'p95 没被卡的肩上沿夹住：%.1f' % got)
-    free = curve_from_quantiles(q, shape, p95_cap=100.0)
-    ok(apply_lut(free, 99.0) > 98.0, '没有上限时不该硬压：%.1f' % apply_lut(free, 99.0))
-
-
-def test_whites_plan_is_wired_to_lrplan():
-    """`white_end_plan.whites_ui` 必须真的进 LRPlan（旧版写 0 = 算出来没落地）。"""
-    from design.lr_exec import to_lrplans
-    plans = {'a': dict(plan=dict(exposure_ev=0.2, local_ev=0.0, curve={}),
-                       white=dict(need='down', whites_ui=-18.5, amount=-18.5),
-                       grading={}, curve=None)}
-    lr = to_lrplans(plans)['a']
-    eq(lr.whites, -18.5)
-    eq(lr.exposure_ev, 0.2)
-
-
-def test_no_model_knobs_are_one_step():
-    """没有公开传递函数的旋钮：只给方向 + 一档（10 UI），不许模型反解。"""
-    from design.lr_solve import ONE_STEP_UI, white_end_plan
-    card = dict(name='t', points=dict(p95=90.0))
-    rec = dict(img=dict(p5=10.0, p50=50.0, p95=99.0, p99=100.0, clip_pct=5.0),
-               person=dict(clip_pct=5.0),
-               skin=dict(L=60.0, C=20.0, h=50.0))
-    w = white_end_plan(rec, card, curve=None)
-    eq(w['whites_ui'], -ONE_STEP_UI)
-    same(w['amount_basis'], 'one_step')
-
-
-def test_batch_grade_is_one_curve_and_one_grading():
-    """A 段必须**全批同一条曲线**；颜色在 B 段逐图，不再要求同参。"""
-    from design.batch_grade import build
-    from design.lr_solve import plan_batch
-    card = dict(name='t', points=dict(
-        p95=93.0, face_C=22.0, face_h=45.0, warm_cool_b=1.5,
-        toe=7.0, contrast_win=50.0, shoulder=8.0, face_over_bg=0.75, p5=5.0),
-        bands=dict(p95=[90.0, 95.0]))
-    a = _lr_rec(img=dict(p5=5.0, p25=18.0, p50=50.0, p75=78.0, p95=94.0,
-                         p99=99.9, clip_pct=0.1, contrast=89.0))
-    b = _lr_rec(img=dict(p5=12.0, p25=30.0, p50=58.0, p75=80.0, p95=92.0,
-                         p99=99.0, clip_pct=0.2, contrast=80.0))
-    recs = {'a': a, 'b': b}
-    bg = build(recs, card)
-    ok(bg['curve'] is not None and len(bg['curve']) == 16, '批级曲线没造出来')
-    plans = plan_batch(recs, card, batch=bg)
-    c0 = plans['a']['curve']
-    ok(all(p['curve'] == c0 for p in plans.values()), '同一批的曲线不一致')
-    ok(all('grading' in p for p in plans.values()), '每张都要有颜色计划（B 段逐图）')
-
-
-def test_measure_adapter_reads_v7_rows():
-    """v7 的扁平字段（face_L/person_p99/bg_L_p90）也要能进 B 段。"""
-    from design.lr_solve import _meas_of
-    r = dict(file='x', face_L=52.0, face_C=20.0, face_h=48.0,
-             person_L=50.0, person_p99=96.0, bg_L=40.0, bg_L_p90=70.0,
-             img=dict(p5=2.0, p25=20.0, p50=45.0, p75=70.0, p95=88.0,
-                      p99=95.0, clip_pct=0.1, contrast=86.0))
-    m = _meas_of(r)
-    eq(m['face_L'], 52.0)
-    eq(m['p99'], 96.0)
-    eq(m['bg_hi'], 70.0)
-    ok(m['shape']['toe'] is not None and m['shape']['contrast_win'] is not None,
-       'v7 没 shape 时要能从 img 分位算出来')
-
-
 if __name__ == '__main__':
     raise SystemExit(main())
-

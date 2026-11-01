@@ -27,9 +27,9 @@
  "grain": {
   "active": true,
   "rms_granularity": [
-   21.0,
-   21.0,
-   21.0
+   4.0,
+   4.0,
+   4.0
   ],
   "particle_scale_sublayers": [
    1.0,
@@ -319,20 +319,20 @@
  },
  "_note_medium_20261028": "介质定值 2026-10-28（报告§13/§4.3）：wb 4545/0.998→4630/0.95（n=10 生产路径格点：肤h中位47.53=靶47.7带内；中性a 0.0 量化噪声内）；amount 1.00→1.30（n=10：肤C中位17.42，带[15.12,23.36]内；高彩脸1526/1422/1772 C29-40 不再上推）。备份 .bak_medium_20261028，前sha 587767abb2bd",
  "_note_base": "基线介质（从 卡38 一次性冻结；此后目录介质以各自 media/*.json 为准）",
- "_note_medium": "print_exposure = 参考灰 18.4% → 本卡目标密度（二分求得）",
+ "_note_medium": "扫描端点/放大机滤片写进 simulation.*；其余目标见 _target",
  "_target": {
-  "p50_target_D": 0.416,
+  "p50_target_D": 0.417,
   "shape": {
-   "toe": 11.39,
-   "shoulder": 11.47,
-   "contrast_win": 71.96,
-   "skew": 55.06
+   "toe": 11.37,
+   "shoulder": 11.37,
+   "contrast_win": 54.9,
+   "skew": 0.7
   },
-  "warm_cool_b": 6.13,
+  "warm_cool_b": 5.0,
   "face": {
-   "C": 18.1,
-   "h": 51.31,
-   "L": 75.51
+   "C": 18.6,
+   "h": 48.58,
+   "L": 81.18
   },
   "shadow": {
    "lab": [

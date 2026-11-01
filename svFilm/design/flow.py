@@ -1,130 +1,39 @@
 # -*- coding: utf-8 -*-
-"""整条引擎侧的流程：**选卡 → 出质感参数 → 渲一次 → 交 LR**。
+"""引擎侧：**按卡渲一次 ①**（不匹配、不选卡、不管落点）。
 
-单位是「卡」（见 `cards.py`）：一个卡 = 一卷 + 一张纸 + 一组质感档位 + 风格档。
-对外只有卡；引擎侧那个配置文件只是卡的落地实现。
+设计（`引擎设计.md` §2/§4.4/§5）：
+  · 只渲一次：人选卡之后，用这个目录的介质 + 该目录的 PE 渲 ①；
+  · 不再有 ①′ 基线；匹配 A 用机内 JPG（`contentmatch`）；
+  · 引擎固定 PE，auto_exposure 关；落点/脸/颜色都归 LR；
+  · 生产默认走 A：**按交付尺寸渲**（长边 1080，与大师同域）。
 
-流程：
-    need       ← 场景测量 + 意图（只用场景侧的量，不用自己出片的偏差）
-    rank_cards ← 现有卡之间排序（**能立刻用**）
-    rank_stocks← 卷之间排序（**值得做新卡的参考**，不是能选的）
-    texture    ← 选中那张卡的质感参数（查表 + 换算 + 档位，逐条带出处）
-    render     ← 注入式：渲一次、量一次
-    handoff    ← 只告诉 LR"这张底片是什么"，不给靶
-
-用法：
-    from design.flow import choose, describe
-    offer = choose(recs_engine, intent)
-    print(describe(offer))
+本模块只剩三件事：渲、报余量、写 `_render.json`（供 --reuse 校验）。
+选卡/匹配/交付不在这里。
 """
 from __future__ import annotations
 
+import copy
 import json
 import os
+import time
+from typing import Dict, Optional
 
-from dataclasses import dataclass, field
-from typing import Callable, Dict, List, Optional
-
-from . import measure as M
-from .intent import Intent
-from .stocks import Registry, registry
-from .texture import Style, TexturePlan, plan_texture, warn
-
-# ★ 2026-10-31：引擎**不再用 render_safe 自己找曝光**（那是引擎做放置，越界）。
-#   固定用每目录的 print_exposure 渲；余量只报告。引擎不管脸、不管落点。
-# ★★★ 余量只有在"上端没被砍"时才是一个可用的数（2026-10-29 实测，见下）
-#   `scan_white_level` 是**上端硬天花**：它按 sRGB 显示码切顶。
-#     white_level=1.00 ⇒ 天花 L*≈100（能到顶、clip 可测）
-#     white_level=0.95 ⇒ 天花 L*≈95.5（96~100 那 4~5 L* 直接归零）
-#   ⇒ 降它换来的"余量"是个恒等式：headroom_ev ≡ −log2(Y(天花))，砍多少报多少，一进一出等于零。
-#   实测 10/10 吻合（推算 0.167~0.223 / 实测 0.13~0.19，差 ≤0.04 EV），
-#   代价是中位 4.65%（1.5~14%）的像素被从 ≥96 压到 95.5 以下、直方图 96+ 段精确归零。
-#   ⇒ **不许再用降白端去制造余量**。天花低于此值 ⇒ 余量判为不可信。
+# 余量只有在"上端没被砍"时才是一个可用的数（2026-10-29 实测）：
+# `scan_white_level` 是上端硬天花，降它换来的余量是恒等式（砍多少报多少）。
 CEILING_MIN_L = 99.5
 
+# 交付域长边（`测量设计.md` §1.1 / `引擎设计.md` §4.4 A）
+DELIVERY_LONG_SIDE = 1080
 
-@dataclass
-class Choice:
-    hit: CardHit
-    texture: TexturePlan
-    medium: Optional[dict] = None      # 基线 ①′ 用；None = 读卡自己的介质
-    note: str = ''
-
-    @property
-    def card(self) -> Card:
-        return self.hit.card
-
-    @property
-    def stock(self) -> str:
-        return self.hit.card.stock
-
-    @property
-    def paper(self) -> str:
-        return self.hit.card.paper
-
-    @property
-    def renderable(self) -> bool:
-        return True                       # 卡本身就是"能渲"的组合
+# 渲染并行：路数由**内存**算，不由核数算（2048 长边每路 2.3~3.1 GB）。
+ENGINE_PER_JOB_GB = 3.1
+ENGINE_MEM_BUDGET_GB = 24.0
 
 
-@dataclass
-class Offer:
-    choices: List[Choice] = field(default_factory=list)
-    new_card_candidates: List[str] = field(default_factory=list)
-    need: Optional[object] = None     # 旧 Need 已随两层卡体系废弃
-
-    def best(self) -> Optional[Choice]:
-        return self.choices[0] if self.choices else None
-
-
-def choose(recs_engine: Dict[str, dict], intent: Optional[Intent] = None,
-           style: Optional[Style] = None, reg: Optional[Registry] = None,
-           topn: int = 5, paths: Optional[Dict[str, str]] = None) -> Offer:
-    """选卡：**走匹配卡**（`matchcard.rank_top5`，设计真源 §57），不再走旧的两层卡体系。"""
-    from .matchcard import rank_top5
-    offer = Offer()
-    for h in rank_top5(recs_engine, k=topn, paths=paths):
-        c = h['card']
-        tp = plan_texture(c.stock, c.paper, long_side=1080, style=style)
-        hit = _Hit(c, h['score'])
-        offer.choices.append(Choice(hit=hit, texture=tp,
-                                    note=' ｜ '.join(list(h['reason']) + list(h['cost']))))
-    return offer
-
-
-class _Hit:
-    """`rank_top5` 的一条结果 → Choice 需要的形状（`.card` 就是匹配卡本身）。"""
-
-    def __init__(self, card, score):
-        self.card = card
-        self.score = score
-        self.contrib = {}
-
-
-def describe(offer: Offer) -> str:
-    """把 offer 说清楚（终端用）。**不推荐、不代选**：只列候选与代价。"""
-    if not offer.choices:
-        return '【选卡】没有候选（匹配卡为空？）'
-    lines = ['【选卡】前 %d 个候选（看样例图定，别只看分数）：' % len(offer.choices)]
-    for i, c in enumerate(offer.choices, 1):
-        lines.append('%d) %-28s %-6.2f  %s + %s'
-                     % (i, c.card.name, getattr(c.hit, 'score', 0.0),
-                        c.stock, c.paper))
-        if c.note:
-            lines.append('     ' + c.note[:120])
-    lines.append('')
-    lines.append('选定就回：--card <名字>')
-    return '\n'.join(lines)
-
+# ---------------------------------------------------------------- 余量（产物，不是目标）
 
 def headroom_clip(disp, ev: float = 1.0) -> float:
-    """**余量测试**：把已渲好的片子按线性域乘 2^ev，量"还会剪多少"。
-
-    为什么这样测（2026-10-29）：
-      · p99 只是**代理指标**——高光端斜率实测 8~16 L*/EV，所以 p99=92 并不等于
-        "还能抬 1 EV"。真正要回答的是"抬了之后剪不剪"。
-      · 这个问题**不需要重渲**：显示域 → 线性 → ×2^ev → 回显示域 → 量 clip。
-    """
+    """把已渲好的片子按线性域乘 2^ev，量"还会剪多少"。"""
     import numpy as _np
     u = _np.clip(_np.asarray(disp, _np.float64), 0.0, 1.0)
     lin = _np.where(u <= 0.04045, u / 12.92, ((u + 0.055) / 1.055) ** 2.4)
@@ -136,16 +45,7 @@ def headroom_clip(disp, ev: float = 1.0) -> float:
 
 
 def headroom_ev(disp, clip_max: float = 0.5, hi: float = 3.0) -> float:
-    """**这张底片还能抬几档**（抬到 clip = clip_max 为止）。
-
-    这是引擎该报给 LR 的数：LR 的曝光计划不许超过它，否则计划本身就会毁图
-    （2026-10-29 首次真跑发现：引擎为留余量压暗 -> 脸 L≈45 -> LR 要 +2.4 档，
-      而 +1 档已经剪 8.69% ⇒ 计划不可行，系统却没拦）。
-
-    ⚠ **这个数只在上端没被砍时可信**。若底的最高 L* 明显低于 100（`scan_white_level`
-      小于 1），它报出来的就是"你刚砍掉的天花板高度" —— 恒等式，不是收益。
-      调用方要先用 `ceiling_L()` 判一下；`headroom_report()` 已经把这两件事绑在一起。
-    """
+    """这张底片还能抬几档（抬到 clip = clip_max 为止）。"""
     lo = 0.0
     if headroom_clip(disp, hi) <= clip_max:
         return float(hi)
@@ -159,14 +59,13 @@ def headroom_ev(disp, clip_max: float = 0.5, hi: float = 3.0) -> float:
 
 
 def ceiling_L(disp) -> float:
-    """这张底片的**上端天花**（全图最高 L*）。"""
+    """这张底片的上端天花（全图最高 L*）。"""
     import numpy as _np
     return float(_np.max(_lab_of_disp(disp)))
 
 
 def _code_to_L(code: float) -> float:
-    """sRGB 显示码 → L*（内部口径，与 `_lab_of_disp` 一致）。"""
-    import numpy as _np
+    """sRGB 显示码 → L*。"""
     c = max(0.0, min(1.0, float(code)))
     y = c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
     return 116.0 * (y ** (1.0 / 3.0)) - 16.0
@@ -174,19 +73,9 @@ def _code_to_L(code: float) -> float:
 
 def headroom_report(disp, clip_max: float = 0.5, white_level: float = None,
                     max_px: int = 1_200_000) -> dict:
-    """余量 + 它**可不可信**，一起报。
+    """余量 + 可不可信，一起报。
 
-    ★ 判据（2026-10-29 实测）：`scan_white_level` 是**上端硬天花**。
-      它小于 1 时，图会被切在 `code=white_level` 那条线上（0.95 ⇒ L*95.5），
-      而 `headroom_ev` 这时精确等于"砍掉的高度"（10/10 吻合）⇒ 报给 LR 是假预算。
-
-    ★ 判别"被砍"和"这张本来就暗"必须分开（否则低反差图全成误报）：
-      被砍 ⇒ 分布**正好顶到**白端那条线（实测天花 ≈ 预期天花）；
-      本来就暗 ⇒ 天花明显**低于**这条线（1289/1608/1726 就是这种）。
-
-    `white_level`：卡里那个白端值。不传 ⇒ 按 1.0 处理并降级为"疑似"（说明里写明）。
-    `max_px`：余量是**二分搜索**，要跑十几次全图转换，原生尺寸会吃爆内存
-    ⇒ 超过就**走位抽样**（不是缩放：抽样不改分布，缩放会削掉极值）。
+    `scan_white_level` < 1 时图被切在上端那条线，报的余量只是"砍掉的高度"。
     """
     import math as _math
     import numpy as _np
@@ -194,9 +83,6 @@ def headroom_report(disp, clip_max: float = 0.5, white_level: float = None,
     wl_known = white_level is not None
     wl = 1.0 if white_level is None else float(white_level)
     expect = _code_to_L(wl)
-    # ★ 判据只看把锯子设成多少，**不看这张图亮不亮**：
-    #   白端 < 1 ⇒ 整批的天花被那条线限住 ⇒ 余量结构上不会超过"砍掉的高度"，
-    #   是硬不变量，与图像内容无关（1726 的天花离切线 1.3 L*，按"顶到没顶到"判会漏掉）。
     cut = expect < CEILING_MIN_L
 
     arr = _np.asarray(disp)
@@ -208,15 +94,13 @@ def headroom_report(disp, clip_max: float = 0.5, white_level: float = None,
     ev = headroom_ev(sub, clip_max=clip_max)
 
     y = ((top + 16.0) / 116.0) ** 3 if top > -16.0 else 0.0
-    taut = float(-_math.log2(y)) if y > 0 else None       # 恒等式预言的值
+    taut = float(-_math.log2(y)) if y > 0 else None
     if cut:
         why = ('白端 scan_white_level=%.2f（期望天花 L*%.1f，实测 L*%.1f）⇒ '
-               '天花被那条线限住，报的 %.2f 档最多就是砍掉的高度（恒等式 %s），不是可用余量'
-               '（要抬就把白端还原成 1.0）'
-               % (wl, expect, top, ev,
-                  '%.2f' % taut if taut is not None else '—'))
+               '天花被那条线限住，报的 %.2f 档最多就是砍掉的高度，不是可用余量'
+               % (wl, expect, top, ev))
     elif not wl_known:
-        why = '天花 L*%.1f；没传白端值，按 1.0 处理（若卡里不是 1.0，这个判定不作数）' % top
+        why = '天花 L*%.1f；没传白端值，按 1.0 处理' % top
     else:
         why = '天花 L*%.1f，白端 1.0 ⇒ 余量可信' % top
     return dict(headroom_ev=ev, ceiling_L=round(top, 2), valid=bool(not cut),
@@ -224,112 +108,10 @@ def headroom_report(disp, clip_max: float = 0.5, white_level: float = None,
                 tautology_ev=(round(taut, 3) if taut is not None else None), why=why)
 
 
-def render_card(choice: Choice, raf_paths: Dict[str, str], out_dir: str,
-                log=print) -> Dict[str, str]:
-    """用引擎固定 PE 渲一批：**引擎不做放置**，出 16-bit TIF。
-
-    raf_paths = {stem: RAF 路径}
-    返回 {stem: TIF 路径}
-    """
-    import os
-    from svFilm import presets, io                     # 引擎侧（卡就是靠它落地的）
-    from svFilm import lrbase
-
-    os.makedirs(out_dir, exist_ok=True)
-    # ★ 2026-10-31：**没有"预设"这个可选集合了**。每个目录自带一份介质块
-    #   （卷/纸/WB/amount/化学…），整块直接喂引擎；读不到就抛。
-    from .card_render import medium_of
-    medium = choice.medium if getattr(choice, 'medium', None) else medium_of(choice.card)
-    media_label = '%s + %s' % (medium['simulation']['film_stock'],
-                              medium['simulation']['print_paper'])
-    # ★ 白端要**记下来**：它决定这张底片的天花，也决定"余量"这个数可不可信
-    try:
-        white_level = float(medium['simulation']['scan_white_level'])
-    except Exception:
-        white_level = None
-    if white_level is not None and white_level < 1.0:
-        log('  ! 卡的白端 scan_white_level=%.2f < 1.0：天花会被切在 L*%.1f，'
-            '换来的余量是零和（砍多少报多少）⇒ 出片后余量判为不可信'
-            % (white_level, _code_to_L(white_level)))
-    out = {}
-    # ★ 质感这层要**真的进渲染**：`render_safe` 原来一个参数都不传，于是
-    #   `plan_texture()` 算完就扔（"算值不落地"）。现在整份 overrides 传下去。
-    from .texture import to_overrides
-    tex = choice.texture
-    long_side = 2048
-    try:
-        from svFilm import presets as _ps
-        long_side = int(getattr(_ps.C, 'MAX_SIDE', 2048) or 2048)
-    except Exception:                                      # noqa: BLE001
-        pass
-    ov = to_overrides(tex, long_side=long_side)
-    log('  质感 overrides：%d 根（%s）'
-        % (len(ov), '、'.join(sorted(k.split('.')[-1] for k in ov))))
-    jobs = engine_jobs(len(raf_paths))
-    if jobs > 1:
-        log('  并行渲：%d 路（长边 %d，内存预算 %d GB）'
-            % (jobs, long_side, ENGINE_PER_JOB_GB * jobs))
-        from multiprocessing import get_context
-        argv = [(stem, raf, medium, out_dir, ov, white_level)
-                for stem, raf in raf_paths.items()]
-        with get_context('spawn').Pool(jobs) as pool:
-            for stem, dst, hr, c0, c1, msgs in pool.imap_unordered(_render_one, argv):
-                out[stem] = dst
-                _write_headroom(out_dir, stem, hr)
-                for m in msgs:
-                    log(m)
-        _write_render_meta(out_dir, choice, media_label, out)
-        return out
-
-    for stem, raf in raf_paths.items():
-        stem, dst, hr, c0, c1, msgs = _render_one(
-            (stem, raf, medium, out_dir, ov, white_level))
-        out[stem] = dst
-        _write_headroom(out_dir, stem, hr)
-        for m in msgs:
-            log(m)
-    _write_render_meta(out_dir, choice, media_label, out)
-    return out
-
-
-def _write_render_meta(out_dir: str, choice, media_label: str, out: dict) -> str:
-    """把"这批 ① 是用什么渲的"写下来（供 --reuse 校验）。
-
-    ★ 2026-10-31：没有它，`--reuse` 只能看文件名 —— 卡/预设/amount 换了也照样复用，
-      实测踩过：一批 1.0 的底片被当成 1.3 用，整轮参数全错还没人报。
-    """
-    import json
-    import time
-    from .card_render import medium_of
-    m = choice.medium if getattr(choice, 'medium', None) else medium_of(choice.card)
-    sim = m.get('simulation') or {}
-    p = os.path.join(out_dir, '_render.json')
-    d = dict(card=getattr(choice.card, 'name', ''),
-             medium=media_label,
-             print_exposure=float(sim.get('print_exposure') or 0.0),
-             amount=float((m.get('couplers') or {}).get('amount') or 0.0),
-             corpus=getattr(choice.card, 'corpus', ''),
-             n=len(out), stems=sorted(out),
-             ts=time.strftime('%Y-%m-%d %H:%M:%S'))
-    tmp = p + '.tmp'
-    with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
-        json.dump(d, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, p)
-    return p
-
-
-# ---------------------------------------------------------------- 单张渲染（串行/并行共用）
-
-# ★★ 引擎渲染一律"最大限程 + 最快速度"（10-29 SV 定）。
-#   实测本机 32 GB / 24 核 32 线程：2048 长边渲染峰值 2.3~3.1 GB/路 ⇒ 6 路 ≈ 17 GB，安全；
-#   6264 全尺寸 ~8 GB/路 ⇒ 只有 1~2 路。**路数由内存算，不由核数算。**
-ENGINE_PER_JOB_GB = 3.1
-ENGINE_MEM_BUDGET_GB = 24.0      # 留 8 GB 给系统 / LR / 测量
-
+# ---------------------------------------------------------------- 渲一次
 
 def engine_jobs(n_images: int) -> int:
-    """能开几路：内存预算是上限，图片数是不够就少开。"""
-    import os
+    """能开几路：内存预算是上限，图片数不够就少开。"""
     want = int(os.environ.get('SV_ENGINE_JOBS', '0') or 0)
     if want > 0:
         return max(1, min(want, n_images))
@@ -337,38 +119,109 @@ def engine_jobs(n_images: int) -> int:
     return max(1, min(by_mem, os.cpu_count() or 1, n_images))
 
 
+def render_card(card, raf_paths: Dict[str, str], out_dir: str,
+                long_side: int = DELIVERY_LONG_SIDE, log=print) -> Dict[str, str]:
+    """用引擎固定 PE 渲一批：**引擎不做放置**，出 16-bit TIF。
+
+    `card`：MatchCard（有 name/corpus）或原样卡字典。
+    返回 {stem: TIF 路径}。
+
+    WB：解码用**相机 as-shot**（场景 WB）；卡白点是**交付域 look 目标**，
+    用这批第一张的 2 个探针解**印相滤片**（一次，写进本次介质），不碰解码。
+    """
+    from .card_render import medium_of
+    from .texture import plan_texture, to_overrides
+
+    os.makedirs(out_dir, exist_ok=True)
+    medium0 = medium_of(card)
+    media_label = '%s + %s' % (medium0['simulation']['film_stock'],
+                              medium0['simulation']['print_paper'])
+    try:
+        white_level = float(medium0['simulation']['scan_white_level'])
+    except Exception:                                      # noqa: BLE001
+        white_level = None
+    if white_level is not None and white_level < 1.0:
+        log('  ! 卡的白端 scan_white_level=%.2f < 1.0：天花会被切在 L*%.1f，'
+            '余量判为不可信' % (white_level, _code_to_L(white_level)))
+    tex = plan_texture(_stock_of(card), _paper_of(card), long_side=long_side)
+    ov = to_overrides(tex, long_side=long_side)
+    # ★ 优先卡级 WB（一个目录一个值）；没有才用介质预设。不做逐批反解。
+    wbc = (card.get('wb') if isinstance(card, dict)
+           else getattr(card, 'wb', None)) or {}
+    wbm = dict(medium0.get('wb') or {})
+    if wbc.get('temperature') is not None and wbc.get('tint') is not None:
+        temp, tint = wbc.get('temperature'), wbc.get('tint')
+        why = 'card-wb'
+    else:
+        temp, tint = wbm.get('temperature'), wbm.get('tint')
+        why = 'preset-wb'
+    medium = medium0
+    if temp is not None and tint is not None:
+        wb = {'white_balance': 'custom',
+              'temperature': float(temp), 'tint': float(tint)}
+        wb_info = dict(calibrated=False, why=why,
+                       y=_filters_of(medium0)[0], m=_filters_of(medium0)[1])
+        log('  解码 WB：%s custom %.0fK / G×%.3f（整批共用，不逐帧）'
+            % ('卡级' if why == 'card-wb' else '预设',
+               float(temp), float(tint)))
+    else:
+        wb = {'white_balance': 'as_shot'}
+        wb_info = dict(calibrated=False, why='no wb',
+                       y=_filters_of(medium0)[0], m=_filters_of(medium0)[1])
+        log('  解码 WB：没有卡/预设 wb ⇒ 相机 as-shot')
+    log('  质感 overrides：%d 根（%s）' % (len(ov), '、'.join(sorted(
+        k.split('.')[-1] for k in ov))))
+    jobs = engine_jobs(len(raf_paths))
+    out: Dict[str, str] = {}
+    argv = [(stem, raf, medium, out_dir, ov, white_level, long_side, wb)
+            for stem, raf in raf_paths.items()]
+    if jobs > 1:
+        log('  并行渲：%d 路（长边 %d）' % (jobs, long_side))
+        from multiprocessing import get_context
+        with get_context('spawn').Pool(jobs) as pool:
+            for stem, dst, hr, msgs in pool.imap_unordered(_render_one, argv):
+                out[stem] = dst
+                _write_headroom(out_dir, stem, hr)
+                for m in msgs:
+                    log(m)
+    else:
+        for a in argv:
+            stem, dst, hr, msgs = _render_one(a)
+            out[stem] = dst
+            _write_headroom(out_dir, stem, hr)
+            for m in msgs:
+                log(m)
+    _write_render_meta(out_dir, card, media_label, out, wb, wb_info, medium)
+    return out
+
+
+def _stock_of(card) -> str:
+    return card.stock if hasattr(card, 'stock') else str(card.get('stock') or '')
+
+
+def _paper_of(card) -> str:
+    return card.paper if hasattr(card, 'paper') else str(card.get('paper') or '')
+
+
 def _render_one(args):
     """渲一张 + 量余量（**必须在模块级**：Windows 的 spawn 不能 pickle 闭包）。"""
-    (stem, raf, medium, out_dir, ov, white_level) = args
-    from svFilm import presets, io, lrbase       # 子进程里自己 import
+    (stem, raf, medium, out_dir, ov, white_level, long_side, wb) = args
+    from svFilm import io, lrbase, presets
     media_label = '%s + %s' % (medium['simulation']['film_stock'],
                                medium['simulation']['print_paper'])
-    msgs = ['  渲 %s ← %s（介质 %s）'
-            % (stem, os.path.basename(raf), media_label)]
-    lin = io.load_raw(raf).lin
-    # ★★ 2026-10-31（按设计纠正）：**引擎只做介质，不做落点/形状**。
-    #   固定用介质自带的 print_exposure 渲，出片偏亮偏暗都交给 LR 的 Exposure。
+    msgs = ['  渲 %s ← %s（介质 %s，长边 %d）'
+            % (stem, os.path.basename(raf), media_label, long_side)]
+    lin = io.load_raw(raf, max_side=long_side, wb=wb).lin
+    # 引擎只做介质，不做落点/形状：固定用介质自带的 print_exposure。
     disp = presets.render(lin, medium, overrides=ov)
     msgs.append('  引擎自动曝光：**关**（固定 print_exposure=%.3f，落点归 LR）'
                 % presets.pe_of(medium))
     dst = os.path.join(out_dir, '%s_engine.tif' % stem)
     lrbase.save_tiff16(disp, dst)
     hr = headroom_report(disp, white_level=white_level)
-    if hr['valid']:
-        msgs.append('  可抬 %.2f 档（到 clip 0.5%% 为止）｜天花 L*%.1f'
-                    % (hr['headroom_ev'], hr['ceiling_L']))
-    else:
-        msgs.append('  !!! 余量不可信：%s' % hr['why'])
-    ev_plan = 1.0
-    c0 = float((_lab_of_disp(disp) > 99).mean() * 100.0)
-    c1 = headroom_clip(disp, ev_plan)
-    msgs.append('  余量：当前 clip=%.2f%% ｜ +%.1fEV 后 clip=%.2f%%（限 0.5%%）'
-                % (c0, ev_plan, c1))
-    if c1 > 0.5:
-        msgs.append('  · 余量 %.1f 档（产物，不是目标）；+%.1fEV clip=%.2f%%'
-                    ' ⇒ 只报告，不改曝光/safety（设计：让引擎多留余量 = 越界）'
-                    % (hr['headroom_ev'], ev_plan, c1))
-    return stem, dst, hr, c0, c1, msgs
+    msgs.append('  余量 %s：可抬 %.2f 档（产物，不是目标）'
+                % ('可信' if hr['valid'] else '不可信', hr['headroom_ev']))
+    return stem, dst, hr, msgs
 
 
 def _write_headroom(out_dir, stem, hr):
@@ -379,15 +232,45 @@ def _write_headroom(out_dir, stem, hr):
                        ceiling_expect_L=hr['ceiling_expect_L'],
                        white_level=hr['white_level'],
                        tautology_ev=hr['tautology_ev'], why=hr['why'],
-                       limit_clip=None,
                        note='引擎固定 PE；只报告余量，不改曝光；脸归 LR'),
                   fh, ensure_ascii=False, indent=1)
+
+
+def _write_render_meta(out_dir: str, card, media_label: str, out: dict,
+                       wb=None, wb_info=None, medium=None) -> str:
+    """把"这批 ① 是用什么渲的"写下来（供 --reuse 校验）。"""
+    from .card_render import medium_of
+    m = medium or medium_of(card)
+    sim = m.get('simulation') or {}
+    info = dict(wb_info or {})
+    p = os.path.join(out_dir, '_render.json')
+    d = dict(card=getattr(card, 'name', '') if hasattr(card, 'name')
+             else str((card or {}).get('name') or ''),
+             medium=media_label,
+             print_exposure=float(sim.get('print_exposure') or 0.0),
+             amount=float((m.get('couplers') or {}).get('amount') or 0.0),
+             wb=(wb or {}).get('white_balance', 'as_shot'),
+             wb_temperature=float((wb or {}).get('temperature') or 0.0),
+             wb_tint=float((wb or {}).get('tint') or 1.0),
+             wb_calibrated=bool(info.get('calibrated')),
+             print_y_filter_shift=float(sim.get('print_y_filter_shift') or 0.0),
+             print_m_filter_shift=float(sim.get('print_m_filter_shift') or 0.0),
+             wb_target=info.get('target'),
+             wb_base_white=info.get('base_white'),
+             corpus=getattr(card, 'corpus', '') if hasattr(card, 'corpus')
+             else str((card or {}).get('corpus') or ''),
+             n=len(out), stems=sorted(out),
+             ts=time.strftime('%Y-%m-%d %H:%M:%S'))
+    tmp = p + '.tmp'
+    with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
+        json.dump(d, fh, ensure_ascii=False, indent=2)
+    os.replace(tmp, p)
+    return p
 
 
 def _lab_of_disp(disp):
     """显示域 → L*（0..100），与测量层同口径（浮点，不量化）。"""
     import numpy as np
-    from design.measure import measure_sha  # noqa: F401  仅保证模块可用
     u = np.clip(np.asarray(disp, np.float64), 0.0, 1.0)
     lin = np.where(u <= 0.04045, u / 12.92, ((u + 0.055) / 1.055) ** 2.4)
     M = np.array([[0.4124564, 0.3575761, 0.1804375],
@@ -397,41 +280,3 @@ def _lab_of_disp(disp):
     d = 6.0 / 29.0
     f = np.where(xyz > d ** 3, np.cbrt(xyz), xyz / (3 * d * d) + 4.0 / 29.0)
     return 116.0 * f[..., 1] - 16.0
-
-
-# ---------------------------------------------------------------- 引擎侧的边界（别再越界）
-
-# ★★★ 2026-10-31：引擎 **auto_exposure 关**（`design/medium.py` 写死 False），
-#   只做介质 + 固定 PE；落点/形状全归 LR。`render_safe` 不再从生产路径调用。
-#   设计 §20：引擎侧只剩三件事，都不逐图 —— ① 选卷/纸 ② T0 余量校验 ③ 白点按配对给定。
-#   设计 §19：引擎判据只有 **T0 余量 · T3 白点**；曝光落点/明暗分布/颜色全是 LR 的。
-#
-#   所以：**不要在 flow 里做任何"按 L* 落点去二分 pe"的东西**（我做过一次 `render_p5_anchor`，
-#   已删）。引擎若 T0 不过，按 §21 是**卷/纸或入口 WB 的问题**，不是"再乘一个系数"。
-#   LR 提不动脸时，先做 Highlights 收白（§31 ③），**收不回来**才按 §32 回引擎要余量。
-
-
-# ---------------------------------------------------------------- 渲染/交接（注入式）
-
-def render_stage(choice: Choice, stems: List[str],
-                 render_fn: Optional[Callable] = None,
-                 measure_fn: Optional[Callable] = None) -> Dict[str, dict]:
-    """渲一次并量 ①。渲染与测量都由调用方注入，本层不绑任何具体实现。
-
-    render_fn(stem, card) -> 出片路径
-    measure_fn(path)      -> measure_all 的单图记录
-    """
-    if render_fn is None:
-        raise RuntimeError(
-            '没有注入渲染入口。要么注入 render_fn(stem, card)->路径，'
-            '要么用 flow.render_card(choice, raf_paths, out_dir)。'
-            '当前可用卡：%s' % ', '.join(all_cards().keys()))
-    if measure_fn is None:
-        raise RuntimeError('没有注入测量函数（用 measure_all 那套）')
-    return {stem: measure_fn(render_fn(stem, choice.card)) for stem in stems}
-
-
-def handoff(choice: Choice, recs_engine: Dict[str, dict]) -> str:
-    """给 LR 的交接：只说"这张底片是什么"，不给靶。"""
-    return ('底片 %s ｜ n=%d ｜ %s'
-            % (choice.card.label(), len(recs_engine), M.summarize(recs_engine)))

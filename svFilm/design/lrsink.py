@@ -1,117 +1,104 @@
 # -*- coding: utf-8 -*-
-"""LR 执行端（sink）：把 `LRPlan` 落成 **XMP 作业单**。**不驱动 LR**。
+"""LR 落盘：**LRPlan → XMP 作业单**（不驱动 LR）+ 产品阶段（驱动 LR 出 ③）。
 
-SV 定的规矩（2026-10-29）：不要用 LR 跑；数值与公式去查资料。
-所以这里只做文件，不做桥：
-    LRPlan  →  XMP 文本  →  写到 out_dir/<stem>.xmp  +  manifest.json
-之后要不要导、什么时候导，是人决定的事。
+两条路分开：
+  · `write_jobs`  只写 XMP + manifest：可 diff、可回放、不碰 LR；
+  · `apply_and_export` 把 XMP 塞进 TIF → ADD → 局部 → 导出 ③。
 
-为什么走 XMP（10-28 实测）：
-  · 桥逐键写有三个治不好的病：键名靠猜（写错静默丢弃）、结构化键写不进、状态只活在会话里。
-  · XMP 是一份文件：可 diff、可回放、键名就是规范名。
-  · 三条硬约束缺一条 LR 一个数都不读：
-        `<?xpacket?>` 包头 · `AlreadyApplied="False"` · `WhiteBalance="As Shot"`
-  · `PointColors` **必须配 `ColorVariance`**，且 `SrcHue ≤ 5.95`（弧度制 0~6）。
-
-用法：
-    from design.lrsink import plan_to_xmp, write_jobs
-    xmp = plan_to_xmp(plan)
-    write_jobs({'DSCF1289': plan}, '%TEMP%/out')
+局部：LR SDK 没有 facialSkin 子类型 ⇒ 用 subject 建组 + **肤色点颜色**工具
+把修正收窄到肤色（白衫低饱和，不在肤色窗里，不会被一起抬）；直接用 subject
+整身提亮是设计禁止的，这里用肤色窗做交集合。`MASKPARAM` 必须回读校验。
 """
 from __future__ import annotations
 
 import json
 import os
-import sys
-from typing import Dict, List, Optional
+import shutil
+import time
+from typing import Dict, Optional
 
-from .lr import LRPlan
+from . import lr_xmp
+from .calibration import LOCAL_EXPOSURE_PER_EV
+from .lr_plan import LRPlan
 
-# 底层实现（已经验证过的那份 XMP 构造），单一真源
-_PHOTO = r'E:\svStudio\svFilm\analysis\corpus\kurai'
-if _PHOTO not in sys.path:
-    sys.path.insert(0, _PHOTO)
-
-CRS_VERSION = '18.1'
-PROCESS_VERSION = '15.4'
+CRS_VERSION = lr_xmp.CRS_VERSION
+PROCESS_VERSION = lr_xmp.PROCESS_VERSION
 
 
-def point_color_record(plan: LRPlan) -> Optional[str]:
-    """从剂量 + ②处取样色造 19 数字记录（复用已验证的构造函数）。
+def plan_to_xmp(plan: LRPlan) -> str:
+    """LRPlan → XMP 文本。值为 0 的滑杆不写（不写 = 不动）。
 
-    为什么用 `point_color(rgb, ...)` 而不是 Lab→RGB：
-      10-28 栽过——用 Lab 中心色反推出来的 HSL 色相是错的（0~360 与 0~6 弧度还会混）。
-      这里直接喂**真实取样像素**（已过曲线 LUT），SrcHue 由它的 HSL 算。
+    ★ 不写全局 `PointColors`：肤色点颜色是**局部肤色蒙版**里的色票
+      （`POINTSWATCH` 建，isForMasking=true），写进 XMP 会变成全局色票，
+      同一剂量落两次。
     """
-    if not plan.point_color or not plan.point_color_rgb:
-        return None
-    from lr_xmp import point_color
-    return point_color(plan.point_color_rgb,
-                       sat_scale=float(plan.point_color.get('scale', 0.0)),
-                       hue_shift=float(plan.point_color.get('shift', 0.0)),
-                       # ★ 亮度：一直没接（10-29）。点颜色是**唯一只作用于肤色范围**的亮度旋钮，
-                       #   背景不是肤色 ⇒ 不动背景 ⇒ 不会触发"背景亮→收白→压脸"那条链
-                       lum_scale=float(plan.point_color.get('lum', 0.0)))
-
-
-def plan_to_xmp(plan: LRPlan, point_colors: Optional[List[str]] = None) -> str:
-    """LRPlan → XMP 文本。值为 0 的滑杆不写（不写 = 不动）。"""
-    from lr_xmp import build_xmp
-    scalars = {k: v for k, v in plan.as_xmp_scalars().items() if abs(v or 0) > 1e-9}
-    if point_colors is None:
-        rec = point_color_record(plan)
-        point_colors = [rec] if rec else None
-    return build_xmp(scalars=scalars, curve=plan.curve, point_colors=point_colors)
+    scalars = plan.as_xmp_scalars()
+    return lr_xmp.build_xmp(scalars=scalars, curve=plan.curve, point_colors=None)
 
 
 def diagnostic(xmp_text: str) -> Dict[str, object]:
-    """自检：三件套齐不齐、点颜色有没有配 ColorVariance。"""
+    """自检：三件套 + 曲线 + WB 键在不在。"""
     d = dict(xpacket='<?xpacket' in xmp_text,
              already_applied='AlreadyApplied="False"' in xmp_text,
-             as_shot='WhiteBalance="As Shot"' in xmp_text,
+             has_settings='HasSettings="True"' in xmp_text,
+             white_balance=('WhiteBalance="Custom"' if 'WhiteBalance="Custom"' in xmp_text
+                            else ('WhiteBalance="As Shot"' if 'WhiteBalance="As Shot"' in xmp_text
+                                  else 'missing')),
+             has_temperature='crs:Temperature=' in xmp_text,
+             tone_curve_custom='ToneCurveName2012="Custom"' in xmp_text,
              has_point_colors='<crs:PointColors>' in xmp_text,
-             has_color_variance='<crs:ColorVariance>' in xmp_text,
-             tone_curve_custom='ToneCurveName2012="Custom"' in xmp_text)
-    d['ok'] = (d['xpacket'] and d['already_applied'] and d['as_shot']
-               and (not d['has_point_colors'] or d['has_color_variance']))
+             has_color_variance='<crs:ColorVariance>' in xmp_text)
+    d['ok'] = bool(d['xpacket'] and d['already_applied'] and d['has_settings']
+                   and d['white_balance'] != 'missing')
     return d
 
 
 def write_jobs(plans: Dict[str, LRPlan], out_dir: str,
-               point_colors: Optional[Dict[str, List[str]]] = None,
                manifest_extra: Optional[dict] = None) -> Dict[str, object]:
-    """一批 LRPlan → 一批 .xmp + manifest.json。**不碰 LR**。
-
-    plans = {stem: LRPlan}
-    返回 manifest（也落在 out_dir/manifest.json）
-    """
+    """一批 LRPlan → 一批 .xmp + manifest.json。**不碰 LR**。"""
     os.makedirs(out_dir, exist_ok=True)
+    # 清掉上一轮的 .xmp：留下的旧作业单会被误当成本轮（设计：一次算一份）
+    for f in os.listdir(out_dir):
+        if f.lower().endswith('.xmp'):
+            try:
+                os.remove(os.path.join(out_dir, f))
+            except OSError:
+                pass
     items = []
     for stem, plan in plans.items():
-        pcs = (point_colors or {}).get(stem)
-        xmp = plan_to_xmp(plan, point_colors=pcs)
+        xmp = plan_to_xmp(plan)
         diag = diagnostic(xmp)
         path = os.path.join(out_dir, '%s.xmp' % stem)
         with open(path, 'w', encoding='utf-8', newline='\n') as fh:
             fh.write(xmp)
-        items.append(dict(stem=stem, xmp=os.path.basename(path),
-                          exposure_ev=plan.exposure_ev,
-                          highlights=plan.highlights,
-                          saturation=plan.saturation,
-                          curve_points=(len(plan.curve) if plan.curve else 0),
-                          lookat=plan.notes.get('lookat'),
-                          curve_note=plan.notes.get('curve'),
-                          highlights_note=plan.notes.get('highlights'),
-                          highlight_verify=plan.notes.get('highlight_verify'),
-                          highlight_debt=plan.notes.get('highlight_debt'),
-                          exposure_debt=plan.notes.get('exposure_debt'),
-                          point_color=plan.point_color,
-                          point_color_rgb=plan.point_color_rgb,
-                          diag=diag))
-    manifest = dict(generated_utc=None, n=len(items), items=items,
+        items.append(dict(
+            stem=stem, xmp=os.path.basename(path), diag=diag,
+            wb=dict(decode='as_shot', card_white=plan.wb.card_white,
+                    note=plan.wb.note),
+            basic=dict(exposure_ev=plan.exposure_ev, contrast=plan.contrast,
+                       highlights=plan.highlights, shadows=plan.shadows,
+                       whites=plan.whites, blacks=plan.blacks),
+            point_color=(dict(h=plan.point_color.h, s=plan.point_color.s,
+                              l=plan.point_color.l, range=plan.point_color.range,
+                              sat_scale=plan.point_color.sat_scale,
+                              raw=plan.point_color.raw)
+                         if plan.point_color.is_set() else None),
+            split=dict(shadow_hue=plan.split_shadow_hue,
+                       shadow_sat=plan.split_shadow_sat,
+                       highlight_hue=plan.split_highlight_hue,
+                       highlight_sat=plan.split_highlight_sat,
+                       balance=plan.split_balance),
+            local=dict(mask=plan.local.mask, exposure_ev=plan.local.exposure_ev,
+                       shadows=plan.local.shadows, highlights=plan.local.highlights,
+                       saturation=plan.local.saturation),
+            curve_points=(len(plan.curve) if plan.curve else 0),
+            target=plan.target, card_dev=plan.card_dev,
+            ledger=list(plan.ledger)))
+    manifest = dict(generated_utc=time.strftime('%Y-%m-%d %H:%M:%S'),
+                    n=len(items), items=items,
                     caliber=dict(crs_version=CRS_VERSION,
                                  process_version=PROCESS_VERSION,
-                                 note='Exposure 单位=档（Adobe 文档）；滑杆值 0 不写'))
+                                 note='滑杆值 0 不写；WB 卡级（引擎解码层，不在 XMP）；局部=肤色蒙版'))
     if manifest_extra:
         manifest.update(manifest_extra)
     with open(os.path.join(out_dir, 'manifest.json'), 'w', encoding='utf-8') as fh:
@@ -122,30 +109,40 @@ def write_jobs(plans: Dict[str, LRPlan], out_dir: str,
 def summary(manifest: Dict[str, object]) -> str:
     items = manifest.get('items') or []
     bad = [i for i in items if not (i.get('diag') or {}).get('ok')]
-    ev = [i['exposure_ev'] for i in items if i.get('exposure_ev') is not None]
     lines = ['XMP 作业单：%d 张 ｜ 自检不过 %d 张' % (len(items), len(bad))]
+    wbs = {(i.get('wb') or {}).get('temperature') for i in items}
+    wb0 = sorted(w for w in wbs if w)
+    lines.append('  WB（卡级）：%s' % (
+        '%.0fK（整批一个，引擎解码层）' % wb0[0] if len(wb0) == 1 else
+        ('不统一：%s' % wb0 if wb0 else '不动（As Shot）')))
+    if manifest.get('print_exposure') is not None:
+        lines.append('  PE：%.3f' % float(manifest['print_exposure']))
+    ev = [i['basic']['exposure_ev'] for i in items]
     if ev:
-        lines.append('  曝光：中位 %+.2f 档 ｜ 范围 %+.2f ~ %+.2f'
+        lines.append('  曝光：中位 %+.2f ｜ 范围 %+.2f ~ %+.2f'
                      % (sorted(ev)[len(ev) // 2], min(ev), max(ev)))
-    with_curve = [i for i in items if i.get('curve_points')]
-    lines.append('  带曲线：%d 张 ｜ 带点颜色：%d 张'
-                 % (len(with_curve), sum(1 for i in items
-                                         if (i.get('diag') or {}).get('has_point_colors'))))
-    ed = [i for i in items if i.get('exposure_debt')]
-    if ed:
-        lines.append('  ⚠ 曝光欠账 %d 张（现在是引擎的账，不是 LR 截断的）：' % len(ed))
-        for i in ed[:3]:
-            lines.append('    %s: %s' % (i['stem'], i['exposure_debt']))
-    hl = [i for i in items if i.get('highlights')]
-    if hl:
-        vals = sorted(i['highlights'] for i in hl)
-        lines.append('  收白：%d 张 ｜ 起点 %+.0f（对分第一步，不是算出来的幅度）'
-                     % (len(hl), vals[len(vals) // 2]))
-    debt = [i for i in items if i.get('highlight_debt')]
-    if debt:
-        lines.append('  ⚠ 收白欠账 %d 张（① 已爆 = 引擎丢的细节 / 到尽头仍不达标）：' % len(debt))
-        for i in debt[:3]:
-            lines.append('    %s: %s' % (i['stem'], i['highlight_debt'][:80]))
+    for key, label in (('contrast', '对比'), ('highlights', '高光'),
+                       ('shadows', '阴影'), ('whites', '白'), ('blacks', '黑')):
+        vals = [i['basic'][key] for i in items if abs(i['basic'].get(key) or 0) > 1e-9]
+        if vals:
+            lines.append('  %s：%d 张 ｜ 中位 %+.1f ｜ 范围 %+.1f ~ %+.1f'
+                         % (label, len(vals), sorted(vals)[len(vals) // 2],
+                            min(vals), max(vals)))
+    pc = [i for i in items if i.get('point_color')]
+    lines.append('  点颜色（肤色蒙版）：%d 张' % len(pc))
+    if pc:
+        ss = sorted(float((i.get('point_color') or {}).get('sat_scale') or 0.0)
+                    for i in pc)
+        lines.append('    SatScale 中位 %+.2f ｜ 范围 %+.2f ~ %+.2f'
+                     % (ss[len(ss) // 2], ss[0], ss[-1]))
+    sp = [i for i in items if abs(i['split']['shadow_sat']) > 1e-9
+          or abs(i['split']['highlight_sat']) > 1e-9]
+    if sp:
+        lines.append('  分色：%d 张' % len(sp))
+    loc = [i for i in items if abs((i.get('local') or {}).get('exposure_ev') or 0) > 1e-9]
+    lines.append('  局部（肤色蒙版）：%d 张' % len(loc))
+    cur = [i for i in items if i.get('curve_points')]
+    lines.append('  曲线：%d 张' % len(cur))
     for i in bad[:3]:
         lines.append('  ! %s 自检不过：%s' % (i['stem'], i['diag']))
     lines.append('  ★ 只写了 XMP 与 manifest，**没有驱动 LR**')
@@ -155,112 +152,65 @@ def summary(manifest: Dict[str, object]) -> str:
 # ---------------------------------------------------------------- 产品阶段（会驱动 LR）
 
 def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
-    """把计划**真的**在 LR 里跑一遍并导出 ③ 成片。
-
-    与上面"只写 XMP"分开的原因：
-      · 算值阶段不许依赖 LR（公式要能查、要能离线复算）；
-      · 但**产品**必须有 ③ 才能验收（肤色 L 分布、背景是否被动、是否仍是人样）。
-    这一层是可选的、要显式调用的，不是算值的一部分。
+    """LRPlan **真的**在 LR 里跑一遍并导出 ③。返回 {stem: ③ 路径}。
 
     pairs = [(stem, ①的TIF路径, LRPlan)]
-    返回 {stem: 导出的 TIF 路径}
-    """
-    import os
-    import shutil
-    import time
 
-    PHOTO = r'E:\svStudio\svFilm\analysis\corpus\kurai'
-    import sys
-    if PHOTO not in sys.path:
-        sys.path.insert(0, PHOTO)
-    import lr_xmp
-    import lrstate as LS
+    顺序（设计）：XMP（Basic/分色/曲线）→ ADD → subject 组 + 肤色色票
+    → 局部曝光（MASKPARAM，回读）→ 导出 ③。WB 在引擎解码层，不在 XMP。
+    """
+    from . import lr_bridge as B
 
     os.makedirs(out_dir, exist_ok=True)
-    # ★ 2026-10-31：lrstate.TMP 指向已删的旧语料目录（_corpus/kurai/full/_probe_lr）。
-    #   生产不能依赖语料目录；临时 TIF / 导出都放到本次输出下。
-    LS.TMP = os.path.join(out_dir, '_work')
-    os.makedirs(LS.TMP, exist_ok=True)
-    out = {}
+    work = os.path.join(out_dir, '_work')
+    os.makedirs(work, exist_ok=True)
+    out: Dict[str, str] = {}
     for stem, src, plan in pairs:
-        rec = point_color_record(plan)
-        xmp = plan_to_xmp(plan)          # 已含曲线；点颜色单独写进临时副本
-        tmp = os.path.join(LS.TMP, 'design_%s_%d.tif'
-                           % (stem, int(time.time() * 1000) % 100000))
+        xmp = plan_to_xmp(plan)
+        stamp = '%d' % (int(time.time() * 1000) % 1000000)
+        tmp = os.path.join(work, 'design_%s_%s.tif' % (stem, stamp))
         lr_xmp.write_tif(src, tmp, xmp)
-        r = LS.run('ADD ' + tmp, timeout=180)
-        if 'ADD' not in r.upper() and 'EXIST' not in r.upper():
-            raise RuntimeError('ADD 失败 %s: %s' % (stem, r[:120]))
-        # ★★ 补光：主体蒙版 + 局部曝光（⚠ EV/4 无出处，10-30 停用；暂按方向 + 一档）
-        #   两个坑（都真踩过）：
-        #   ① `MASK ... LocalExposure2012=` 走 LrDevelopController.setValue，命令报 ok、
-        #      蒙版也建了，但导出时**一个字都不落**（四档脸 L 全一样）⇒ 必须用 MASKPARAM；
-        #   ② MASKPARAM 要**回读**：读回来的值不匹配就当这一步没做，不许静默通过。
-        _ev = float(getattr(plan, 'fill_ev', 0.0) or 0.0)
-        _sh = float(getattr(plan, 'local_shadows', 0.0) or 0.0)
-        _hl = float(getattr(plan, 'local_highlights', 0.0) or 0.0)
-        # ★ 2026-10-31：颜色也走主体蒙版（局部饱和/局部染色）⇒ 建蒙版的条件要把它们算进来，
-        #   否则"只有颜色、没有补光"的图不会建蒙版，颜色一个都不落（10-31 实测的坑）。
-        _ls = float(getattr(plan, 'local_saturation', 0.0) or 0.0)
-        _lt = max(abs(float(getattr(plan, 'local_toning_hue', 0.0) or 0.0)),
-                  abs(float(getattr(plan, 'local_toning_sat', 0.0) or 0.0)))
-        _pc = abs(float(getattr(plan, 'point_color_sat_scale', 0.0) or 0.0))
-        # ★ 2026-10-30：蒙版不再只由 fill_ev 决定 —— LocalShadows 是"主体∩暗部"的
-        #   原生等效（实测：脸 +7.1 L/单位，画面 p99 只 +0.1），必须能单独用。
-        if max(abs(_ev), abs(_sh), abs(_hl), abs(_ls), _lt, _pc) > 1e-6:
-            rm = LS.run('MASK %s subject' % tmp, timeout=180)
-            if 'groups=0->0' in rm:
-                raise RuntimeError('%s 主体蒙版没建出来：%s' % (stem, rm[:120]))
-            if _pc > 1e-6:
-                _h = float(getattr(plan, 'point_color_h', 0.0) or 0.0)
-                _s = float(getattr(plan, 'point_color_s', 0.0) or 0.0)
-                _ll = float(getattr(plan, 'point_color_l', 0.0) or 0.0)
-                _r = float(getattr(plan, 'point_color_range', 0.0) or 0.5)
-                _ss = float(getattr(plan, 'point_color_sat_scale', 0.0) or 0.0)
-                rp = LS.run('POINTSWATCH %s %.6f %.6f %.6f %.4f %.4f'
-                            % (tmp, _h, _s, _ll, _r, _ss), timeout=180)
-                if 'res=true' not in rp:
-                    raise RuntimeError('%s Point Color 没落下去：%s' % (stem, rp[:160]))
-                log('    Point Color H%.3f/S%.3f/L%.3f range%.2f SatScale%+.2f'
-                    % (_h, _s, _ll, _r, _ss))
-            from .calibration import LOCAL_EXPOSURE_PER_EV
-            _v = _ev * LOCAL_EXPOSURE_PER_EV
-            rp = LS.run('MASKPARAM %s LocalExposure2012 %.6f' % (tmp, _v), timeout=180)
-            _rb = rp.split('readback=')[-1].split()[0] if 'readback=' in rp else '0'
-            try:
-                _okv = abs(float(_rb) - _v) <= 1e-6
-            except ValueError:
-                _okv = False
-            if not _okv:
-                raise RuntimeError('%s 补光没落下去（回读 %s ≠ %.4f）：%s'
-                                   % (stem, _rb, _v, rp[:120]))
-            log('    补光 %+.2f 档 ⇒ 蒙版 %.4f（回读 %s）' % (_ev, _v, _rb))
-            # ★ §6E：局部是一整套旋钮 —— 只用曝光会把白裙一起提上去。
-            #   Shadows 提暗部（文档保证按亮度选择性）、Highlights 压住人的亮部。
-            #   ⚠ 桥的 MASKSX 回读**只列了一部分键**：LocalExposure2012 能读回，
-            #     LocalShadows2012 / LocalHighlights2012 回读是 nil。
-            #     "报 ok 但读不回来"不许当成功（老账）⇒ 这里**跳过并记账**，
-            #     等把这两个键加进桥的回读列表、在 LR 里重载插件之后再启用。
-            for _key, _ui in (('LocalShadows2012', float(getattr(plan, 'local_shadows', 0.0) or 0.0)),
-                              ('LocalSaturation', float(getattr(plan, 'local_saturation', 0.0) or 0.0)),
-                              ('LocalToningHue', float(getattr(plan, 'local_toning_hue', 0.0) or 0.0)),
-                              ('LocalToningSaturation', float(getattr(plan, 'local_toning_sat', 0.0) or 0.0)),
-                              ('LocalHighlights2012', float(getattr(plan, 'local_highlights', 0.0) or 0.0))):
-                if abs(_ui) < 1e-6:
+        B.add(tmp)
+
+        # ---- 局部：**肤色蒙版** = LR 主体 AI 蒙版 ∩ 肤色点颜色工具。
+        #   ★ SDK 只有 aiSelection 的 subject/people/sky/...，**没有 facialSkin
+        #     subtype**（`LrDevelopController.createNewMask` 的 maskSubtype 列表里
+        #     只有 subject/people/...；实测 people 建不出组，subject 可以）。
+        #   所以用 subject 建组，再用 local point-color 色票（肤色色相）把修正
+        #   收窄到肤色：白衫低饱和、不在肤色窗里，不会被一起抬（实测 +1EV：
+        #   face L +3.9、人 clip 0.16%→0.74%）。这是设计意图（不改背景/白衫）
+        #   在当前 SDK 下能做到的最近实现；SDK 若以后给 facialSkin，只换 mask 名。
+        need_mask = plan.point_color.is_set() or plan.local.is_set()
+        if need_mask:
+            rm = B.run('MASK %s subject' % tmp, timeout=180)
+            if 'groups=0->0' in rm or 'tiles=0->0' in rm:
+                raise RuntimeError('%s 肤色蒙版没建出来：%s' % (stem, rm[:160]))
+        if plan.point_color.is_set():
+            pc = plan.point_color
+            rp = B.point_watch(tmp, pc.h * 2.0 * 3.141592653589793,
+                               pc.s, pc.l, pc.range, pc.sat_scale)
+            if 'res=true' not in rp:
+                raise RuntimeError('%s 肤色色票没落下去：%s' % (stem, rp[:200]))
+            log('    肤色色票（subject ∩ 肤色）H%.3f/S%.3f/L%.3f SatScale%+.2f'
+                % (pc.h, pc.s, pc.l, pc.sat_scale))
+        # ---- 局部：只动肤色蒙版里的曝光（设计：一张卡一个局部蒙版）
+        if plan.local.is_set():
+            v = float(plan.local.exposure_ev) * LOCAL_EXPOSURE_PER_EV
+            if abs(v) > 1e-9:
+                rb = B.mask_param(tmp, 'LocalExposure2012', v)
+                log('    局部曝光 %+.2f 档 ⇒ 蒙版 %.4f（回读 %s）'
+                    % (plan.local.exposure_ev, v, rb))
+            # ⚠ LocalHighlights2012 的桥回读/导出实测不可用（-1.0 会污染测量），
+            #   不启用；靠肤色窗口本身压住白衫。
+            for key, ui in (('LocalShadows2012', plan.local.shadows),):
+                if abs(float(ui or 0.0)) < 1e-9:
                     continue
-                _x = _ui / 100.0           # §6C：其余滑杆 = UI 值 / 100（XMP 刻度）
-                rr = LS.run('MASKPARAM %s %s %.4f' % (tmp, _key, _x), timeout=180)
-                _b = rr.split('readback=')[-1].split()[0] if 'readback=' in rr else 'nil'
                 try:
-                    _ok2 = abs(float(_b) - _x) <= 1e-6
-                except ValueError:
-                    _ok2 = False
-                if not _ok2:
-                    log('    ! %s 跳过（桥回读 %s，未验证）' % (_key, _b))
-                    continue
-                log('    %s %+.0f（XMP %.3f，回读 %s）'
-                    % (_key.replace('Local', '').replace('2012', ''), _ui, _x, _b))
-        got = LS.expo(tmp, 'design_%s' % stem)
+                    B.mask_param(tmp, key, float(ui) / 100.0)
+                    log('    %s %+.0f（回读 ok）' % (key, float(ui)))
+                except RuntimeError as ex:               # noqa: BLE001
+                    log('    ! %s 跳过（桥回读不可用）：%s' % (key, str(ex)[:120]))
+        got = B.export_tif(tmp, out_dir, tag=stem)
         dst = os.path.join(out_dir, '%s_final.tif' % stem)
         shutil.copy2(got, dst)
         out[stem] = dst

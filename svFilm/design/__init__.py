@@ -1,57 +1,51 @@
 # -*- coding: utf-8 -*-
-"""新设计框架（2026-10-29 起）。
+"""设计层（v0.3，2026-11-01 整理）。
 
-设计文档（唯一真源）：`design/设计真源.md`；LR 数值出处：`design/LR数值来源.md`
-
-一句话：
-    引擎交一张「带余量、不偏色、有胶片质感的底片」；
-    LR 决定这张底片最终多亮、什么颜色；
-    判据只有「不变量 + 意图」，没有「该到多少」。
+唯一设计真源：`design/设计真源.md`；纪律：`design/纪律.md`。
+一句话：**选卡 → 引擎给介质基线 ① → LR 对齐卡 ③ → 人目检**。
 
 模块地图
 --------
-invariants.py  T0~T5 / S1~S5 判定（纯函数，可单测）
-stocks.py      从引擎 profile 读卷的性格五轴 + 卷↔纸配对（卷决定纸）
-cards.py       「卡」= 一卷+一纸+质感档位+风格档（唯一被匹配/选用/渲染的单位）
-cards_match.py 现有卡之间的排序
-match.py       卷层排序（值得做新卡的参考）+ 需求向量
-texture.py     质感：换算 / 规格（查引擎卷表）/ 档位；禁用项
-flow.py        选卡 → 质感 → 渲一次（引擎自己的测光）→ 量余量 → 交 LR
-               ★ 引擎不管脸、不管落点（那是 LR 的事）
-batch_grade.py A 段（批级）：全批中位 → 一条曲线 + 一套颜色（全批同参）
-lr.py          LR 侧七步求解（一次算一次验，不闭环）
-photometry.py  标准色度学：L*↔Y↔EV↔sRGB 码（定义式，唯一真源）
+匹配 A（机内 JPG，不渲 ①′）
+  contentmatch.py   读 RAW 内嵌 JPG → 测量 → 内容匹配 → 候选页
+  card_content.py   目录内容卡：读 / 打分 / 理由
+  matchpage.py      内容匹配页（给人拍板）
+  matchcard.py      卡注册表（cards / raw_card / card_samples）
 
-lrmodel.py     LR 的数值口径索引（不参与求解；能查/不能查 + 出处）
-curve.py       曲线：只修不变量 + 预算；PCHIP 插值；采样点含锚点
-color_math.py  Lab↔XYZ↔CCT/HSL（定义式；WB 与 HSL 色相不再靠标定）
-states.py      三态：①→② 用 LUT 自算；②→③ 算不了（点颜色无公开函数）
-intent.py      意图（接口定义，非物理断言）
-measure.py     测量桥：读 measure_all 记录 + 口径 sha
-lrsink.py      LRPlan → XMP 作业单 + manifest（**不驱动 LR**）
-cli.py         命令行：stocks/cards/check/plan/curve/match/flow/texture/xmp/states
+引擎（介质级）
+  flow.py           渲一次 ①（固定 PE、交付尺寸）+ 余量报告
+  card_render.py    卡 → 介质块
+  medium.py         每目录一份介质（media/<卡名>.json）
+  texture.py        质感参数（引擎链换算）
+  stocks.py / profile_table.py   卷/纸事实（查 profile）
 
-命令行
-------
-    python -m design.cli stocks
-    python -m design.cli check <recs.json> --stage engine --stem "_engine\\.tif$"
-    python -m design.cli plan  <recs.json> --stem "_engine\\.tif$" --intent denser=0.2
-    python -m design.cli curve <src.json> <dst.json>
+LR（图级）
+  lr_plan.py        LRPlan 数据模型（WB/Basic/PointColor/局部/曲线）
+  lr_solve.py       WB → 曝光/明暗（Basic 为主）→ 肤色（蒙版里的 Point Color）→ 局部
+  lr_response.py    Basic 滑杆实测一阶响应（规划起点）
+  curve_design.py   曲线补形状（PCHIP，单调）
+  lr_exec.py / lrsink.py / lr_bridge.py   XMP + 桥（肤色蒙版）
+  peer.py           逐片 peer（同构图/同场景）
+  batch_guard.py    批级护栏（只报告，不下发公共曲线）
 
-★ 重开的两条已关闭决议，基础变了 —— 写明原因：
-  1. 「曝光层机制 = pe + 动态 PE」→ 现在曝光归 LR。
-     依据变了：引擎出片的 T0 实测 9/9 不过（p99≈97、clip 最高 16.7%），
-     说明当年 pe 闭环补的是**底片余量**，不是"曝光本身必须在引擎里"。
-  2. 「卷/纸 = portra_400 + portra_endura 固定」→ 卷纸变成离散的风格选择。
-     依据变了：profile 自带 `target_print`（卷决定纸），三组阵营明确；
-     且卷纸不再用于追数值，只用于定风格。
+收尾
+  review.py         ③ 目检页 + 测量（**不判过/不过**）
+  measure_all.py    唯一尺子；measure.py 读记录 + 口径 sha
+  batch.py          批次：渲 + 交付域测量
+  cli.py            命令行：run / match-jpg / page / xmp / review / cards / stocks
 
-归档
+命令
 ----
-`E:\\svStudio\\svFilm\\_archive_1029\\`  本次清理掉的旧实现（可 git 追回）
-`E:\\ds\\photo\\_corpus\\kurai\\full\\_archive_1029\\`  旧链 64 个脚本
+    python -m design.cli cards
+    python -m design.cli match-jpg --raf <RAW目录> --out <输出目录>
+    python -m design.cli run --raf <RAW目录> --out <输出目录> --card <卡名> [--export]
+    python -m design.cli xmp  <①测量.json> --card <卡名> --out <输出目录>
+    python -m design.cli review <①测量.json> <③测量.json> --out <输出目录>
 """
 
-__all__ = ['invariants', 'stocks', 'cards', 'cards_match', 'match', 'texture',
-           'flow', 'lr', 'batch_grade', 'photometry', 'lrmodel', 'curve',
-           'color_math', 'states', 'intent', 'measure', 'lrsink', 'cli']
+__all__ = ['batch', 'batch_guard', 'calibration', 'card_content', 'card_render',
+           'cli', 'color_math', 'contentmatch', 'curve', 'curve_design',
+           'flow', 'lr_bridge', 'lr_exec', 'lr_plan', 'lr_response', 'lr_solve',
+           'lr_xmp', 'lrsink', 'matchcard', 'matchpage', 'measure', 'measure_all',
+           'medium', 'peer', 'photometry', 'review', 'stocks', 'texture',
+           'profile_table']

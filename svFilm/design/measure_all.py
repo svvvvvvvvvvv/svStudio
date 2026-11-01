@@ -25,9 +25,6 @@ import numpy as np
 _SV = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SV not in sys.path:
     sys.path.insert(0, _SV)
-_CORP = r'E:\ds\photo\_corpus\kurai\full'
-if _CORP not in sys.path:
-    sys.path.append(_CORP)
 
 from design.skin import face_mask as FM          # noqa: E402
 from design.skin import sample_skin              # noqa: E402
@@ -43,7 +40,8 @@ CFG = dict(
     near_r=0.90,          # 近邻背景半径 / 脸宽
     rim_r=(1.20, 1.60),   # 轮廓环 / 脸宽
     hair_band=(1.00, 1.40),
-    white_pct=95.0,
+    white_pct=90.0,
+    white_c_max=8.0,
     neutral_bands=5, hue_bands=6,
     ita=True,
 )
@@ -200,6 +198,22 @@ def measure_one(path: str, light_probe=None) -> dict:
             # 光向量
             lum = Ln
             face_v = face & (fs > 0.5)
+            # ★ 2026-11-01 v0.3：把旧 v7 的 face/person 分位与肤色 RGB 补回来，
+            #   让 `design.measure_all` 一把尺子也能喂 plan_batch/grading_of。
+            out['face_w_native'] = fw
+            out['face_mask_share'] = float(face.mean())
+            if face_v.sum() >= 300:
+                out['face_p5'] = _pct(lum[face_v], 5)
+                out['face_p95'] = _pct(lum[face_v], 95)
+                out['face_p99'] = _pct(lum[face_v], 99)
+                out['face_dark_share40'] = float((lum[face_v] <= 40.0).mean())
+                _rgb = np.median(native[face_v].astype(np.float64), axis=0)
+                out['skin_rgb'] = [int(round(float(v))) for v in _rgb]
+            if pm.sum() >= 300:
+                out['person_p5'] = _pct(lum[pm], 5)
+                out['person_p95'] = _pct(lum[pm], 95)
+                out['person_p99'] = _pct(lum[pm], 99)
+                out['person_clip_pct'] = float((lum[pm] >= 99).mean() * 100.0)
             if face_v.sum() >= 500:
                 yy, xx = np.nonzero(face_v)
                 left = face_v & (np.mgrid[0:Ln.shape[0], 0:Ln.shape[1]][1] < cx)
@@ -232,12 +246,14 @@ def measure_one(path: str, light_probe=None) -> dict:
                               n=int(ring.sum()))
 
         # ---- 白点 / 中性轴 / 色相六段 / 暖冷 / 光比
-        wm = bg & (Ln >= (_pct(Ln[bg], CFG['white_pct']) or 1e9))
+        # 白点 = 全幅最亮 5% 里**低彩度**的中性面（白衣服/白墙/灰卡），不是只看背景：
+        # 背景最亮块可能是暖石头/天光，会把卡 WB 带黄（卡 108：bg b+1，白衣服 b0）。
+        wm = (Ln >= (_pct(Ln, CFG['white_pct']) or 1e9)) & (Cn <= CFG['white_c_max'])
         out['white_point'] = dict(n=int(wm.sum()),
                                   a=_med(an[wm]) if wm.sum() >= 500 else None,
                                   b=_med(bn[wm]) if wm.sum() >= 500 else None,
                                   C=_med(Cn[wm]) if wm.sum() >= 500 else None,
-                                  L_thr=_pct(Ln[bg], CFG['white_pct']))
+                                  L_thr=_pct(Ln, CFG['white_pct']))
         lo, hi = _pct(Ln, 0), _pct(Ln, 100)
         edges = np.linspace(lo, hi + 1e-6, CFG['neutral_bands'] + 1)
         out['neutral_axis'] = [dict(L=(edges[i] + edges[i + 1]) / 2,

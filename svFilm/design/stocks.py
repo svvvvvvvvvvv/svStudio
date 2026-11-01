@@ -61,12 +61,14 @@ class Stock:
     def axes(self) -> Dict[str, float]:
         a = dict(speed=self.speed, sepR=self.sepR, sepB=self.sepB,
                  gamma=self.gamma, dmax=self.dmax)
-        if self.rms:
-            a['rms'] = float(sum(self.rms) / len(self.rms))
+        vals = [float(v) for v in self.rms if isinstance(v, (int, float))]
+        if vals:
+            a['rms'] = sum(vals) / len(vals)
         return a
 
     def __str__(self):
-        rms = ('%.1f' % (sum(self.rms) / len(self.rms))) if self.rms else '—'
+        vals = [float(v) for v in self.rms if isinstance(v, (int, float))]
+        rms = ('%.1f' % (sum(vals) / len(vals))) if vals else '—'
         return ('%-24s %-9s anti=%-6s rms=%-5s sepR=%+.2f sepB=%+.2f γ=%.2f 纸=%s'
                 % (self.name, self.kind, self.anti, rms, self.sepR, self.sepB,
                    self.gamma, self.target_print))

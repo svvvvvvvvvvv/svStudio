@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""卡缺的那两块：**暗部/高光的冷暖特征**（cards_v5 里 hue_bands / neutral_axis 是空的）。
+"""卡缺的那两块：**暗部/高光的冷暖特征**（cards_v6 里 hue_bands / neutral_axis 是空的）。
 
 为什么能量、也为什么要量：
   · 量的是"这张卡在暗部/高光的**色偏**"（一个颜色），不是"蓝色占多少像素"（内容）。
@@ -61,8 +61,8 @@ def _zone(L: np.ndarray, a: np.ndarray, b: np.ndarray, lo: float, hi: float):
 
 def build_card(card: dict) -> Optional[dict]:
     from PIL import Image
-    from .matchcard import _abs_samples
-    files = [p for p in _abs_samples(card) if os.path.isfile(p)]
+    from .matchcard import card_samples
+    files = [p for p in card_samples(card.get('name') or '') if os.path.isfile(p)]
     if not files:
         return None
     sh, hi, overall, neutral = [], [], [], []
@@ -121,7 +121,7 @@ def main(argv=None) -> int:
     want = ''
     if '--card' in argv:
         want = argv[argv.index('--card') + 1]
-    d = json.load(open(os.path.join(_CORPUS, 'cards_v5.json'), encoding='utf-8'))
+    d = json.load(open(os.path.join(_CORPUS, 'cards_v6.json'), encoding='utf-8'))
     cards = [c for c in d['cards'] if (not want or c['name'] == want)]
     old = {}
     if os.path.isfile(_OUT):

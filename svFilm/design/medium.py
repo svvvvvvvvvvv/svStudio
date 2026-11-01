@@ -41,7 +41,11 @@ def load(card_name: str) -> Optional[dict]:
 
 def medium_of(card) -> dict:
     """这张卡的介质块。没有就**抛**——目录没介质是"未定义"，不是"用默认"。"""
-    name = getattr(card, 'name', str(card))
+    if isinstance(card, dict):
+        name = card.get('name')
+    else:
+        name = getattr(card, 'name', None)
+    name = name or str(card)
     b = load(name)
     if b is None:
         raise KeyError('目录没有介质：%s（应该在 %s）' % (name, path_of(name)))
@@ -50,23 +54,6 @@ def medium_of(card) -> dict:
 
 def template() -> dict:
     return json.load(open(_TEMPLATE, encoding='utf-8'))
-
-
-def baseline_medium() -> dict:
-    """①′ 基线介质：引擎默认配对 `portra_400 + portra_endura`，只为把原片送进成片域。
-
-    ★ 2026-10-31：无卡路径不再拿"第一张卡"的介质当基线；基线固定为默认配对。
-    """
-    m = template()
-    sim = dict(m.get('simulation') or {})
-    sim['film_stock'] = 'kodak_portra_400'
-    sim['print_paper'] = 'kodak_portra_endura'
-    sim['auto_exposure'] = False
-    sim['auto_exposure_method'] = 'center_weighted'
-    sim['scan_white_level'] = SCAN_WHITE_LEVEL
-    sim['scan_black_level'] = SCAN_BLACK_LEVEL
-    m['simulation'] = sim
-    return m
 
 
 def save(card_name: str, block: dict, note: str = '') -> str:
@@ -81,20 +68,9 @@ def save(card_name: str, block: dict, note: str = '') -> str:
     return p
 
 
-def from_preset(card_name: str, preset_name: str, note: str = '') -> dict:
-    """把某个 preset 的**内容**抄成这个目录的介质（一次性迁移用）。
-
-    抄完就是目录自己的了：以后改它，不会影响别的目录，也不再有"共享预设"。
-    """
-    src = os.path.join(r'E:\svStudio\svFilm\svFilm\data\presets', preset_name, 'preset.json')
-    block = json.load(open(src, encoding='utf-8'))
-    save(card_name, block, note=note or ('迁移自 preset「%s」' % preset_name))
-    return block
-
-
 # ---------------------------------------------------------------- 目录级目标（只换算）
 
-_CARDS = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v5.json'
+_CARDS = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v6.json'
 _TONE = r'E:\svStudio\svFilm\analysis\corpus\kurai\card_tone.json'
 
 

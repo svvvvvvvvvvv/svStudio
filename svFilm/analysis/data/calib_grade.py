@@ -19,7 +19,7 @@ sys.path.insert(0, r'E:\ds\photo\_corpus\kurai\full')
 
 import lrstate as LS                      # noqa: E402
 from design import measure_all as MA      # noqa: E402
-from design.lr import LRPlan              # noqa: E402
+from design.lr_plan import LRPlan              # noqa: E402
 from design.lr_xmp import build_xmp, write_tif   # noqa: E402
 
 SRC = r'E:\ds\photo\_run_1029_tex2\engine\DSCF1231_engine.tif'
@@ -28,8 +28,11 @@ OUT = r'E:\ds\photo\_run_1030_card004\_calib'
 
 def export(tag: str, *, saturation: float = 0.0, local_shadows: float = 0.0) -> str:
     os.makedirs(OUT, exist_ok=True)
-    plan = LRPlan(saturation=saturation)
-    xmp = build_xmp(plan.as_xmp_scalars(), curve=None)
+    plan = LRPlan()
+    scalars = plan.as_xmp_scalars()
+    if abs(float(saturation or 0.0)) > 1e-9:
+        scalars['Saturation'] = float(saturation)
+    xmp = build_xmp(scalars, curve=None)
     tmp = os.path.join(OUT, 'calib_%s.tif' % tag)
     write_tif(SRC, tmp, xmp)
     print(' ADD %s -> %s' % (tag, LS.run('ADD ' + tmp, timeout=300)[:80]))

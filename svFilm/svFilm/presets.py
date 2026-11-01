@@ -58,10 +58,21 @@ def _check_white_gate(name, wc, bc, white_level):
 
 
 def _key_of(name):
-    """预设名(str) 或 **介质块**(dict) → 缓存/锁的键。"""
+    """预设名(str) 或 **介质块**(dict) → 缓存/锁的键。
+
+    ★ 2026-11-01：介质块的缓存键必须含**整块内容**，不能只写 卷+纸。
+      两个目录可能同卷同纸、但 grain/filter/diffusion 不同；只按卷纸键
+      会把先渲的那份参数缓存给后一个目录（实测：改 medium 的
+      `grain.rms_granularity` 4→44，6 次渲染的测量值完全不变）。
+    """
     if isinstance(name, dict):
+        import hashlib
+        import json
         sim = name.get('simulation') or {}
-        return 'medium:%s+%s' % (sim.get('film_stock'), sim.get('print_paper'))
+        blob = json.dumps(name, sort_keys=True, ensure_ascii=False).encode('utf-8')
+        h = hashlib.sha1(blob).hexdigest()[:16]
+        return 'medium:%s+%s:%s' % (sim.get('film_stock'),
+                                    sim.get('print_paper'), h)
     return name
 
 
@@ -329,10 +340,9 @@ def _apply(p, d, cfg, name=None):
     g.density_min = tuple(float(v) for v in gr['density_min'])
     g.uniformity = tuple(float(v) for v in gr['uniformity'])
     g.blur = float(gr['blur'])
-    # ★ 2026-11-01：引擎颗粒实际读 particle_area_um2；medium 里的 rms_granularity 只是
-    #   规格记账，不参与渲染。要改颗粒粗细，必须写这个键（0.2 是引擎默认）。
-    if 'particle_area_um2' in gr:
-        g.particle_area_um2 = float(gr['particle_area_um2'])
+    # ★ 2026-11-01：`particle_area_um2` 是**已删除字段**（`引擎手册.md` §9.1 / `grain.py`
+    #   根本没有读它；`GrainParams` 无 __slots__，写旧名不报错也没人读）。
+    #   颗粒粗细的唯一物理旋钮是 `rms_granularity`（a₁ ∝ rms²，ISO 6328）。
     g.mult_usm_sigma = float(gr.get('mult_usm_sigma', 0.7))
     g.mult_usm_amount = float(gr.get('mult_usm_amount', 0.0))
     g.blur_dye_clouds_um = float(gr.get('blur_dye_clouds_um', 2.0))

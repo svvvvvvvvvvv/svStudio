@@ -1,162 +1,18 @@
 # -*- coding: utf-8 -*-
-"""完整流程的收尾三件事：**量 ③ · 验收 · 目检页**。
+"""③ 的**目检页**：只出片 + 摆测量 + 描述偏差，**不判过/不过**。
 
-为什么单独一个文件：流程原来断在"导出成片"之后 ——
-没有人量它、没有东西判它、也没有一页能看的图。这三件事都只做"读"和"排版"，
-不改任何参数（参数在 lr.py 里算，这里只判结果）。
+设计（`设计真源.md` §7 / `纪律.md`）：
 
-三条规矩（`纪律.md` · 六条铁律第 5 条）：
-  · **脸优先**：硬门只看脸和"有没有把脸改坏"；背景爆是软门，只报不拦。
-  · 量 ③ 是为了**定位**问题，不是宣布做对。
-  · 目检页一图一行、占满宽、竖排；**不拼图、不用 <table>**。
+    机器只做：出片 ③ + 目检页 + 测量（诊断）
+    人做：目检；人说"过"才是过；人说"不过"就写哪一段不对
+
+所以这里**没有** ok/bad 判定、没有硬门/软门、没有"物理底线过了就算交付"。
+物理测量只用来定位事故（死白/p1/肤色崩），卡偏差只用来描述"哪一项差多少"。
 """
 from __future__ import annotations
 
 import os
 from typing import Dict, List, Optional
-
-
-from .invariants import T1, T2, T3, T4, T4_BACKLIT, T5, S1, S3
-
-# ---------------------------------------------------------------- 验收
-
-def verify(rec_1: dict, rec_3: dict, plan=None, ev_known: bool = True,
-           light: Optional[str] = None) -> Dict[str, object]:
-    """③ 的验收：**物理底线（硬）+ 目检**；脸/背景/曲线/白点只报告。
-
-    2026-10-31：硬门只留物理（黑端 p1、人身上死白）；T4/T5/S1/S3/T3 降为报告，
-    最终过不过由人目检。`ok` = 物理底线；不是"这张好看"。
-    """
-    hard, soft = [], []
-    img1 = rec_1.get('img') or {}
-    img3 = rec_3.get('img') or {}
-    s1 = rec_1.get('skin') or {}
-    s3 = rec_3.get('skin') or {}
-
-    # ---- 硬门：脸
-    # ★ ① 本身就不在区里/就发灰 ⇒ 只要求 ③ 不比 ① 更差（否则就是拿引擎的账罚 LR）
-    L1, C1 = s1.get('L'), s1.get('C')
-    L3, C3 = s3.get('L'), s3.get('C')
-    # ★ 脸亮区**分光位**（2026-10-29，目录卡实测 n=43）：逆光 45~70，顺光/未知 55~85
-    # `auto` 要**逐图**解析成具体光位（传 'auto' 进来直接比字符串是错的）
-    lt = light
-    if lt in (None, 'auto', 'none', ''):
-        from .lr import light_state
-        lt = light_state(dict(rec_1 or {}), given='auto')
-    zlo, zhi = (T4_BACKLIT['L_lo'], T4_BACKLIT['L_hi']) if lt == 'backlit' \
-        else (T4['L_lo'], T4['L_hi'])
-    if L3 is not None:
-        if L1 is not None and not (zlo <= float(L1) <= zhi):
-            okv = abs(float(L3) - zhi) <= abs(float(L1) - zhi) + 0.2 or zlo <= float(L3) <= zhi
-            soft.append(('T4 脸L', okv, round(float(L3), 1), '比 ①(%.1f) 更靠近区' % float(L1),
-                         '① 本身出区 ⇒ 只要求别更远（报告）'))
-        else:
-            soft.append(('T4 脸L', zlo <= float(L3) <= zhi, round(float(L3), 1),
-                         '%g~%g' % (zlo, zhi), '脸在合理曝光区（%s，报告）' % (lt or 'unknown')))
-    if C3 is not None:
-        if C1 is not None and float(C1) < T5['C_min']:
-            soft.append(('T5 脸C', float(C3) >= float(C1) - 0.2, round(float(C3), 1),
-                         '≥ ①(%.1f)-0.2' % float(C1), '① 本身就发灰 ⇒ 只要求不比 ① 更差（报告）'))
-        else:
-            soft.append(('T5 脸C', (C3 or 0) >= T5['C_min'], round(float(C3), 1),
-                         T5['C_min'], '脸不灰（报告）'))
-
-    # ---- 硬门：脸的明暗残差（曝光与补光之外，别的步骤不许动脸）
-    ev = float(getattr(plan, 'exposure_ev', 0.0) or 0.0) if plan is not None else 0.0
-    fill = float(getattr(plan, 'fill_ev', 0.0) or 0.0) if plan is not None else 0.0
-    L1 = s1.get('L')
-    if L1 is not None and L3 is not None:
-        # 2026-10-30：原来 `L1 + ev·slope + fill·18.7` 是两个线性近似叠加；
-        # 改成 CIELAB 精确式：先全局曝光，再局部补光。
-        from .photometry import l_after_ev
-        expect = l_after_ev(l_after_ev(float(L1), ev), fill)
-        resid = (float(L3) - float(L1)) - (expect - float(L1))
-        item = ('S1 脸残差', abs(resid) <= S1['dL_max'], round(resid, 2),
-                S1['dL_max'], '③ 的脸位移 − 曝光/补光该带来的位移')
-        # ★ 这条只能当信息：曝光对 L* 的**实际**响应与模型差得多
-        #   （10-29 真跑：模型斜率 13~15 L*/EV，实测 11.4~18.5，散 ±30%）
-        #   ⇒ |残差| ≤ 1 这种门在暗脸上必然误报，不能当硬门
-        # 点颜色的亮度也会抬脸，而它没有可用的传递函数 ⇒ 有 lum 时这条只能当信息
-        # ★ 补光（主体蒙版）的实测传递是 10~20 L*/档（10-29 十张：18~20，1627 只有 10）
-        #   ⇒ 有补光时把它当**硬门必误报**，降级为信息。
-        _lum = float((getattr(plan, 'point_color', None) or {}).get('lum', 0.0) or 0.0) \
-            if plan is not None else 0.0
-        if ev_known and abs(expect - float(L1)) <= 1e-9 and abs(_lum) < 1e-9:
-            soft.append(item)
-        elif fill > 1e-9:
-            soft.append(item[:4] + (item[4] + '（补光传递实测 10~20 L*/档，残差只当信息）',))
-        else:
-            # 手里的"曝光档数"是重算的、不是实际落下去的那个 ⇒ 这条只能当信息
-            soft.append(item[:4] + (item[4] + '（参数是重算值，不是实际值 ⇒ 只报不算）',))
-
-    # ---- 硬门：黑端没堵
-    # ① 本身就堵黑（p1 已经低于 T2）⇒ 只要求 ③ 不比 ① 更差。
-    # 拿绝对门去罚 ③，就是让 LR 背引擎的账 —— 和"回引擎"是同一个病。
-    p1_1, p1_3 = img1.get('p1'), img3.get('p1')
-    if p1_3 is not None:
-        if p1_1 is not None and float(p1_1) < T2['p1_min']:
-            hard.append(('T2 p1', float(p1_3) >= float(p1_1) - 0.2, round(float(p1_3), 2),
-                         '≥ ①-0.2（%.2f）' % (float(p1_1) - 0.2),
-                         '① 本身就没到 %.1f ⇒ 只要求不比 ① 更差' % T2['p1_min']))
-        else:
-            hard.append(('T2 p1', float(p1_3) >= T2['p1_min'], round(float(p1_3), 2),
-                         T2['p1_min'], '黑端不堵'))
-
-    # ---- 报告：曲线预算（S3 是自标定政策，不再当硬门）
-    if plan is not None and getattr(plan, 'curve', None):
-        from .curve import displacement
-        Ls = [img1.get('p%d' % k) for k in (5, 25, 50, 75, 95)]
-        ds = displacement(plan.curve, [v for v in Ls if isinstance(v, (int, float))])
-        if ds:
-            w = max(abs(x) for x in ds)
-            soft.append(('S3 曲线预算', w <= S3['anchor_max'], round(w, 2),
-                         S3['anchor_max'], '每锚点位移（L*，报告）'))
-
-    # ---- 报告：白点位移（不是物理判决）
-    wp1 = rec_1.get('white_point') or None
-    wp3 = rec_3.get('white_point') or None
-    if wp3 and wp1:
-        d = max(abs(wp3.get('a', 0) - wp1.get('a', 0)),
-                abs(wp3.get('b', 0) - wp1.get('b', 0)))
-        soft.append(('T3 白点位移', d <= T3['ab_max'], round(d, 2), T3['ab_max'],
-                     '白点相对 ① 的位移（报告）'))
-    if wp3:
-        worst = max(abs(wp3.get('a', 0.0)), abs(wp3.get('b', 0.0)))
-        soft.append(('T3 白点绝对', worst <= T3['ab_max'], round(worst, 2), T3['ab_max'],
-                     '白点绝对值（卷/纸定的，只报告）'))
-
-    # ---- 软门：背景爆（脸优先 ⇒ 只报不拦）
-    clip = img3.get('clip_pct')
-    if clip is not None:
-        soft.append(('T1 clip', float(clip) < T1['clip_max'], round(float(clip), 2),
-                     T1['clip_max'], '终片不爆白（背景可爆，此项只报告）'))
-    # ---- 硬门：**人身上**的死白（物理不可逆；背景爆不算）
-    p_clip = (rec_3.get('person') or {}).get('clip_pct')
-    if p_clip is not None:
-        hard.append(('T1 人clip', float(p_clip) < T1['clip_max'], round(float(p_clip), 2),
-                     T1['clip_max'], '人身上可见剪裁（物理不可逆）'))
-
-    # ---- 软门：背景 a/b 位移（要 background 掩膜才量得到）
-    bb, ba = rec_1.get('bg') or {}, rec_3.get('bg') or {}
-    if bb and ba:
-        d = max(abs(ba.get('a', 0) - bb.get('a', 0)), abs(ba.get('b', 0) - bb.get('b', 0)))
-        soft.append(('S2 背景', d <= 2.0, round(d, 2), 2.0, '背景 a/b 位移（软门）'))
-
-    return dict(hard=hard, soft=soft, ok=all(x[1] for x in hard))
-
-
-def verify_line(v: Dict[str, object]) -> str:
-    """一行说清验收结果（给终端/报告用）。"""
-    bad_h = [x for x in v['hard'] if not x[1]]
-    bad_s = [x for x in v['soft'] if not x[1]]
-    if not bad_h and not bad_s:
-        return '✓ 全过'
-    parts = []
-    if bad_h:
-        parts.append('硬门破 %d：%s' % (len(bad_h), '、'.join(x[0] for x in bad_h)))
-    if bad_s:
-        parts.append('软门 %d（只报不拦）：%s' % (len(bad_s), '、'.join(x[0] for x in bad_s)))
-    return ' ｜ '.join(parts)
 
 
 # ---------------------------------------------------------------- 目检页
@@ -170,7 +26,8 @@ def jpg_of(tif_path: str, dst_path: str, width: int = 1400, quality: int = 88) -
     try:
         im = Image.open(tif_path).convert('RGB')
         if im.width > width:
-            im = im.resize((width, int(round(im.height * width / float(im.width)))), Image.LANCZOS)
+            im = im.resize((width, int(round(im.height * width / float(im.width)))),
+                           Image.LANCZOS)
         os.makedirs(os.path.dirname(dst_path), exist_ok=True)
         im.save(dst_path, 'JPEG', quality=quality, optimize=True)
         return dst_path
@@ -192,8 +49,7 @@ figure{margin:0 0 26px}
 figure img{width:100%;height:auto;display:block;border-radius:10px;background:#000}
 .cap{color:#8f8b84;font-size:12.5px;margin:7px 0 0}
 .cap b{color:#dcd9d3;font-weight:600}
-.ok{color:#8fce9d}
-.bad{color:#e0928c}
+.diag{color:#8f8b84;font-size:12px;margin:5px 0 0}
 details{margin:8px 0 0}
 summary{color:#7f8b99;font-size:12.5px;cursor:pointer;outline:none}
 details img{margin-top:8px}
@@ -205,15 +61,11 @@ details img{margin-top:8px}
 
 def contact_sheet(rows: List[dict], out_html: str, title: str, sub: str = '',
                   hero: Optional[dict] = None) -> str:
-    """一页目检：**一张图占满宽、竖着排**，每张图下面跟它的账。
+    """一页目检：一张图占满宽、竖着排；每张图下面跟它的账。
 
-    rows 每项：
-        dict(stem, final_jpg, engine_jpg, verdict(ok|bad 文本),
-             values='曝光 +0.3 ｜ 收白 -50 ｜ 点颜色 0.6',
-             note='③ 的脸 L 62.1（① 61.8）｜ clip 1.2%（① 5.4%）')
-    hero：人拍板的 look 参考（dict(jpg=..., label=...)），**只摆在图上方做对照，不参与算值**。
+    rows 每项：dict(stem, final_jpg, engine_jpg, values, note, diag)
     """
-    os.makedirs(os.path.dirname(out_html), exist_ok=True)
+    os.makedirs(os.path.dirname(out_html) or '.', exist_ok=True)
     out = ['<!DOCTYPE html>', '<html lang="zh-CN"><head><meta charset="utf-8">',
            '<meta name="viewport" content="width=device-width, initial-scale=1">',
            '<title>%s</title><style>%s</style></head><body><div class="wrap">' % (title, _CSS),
@@ -228,22 +80,23 @@ def contact_sheet(rows: List[dict], out_html: str, title: str, sub: str = '',
     for r in rows:
         out.append('<figure>')
         out.append('<div class="lab"><span class="name">%s</span>'
-                   '<span class="num">%s</span></div>' % (r.get('stem', ''), r.get('values', '')))
+                   '<span class="num">%s</span></div>'
+                   % (r.get('stem', ''), r.get('values', '')))
         if r.get('final_jpg'):
             out.append('<img loading="lazy" src="%s" alt="%s">'
                        % (r['final_jpg'], r.get('stem', '')))
-        v = r.get('verdict') or ''
-        cls = 'ok' if v.startswith('✓') else 'bad'
-        out.append('<p class="cap">成片 · %s<span class="%s">%s</span></p>' % (r.get('note', ''),
-                                                                              cls, v))
+        if r.get('note'):
+            out.append('<p class="cap">%s</p>' % r['note'])
+        if r.get('diag'):
+            out.append('<p class="diag">%s</p>' % r['diag'])
         if r.get('engine_jpg'):
-            out.append('<details><summary>看① 引擎底片</summary>'
+            out.append('<details><summary>看 ① 引擎底片</summary>'
                        '<img loading="lazy" src="%s" alt="%s 底片"></details>'
                        % (r['engine_jpg'], r.get('stem', '')))
         out.append('</figure>')
-    out.append('<p class="foot">③ 是 LR 出的成片（曝光/收白/曲线/点颜色都在里面）；'
-               '① 是引擎底片，只作对照。验收硬门只看脸和"有没有把脸改坏"，'
-               '背景爆属软门，只报不拦。</p>')
+    out.append('<p class="foot">③ 是 LR 成片；① 是引擎底片，只作对照。'
+               '这里的数字只用来**定位**（死白/p1/肤色/卡偏差），'
+               '不判过/不过 —— <b>人目检是唯一验收</b>。</p>')
     out.append('</div></body></html>')
     html = '\n'.join(out)
     with open(out_html, 'w', encoding='utf-8', newline='\n') as fh:
@@ -254,10 +107,7 @@ def contact_sheet(rows: List[dict], out_html: str, title: str, sub: str = '',
 # ---------------------------------------------------------------- 组装（不依赖 Batch）
 
 def by_stem(recs: Dict[str, dict]) -> Dict[str, dict]:
-    """把 {文件名: 记录} 归一成 {stem: 记录}（`DSCF2453_xmp.tif` 和 `DSCF2453` 都算同一个）。
-
-    `_base.tif` 直接跳过：它是"不加 XMP 的对照"，不是 ③，混进来会把没改过的图当成品。
-    """
+    """把 {文件名: 记录} 归一成 {stem: 记录}。`_base.tif` 跳过。"""
     out = {}
     for name, rec in (recs or {}).items():
         st = os.path.basename(str(name))
@@ -288,11 +138,7 @@ def _find_tif(d: str, stem: str, allow_engine: bool = False) -> Optional[str]:
 
 
 def _hero_block(hero: str, prev_dir: str, log=print) -> Optional[dict]:
-    """人选的 hero → 目检页顶部那张对照图 + 肤色读数。
-
-    ★ 2026-10-31：hero 目前**不进求解**（设计 §4.1：A 不拿 hero 做拟合）；
-      但至少把它的肤色量出来摆在页面上，别让人选完像没用。
-    """
+    """人选的 hero → 目检页顶部对照图 + 肤色读数（只做参考）。"""
     if not hero:
         return None
     if not os.path.isfile(hero):
@@ -304,13 +150,10 @@ def _hero_block(hero: str, prev_dir: str, log=print) -> Optional[dict]:
         return None
     label = os.path.basename(hero)
     try:
-        import sys
-        P = r'E:\svStudio\svFilm\analysis\corpus\kurai'
-        if P not in sys.path:
-            sys.path.insert(0, P)
-        import measure_v7 as _M
-        r = _M.measure_one(hero)
-        L, C, h = r.get('face_L'), r.get('face_C'), r.get('face_h')
+        from .measure_all import measure_one
+        r = measure_one(hero)
+        sk = r.get('skin') or {}
+        L, C, h = sk.get('L'), sk.get('C'), sk.get('h')
         if L is not None:
             label += ' ｜ 脸 L %.1f · C %.1f · h %.1f' % (
                 float(L), float(C or 0.0), float(h or 0.0))
@@ -319,48 +162,92 @@ def _hero_block(hero: str, prev_dir: str, log=print) -> Optional[dict]:
     return dict(jpg='preview/hero.jpg', label=label)
 
 
-def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict], plans: Dict[str, object],
-                out_dir: str, tif_1_dir: str = '', tif_3_dir: str = '',
-                title: str = '成片目检', sub: str = '', ev_known: bool = True,
-                light: Optional[str] = None,
+def _g(obj, key, default=None):
+    if isinstance(obj, dict):
+        return obj.get(key, default)
+    return getattr(obj, key, default)
+
+
+def _plan_line(plan) -> str:
+    """计划里真正落下去的键（一图一行）。"""
+    wb = _g(plan, 'wb')
+    cw = _g(wb, 'card_white', None) if wb is not None else None
+    basic = []
+    for key, label in (('exposure_ev', '曝'), ('contrast', '对'),
+                       ('highlights', '高'), ('shadows', '阴'),
+                       ('whites', '白'), ('blacks', '黑')):
+        v = float(_g(plan, key, 0.0) or 0.0)
+        if abs(v) > 1e-9:
+            basic.append('%s%+.2f' % (label, v) if key == 'exposure_ev'
+                         else '%s%+.0f' % (label, v))
+    color = []
+    pc = _g(plan, 'point_color')
+    ss = float(_g(pc, 'sat_scale', 0.0) or 0.0) if pc is not None else 0.0
+    if abs(ss) > 1e-9:
+        color.append('点颜色 %+.2f' % ss)
+    loc = _g(plan, 'local')
+    lev = float(_g(loc, 'exposure_ev', 0.0) or 0.0) if loc is not None else 0.0
+    if abs(lev) > 1e-9:
+        color.append('局部 %+.2f档' % lev)
+    parts = []
+    if cw and len(cw) >= 3:
+        parts.append('白点 %+.1f/%+.1f' % (float(cw[1]), float(cw[2])))
+    if basic:
+        parts.append(' '.join(basic))
+    if color:
+        parts.append(' ｜ '.join(color))
+    return ' ｜ '.join(parts) or '不动'
+
+
+def _meas_line(a: dict, b: dict) -> str:
+    """①→③ 的测量（只描述，不判）。"""
+    s1 = (a.get('skin') or {})
+    s3 = (b.get('skin') or {})
+    i1 = a.get('img') or {}
+    i3 = b.get('img') or {}
+    p1 = (a.get('person') or {})
+    p3 = (b.get('person') or {})
+
+    def _f(v, fmt):
+        return '—' if v is None else fmt % float(v)
+
+    return ('脸 L %s → %s ｜ 脸 C %s → %s ｜ 脸 h %s → %s ｜ p50 %s → %s ｜ '
+            'p95 %s → %s ｜ 人 clip %s → %s ｜ 整幅 clip %s → %s'
+            % (_f(s1.get('L'), '%.1f'), _f(s3.get('L'), '%.1f'),
+               _f(s1.get('C'), '%.1f'), _f(s3.get('C'), '%.1f'),
+               _f(s1.get('h'), '%.1f'), _f(s3.get('h'), '%.1f'),
+               _f(i1.get('p50'), '%.1f'), _f(i3.get('p50'), '%.1f'),
+               _f(i1.get('p95'), '%.1f'), _f(i3.get('p95'), '%.1f'),
+               _f(p1.get('clip_pct'), '%.2f%%'), _f(p3.get('clip_pct'), '%.2f%%'),
+               _f(i1.get('clip_pct'), '%.2f%%'), _f(i3.get('clip_pct'), '%.2f%%')))
+
+
+def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict],
+                plans: Dict[str, object], out_dir: str,
+                tif_1_dir: str = '', tif_3_dir: str = '',
+                title: str = '成片目检', sub: str = '',
                 url_map: Optional[Dict[str, str]] = None,
-                hero: str = '',
+                hero: str = '', card_dev: Optional[Dict[str, dict]] = None,
                 log=print) -> Dict[str, object]:
-    """量完 ③ 之后：**验收 + 出一页目检**。只读，不改参数。
+    """量完 ③ 之后出目检页。**只读，不判过/不过**。
 
-    这是 G1/G2/G3 的落地：以前流程走到"导出"就断了，现在导出之后必须过这里。
-
-    `url_map`：`{本地jpg文件名: 托管直链}`。传了就用直链（**手机端看资料库必须用这个**），
-    没传就写相对路径（本地桌面看）。直链来自 `manage/upload_image.py`。
+    `url_map`：{本地 jpg 文件名: 托管直链}；传了手机端可看。
     """
     r1, r3 = by_stem(recs_1), by_stem(recs_3)
     prev_dir = os.path.join(out_dir, 'preview')
-    rows, nok = [], 0
-
+    rows = []
     for st, plan in (plans or {}).items():
         b = r3.get(st)
         if not b:
             continue
         a = r1.get(st) or {}
-        v = verify(a, b, plan, ev_known=ev_known, light=light)
-        nok += 1 if v['ok'] else 0
-
-        s1 = (a.get('skin') or {}).get('L')
-        s3 = (b.get('skin') or {}).get('L')
-        c1 = (a.get('img') or {}).get('clip_pct')
-        c3 = (b.get('img') or {}).get('clip_pct')
-        vals = '曝光 %+.2f ｜ 收白 %+.0f ｜ 饱和 %+.0f' % (
-            float(getattr(plan, 'exposure_ev', 0.0) or 0.0),
-            float(getattr(plan, 'whites', 0.0) or 0.0),
-            float(getattr(plan, 'saturation', 0.0) or 0.0))
-        if getattr(plan, 'point_color', None):
-            vals += ' ｜ 点颜色 %+.2f' % float(plan.point_color.get('scale', 0.0))
-        note = '脸 L %s → %s ｜ clip %s → %s' % (
-            '—' if s1 is None else '%.1f' % s1,
-            '—' if s3 is None else '%.1f' % s3,
-            '—' if c1 is None else '%.2f%%' % c1,
-            '—' if c3 is None else '%.2f%%' % c3)
-
+        dev = (card_dev or {}).get(st) or (_g(plan, 'card_dev') or {})
+        diag = []
+        for key, label in (('p50', 'p50'), ('p95', 'p95'),
+                           ('face_L', '脸L'), ('face_C', '脸C')):
+            v = (dev or {}).get(key)
+            if isinstance(v, (int, float)):
+                diag.append('%s 偏差 %+.1f' % (label, float(v)))
         fin = _find_tif(tif_3_dir, st)
         eng = _find_tif(tif_1_dir, st, allow_engine=True) if tif_1_dir else None
         fj = ej = None
@@ -373,200 +260,11 @@ def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict], plans: Dict[st
             p = jpg_of(eng, os.path.join(prev_dir, st + '_1.jpg'))
             ej = 'preview/%s_1.jpg' % st if p else None
             ej = um.get(st + '_1.jpg') or um.get(st + '_1') or ej
-
-        rows.append(dict(stem=st, values=vals + ' ｜ ', note=note, verdict=verify_line(v),
-                         final_jpg=fj, engine_jpg=ej, _v=v))
-
+        rows.append(dict(stem=st, values=_plan_line(plan),
+                         note=_meas_line(a, b), diag=' ｜ '.join(diag),
+                         final_jpg=fj, engine_jpg=ej))
     html = contact_sheet(rows, os.path.join(out_dir, '目检.html'), title=title,
-                         sub=sub or ('%d 张 ｜ 硬门（脸）过 %d 张 ｜ 背景爆只报不拦'
-                                     % (len(rows), nok)),
+                         sub=sub or ('%d 张 ｜ 机器只出片+测量，过不过由你目检' % len(rows)),
                          hero=_hero_block(hero, prev_dir, log=log))
-    bad = [r for r in rows if not r['verdict'].startswith('✓')]
     log('目检页：%s' % html)
-    for r in bad:
-        log('  ! %s ｜ %s' % (r['stem'], r['verdict']))
-    return dict(rows=rows, ok=nok, n=len(rows), html=html)
-
-
-# ---------------------------------------------------------------- 选卡页（人定，不是自动挑）
-
-_MATCH_CSS = _CSS + """
-.sec{font-size:13px;color:#8f8b84;margin:26px 0 10px;letter-spacing:.5px;scroll-margin-top:12px}
-a{text-decoration:none}
-.lead{font-size:14.5px;margin:0 0 10px;color:#dcd9d3}
-.lead b{color:#fff}
-.row{display:flex;gap:10px;align-items:baseline;padding:9px 0;border-top:1px solid #2e2d2b;font-size:13.5px}
-.row:first-of-type{border-top:0}
-.row .k{flex:0 0 96px;color:#cfcbc4}
-.row .v{flex:1;color:#b9b5ae;font-variant-numeric:tabular-nums}
-.card{border-top:1px solid #2e2d2b;padding:14px 0 4px}
-.card:first-of-type{border-top:0}
-.card h2{font-size:15.5px;margin:0 0 4px;color:#fff;font-weight:600}
-.card .meta{color:#8f8b84;font-size:12.5px;margin:0 0 8px;font-variant-numeric:tabular-nums}
-.mono{color:#7f8b99;font-size:12.5px;line-height:1.6;white-space:pre-wrap}
-.pick{background:#1b241c;border:1px solid #2c3d2e;border-radius:9px;padding:10px 12px;margin:14px 0 0;font-size:13px;color:#b9d3bd}
-"""
-
-
-def _card_diffs(a, b) -> List[str]:
-    """两张同卷同纸的卡，真正不同的档位（这是人做决定要看的东西）。"""
-    def _tex(c, key):
-        t = getattr(c, 'texture', None)
-        if isinstance(t, dict):
-            return t.get(key)
-        return getattr(t, key, None)
-
-    def rms(c):
-        v = _tex(c, 'rms_granularity') or ()
-        return ('%.1f' % (sum(v) / len(v))) if v else None
-
-    rows = [('卷/纸', (getattr(a, 'stock', None), getattr(a, 'paper', None)),
-             (getattr(b, 'stock', None), getattr(b, 'paper', None))),
-            ('颗粒 rms', rms(a), rms(b)),
-            ('彩度 amount', _tex(a, 'amount'), _tex(b, 'amount')),
-            ('柔光', _tex(a, 'diffusion'), _tex(b, 'diffusion')),
-            ('画幅', _tex(a, 'film_format_mm'), _tex(b, 'film_format_mm')),
-            ('参考 p95', (getattr(a, 'profile', {}) or {}).get('p95'),
-             (getattr(b, 'profile', {}) or {}).get('p95'))]
-    return ['%s %s→%s' % (k, x, y) for k, x, y in rows if str(x) != str(y)]
-
-
-def match_sheet(batch_name: str, profile: Dict[str, float], refs: List[object],
-                offer, gap_rows=None, gap_verdict: str = '', out_html: str = '',
-                samples: Optional[Dict[str, str]] = None, n_img: int = 0,
-                caliber: str = '', master_sets: Optional[List[dict]] = None,
-                log=print) -> str:
-    """选卡页：**给人挑**，不给结论。
-
-    页面上必须有三件事，缺一件人就挑不了：
-      ① 这批像哪一套（画像级，不是靶）；② 最近那套的缺口关不关得掉；
-      ③ 现有卡各自的代价（卷/纸/质感档）。有样片就放样片，没有就明说"未渲"。
-      `master_sets`：匹配到的几套**大师成片**（每套给全部图），排在图区里给人看"像的那套长什么样"。
-    """
-    samples = samples or {}
-    out = ['<!DOCTYPE html>', '<html lang="zh-CN"><head><meta charset="utf-8">',
-           '<meta name="viewport" content="width=device-width, initial-scale=1">',
-           '<title>选卡 · %s</title><style>%s</style></head><body><div class="wrap">'
-           % (batch_name, _MATCH_CSS),
-           '<h1>选卡 · %s</h1>' % batch_name]
-    sub = '%d 张试点 ｜ 口径 %s' % (n_img, caliber or '—')
-    out.append('<p class="sub">%s</p>' % sub)
-
-    out.append('<p class="lead">这批画像：<b>脸 L %.1f ｜ 脸 C %.1f ｜ 脸 h %.1f ｜ '
-               'p50 %.1f ｜ p95 %.1f</b></p>'
-               % (profile.get('L', 0), profile.get('C', 0), profile.get('h', 0),
-                  profile.get('p50', 0), profile.get('p95', 0)))
-    out.append('<p class="cap">匹配只回答"最像哪一套"，不是要求做到那套的数；'
-               '参照卡只有画像、没有配方。这里的数拿的是<b>引擎底片①</b>，'
-               '还没有过 LR，所以差里混着"我们还没调"那一截。</p>')
-
-    out.append('<div class="sec">① 这批最像哪一套</div>')
-    for h in refs:
-        why = ' · '.join('%s%+.1f' % (k, v) for k, v in list(h.diff.items())[:3]) or '很接近'
-        out.append('<div class="row"><span class="k">%.2f</span>'
-                   '<span class="v">%s　<span class="mono">n=%d ｜ %s</span></span></div>'
-                   % (h.score, h.ref.label(), h.ref.n, why))
-
-    if gap_rows:
-        out.append('<div class="sec">② 最近那套的缺口，关得掉吗</div>')
-        for r in gap_rows:
-            out.append('<div class="mono">%s</div>' % str(r))
-        if gap_verdict:
-            out.append('<p class="cap">%s</p>' % gap_verdict.replace('\n', '<br>'))
-
-    out.append('<div class="sec">③ 现有卡（你定用哪张）</div>')
-    choices = list(offer.choices) if offer else []
-    # 候选太少、还有几张卷纸完全相同时，分数**没有分辨力** —— 必须写明，否则等于骗人
-    pairs = [(c.card.stock, c.card.paper) for c in choices]
-    dup = len(pairs) != len(set(pairs))
-    if dup:
-        out.append('<p class="cap">⚠ 下面的卡里有<b>同卷同纸</b>的（只差质感档）⇒ '
-                   '分数在这几张之间几乎没有分辨力，请看"和别的卡差在哪"那几行，'
-                   '或者直接看样片。</p>')
-    for ch in choices:
-        c = ch.card
-        rms = c.texture.get('rms_granularity') or ()
-        rms_s = ('%.1f' % (sum(rms) / len(rms))) if rms else '—'
-        out.append('<div class="card">')
-        out.append('<h2>%s</h2>' % c.label())
-        out.append('<p class="meta">匹配分 %.2f ｜ rms %s ｜ 画幅 %s ｜ 柔光 %s ｜ 彩度 %s'
-                   ' ｜ 余量设定 p95≤%s</p>'
-                   % (ch.hit.score, rms_s, c.style.get('film_format_mid')
-                      or c.style.get('film_format_mm', '—'),
-                      c.style.get('diffusion', 'off'), c.style.get('amount', '—'),
-                      c.safety.get('p95_max', '—')))
-        if getattr(ch.hit, 'contrib', None):
-            top = ch.hit.top(2)
-            out.append('<p class="mono">主要差在：%s</p>'
-                       % ' · '.join('%s%+.2f' % (k, v) for k, v in top))
-        # 同卷同纸的卡：把真正的差别摆出来（分数帮不上忙，质感档才帮得上）
-        for other in choices:
-            if other is ch:
-                continue
-            oc = other.card
-            if (oc.stock, oc.paper) != (c.stock, c.paper):
-                continue
-            diffs = _card_diffs(c, oc)
-            out.append('<p class="mono">和「%s」同卷同纸，差别在：%s</p>'
-                       % (oc.name, ' · '.join(diffs) if diffs else '几乎一样'))
-            break
-        s = samples.get(c.name)
-        if s:
-            out.append('<figure style="margin:10px 0 0"><img src="%s" alt="%s"></figure>'
-                       % (s, c.name))
-        else:
-            out.append('<p class="mono">样片：未渲（要图的话给这张卡渲一张试点）</p>')
-        out.append('</div>')
-
-    if offer and offer.new_card_candidates:
-        out.append('<div class="sec">想换风格的话（要做新卡，不是改一个键）</div>')
-        out.append('<p class="mono">值得做新卡的卷：%s</p>' % '、'.join(offer.new_card_candidates))
-        out.append('<p class="cap">卷/纸在卡构建时就传进 params，overrides 改不了；'
-                   '换卷 = 做一张新卡。</p>')
-
-    if master_sets:
-        out.append('<div class="sec">④ 这几套大师的成片（点名字跳过去）</div>')
-        for i, m in enumerate(master_sets, 1):
-            out.append('<div class="row"><span class="k">%.2f</span>'
-                       '<span class="v"><a href="#m%d" style="color:#cfe3d2">%s</a>'
-                       '<span class="mono">　%d 张 ｜ %s</span></span></div>'
-                       % (m.get('score', 0), i, m.get('label', ''), m.get('n', 0),
-                          m.get('diff', '')))
-        for i, m in enumerate(master_sets, 1):
-            out.append('<div class="sec" id="m%d">第 %d 套 · %s　'
-                       '<span class="mono">%.2f ｜ %s ｜ %d 张</span></div>'
-                       % (i, i, m.get('label', ''), m.get('score', 0),
-                          m.get('diff', ''), m.get('n', 0)))
-            out.append('<p class="cap">同一个拍点如果有两个版本，只展开一张，'
-                       '另一版折在下面（不重复占屏）。</p>')
-            # 按拍点分组：第一张直接显示，同拍点的其余版本折进 <details>
-            groups, order = {}, []
-            for item in (m.get('imgs') or []):
-                k, u = (item if isinstance(item, (tuple, list)) else ('', item))
-                if k not in groups:
-                    groups[k] = []
-                    order.append(k)
-                groups[k].append(u)
-            for k in order:
-                us = groups[k]
-                out.append('<figure><img loading="lazy" src="%s" alt="%s"></figure>'
-                           % (us[0], m.get('label', '')))
-                if len(us) > 1:
-                    inner = ''.join('<img loading="lazy" src="%s" alt="%s">' % (x, k)
-                                    for x in us[1:])
-                    out.append('<details><summary>同拍点另一版（%d）</summary>%s</details>'
-                               % (len(us) - 1, inner))
-
-    out.append('<div class="pick">选好之后这样告诉流程：<br>'
-               '<code>--card &lt;卡名&gt;</code>（卡名就是上面每个小标题括号前的那个，'
-               '如 <code>%s</code>）——不给就会按匹配分自动取第一张。</div>'
-               % (offer.choices[0].card.name if (offer and offer.choices) else '卡名'))
-    out.append('</div></body></html>')
-
-    html = '\n'.join(out)
-    if out_html:
-        os.makedirs(os.path.dirname(out_html) or '.', exist_ok=True)
-        with open(out_html, 'w', encoding='utf-8', newline='\n') as fh:
-            fh.write(html)
-        log('选卡页：%s' % out_html)
-    return html
+    return dict(rows=rows, n=len(rows), html=html)

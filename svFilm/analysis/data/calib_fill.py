@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """标定**局部 fill（LocalExposure2012）→ 脸 L* / 人 p99**（替掉 fit 里 0.3 那个假设）。
 
 三档：0 / 1.0 / 1.5 档（写进 LR 是 /4 ⇒ 0 / 0.25 / 0.375）
@@ -17,7 +17,7 @@ sys.path.insert(0, r'E:\ds\photo\_corpus\kurai\full')
 
 import lrstate as LS                      # noqa: E402
 from design import measure_all as MA      # noqa: E402
-from design.lr import LRPlan              # noqa: E402
+from design.lr_plan import LRPlan              # noqa: E402
 from design.lr_xmp import build_xmp, write_tif   # noqa: E402
 
 OUT = r'E:\ds\photo\_run_1030_card004\_calib_fill'

@@ -318,21 +318,21 @@
   "display.preview_max_size": "预览长边像素（640）；只影响预览，不影响成片。"
  },
  "_note_medium_20261028": "介质定值 2026-10-28（报告§13/§4.3）：wb 4545/0.998→4630/0.95（n=10 生产路径格点：肤h中位47.53=靶47.7带内；中性a 0.0 量化噪声内）；amount 1.00→1.30（n=10：肤C中位17.42，带[15.12,23.36]内；高彩脸1526/1422/1772 C29-40 不再上推）。备份 .bak_medium_20261028，前sha 587767abb2bd",
- "_note_medium": "print_exposure = 参考灰 18.4% → 本卡目标密度（二分求得）",
+ "_note_medium": "扫描端点/放大机滤片写进 simulation.*；其余目标见 _target",
  "_note_base": "基线介质（从 滨田预设 一次性冻结；此后目录介质以各自 media/*.json 为准）",
  "_target": {
-  "p50_target_D": 0.348,
+  "p50_target_D": 0.346,
   "shape": {
-   "toe": 29.45,
-   "shoulder": 7.84,
-   "contrast_win": 40.35,
-   "skew": 25.72
+   "toe": 29.41,
+   "shoulder": 8.24,
+   "contrast_win": 25.88,
+   "skew": 0.74
   },
-  "warm_cool_b": 1.73,
+  "warm_cool_b": 4.0,
   "face": {
-   "C": 12.83,
-   "h": 69.91,
-   "L": 76.81
+   "C": 13.04,
+   "h": 70.02,
+   "L": 76.08
   },
   "shadow": {
    "lab": [
