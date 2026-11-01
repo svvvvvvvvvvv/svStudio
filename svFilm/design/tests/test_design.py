@@ -172,7 +172,6 @@ def test_tone_solve_fills_exposure_residual():
     rec = _rec(person_p99=80.0)
     out = tone_solve(rec, _card(), _target(p99=94.0), [])
     assert 0.0 < out['ev'] <= 3.0, out
-    assert out['curve'], out
     assert any(abs(v) > 1e-9 for v in out['ui'].values()), out['ui']
 
 
@@ -188,7 +187,6 @@ def test_tone_solve_background_clip_is_diagnostic_only():
     rec = _rec(img_clip=20.0, person_clip=0.0, person_p99=80.0)
     out = tone_solve(rec, _card(), _target(p99=90.0), [])
     assert out['ev'] > 0.0, out
-    assert out['curve']
 
 
 def test_tone_solve_without_exposure_target_keeps_pe():
@@ -199,8 +197,7 @@ def test_tone_solve_without_exposure_target_keeps_pe():
     target['dist'] = {}
     out = tone_solve(rec, _card(), target, [])
     assert out['ev'] == 0.0
-    assert any(abs(out['ui'][k]) > 1e-9
-               for k in ('contrast', 'highlights', 'shadows'))
+    assert all(abs(v) < 1e-9 for v in out['ui'].values())
 
 
 def test_shape_target_prefers_peer_hero():

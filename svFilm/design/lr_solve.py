@@ -21,7 +21,7 @@ from typing import Dict, List, Optional, Tuple
 from . import lr_response as R
 from .curve_design import apply_lut, curve_from_quantiles
 from .lr_plan import LRPlan, Local, PointColor, WhiteBalance
-from .photometry import ev_for_l, l_after_ev
+from .photometry import code_to_l, ev_for_l, l_after_ev, l_to_code
 
 # ---- 物理底线 / 工程护栏（都不是风格目标）
 PERSON_CLIP_MAX = 1.0          # 人身上可见死白 ≥1% ⇒ 明暗停住
@@ -168,37 +168,181 @@ def curve_for(pred: Dict[str, float], shape: Optional[dict],
 
 # ---------------------------------------------------------------- 曝光 / 形状
 
-def _dist_ev(cur: dict, tgt: dict) -> Optional[float]:
-    """分布对齐：在 EV 上最小化平移后分位与 peer/hero 分位的加权 L1。"""
-    keys = ('p5', 'p25', 'p50', 'p75', 'p95')
-    pairs = []
-    for k in keys:
-        a, b = _num(cur.get(k)), _num(tgt.get(k))
+TONE_KNOTS = (0.0, 0.10, 0.25, 0.50, 0.66, 0.82, 0.92, 1.0)
+TONE_PRIOR = 0.01
+
+
+def _smooth(a, b, x):
+    if b <= a:
+        return 1.0 if x >= b else 0.0
+    t = max(0.0, min(1.0, (x - a) / (b - a)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+def _tone_basis(x):
+    """Lightroom 风格的 5 根 tone basis：[contrast, high, shadow, white, black]。"""
+    w_sh = _smooth(0.0, 0.25, x) * (1.0 - _smooth(0.25, 0.50, x))
+    w_hi = _smooth(0.60, 0.82, x) * (1.0 - _smooth(0.82, 1.0, x))
+    w_ct = _smooth(0.50, 0.75, x) * (1.0 - _smooth(0.75, 1.0, x)) - w_sh
+    w_wh = 1.0 if x >= 0.999 else (0.45 if abs(x - 0.92) < 1e-3 else 0.0)
+    w_bl = 1.0 if x <= 0.001 else (0.45 if abs(x - 0.10) < 1e-3 else 0.0)
+    return (0.20 * w_ct, 0.34 * w_hi, 0.33 * w_sh, 0.32 * w_wh, 0.32 * w_bl)
+
+
+def _tone_exp(x, ev):
+    return max(0.0, min(1.0, l_after_ev(x * 100.0, ev) / 100.0))
+
+
+def _tone_weights(ev):
+    base = [_tone_exp(x, ev) for x in TONE_KNOTS]
+    out = []
+    for i in range(len(base)):
+        left = base[i] - base[i - 1] if i else 0.0
+        right = base[i + 1] - base[i] if i + 1 < len(base) else 0.0
+        gap = max(left, right)
+        out.append(0.0 if gap <= 1e-6 else min(1.0, gap / 0.01))
+    return out
+
+
+def _solve5(a, b):
+    a = [row[:] + [b[i]] for i, row in enumerate(a)]
+    n = 5
+    for c in range(n):
+        p = max(range(c, n), key=lambda r: abs(a[r][c]))
+        a[c], a[p] = a[p], a[c]
+        if abs(a[c][c]) < 1e-12:
+            continue
+        for r in range(c + 1, n):
+            f = a[r][c] / a[c][c]
+            for k in range(c, n + 1):
+                a[r][k] -= f * a[c][k]
+    x = [0.0] * n
+    for c in range(n - 1, -1, -1):
+        acc = a[c][n] - sum(a[c][k] * x[k] for k in range(c + 1, n))
+        x[c] = 0.0 if abs(a[c][c]) < 1e-12 else acc / a[c][c]
+    return x
+
+
+def _solve_sliders(ev, target, mvals):
+    """在固定 EV 上解 5 根 slider：target ≈ exposure + basis·s，带 ridge prior。"""
+    weights = _tone_weights(ev)
+    ata = [[0.0] * 5 for _ in range(5)]
+    atb = [0.0] * 5
+    for i, x in enumerate(TONE_KNOTS):
+        b = _tone_basis(x)
+        r = mvals[i] - _tone_exp(x, ev)
+        w = weights[i]
+        for p in range(5):
+            for q in range(5):
+                ata[p][q] += w * b[p] * b[q]
+            atb[p] += w * b[p] * r
+    for p in range(5):
+        ata[p][p] += TONE_PRIOR
+    s = _solve5(ata, atb)
+    return [max(-1.0, min(1.0, v)) for v in s]
+
+
+def _eval_model(ev, sliders, x):
+    b = _tone_basis(x)
+    y = _tone_exp(x, ev) + sum(b[i] * sliders[i] for i in range(5))
+    return max(0.0, min(1.0, y))
+
+
+def _interp_points(points, x):
+    if x <= points[0][0]:
+        return points[0][1]
+    for p, q in zip(points, points[1:]):
+        if x <= q[0]:
+            t = (x - p[0]) / max(1e-9, q[0] - p[0])
+            return p[1] + t * (q[1] - p[1])
+    return points[-1][1]
+
+
+def _dist_map(rec, target):
+    """当前分位 → peer/hero 分位的单调映射，返回 (map_fn, knots_values)。"""
+    cur = rec.get('img') or {}
+    td = (target or {}).get('dist') or {}
+    pts = []
+    for k in ('p5', 'p25', 'p50', 'p75', 'p95'):
+        a, b = _num(cur.get(k)), _num(td.get(k))
         if a is not None and b is not None:
-            pairs.append((float(a), float(b)))
-    if len(pairs) < 3:
+            pts.append((max(0.0, min(100.0, float(a))) / 100.0,
+                        max(0.0, min(100.0, float(b))) / 100.0))
+    if len(pts) < 3:
         return None
-    weights = (1.0, 1.0, 2.0, 1.0, 1.0)[:len(pairs)]
-
-    def loss(ev):
-        return sum(w * abs(l_after_ev(a, ev) - b)
-                   for w, (a, b) in zip(weights, pairs))
-
-    best_ev, best = 0.0, float('inf')
-    grid = [-3.0 + 0.02 * i for i in range(301)]
-    for ev in grid:
-        v = loss(ev)
-        if v < best:
-            best, best_ev = v, ev
-    for _ in range(2):
-        step = 0.01
-        around = [best_ev - step, best_ev, best_ev + step]
-        best_ev = min(around, key=loss)
-    return float(best_ev)
+    pts.sort()
+    pts = [(0.0, 0.0)] + pts + [(1.0, 1.0)]
+    ys = [p[1] for p in pts]
+    for i in range(1, len(ys)):
+        if ys[i] < ys[i - 1]:
+            ys[i] = ys[i - 1]
+    pts = [(pts[i][0], ys[i]) for i in range(len(pts))]
+    fn = lambda x: _interp_points(pts, max(0.0, min(1.0, x)))
+    return fn, [fn(x) for x in TONE_KNOTS]
 
 
-def exposure_for(rec: dict, target: Optional[dict],
-                 ledger: List[str]) -> float:
+def _fit_dist_tone(rec, target, face_p99):
+    dm = _dist_map(rec, target)
+    if dm is None:
+        return None
+    map_fn, mvals = dm
+    # 曝光先由 face/皮肤上限定住；候选网格内再解 slider。
+    cap = float('inf')
+    if face_p99 is not None:
+        room = ev_for_l(float(face_p99), PERSON_CEIL_L)
+        if room is not None:
+            cap = max(0.0, float(room))
+    best = None
+    for i in range(121):
+        ev = -3.0 + 0.05 * i
+        if ev > cap:
+            break
+        s = _solve_sliders(ev, target, mvals)
+        err = 0.0
+        for j, x in enumerate(TONE_KNOTS):
+            w = _tone_weights(ev)[j]
+            err += w * (_eval_model(ev, s, x) - mvals[j]) ** 2
+        err += TONE_PRIOR * sum(v * v for v in s)
+        if best is None or err < best[0]:
+            best = (err, ev, s)
+    if best is None:
+        return None
+    _, ev, s = best
+    return dict(ev=float(ev), sliders=[float(v) for v in s],
+                map_fn=map_fn, mvals=mvals)
+
+
+def _residual_tone_curve(fit):
+    ev, s, map_fn = fit['ev'], fit['sliders'], fit['map_fn']
+    pts = []
+    for i in range(13):
+        x = i / 12.0
+        sx = _eval_model(ev, s, x)
+        y = map_fn(x)
+        pts.append((int(round(l_to_code(sx * 100.0))),
+                    int(round(l_to_code(max(0.0, min(1.0, y)) * 100.0)))))
+    pts.sort()
+    out = []
+    prev_y = -1
+    for x, y in pts:
+        if out and x <= out[-1][0]:
+            continue
+        y = max(prev_y, y)
+        out.append((x, y))
+        prev_y = y
+    if len(out) < 3:
+        return None
+    if out[0][0] > 0:
+        out.insert(0, (0, 0))
+    if out[-1][0] < 255:
+        out.append((255, 255))
+    worst = max((b[1] - a[1]) / max(1.0, b[0] - a[0])
+                for a, b in zip(out, out[1:]))
+    if worst > MAX_CURVE_SLOPE:
+        return None
+    if max(abs(y - x) for x, y in out) < 4:
+        return None
+    return out
     """补全局曝光：对齐 peer/hero 的**背景分布**；人/脸只做上限约束。
 
     不再拿脸 p99 / 单张中位当全局靶。背景 p10/p90/p95 三个分位各算一个 EV，
@@ -284,7 +428,7 @@ def _basic_shape(pred: dict, sh: dict, tdist: Optional[dict] = None) -> dict:
 
 def tone_solve(rec: dict, card: dict, target: Optional[dict],
                ledger: List[str]) -> dict:
-    """曝光 + 形状；Basic 按 peer 肩趾给粗形状，曲线再补细节。"""
+    """分布 → 单调 tone map → 8 knot basis 解 sliders → 残差曲线。"""
     img = rec.get('img') or {}
     q = {k: _num(img.get(k)) for k in ('p5', 'p25', 'p50', 'p75', 'p95')}
     ui = {k: 0.0 for k in ('contrast', 'highlights', 'shadows', 'whites', 'blacks')}
@@ -292,9 +436,6 @@ def tone_solve(rec: dict, card: dict, target: Optional[dict],
         ledger.append('① 缺分位 ⇒ 明暗不做')
         return dict(ev=0.0, ui=ui, pred=dict(q), curve=None,
                     target=None, clipped=False)
-    ev = exposure_for(rec, target, ledger)
-    pred = {k: l_after_ev(float(v), ev) for k, v in q.items()}
-    clipped = False
     face_p99 = _num(rec.get('face_p99')) or _num((rec.get('skin') or {}).get('p99'))
     per = rec.get('person') or {}
     clip = _num(per.get('clip_pct'))
@@ -302,32 +443,27 @@ def tone_solve(rec: dict, card: dict, target: Optional[dict],
         clip = _num(rec.get('person_clip_pct')) or 0.0
     if ((face_p99 is not None and face_p99 >= 99.0)
             or (face_p99 is None and clip >= PERSON_CLIP_MAX)):
-        clipped = True
-        ledger.append('脸/皮肤已削顶 ⇒ 曲线不做，只做颜色/局部')
-        return dict(ev=0.0, ui=ui, pred=pred, curve=None,
+        ledger.append('脸/皮肤已削顶 ⇒ 明暗不做，只做颜色/局部')
+        return dict(ev=0.0, ui=ui, pred=dict(q), curve=None,
                     target=None, clipped=True)
-    sh = shape_target(card, target)
-    if sh is None:
-        ledger.append('没有可用的卡/peer/hero 形状 ⇒ 曲线不做')
-        return dict(ev=ev, ui=ui, pred=pred, curve=None,
+
+    fit = _fit_dist_tone(rec, target, face_p99)
+    if fit is None:
+        ledger.append('没有 peer/hero 的亮度分布 ⇒ 明暗保持起点')
+        return dict(ev=0.0, ui=ui, pred=dict(q), curve=None,
                     target=None, clipped=False)
-    shape_ui, src = _basic_shape(pred, sh, (target or {}).get('dist'))
-    ui.update(shape_ui)
-    basic_mag = max(abs(ui[k]) for k in ('contrast', 'highlights', 'shadows'))
-    if basic_mag > 2.0:
-        ledger.append('Basic 粗形状（%s）：对比%+.0f 高光%+.0f 阴影%+.0f；'
-                      '曲线本轮不重复推形状'
-                      % (src, ui['contrast'], ui['highlights'], ui['shadows']))
-        curve = None
-    else:
-        ledger.append('Basic 已在目标内 ⇒ 曲线只补残差')
-        curve = curve_for(pred, sh, ledger)
-    if curve:
-        ledger.append('风格曲线：套 %s 肩趾比例（toe %.2f / shoulder %.2f）到本图锚点'
-                      % (sh.get('source') or '卡', float(sh['toe']), float(sh['shoulder'])))
-    else:
-        ledger.append('形状目标 %s（toe %.2f / shoulder %.2f）未落地，按不硬修处理'
-                      % (sh.get('source') or '卡', float(sh['toe']), float(sh['shoulder'])))
+
+    ev = fit['ev']
+    pred = {k: l_after_ev(float(v), ev) for k, v in q.items()}
+    ui = dict(zip(('contrast', 'highlights', 'shadows', 'whites', 'blacks'),
+                  [round(float(v) * 100.0, 1) for v in fit['sliders']]))
+    curve = _residual_tone_curve(fit)
+    sh = shape_target(card, target)
+    ledger.append('分布 tone：EV %+.2f；Basic 对比%+.0f 高光%+.0f 阴影%+.0f'
+                  ' 白%+.0f 黑%+.0f；%s'
+                  % (ev, ui['contrast'], ui['highlights'], ui['shadows'],
+                     ui['whites'], ui['blacks'],
+                     ('残差曲线 %d 点' % len(curve)) if curve else '残差曲线不动'))
     return dict(ev=ev, ui=ui, pred=pred, curve=curve,
                 target=sh, clipped=False)
 
