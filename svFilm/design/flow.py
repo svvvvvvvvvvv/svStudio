@@ -2,9 +2,9 @@
 """引擎侧：**按卡渲一次 ①**（不匹配、不选卡、不管落点）。
 
 设计（`引擎设计.md` §2/§4.4/§5）：
-  · 只渲一次：人选卡之后，用这个目录的介质 + 该目录的 PE 渲 ①；
+  · 只渲一次：人选卡之后，用这个目录的介质 + 该目录的 PE 做基准渲 ①；
   · 不再有 ①′ 基线；匹配 A 用机内 JPG（`contentmatch`）；
-  · 引擎固定 PE，auto_exposure 关；落点/脸/颜色都归 LR；
+  · 落点：**auto_exposure=subject，用脸皮肤 mask 测光**；PE 只作基准；
   · 生产默认走 A：**按交付尺寸渲**（长边 1080，与大师同域）。
 
 本模块只剩三件事：渲、报余量、写 `_render.json`（供 --reuse 校验）。
@@ -209,19 +209,49 @@ def _paper_of(card) -> str:
     return card.paper if hasattr(card, 'paper') else str(card.get('paper') or '')
 
 
+def _srgb_of_linear(lin):
+    import numpy as np
+    u = np.clip(np.asarray(lin, np.float64), 0.0, 1.0)
+    return np.where(u <= 0.0031308, 12.92 * u,
+                    1.055 * np.power(u, 1.0 / 2.4) - 0.055)
+
+
+def _subject_face_mask(lin):
+    """用 selfie_multiclass 的脸皮肤类给 `subject` 测光做 mask。
+
+    输入是 RAW 解码后的线性 RGB（与 render 同一个 1080 域）；mask 只取
+    类别 3（脸皮肤），不把白衣服/头发算进测光。
+    """
+    import numpy as np
+    from design.skin import face_mask as FM
+    rgb = (_srgb_of_linear(lin) * 255.0 + 0.5).astype(np.uint8)
+    probs = FM._probs(rgb)
+    return np.asarray(probs[3] > 0.5)
+
+
 def _render_one(args):
     """渲一张 + 量余量（**必须在模块级**：Windows 的 spawn 不能 pickle 闭包）。"""
     (stem, raf, medium, out_dir, ov, white_level, long_side, wb) = args
     from svFilm import io, lrbase, presets
-    media_label = '%s + %s' % (medium['simulation']['film_stock'],
-                               medium['simulation']['print_paper'])
+    from svFilm import exposure
+    medium = dict(medium)
+    sim = dict(medium.get('simulation') or {})
+    sim['auto_exposure'] = True
+    sim['auto_exposure_method'] = 'subject'
+    medium['simulation'] = sim
+    media_label = '%s + %s' % (sim['film_stock'], sim['print_paper'])
     msgs = ['  渲 %s ← %s（介质 %s，长边 %d）'
             % (stem, os.path.basename(raf), media_label, long_side)]
     lin = io.load_raw(raf, max_side=long_side, wb=wb).lin
-    # 引擎只做介质，不做落点/形状：固定用介质自带的 print_exposure。
-    disp = presets.render(lin, medium, overrides=ov)
-    msgs.append('  引擎自动曝光：**关**（固定 print_exposure=%.3f，落点归 LR）'
-                % presets.pe_of(medium))
+    mask = _subject_face_mask(lin)
+    cover = float(mask.mean())
+    exposure.set_mask(mask, 'face')
+    try:
+        disp = presets.render(lin, medium, overrides=ov)
+    finally:
+        exposure.clear()
+    msgs.append('  引擎自动曝光：subject-face（脸 mask 占比 %.3f；PE=%.3f 只作基准）'
+                % (cover, presets.pe_of(medium)))
     dst = os.path.join(out_dir, '%s_engine.tif' % stem)
     lrbase.save_tiff16(disp, dst)
     hr = headroom_report(disp, white_level=white_level)
@@ -254,6 +284,8 @@ def _write_render_meta(out_dir: str, card, media_label: str, out: dict,
              else str((card or {}).get('name') or ''),
              medium=media_label,
              print_exposure=float(sim.get('print_exposure') or 0.0),
+             auto_exposure='subject-face',
+             auto_exposure_method='subject',
              amount=float((m.get('couplers') or {}).get('amount') or 0.0),
              wb=(wb or {}).get('white_balance', 'as_shot'),
              wb_temperature=float((wb or {}).get('temperature') or 0.0),
