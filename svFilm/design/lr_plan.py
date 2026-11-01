@@ -80,7 +80,7 @@ class Local:
     exposure_ev: float = 0.0          # 补脸的档数（写盘 = EV/4）
     shadows: float = 0.0              # UI；局部提暗部（人身上的暗部）
     highlights: float = 0.0           # UI；局部压人身上的亮部
-    whites: float = 0.0               # UI；人物蒙版里的白色（压白裙）
+    whites: float = 0.0               # UI；人物蒙版里的白色（一般不用，白裙压 Highlights）
     saturation: float = 0.0           # UI；肤色饱和（与点颜色二选一）
 
     def is_set(self) -> bool:
@@ -115,7 +115,7 @@ class LRPlan:
     split_highlight_sat: float = 0.0
     split_balance: float = 0.0
     # ---- 图级：局部（一张卡一个肤色蒙版）
-    # ---- 局部：人物组（白裙 Whites）/ 肤色组（Point Color）
+    # ---- 局部：人物组（白裙 Highlights）/ 肤色组（Point Color）
     white: Local = field(default_factory=lambda: Local(mask='person'))
     local: Local = field(default_factory=Local)
     # ---- 记账
@@ -181,8 +181,8 @@ class LRPlan:
         chunks = []
         if self.white.is_set():
             parts = []
-            if abs(self.white.whites) > 1e-9:
-                parts.append('白色%+.0f' % self.white.whites)
+            if abs(self.white.highlights) > 1e-9:
+                parts.append('高光%+.0f' % self.white.highlights)
             if abs(self.white.exposure_ev) > 1e-9:
                 parts.append('曝光%+.2f档' % self.white.exposure_ev)
             chunks.append('人物蒙版 ' + ' '.join(parts))

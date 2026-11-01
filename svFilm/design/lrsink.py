@@ -93,7 +93,7 @@ def write_jobs(plans: Dict[str, LRPlan], out_dir: str,
             local=dict(mask=plan.local.mask, exposure_ev=plan.local.exposure_ev,
                        shadows=plan.local.shadows, highlights=plan.local.highlights,
                        whites=plan.local.whites, saturation=plan.local.saturation),
-            white=dict(mask=plan.white.mask, whites=plan.white.whites,
+            white=dict(mask=plan.white.mask, highlights=plan.white.highlights,
                        shadows=plan.white.shadows),
             curve_points=(len(plan.curve) if plan.curve else 0),
             target=plan.target, card_dev=plan.card_dev,
@@ -192,7 +192,7 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
             rc = B.run('CLEARMASKS %s' % tmp, timeout=180)
             log('    清残留蒙版：%s' % rc[:120])
 
-        # ---- 第 1 组：人物整身 → Whites 压白裙
+        # ---- 第 1 组：人物整身 → Highlights 压白裙
         skin_idx = 1
         if white_group:
             rm = B.run('MASK %s subject' % tmp, timeout=180)
@@ -200,7 +200,7 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
                 raise RuntimeError('%s 白裙蒙版没建出来：%s' % (stem, rm[:160]))
             time.sleep(1.0)
             for key, ui in (('LocalShadows2012', plan.white.shadows),
-                            ('LocalWhites2012', plan.white.whites)):
+                            ('LocalHighlights2012', plan.white.highlights)):
                 if abs(float(ui or 0.0)) < 1e-9:
                     continue
                 B.mask_param(tmp, key, float(ui) / 100.0, index=1)

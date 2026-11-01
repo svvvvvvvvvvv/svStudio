@@ -419,7 +419,7 @@ def local_face(plan: LRPlan, rec: dict, target: dict, ledger: List[str]) -> None
 # ---------------------------------------------------------------- 白裙局部
 
 def local_white(plan: LRPlan, rec: dict, ledger: List[str]) -> bool:
-    """白裙在人物蒙版里；过曝时只压人物蒙版的 Whites。"""
+    """白裙在人物蒙版里；过曝时压人物蒙版的 Highlights。"""
     w = (rec.get('parts') or {}).get('white') or {}
     p99 = _num(w.get('L_p99'))
     share = _num(w.get('share_person'))
@@ -430,8 +430,8 @@ def local_white(plan: LRPlan, rec: dict, ledger: List[str]) -> bool:
         return False
     over = float(after) - WHITE_OVER_L
     ui = -min(40.0, max(10.0, over * 8.0))
-    plan.white = Local(mask='person', whites=round(float(ui), 1))
-    ledger.append('白裙 p99 %.1f → 全局后 %.1f，超 %.1f：人物蒙版 Whites %+.0f'
+    plan.white = Local(mask='person', highlights=round(float(ui), 1))
+    ledger.append('白裙 p99 %.1f → 全局后 %.1f，超 %.1f：人物蒙版 Highlights %+.0f'
                   % (float(p99), after, over, ui))
     return True
 
