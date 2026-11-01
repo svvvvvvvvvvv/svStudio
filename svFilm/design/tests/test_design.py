@@ -8,7 +8,7 @@
   · 色度学 / 曲线（定义式）
   · WB 卡级（引擎解码层）
   · 曝光残差（人/脸优先；背景 clip 只诊断）
-  · 形状目标（peer → hero → 卡；Basic 四根为 0）
+  · 形状目标（peer → hero → 卡；Basic 按肩趾给粗形状）
   · 肤色 Point Color（C/L 动态 SatScale）+ 分色
   · 局部（face_p99 余量、只抬不压）
   · LRPlan/XMP（WB 不写 XMP）
@@ -170,9 +170,9 @@ def test_wb_missing_is_reported():
 def test_tone_solve_fills_exposure_residual():
     rec = _rec(person_p99=80.0)
     out = tone_solve(rec, _card(), _target(p99=94.0), [])
-    assert 0.0 < out['ev'] <= 0.7, out
+    assert 0.0 < out['ev'] <= 3.0, out
     assert out['curve'], out
-    assert all(abs(v) < 1e-9 for v in out['ui'].values()), out['ui']
+    assert any(abs(v) > 1e-9 for v in out['ui'].values()), out['ui']
 
 
 def test_tone_solve_person_clip_stops_global():
@@ -233,7 +233,7 @@ def test_grading_point_color_dynamic():
     pc = out['point_color']
     assert pc and pc.is_set()
     assert pc.sat_scale > 0.0
-    assert abs(pc.sat_scale) <= 0.2
+    assert abs(pc.sat_scale) <= 0.35
     assert pc.raw > 0.0
 
 
@@ -381,9 +381,6 @@ def test_plan_batch_peer_hero_order():
     assert plans['B'].target['source'] == 'hero'
     assert plans['C'].target['source'] == 'hero'
     assert plans['A'].exposure_ev > 0.0
-    for p in plans.values():
-        for k in ('contrast', 'highlights', 'shadows', 'whites', 'blacks'):
-            assert abs(getattr(p, k)) < 1e-9, (k, getattr(p, k))
 
 
 def test_plan_batch_card_fallback_without_hero():
@@ -404,8 +401,7 @@ def test_plan_batch_ignores_card_parts_for_basic():
                         skin=dict(L_p25=30.0))
     plans = plan_batch({'A': rec}, card, log=lambda *_: None)
     p = plans['A']
-    for k in ('contrast', 'highlights', 'shadows', 'whites', 'blacks'):
-        assert abs(getattr(p, k)) < 1e-9, (k, getattr(p, k))
+    assert p.target['source'] == 'card'
 
 
 def test_per_card_json_has_all_fields():

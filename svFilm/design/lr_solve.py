@@ -26,13 +26,15 @@ from .photometry import ev_for_l, l_after_ev
 # ---- 物理底线 / 工程护栏（都不是风格目标）
 PERSON_CLIP_MAX = 1.0          # 人身上可见死白 ≥1% ⇒ 明暗停住
 PERSON_CEIL_L = 98.0           # 人/脸最亮处还留细节的物理上限
-EXPOSURE_STEP_MAX = 0.7        # 全局一次最多补多少；背景分布给量，人/脸做上限
+EXPOSURE_STEP_MAX = 3.0        # 全局硬上限（只防失控；不再用 0.7 小步）
 FACE_CEIL_L = 98.0             # 局部补脸的物理上限
 WHITE_OVER_L = 97.5            # 白裙开始压的物理阈值
 WHITE_MIN_SHARE = 0.005        # 白裙至少占人的 0.5% 才动
 LOCAL_FACE_MAX_EV = 0.7        # 局部一次最多补多少（工程护栏，不是目标）
-MAX_CURVE_SLOPE = 2.0          # 曲线局部斜率上限（code/code）；超过就不是补形状
-POINT_SAT_CAP = 0.2            # Point Color SatScale 一次最多走到哪（工程护栏）
+MAX_CURVE_SLOPE = 3.0          # 曲线局部斜率上限（code/code）；超过就不是补形状
+POINT_SAT_CAP = 0.35           # Point Color SatScale 上限
+POINT_HUE_CAP = 0.20           # Point Color HueShift 上限
+POINT_LUM_CAP = 0.35           # Point Color LumScale 上限
 SPLIT_UI_PER_C = 3.0
 SPLIT_UI_MAX = 30.0
 SPLIT_C_MAX = 1.5
@@ -214,9 +216,29 @@ def exposure_for(rec: dict, target: Optional[dict],
     return round(float(ev), 3)
 
 
+def _basic_shape(pred: dict, sh: dict) -> dict:
+    """用 peer/hero 的肩趾比例给 Basic 一个粗形状；细分仍交给曲线/局部。"""
+    p5, p25, p50 = float(pred['p5']), float(pred['p25']), float(pred['p50'])
+    p75, p95 = float(pred['p75']), float(pred['p95'])
+    toe = float(sh.get('toe') or 0.0)
+    shoulder = float(sh.get('shoulder') or 0.0)
+    tq25 = p5 + toe * (p50 - p5)
+    tq75 = p95 - shoulder * (p95 - p50)
+    cur_toe, cur_shoulder = p25 - p5, p95 - p75
+    cur_win = p75 - p25
+    t_toe, t_shoulder = tq25 - p5, p95 - tq75
+    t_win = tq75 - tq25
+    return dict(
+        contrast=round(max(-25.0, min(25.0, (t_win - cur_win) * 1.0)), 1),
+        highlights=round(max(-30.0, min(30.0, (t_shoulder - cur_shoulder) * 1.5)), 1),
+        shadows=round(max(-25.0, min(25.0, (t_toe - cur_toe) * 1.0)), 1),
+        whites=0.0, blacks=0.0,
+    )
+
+
 def tone_solve(rec: dict, card: dict, target: Optional[dict],
                ledger: List[str]) -> dict:
-    """曝光 + 形状；Basic 四根固定 0（通用修图交给人和 ③）。"""
+    """曝光 + 形状；Basic 按 peer 肩趾给粗形状，曲线再补细节。"""
     img = rec.get('img') or {}
     q = {k: _num(img.get(k)) for k in ('p5', 'p25', 'p50', 'p75', 'p95')}
     ui = {k: 0.0 for k in ('contrast', 'highlights', 'shadows', 'whites', 'blacks')}
@@ -243,6 +265,10 @@ def tone_solve(rec: dict, card: dict, target: Optional[dict],
         ledger.append('没有可用的卡/peer/hero 形状 ⇒ 曲线不做')
         return dict(ev=ev, ui=ui, pred=pred, curve=None,
                     target=None, clipped=False)
+    ui.update(_basic_shape(pred, sh))
+    if any(abs(v) > 1e-9 for v in ui.values()):
+        ledger.append('Basic 粗形状：对比%+.0f 高光%+.0f 阴影%+.0f（peer 肩趾）'
+                      % (ui['contrast'], ui['highlights'], ui['shadows']))
     curve = curve_for(pred, sh, ledger)
     if curve:
         ledger.append('风格曲线：套 %s 肩趾比例（toe %.2f / shoulder %.2f）到本图锚点'
@@ -281,9 +307,9 @@ def grading(card: dict, rec: dict, target: dict,
         hue_shift, lum_scale, sat_scale, raw = 0.0, 0.0, 0.0, 0.0
         if h0 is not None and ht is not None:
             dh = ((float(ht) - float(h0) + 180.0) % 360.0) - 180.0
-            hue_shift = max(-0.10, min(0.10, dh / 360.0))
+            hue_shift = max(-POINT_HUE_CAP, min(POINT_HUE_CAP, dh / 360.0))
         if L0 is not None and Lt is not None:
-            lum_scale = max(-0.20, min(0.20, (float(Lt) - float(L0)) / 100.0))
+            lum_scale = max(-POINT_LUM_CAP, min(POINT_LUM_CAP, (float(Lt) - float(L0)) / 100.0))
         if L0 and C0 is not None and Lt and Ct is not None:
             r0 = float(C0) / float(L0)
             rt = float(Ct) / float(Lt)
