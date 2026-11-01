@@ -175,7 +175,7 @@ def cmd_run(a):
         print('hero：%s（目检参考 + peer 不足时的关系兜底）' % os.path.basename(hero))
     print('批次元数据：%s' % b.write_meta())
 
-    print('\n[1/4] 渲 ①（一次；只吃这个目录的介质 + PE）')
+    print('\n[1/4] 渲 ①（一次；介质 + PE 基准 + subject-face）')
     if a.reuse:
         from .card_render import medium_of
         m = medium_of(card_mc)
@@ -187,6 +187,7 @@ def cmd_run(a):
         expect = dict(card=card_mc.name,
                       medium='%s + %s' % (sim.get('film_stock'), sim.get('print_paper')),
                       print_exposure=float(sim.get('print_exposure') or 0.0),
+                      auto_exposure='subject-face',
                       wb=('custom' if use.get('temperature') is not None
                           and use.get('tint') is not None else 'as_shot'),
                       wb_temperature=float(use.get('temperature') or 0.0),
