@@ -85,6 +85,11 @@ def proof(src: str, out_dir: str, size: int = 1024, quality: float = 0.90,
     return sorted(fs)[0]
 
 
+def autotone(path: str, timeout: float = 180.0) -> str:
+    """调用 Lightroom 官方 Auto Tone。"""
+    return run('AUTOTONE %s' % path, timeout=timeout)
+
+
 def point_watch(path: str, h: float, s: float, l: float, rng: float,
                 sat_scale: float, lum_scale: float = 0.0,
                 hue_shift: float = 0.0,

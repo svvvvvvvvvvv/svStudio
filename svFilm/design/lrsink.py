@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import time
 from typing import Dict, Optional
@@ -154,6 +155,33 @@ def summary(manifest: Dict[str, object]) -> str:
 
 
 # ---------------------------------------------------------------- 产品阶段（会驱动 LR）
+
+def auto_tone_basic(src: str, work: str, log=print) -> dict:
+    """让 LR 官方 Auto Tone 给 Basic；返回 contrast/highlights/shadows/whites/blacks。"""
+    from . import lr_bridge as B
+    os.makedirs(work, exist_ok=True)
+    stamp = '%d' % (int(time.time() * 1000) % 1000000)
+    tmp = os.path.join(work, 'autotone_%s_%s.tif'
+                       % (os.path.splitext(os.path.basename(src))[0], stamp))
+    shutil.copy2(src, tmp)
+    B.add(tmp)
+    time.sleep(1.5)
+    r = B.autotone(tmp)
+    if 'OK AUTOTONE' not in r:
+        log('    ! Auto Tone 失败：%s' % r[:120])
+        return {}
+    d = B.run('DUMP %s' % tmp, timeout=60)
+    out = {}
+    for k in ('Contrast2012', 'Highlights2012', 'Shadows2012',
+              'Whites2012', 'Blacks2012'):
+        m = re.search(r'%s=([-+]?[0-9.]+)' % k, d)
+        if m:
+            out[k.replace('2012', '').lower()] = float(m.group(1))
+    log('    Auto Tone：对比%+.0f 高光%+.0f 阴影%+.0f 白%+.0f 黑%+.0f'
+        % (out.get('contrast', 0), out.get('highlights', 0),
+           out.get('shadows', 0), out.get('whites', 0), out.get('blacks', 0)))
+    return out
+
 
 def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
     """LRPlan **真的**在 LR 里跑一遍并导出 ③。返回 {stem: ③ 路径}。

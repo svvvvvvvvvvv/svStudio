@@ -172,7 +172,7 @@ def test_tone_solve_fills_exposure_residual():
     rec = _rec(person_p99=80.0)
     out = tone_solve(rec, _card(), _target(p99=94.0), [])
     assert 0.0 < out['ev'] <= 3.0, out
-    assert any(abs(v) > 1e-9 for v in out['ui'].values()), out['ui']
+    assert all(abs(v) < 1e-9 for v in out['ui'].values()), out['ui']
 
 
 def test_tone_solve_person_clip_stops_global():

@@ -179,7 +179,61 @@ def _smooth(a, b, x):
     return t * t * (3.0 - 2.0 * t)
 
 
-def _tone_basis(x):
+def _dist_ev(rec, target):
+    cur = rec.get('img') or {}
+    td = (target or {}).get('dist') or {}
+    pairs = []
+    for k in ('p5', 'p25', 'p50', 'p75', 'p95'):
+        a, b = _num(cur.get(k)), _num(td.get(k))
+        if a is not None and b is not None:
+            pairs.append((float(a), float(b)))
+    if len(pairs) < 3:
+        return None
+    weights = (1.0, 1.0, 2.0, 1.0, 1.0)[:len(pairs)]
+
+    def loss(ev):
+        return sum(w * abs(l_after_ev(a, ev) - b)
+                   for w, (a, b) in zip(weights, pairs))
+
+    return min((-3.0 + 0.02 * i for i in range(301)), key=loss)
+
+
+def _dist_curve(rec, target, ev):
+    """当前分布（EV 后）→ peer/hero 分布：单调曲线，不碰 Basic。"""
+    cur = rec.get('img') or {}
+    td = (target or {}).get('dist') or {}
+    pts = []
+    for k in ('p5', 'p25', 'p50', 'p75', 'p95'):
+        a, b = _num(cur.get(k)), _num(td.get(k))
+        if a is not None and b is not None:
+            pts.append((l_after_ev(float(a), ev), float(b)))
+    if len(pts) < 3:
+        return None
+    pts.sort()
+    pts = [(0.0, 0.0)] + pts + [(100.0, 100.0)]
+    ys = [p[1] for p in pts]
+    for i in range(1, len(ys)):
+        ys[i] = max(ys[i], ys[i - 1])
+    pts = [(pts[i][0], ys[i]) for i in range(len(pts))]
+    out = []
+    for i in range(16):
+        x = 255.0 * i / 15.0
+        xl = code_to_l(x)
+        yl = _interp_points(pts, xl)
+        out.append((int(round(x)), int(round(l_to_code(yl)))))
+    for i in range(1, len(out)):
+        out[i] = (out[i][0], max(out[i][1], out[i - 1][1]))
+    if out[0][1] > 2:
+        out[0] = (0, 0)
+    if out[-1][1] < 253:
+        out[-1] = (255, 255)
+    worst = max((b[1] - a[1]) / max(1.0, b[0] - a[0])
+                for a, b in zip(out, out[1:]))
+    if worst > MAX_CURVE_SLOPE:
+        return None
+    if max(abs(y - x) for x, y in out) < 4:
+        return None
+    return out
     """Lightroom 风格的 5 根 tone basis：[contrast, high, shadow, white, black]。"""
     w_sh = _smooth(0.0, 0.25, x) * (1.0 - _smooth(0.25, 0.50, x))
     w_hi = _smooth(0.60, 0.82, x) * (1.0 - _smooth(0.82, 1.0, x))
@@ -447,23 +501,24 @@ def tone_solve(rec: dict, card: dict, target: Optional[dict],
         return dict(ev=0.0, ui=ui, pred=dict(q), curve=None,
                     target=None, clipped=True)
 
-    fit = _fit_dist_tone(rec, target, face_p99)
-    if fit is None:
+    ev = _dist_ev(rec, target)
+    if ev is None:
         ledger.append('没有 peer/hero 的亮度分布 ⇒ 明暗保持起点')
         return dict(ev=0.0, ui=ui, pred=dict(q), curve=None,
                     target=None, clipped=False)
-
-    ev = fit['ev']
+    # Auto Tone 给 Basic；这里只做 Exposure + 分布曲线，不再解 5 根 slider。
+    face_cap = None
+    if face_p99 is not None:
+        room = ev_for_l(float(face_p99), PERSON_CEIL_L)
+        if room is not None:
+            face_cap = max(0.0, float(room))
+    if face_cap is not None and ev > face_cap:
+        ev = face_cap
     pred = {k: l_after_ev(float(v), ev) for k, v in q.items()}
-    ui = dict(zip(('contrast', 'highlights', 'shadows', 'whites', 'blacks'),
-                  [round(float(v) * 100.0, 1) for v in fit['sliders']]))
-    curve = _residual_tone_curve(fit)
+    curve = _dist_curve(rec, target, ev)
     sh = shape_target(card, target)
-    ledger.append('分布 tone：EV %+.2f；Basic 对比%+.0f 高光%+.0f 阴影%+.0f'
-                  ' 白%+.0f 黑%+.0f；%s'
-                  % (ev, ui['contrast'], ui['highlights'], ui['shadows'],
-                     ui['whites'], ui['blacks'],
-                     ('残差曲线 %d 点' % len(curve)) if curve else '残差曲线不动'))
+    ledger.append('分布 tone：EV %+.2f；Basic 由 LR Auto Tone；%s'
+                  % (ev, ('残差曲线 %d 点' % len(curve)) if curve else '残差曲线不动'))
     return dict(ev=ev, ui=ui, pred=pred, curve=curve,
                 target=sh, clipped=False)
 
