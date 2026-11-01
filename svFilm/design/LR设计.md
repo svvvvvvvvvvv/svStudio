@@ -17,7 +17,7 @@
 
 | 残差 | 谁补 | 用什么 |
 |---|---|---|
-| **曝光 / 明暗** | LR | 人/脸最亮处细节 + 余量；PE 先到位 |
+| **曝光 / 明暗** | LR | 人/脸最亮处细节 + 余量；引擎 subject-face 先落地 |
 | **形状** | LR | 卡的 `toe/shoulder` 比例，套到本图锚点 |
 | **肤色** | LR | 蒙版里的 Point Color，按 C/L 关系给量 |
 | **颜色** | LR | WB 定色相；冷暖/分色按卡的方向 |
@@ -89,7 +89,7 @@ WB（卡级）
 - 有余量且整幅偏 → 小步提/收，提到“人身上最亮处刚好有细节”。
 - 人/脸已经过曝或没余量 → 全局曝光停住，转局部补脸。
 - **人/脸高光是硬底线；背景允许过曝，只记账。**
-- PE 先到位；PE 不对先修 PE，LR 只补残差。
+- 引擎 subject-face 先落地；PE 只作基准；LR 只补残差。
 - 输入用：`person_p99`、`face_p99`、`person_clip_pct`、`parts.white.L_p99`；`img.clip_pct`/背景只做诊断。
 - 目标：人/脸最亮处刚好有细节；曝光步长由余量给，不用 p50/脸中位。
 
@@ -143,7 +143,7 @@ SatScale = 小步(e)，上限由卡/peer 与 ③ 定
 
 ### 6.1 出计划前先核对
 
-- **① 与 PE 一致**：读 `_render.json`/PE；不一致先重渲，再出 plan。
+- **① 与渲染凭证一致**：读 `_render.json` 的 `auto_exposure=subject-face`、PE 基准、WB；不一致先重渲，再出 plan。
 - **场景一致**：混光先拆；一张 plan 只属于一个场景/一张卡。
 - **脸/肤色可用**：检测在 1620；有脸/肤色窗才做肤色、局部；没有就跳过该层并记账。
 - **目标源清楚**：peer≥3 用 peer；否则 hero；否则卡；plan 写 `target_source` 和 `peer_ids`/`hero`。
@@ -167,8 +167,8 @@ checks: person_clip、bg_clip（诊断）、curve_monotonic、mask_in_skin
 
 | 踩过的坑 | 现在的做法 |
 |---|---|
-| 旧 ① / PE 过期 | 先核对 `_render.json`/PE；PE 变就重渲；一次 ① 对应一个 PE |
-| 曝光恒 0 | 0 是 PE 正确时的结果；曝光补残差，目标是人/脸最亮处细节 |
+| 旧 ① / 渲染凭证过期 | 核对 `_render.json` 的 `auto_exposure=subject-face`/PE 基准/WB；变就重渲；一次 ① 对应一份凭证 |
+| 曝光恒 0 | 0 只是 PE 基准下的一个结果；现在 subject-face 定 ① 落点，LR 只补残差 |
 | Basic 数字靶 | Basic 四根默认 0；parts 只诊断；通用修图只给方向 + 人确认 |
 | 局部用整幅 headroom | 用 `person_p99`/`face_p99`/肤色窗自己的余量；整幅只诊断 |
 | 局部负值把脸压黑 | 补脸只抬；脸已经比目标亮就跳过 |
@@ -185,7 +185,7 @@ checks: person_clip、bg_clip（诊断）、curve_monotonic、mask_in_skin
 
 ### 6.4 缺输入时
 
-- 缺 ① 或 PE 不一致 → 先重渲；仍不一致就停。
+- 缺 ① 或渲染凭证不一致 → 先重渲；仍不一致就停。
 - 缺场景 → 先拆批。
 - 缺脸/肤色窗 → 跳过肤色/局部，记账；其余层继续。
 - 缺 peer → 用 hero；缺 hero → 用卡；都写进 plan。
