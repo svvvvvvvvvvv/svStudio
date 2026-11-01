@@ -192,22 +192,8 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
             rc = B.run('CLEARMASKS %s' % tmp, timeout=180)
             log('    清残留蒙版：%s' % rc[:120])
 
-        # ---- 第 1 组：人物整身 → Highlights 压白裙
+        # ---- 第 1 组：人物 ∩ 肤色 → Point Color 三轴 / 局部曝光
         skin_idx = 1
-        if white_group:
-            rm = B.run('MASK %s subject' % tmp, timeout=180)
-            if 'groups=0->0' in rm or 'tiles=0->0' in rm:
-                raise RuntimeError('%s 白裙蒙版没建出来：%s' % (stem, rm[:160]))
-            time.sleep(1.0)
-            for key, ui in (('LocalShadows2012', plan.white.shadows),
-                            ('LocalHighlights2012', plan.white.highlights)):
-                if abs(float(ui or 0.0)) < 1e-9:
-                    continue
-                B.mask_param(tmp, key, float(ui) / 100.0, index=1)
-                log('    人物蒙版 %s %+.0f（回读 ok）' % (key, float(ui)))
-            skin_idx = 2
-
-        # ---- 第 2 组：人物 ∩ 肤色 → Point Color 三轴 / 局部曝光
         if skin_group:
             rm = B.run('MASK %s subject' % tmp, timeout=180)
             if 'groups=0->0' in rm or 'tiles=0->0' in rm:
@@ -254,6 +240,20 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
                     except RuntimeError as ex:           # noqa: BLE001
                         log('    ! %s 跳过（桥回读不可用）：%s'
                             % (key, str(ex)[:120]))
+
+        # ---- 第 2 组：人物整身 → Highlights 压白裙
+        if white_group:
+            white_idx = 2 if skin_group else 1
+            rm = B.run('MASK %s subject' % tmp, timeout=180)
+            if 'groups=0->0' in rm or 'tiles=0->0' in rm:
+                raise RuntimeError('%s 白裙蒙版没建出来：%s' % (stem, rm[:160]))
+            time.sleep(1.0)
+            for key, ui in (('LocalShadows2012', plan.white.shadows),
+                            ('LocalHighlights2012', plan.white.highlights)):
+                if abs(float(ui or 0.0)) < 1e-9:
+                    continue
+                B.mask_param(tmp, key, float(ui) / 100.0, index=white_idx)
+                log('    人物蒙版 %s %+.0f（回读 ok）' % (key, float(ui)))
         got = B.export_tif(tmp, out_dir, tag=stem)
         dst = os.path.join(out_dir, '%s_final.tif' % stem)
         shutil.copy2(got, dst)

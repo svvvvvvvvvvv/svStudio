@@ -426,6 +426,8 @@ def local_white(plan: LRPlan, rec: dict, ledger: List[str]) -> bool:
     if p99 is None or share is None or share < WHITE_MIN_SHARE:
         return False
     after = _apply_plan_to_L(plan, float(p99))
+    if plan.local.is_set() and plan.local.mask == 'skin':
+        after = l_after_ev(after, plan.local.exposure_ev)
     if after <= WHITE_OVER_L:
         return False
     over = float(after) - WHITE_OVER_L
@@ -479,8 +481,8 @@ def plan_batch(recs: Dict[str, dict], card: dict,
 
         target_skin = dict(skt['skin'])
 
-        local_white(plan, rec, ledger)
         local_face(plan, rec, dict(face_over_bg=skt.get('face_over_bg')), ledger)
+        local_white(plan, rec, ledger)
 
         sk = _skin_of(rec)
         Lpost = (_apply_plan_to_L(plan, sk['L']) if sk.get('L') is not None else None)
