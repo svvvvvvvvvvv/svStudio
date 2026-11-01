@@ -710,8 +710,15 @@ def local_white(plan: LRPlan, rec: dict, ledger: List[str]) -> bool:
 # ---------------------------------------------------------------- 主流程
 
 def _card_target(card: dict) -> dict:
+    pts = (card or {}).get('points') or {}
+    dist = {k: _num(pts.get(k)) for k in ('p5', 'p25', 'p50', 'p75', 'p95')}
+    skin = dict(L=_num(pts.get('face_L')), C=_num(pts.get('face_C')),
+                h=_num(pts.get('face_h')))
+    rel = dict(face_over_bg=_num(pts.get('face_over_bg')),
+               person_over_bg=_num(pts.get('person_over_bg')),
+               warm_cool_b=_num(pts.get('warm_cool_b')))
     return dict(source='card', peer_n=0, shape=_card_shape(card) or {},
-                skin={}, rel={}, exposure={})
+                dist=dist, skin=skin, rel=rel, exposure={})
 
 
 def plan_batch(recs: Dict[str, dict], card: dict,

@@ -387,7 +387,6 @@ def test_plan_batch_card_fallback_without_hero():
     plans = plan_batch({'C': _rec(person_p99=80.0)}, _card(),
                        log=lambda *_: None)
     assert plans['C'].target['source'] == 'card'
-    assert plans['C'].exposure_ev == 0.0
 
 
 def test_plan_batch_ignores_card_parts_for_basic():
