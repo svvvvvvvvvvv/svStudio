@@ -54,10 +54,10 @@ def solve_pe(medium: dict, d_target: float, lo: float = 0.05, hi: float = 6.0,
     y_target = 10.0 ** (-float(d_target))
     a, b = float(lo), float(hi)
     ya, yb = _probe_pe(medium, a), _probe_pe(medium, b)
-    if ya < y_target:      # 连最亮的 PE 都印不到这么亮
-        return b, '目标 Y=%.4f 低于量程（Y(%.2f)=%.4f）⇒ 取 hi' % (y_target, b, yb)
-    if yb > y_target:      # 连最暗的 PE 都太亮
-        return a, '目标 Y=%.4f 高于量程（Y(%.2f)=%.4f）⇒ 取 lo' % (y_target, a, ya)
+    if ya < y_target:      # 最小 PE 仍太暗：目标比最亮端还亮
+        return a, '目标 Y=%.4f 高于最亮端（Y(%.2f)=%.4f）⇒ 取 lo（最亮）' % (y_target, a, ya)
+    if yb > y_target:      # 最大 PE 仍太亮：目标比最暗端还暗
+        return b, '目标 Y=%.4f 低于最暗端（Y(%.2f)=%.4f）⇒ 取 hi（最暗）' % (y_target, b, yb)
     for _ in range(iters):
         mid = 0.5 * (a + b)
         ym = _probe_pe(medium, mid)

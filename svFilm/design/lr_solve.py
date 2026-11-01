@@ -29,6 +29,7 @@ PERSON_CEIL_L = 98.0           # 人/脸最亮处还留细节的物理上限
 EXPOSURE_STEP_MAX = 0.35       # 一次只补一小步；剩余交给人目检/下一轮
 FACE_CEIL_L = 98.0             # 局部补脸的物理上限
 LOCAL_FACE_MAX_EV = 0.7        # 局部一次最多补多少（工程护栏，不是目标）
+MAX_CURVE_SLOPE = 2.0          # 曲线局部斜率上限（code/code）；超过就不是补形状
 POINT_SAT_CAP = 0.2            # Point Color SatScale 一次最多走到哪（工程护栏）
 SPLIT_UI_PER_C = 3.0
 SPLIT_UI_MAX = 30.0
@@ -134,7 +135,8 @@ def shape_target(card: dict, target: Optional[dict]) -> Optional[dict]:
     return _card_shape(card)
 
 
-def curve_for(pred: Dict[str, float], shape: Optional[dict]) -> Optional[List[Tuple[int, int]]]:
+def curve_for(pred: Dict[str, float], shape: Optional[dict],
+              ledger: Optional[List[str]] = None) -> Optional[List[Tuple[int, int]]]:
     """形状残差 → 16 点 LUT；只套肩趾比例，不搬绝对分位。"""
     if not shape or pred.get('p50') is None:
         return None
@@ -148,7 +150,16 @@ def curve_for(pred: Dict[str, float], shape: Optional[dict]) -> Optional[List[Tu
     q25 = q5 + toe * (q50 - q5)
     q75 = q95 - shoulder * (q95 - q50)
     shape_abs = dict(toe=q25 - q5, contrast_win=q75 - q25, shoulder=q95 - q75)
-    return curve_from_quantiles(q, shape_abs, p95_cap=q95)
+    out = curve_from_quantiles(q, shape_abs, p95_cap=q95)
+    if out:
+        worst = max((float(y1) - float(y0)) / max(1.0, float(x1) - float(x0))
+                    for (x0, y0), (x1, y1) in zip(out, out[1:]))
+        if worst > MAX_CURVE_SLOPE:
+            if ledger is not None:
+                ledger.append('曲线局部斜率 %.2f > %.1f（code/code）⇒ 判为不硬修，'
+                              '先查 PE/曝光/peer 形状' % (worst, MAX_CURVE_SLOPE))
+            return None
+    return out
 
 
 # ---------------------------------------------------------------- 曝光 / 形状
@@ -218,9 +229,13 @@ def tone_solve(rec: dict, card: dict, target: Optional[dict],
         ledger.append('没有可用的卡/peer/hero 形状 ⇒ 曲线不做')
         return dict(ev=ev, ui=ui, pred=pred, curve=None,
                     target=None, clipped=False)
-    curve = curve_for(pred, sh)
-    ledger.append('风格曲线：套 %s 肩趾比例（toe %.2f / shoulder %.2f）到本图锚点'
-                  % (sh.get('source') or '卡', float(sh['toe']), float(sh['shoulder'])))
+    curve = curve_for(pred, sh, ledger)
+    if curve:
+        ledger.append('风格曲线：套 %s 肩趾比例（toe %.2f / shoulder %.2f）到本图锚点'
+                      % (sh.get('source') or '卡', float(sh['toe']), float(sh['shoulder'])))
+    else:
+        ledger.append('形状目标 %s（toe %.2f / shoulder %.2f）未落地，按不硬修处理'
+                      % (sh.get('source') or '卡', float(sh['toe']), float(sh['shoulder'])))
     return dict(ev=ev, ui=ui, pred=pred, curve=curve,
                 target=sh, clipped=False)
 

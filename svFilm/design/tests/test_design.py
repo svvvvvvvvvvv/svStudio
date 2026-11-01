@@ -211,6 +211,16 @@ def test_shape_target_falls_back_to_card():
     assert sh['source'] == 'card'
 
 
+def test_curve_rejects_color_shifting_slope():
+    # 2902: p50=20、p75=34、p95=92，peer shoulder=.32 ⇒ 曲线 68->133 过陡
+    from design.lr_solve import curve_for
+    q = dict(p5=1.18, p25=7.06, p50=20.39, p75=34.12, p95=92.55)
+    led = []
+    out = curve_for(q, dict(toe=0.222, shoulder=0.318), led)
+    assert out is None
+    assert any('斜率' in x for x in led), led
+
+
 # ---------------------------------------------------------------- 肤色 / 分色
 
 def test_grading_point_color_dynamic():
