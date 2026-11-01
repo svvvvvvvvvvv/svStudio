@@ -26,7 +26,7 @@ from .photometry import ev_for_l, l_after_ev
 # ---- 物理底线 / 工程护栏（都不是风格目标）
 PERSON_CLIP_MAX = 1.0          # 人身上可见死白 ≥1% ⇒ 明暗停住
 PERSON_CEIL_L = 98.0           # 人/脸最亮处还留细节的物理上限
-EXPOSURE_STEP_MAX = 0.35       # 一次只补一小步；剩余交给人目检/下一轮
+EXPOSURE_STEP_MAX = 0.7        # 全局一次最多补多少；背景分布给量，人/脸做上限
 FACE_CEIL_L = 98.0             # 局部补脸的物理上限
 LOCAL_FACE_MAX_EV = 0.7        # 局部一次最多补多少（工程护栏，不是目标）
 MAX_CURVE_SLOPE = 2.0          # 曲线局部斜率上限（code/code）；超过就不是补形状
@@ -166,39 +166,48 @@ def curve_for(pred: Dict[str, float], shape: Optional[dict],
 
 def exposure_for(rec: dict, target: Optional[dict],
                  ledger: List[str]) -> float:
-    """补曝光残差：目标是人/脸最亮处细节；背景 clip 只诊断。"""
+    """补全局曝光：对齐 peer/hero 的**背景分布**；人/脸只做上限约束。
+
+    不再拿脸 p99 / 单张中位当全局靶。背景 p10/p90/p95 三个分位各算一个 EV，
+    取平均；人 clip / 脸 p99 只负责把正 EV 压住。
+    """
     per = rec.get('person') or {}
     clip = _num(per.get('clip_pct'))
     if clip is None:
         clip = _num(rec.get('person_clip_pct')) or 0.0
     if clip >= PERSON_CLIP_MAX:
-        ledger.append('人身上死白 %.2f%% ≥ %.0f%% ⇒ 明暗停住，只做颜色/局部'
+        ledger.append('人身上死白 %.2f%% ≥ %.0f%% ⇒ 全局曝光停住，只做颜色/局部'
                       % (clip, PERSON_CLIP_MAX))
         return 0.0
-    p99 = _num(rec.get('person_p99')) or _num(per.get('p99'))
-    if p99 is None:
-        p99 = _num(rec.get('face_p99'))
-    if p99 is None:
-        ledger.append('缺 person_p99/face_p99 ⇒ 曝光保持 PE 结果')
+
+    bg = rec.get('bg') or {}
+    tb = (target or {}).get('bg') or {}
+    pairs = []
+    for k in ('L_p10', 'L_p90', 'L_p95'):
+        cur, tgt = _num(bg.get(k)), _num(tb.get(k))
+        if cur is not None and tgt is not None:
+            pairs.append((k, float(cur), float(tgt)))
+    if len(pairs) < 2:
+        ledger.append('没有 peer/hero 的背景分布目标 ⇒ 全局曝光保持起点')
         return 0.0
-    en = (target or {}).get('exposure') or {}
-    t99 = _num(en.get('person_p99'))
-    if t99 is None:
-        t99 = _num(en.get('face_p99'))
-    if t99 is None:
-        ledger.append('没有 peer/hero 的曝光目标 ⇒ 曝光保持 PE 结果')
-        return 0.0
-    t99 = min(PERSON_CEIL_L, float(t99))
-    ev = ev_for_l(float(p99), t99)
+
+    evs = [ev_for_l(cur, tgt) for _, cur, tgt in pairs]
+    ev = sum(evs) / float(len(evs))
     if abs(ev) < 0.05:
         return 0.0
     ev = max(-EXPOSURE_STEP_MAX, min(EXPOSURE_STEP_MAX, ev))
-    if ev > 0:
+
+    # 人/脸只做上限：正 EV 不能把人推到死白。
+    p99 = _num(rec.get('person_p99')) or _num(per.get('p99'))
+    if p99 is None:
+        p99 = _num(rec.get('face_p99'))
+    if ev > 0 and p99 is not None:
         room = ev_for_l(float(p99), PERSON_CEIL_L)
         if room is not None:
             ev = min(ev, max(0.0, float(room)))
-    ledger.append('曝光 %+.2f 档：person_p99 %.1f → 目标 %.1f（小步，PE 先到位）'
-                  % (ev, float(p99), t99))
+    desc = '，'.join('%s %.1f→%.1f' % (k, cur, tgt) for k, cur, tgt in pairs)
+    ledger.append('全局曝光 %+.2f 档：背景分布对齐 peer/hero（%s；人 p99 %s）'
+                  % (ev, desc, ('%.1f' % p99) if p99 is not None else '—'))
     return round(float(ev), 3)
 
 

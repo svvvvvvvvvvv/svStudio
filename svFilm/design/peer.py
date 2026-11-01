@@ -191,6 +191,8 @@ def targets(peers: List[dict]) -> dict:
     rel = dict(
         face_over_bg=_med([_ratio((r.get('skin') or {}).get('L'),
                                   (r.get('bg') or {}).get('L')) for r in rs]),
+        person_over_bg=_med([_ratio((r.get('person') or {}).get('L'),
+                                    (r.get('bg') or {}).get('L')) for r in rs]),
         p50=_med([(r.get('img') or {}).get('p50') for r in rs]),
         p95=_med([(r.get('img') or {}).get('p95') for r in rs]),
         contrast=_med([(r.get('img') or {}).get('contrast') for r in rs]),
@@ -203,6 +205,11 @@ def targets(peers: List[dict]) -> dict:
                               or (r.get('person') or {}).get('clip_pct')
                               for r in rs]),
     )
+    bg = dict(
+        L_p10=_med([(r.get('bg') or {}).get('L_p10') for r in rs]),
+        L_p90=_med([(r.get('bg') or {}).get('L_p90') for r in rs]),
+        L_p95=_med([(r.get('bg') or {}).get('L_p95') for r in rs]),
+    )
     skin = dict(
         L=_med([(r.get('skin') or {}).get('L') for r in rs]),
         C=_med([(r.get('skin') or {}).get('C') for r in rs]),
@@ -211,7 +218,7 @@ def targets(peers: List[dict]) -> dict:
         C_over_L=_med([_ratio((r.get('skin') or {}).get('C'),
                               (r.get('skin') or {}).get('L')) for r in rs]),
     )
-    return dict(shape=shape, rel=rel, skin=skin,
+    return dict(shape=shape, rel=rel, bg=bg, skin=skin,
                 exposure=dict(person_p99=rel['person_p99'],
                               face_p99=rel['face_p99'],
                               person_clip_pct=rel['person_clip_pct']),

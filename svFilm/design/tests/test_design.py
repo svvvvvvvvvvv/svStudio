@@ -50,7 +50,7 @@ def _rec(p5=10, p25=25, p50=50, p75=75, p95=90, p99=95,
         face_p99=face_p99,
         person=dict(clip_pct=person_clip, L=face_L, p99=person_p99),
         person_p99=person_p99, person_clip_pct=person_clip,
-        bg=dict(L=40.0, L_p90=60.0),
+        bg=dict(L=40.0, L_p10=15.0, L_p90=55.0, L_p95=70.0),
         bg_L=40.0,
         white_point=dict(n=5000, a=-1.0, b=-2.0, C=2.2, L_thr=93.0),
         warm_cool_b=wc)
@@ -75,6 +75,7 @@ def _target(shape=(0.30, 0.38), skin=(58.0, 19.0, 55.0),
                    contrast_win=50.0),
         skin=dict(L=skin[0], C=skin[1], h=skin[2]),
         rel=dict(face_over_bg=face_over_bg, warm_cool_b=wc),
+        bg=dict(L_p10=20.0, L_p90=65.0, L_p95=80.0),
         exposure=dict(person_p99=p99, face_p99=face_p99,
                       person_clip_pct=clip),
         peer_n=0)
@@ -169,7 +170,7 @@ def test_wb_missing_is_reported():
 def test_tone_solve_fills_exposure_residual():
     rec = _rec(person_p99=80.0)
     out = tone_solve(rec, _card(), _target(p99=94.0), [])
-    assert 0.0 < out['ev'] <= 0.35, out
+    assert 0.0 < out['ev'] <= 0.7, out
     assert out['curve'], out
     assert all(abs(v) < 1e-9 for v in out['ui'].values()), out['ui']
 
@@ -193,6 +194,7 @@ def test_tone_solve_without_exposure_target_keeps_pe():
     rec = _rec()
     target = _target()
     target['exposure'] = {}
+    target['bg'] = {}
     out = tone_solve(rec, _card(), target, [])
     assert out['ev'] == 0.0
     assert out['curve']
