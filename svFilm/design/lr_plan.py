@@ -74,16 +74,18 @@ class Local:
     子类型）；不是直接拿 subject 整身蒙版提亮 —— 后者会把白衫一起抬爆。
     """
 
-    mask: str = 'skin'                # 只有 skin（脸/肤色范围）
+    mask: str = 'skin'                # skin / person
     exposure_ev: float = 0.0          # 补脸的档数（写盘 = EV/4）
     shadows: float = 0.0              # UI；局部提暗部（人身上的暗部）
     highlights: float = 0.0           # UI；局部压人身上的亮部
+    whites: float = 0.0               # UI；人物蒙版里的白色（压白裙）
     saturation: float = 0.0           # UI；肤色饱和（与点颜色二选一）
 
     def is_set(self) -> bool:
         return (abs(float(self.exposure_ev or 0.0)) > 1e-9
                 or abs(float(self.shadows or 0.0)) > 1e-9
                 or abs(float(self.highlights or 0.0)) > 1e-9
+                or abs(float(self.whites or 0.0)) > 1e-9
                 or abs(float(self.saturation or 0.0)) > 1e-9)
 
 
@@ -178,6 +180,8 @@ class LRPlan:
             parts.append('阴影%+.0f' % self.local.shadows)
         if abs(self.local.highlights) > 1e-9:
             parts.append('高光%+.0f' % self.local.highlights)
+        if abs(self.local.whites) > 1e-9:
+            parts.append('白色%+.0f' % self.local.whites)
         if abs(self.local.saturation) > 1e-9:
             parts.append('饱和%+.0f' % self.local.saturation)
         return '肤色蒙版 ' + ' '.join(parts)

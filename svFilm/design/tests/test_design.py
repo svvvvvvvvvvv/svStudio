@@ -176,7 +176,7 @@ def test_tone_solve_fills_exposure_residual():
 
 
 def test_tone_solve_person_clip_stops_global():
-    rec = _rec(person_clip=2.0)
+    rec = _rec(person_clip=2.0, face_p99=99.0)
     out = tone_solve(rec, _card(), _target(p99=96.0), [])
     assert out['ev'] == 0.0
     assert out['curve'] is None

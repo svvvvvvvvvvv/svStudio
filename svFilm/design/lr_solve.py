@@ -28,6 +28,8 @@ PERSON_CLIP_MAX = 1.0          # 人身上可见死白 ≥1% ⇒ 明暗停住
 PERSON_CEIL_L = 98.0           # 人/脸最亮处还留细节的物理上限
 EXPOSURE_STEP_MAX = 0.7        # 全局一次最多补多少；背景分布给量，人/脸做上限
 FACE_CEIL_L = 98.0             # 局部补脸的物理上限
+WHITE_OVER_L = 97.5            # 白裙开始压的物理阈值
+WHITE_MIN_SHARE = 0.005        # 白裙至少占人的 0.5% 才动
 LOCAL_FACE_MAX_EV = 0.7        # 局部一次最多补多少（工程护栏，不是目标）
 MAX_CURVE_SLOPE = 2.0          # 曲线局部斜率上限（code/code）；超过就不是补形状
 POINT_SAT_CAP = 0.2            # Point Color SatScale 一次最多走到哪（工程护栏）
@@ -172,11 +174,12 @@ def exposure_for(rec: dict, target: Optional[dict],
     取平均；人 clip / 脸 p99 只负责把正 EV 压住。
     """
     per = rec.get('person') or {}
+    face_p99 = _num(rec.get('face_p99')) or _num((rec.get('skin') or {}).get('p99'))
     clip = _num(per.get('clip_pct'))
     if clip is None:
         clip = _num(rec.get('person_clip_pct')) or 0.0
-    if clip >= PERSON_CLIP_MAX:
-        ledger.append('人身上死白 %.2f%% ≥ %.0f%% ⇒ 全局曝光停住，只做颜色/局部'
+    if face_p99 is None and clip >= PERSON_CLIP_MAX:
+        ledger.append('无脸可测；人身上死白 %.2f%% ≥ %.0f%% ⇒ 全局曝光停住'
                       % (clip, PERSON_CLIP_MAX))
         return 0.0
 
@@ -198,7 +201,7 @@ def exposure_for(rec: dict, target: Optional[dict],
     ev = max(-EXPOSURE_STEP_MAX, min(EXPOSURE_STEP_MAX, ev))
 
     # 人/脸只做上限：正 EV 不能把人推到死白。
-    p99 = _num(rec.get('person_p99')) or _num(per.get('p99'))
+    p99 = face_p99 or _num(rec.get('person_p99')) or _num(per.get('p99'))
     if p99 is None:
         p99 = _num(rec.get('face_p99'))
     if ev > 0 and p99 is not None:
@@ -224,13 +227,15 @@ def tone_solve(rec: dict, card: dict, target: Optional[dict],
     ev = exposure_for(rec, target, ledger)
     pred = {k: l_after_ev(float(v), ev) for k, v in q.items()}
     clipped = False
+    face_p99 = _num(rec.get('face_p99')) or _num((rec.get('skin') or {}).get('p99'))
     per = rec.get('person') or {}
     clip = _num(per.get('clip_pct'))
     if clip is None:
         clip = _num(rec.get('person_clip_pct')) or 0.0
-    if clip >= PERSON_CLIP_MAX:
+    if ((face_p99 is not None and face_p99 >= 99.0)
+            or (face_p99 is None and clip >= PERSON_CLIP_MAX)):
         clipped = True
-        ledger.append('人/脸已削顶 ⇒ 曲线不做，只做颜色/局部')
+        ledger.append('脸/皮肤已削顶 ⇒ 曲线不做，只做颜色/局部')
         return dict(ev=0.0, ui=ui, pred=pred, curve=None,
                     target=None, clipped=True)
     sh = shape_target(card, target)
@@ -395,6 +400,26 @@ def local_face(plan: LRPlan, rec: dict, target: dict, ledger: List[str]) -> None
                   % (float(L0) / float(bg), float(ratio), ev))
 
 
+# ---------------------------------------------------------------- 白裙局部
+
+def local_white(plan: LRPlan, rec: dict, ledger: List[str]) -> bool:
+    """白裙在人物蒙版里；过曝时只压人物蒙版的 Whites。"""
+    w = (rec.get('parts') or {}).get('white') or {}
+    p99 = _num(w.get('L_p99'))
+    share = _num(w.get('share_person'))
+    if p99 is None or share is None or share < WHITE_MIN_SHARE:
+        return False
+    after = _apply_plan_to_L(plan, float(p99))
+    if after <= WHITE_OVER_L:
+        return False
+    over = float(after) - WHITE_OVER_L
+    ui = -min(40.0, max(10.0, over * 8.0))
+    plan.local = Local(mask='person', whites=round(float(ui), 1))
+    ledger.append('白裙 p99 %.1f → 全局后 %.1f，超 %.1f：人物蒙版 Whites %+.0f'
+                  % (float(p99), after, over, ui))
+    return True
+
+
 # ---------------------------------------------------------------- 主流程
 
 def _card_target(card: dict) -> dict:
@@ -448,10 +473,9 @@ def plan_batch(recs: Dict[str, dict], card: dict,
         plan.split_highlight_sat = float(sp.get('highlight_sat') or 0.0)
         plan.split_balance = float(sp.get('balance') or 0.0)
 
-        if plan.curve:
+        white_local = local_white(plan, rec, ledger)
+        if not white_local:
             local_face(plan, rec, dict(face_over_bg=skt.get('face_over_bg')), ledger)
-        else:
-            ledger.append('没有形状曲线 ⇒ 局部不补，只做颜色')
 
         sk = _skin_of(rec)
         pred = {k: _apply_plan_to_L(plan, float((rec.get('img') or {}).get(k)))

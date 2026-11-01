@@ -90,7 +90,7 @@ def write_jobs(plans: Dict[str, LRPlan], out_dir: str,
                        balance=plan.split_balance),
             local=dict(mask=plan.local.mask, exposure_ev=plan.local.exposure_ev,
                        shadows=plan.local.shadows, highlights=plan.local.highlights,
-                       saturation=plan.local.saturation),
+                       whites=plan.local.whites, saturation=plan.local.saturation),
             curve_points=(len(plan.curve) if plan.curve else 0),
             target=plan.target, card_dev=plan.card_dev,
             ledger=list(plan.ledger)))
@@ -191,7 +191,8 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
                 raise RuntimeError('%s 肤色蒙版没建出来：%s' % (stem, rm[:160]))
             time.sleep(1.0)
         point_ok = False
-        if plan.point_color.is_set():
+        person_local = bool(plan.local.is_set() and plan.local.mask == 'person')
+        if plan.point_color.is_set() and not person_local:
             pc = plan.point_color
             rp = B.point_watch(tmp, pc.h * 2.0 * 3.141592653589793,
                                pc.s, pc.l, pc.range, pc.sat_scale)
@@ -207,19 +208,22 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
                 point_ok = True
                 log('    肤色色票（subject ∩ 肤色）H%.3f/S%.3f/L%.3f SatScale%+.2f'
                     % (pc.h, pc.s, pc.l, pc.sat_scale))
-        # ---- 局部：只动肤色蒙版里的曝光（必须有肤色窗）
+        elif person_local:
+            point_ok = True
+            log('    人物蒙版（subject 整身；白裙用 Whites 压）')
+        # ---- 局部：肤色窗曝光 / 人物蒙版白色
         if plan.local.is_set():
             if not point_ok:
-                log('    ! 没有肤色窗（色票未落/无 skin_rgb）⇒ 跳过局部，避免 subject 整身抬')
+                log('    ! 没有可用蒙版（色票未落/无 skin_rgb）⇒ 跳过局部')
             else:
                 v = float(plan.local.exposure_ev) * LOCAL_EXPOSURE_PER_EV
                 if abs(v) > 1e-9:
                     rb = B.mask_param(tmp, 'LocalExposure2012', v)
                     log('    局部曝光 %+.2f 档 ⇒ 蒙版 %.4f（回读 %s）'
                         % (plan.local.exposure_ev, v, rb))
-            # ⚠ LocalHighlights2012 的桥回读/导出实测不可用（-1.0 会污染测量），
-            #   不启用；靠肤色窗口本身压住白衫。
-            for key, ui in (('LocalShadows2012', plan.local.shadows),):
+            # LocalHighlights2012 的桥回读/导出实测不可用；白裙用 Whites。
+            for key, ui in (('LocalShadows2012', plan.local.shadows),
+                            ('LocalWhites2012', plan.local.whites)):
                 if abs(float(ui or 0.0)) < 1e-9:
                     continue
                 try:
