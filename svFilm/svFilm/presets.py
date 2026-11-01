@@ -329,6 +329,10 @@ def _apply(p, d, cfg, name=None):
     g.density_min = tuple(float(v) for v in gr['density_min'])
     g.uniformity = tuple(float(v) for v in gr['uniformity'])
     g.blur = float(gr['blur'])
+    # ★ 2026-11-01：引擎颗粒实际读 particle_area_um2；medium 里的 rms_granularity 只是
+    #   规格记账，不参与渲染。要改颗粒粗细，必须写这个键（0.2 是引擎默认）。
+    if 'particle_area_um2' in gr:
+        g.particle_area_um2 = float(gr['particle_area_um2'])
     g.mult_usm_sigma = float(gr.get('mult_usm_sigma', 0.7))
     g.mult_usm_amount = float(gr.get('mult_usm_amount', 0.0))
     g.blur_dye_clouds_um = float(gr.get('blur_dye_clouds_um', 2.0))
