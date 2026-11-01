@@ -115,6 +115,8 @@ class LRPlan:
     split_highlight_sat: float = 0.0
     split_balance: float = 0.0
     # ---- 图级：局部（一张卡一个肤色蒙版）
+    # ---- 局部：人物组（白裙 Whites）/ 肤色组（Point Color）
+    white: Local = field(default_factory=lambda: Local(mask='person'))
     local: Local = field(default_factory=Local)
     # ---- 记账
     notes: Dict[str, object] = field(default_factory=dict)
@@ -176,17 +178,25 @@ class LRPlan:
         return ' ｜ '.join(parts) or '不动'
 
     def local_text(self) -> str:
-        if not self.local.is_set():
-            return '不动'
-        parts = []
-        if abs(self.local.exposure_ev) > 1e-9:
-            parts.append('曝光%+.2f档' % self.local.exposure_ev)
-        if abs(self.local.shadows) > 1e-9:
-            parts.append('阴影%+.0f' % self.local.shadows)
-        if abs(self.local.highlights) > 1e-9:
-            parts.append('高光%+.0f' % self.local.highlights)
-        if abs(self.local.whites) > 1e-9:
-            parts.append('白色%+.0f' % self.local.whites)
-        if abs(self.local.saturation) > 1e-9:
-            parts.append('饱和%+.0f' % self.local.saturation)
-        return '肤色蒙版 ' + ' '.join(parts)
+        chunks = []
+        if self.white.is_set():
+            parts = []
+            if abs(self.white.whites) > 1e-9:
+                parts.append('白色%+.0f' % self.white.whites)
+            if abs(self.white.exposure_ev) > 1e-9:
+                parts.append('曝光%+.2f档' % self.white.exposure_ev)
+            chunks.append('人物蒙版 ' + ' '.join(parts))
+        if self.local.is_set():
+            parts = []
+            if abs(self.local.exposure_ev) > 1e-9:
+                parts.append('曝光%+.2f档' % self.local.exposure_ev)
+            if abs(self.local.shadows) > 1e-9:
+                parts.append('阴影%+.0f' % self.local.shadows)
+            if abs(self.local.highlights) > 1e-9:
+                parts.append('高光%+.0f' % self.local.highlights)
+            if abs(self.local.whites) > 1e-9:
+                parts.append('白色%+.0f' % self.local.whites)
+            if abs(self.local.saturation) > 1e-9:
+                parts.append('饱和%+.0f' % self.local.saturation)
+            chunks.append('肤色蒙版 ' + ' '.join(parts))
+        return ' ｜ '.join(chunks) or '不动'

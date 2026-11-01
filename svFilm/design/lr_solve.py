@@ -430,7 +430,7 @@ def local_white(plan: LRPlan, rec: dict, ledger: List[str]) -> bool:
         return False
     over = float(after) - WHITE_OVER_L
     ui = -min(40.0, max(10.0, over * 8.0))
-    plan.local = Local(mask='person', whites=round(float(ui), 1))
+    plan.white = Local(mask='person', whites=round(float(ui), 1))
     ledger.append('白裙 p99 %.1f → 全局后 %.1f，超 %.1f：人物蒙版 Whites %+.0f'
                   % (float(p99), after, over, ui))
     return True
@@ -479,9 +479,8 @@ def plan_batch(recs: Dict[str, dict], card: dict,
 
         target_skin = dict(skt['skin'])
 
-        white_local = local_white(plan, rec, ledger)
-        if not white_local:
-            local_face(plan, rec, dict(face_over_bg=skt.get('face_over_bg')), ledger)
+        local_white(plan, rec, ledger)
+        local_face(plan, rec, dict(face_over_bg=skt.get('face_over_bg')), ledger)
 
         sk = _skin_of(rec)
         Lpost = (_apply_plan_to_L(plan, sk['L']) if sk.get('L') is not None else None)

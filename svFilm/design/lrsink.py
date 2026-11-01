@@ -93,6 +93,8 @@ def write_jobs(plans: Dict[str, LRPlan], out_dir: str,
             local=dict(mask=plan.local.mask, exposure_ev=plan.local.exposure_ev,
                        shadows=plan.local.shadows, highlights=plan.local.highlights,
                        whites=plan.local.whites, saturation=plan.local.saturation),
+            white=dict(mask=plan.white.mask, whites=plan.white.whites,
+                       shadows=plan.white.shadows),
             curve_points=(len(plan.curve) if plan.curve else 0),
             target=plan.target, card_dev=plan.card_dev,
             ledger=list(plan.ledger)))
@@ -183,58 +185,75 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
         #   收窄到肤色：白衫低饱和、不在肤色窗里，不会被一起抬（实测 +1EV：
         #   face L +3.9、人 clip 0.16%→0.74%）。这是设计意图（不改背景/白衫）
         #   在当前 SDK 下能做到的最近实现；SDK 若以后给 facialSkin，只换 mask 名。
-        need_mask = (plan.point_color.is_set()
-                     or plan.local.is_set())
+        white_group = plan.white.is_set()
+        skin_group = plan.point_color.is_set() or plan.local.is_set()
+        need_mask = white_group or skin_group
         if need_mask:
             rc = B.run('CLEARMASKS %s' % tmp, timeout=180)
             log('    清残留蒙版：%s' % rc[:120])
+
+        # ---- 第 1 组：人物整身 → Whites 压白裙
+        skin_idx = 1
+        if white_group:
+            rm = B.run('MASK %s subject' % tmp, timeout=180)
+            if 'groups=0->0' in rm or 'tiles=0->0' in rm:
+                raise RuntimeError('%s 白裙蒙版没建出来：%s' % (stem, rm[:160]))
+            time.sleep(1.0)
+            for key, ui in (('LocalShadows2012', plan.white.shadows),
+                            ('LocalWhites2012', plan.white.whites)):
+                if abs(float(ui or 0.0)) < 1e-9:
+                    continue
+                B.mask_param(tmp, key, float(ui) / 100.0, index=1)
+                log('    人物蒙版 %s %+.0f（回读 ok）' % (key, float(ui)))
+            skin_idx = 2
+
+        # ---- 第 2 组：人物 ∩ 肤色 → Point Color 三轴 / 局部曝光
+        if skin_group:
             rm = B.run('MASK %s subject' % tmp, timeout=180)
             if 'groups=0->0' in rm or 'tiles=0->0' in rm:
                 raise RuntimeError('%s 肤色蒙版没建出来：%s' % (stem, rm[:160]))
             time.sleep(1.0)
-        point_ok = False
-        person_local = bool(plan.local.is_set() and plan.local.mask == 'person')
-        if plan.point_color.is_set() and not person_local:
-            pc = plan.point_color
-            rp = B.point_watch(tmp, pc.h * 2.0 * 3.141592653589793,
-                               pc.s, pc.l, pc.range, pc.sat_scale,
-                               pc.lum_scale, pc.hue_shift)
-            if 'res=true' not in rp:
-                # 一次重试：LR UI 刚建完组时偶尔还没选中
-                time.sleep(1.0)
+            point_ok = False
+            if plan.point_color.is_set():
+                pc = plan.point_color
                 rp = B.point_watch(tmp, pc.h * 2.0 * 3.141592653589793,
                                    pc.s, pc.l, pc.range, pc.sat_scale,
                                    pc.lum_scale, pc.hue_shift)
-            if 'res=true' not in rp:
-                log('    ! 肤色色票失败（H%.3f S%.3f L%.3f R%.3f Sat%+.3f）：%s'
-                    % (pc.h, pc.s, pc.l, pc.range, pc.sat_scale, rp[:120]))
-            else:
-                point_ok = True
-                log('    肤色色票（subject ∩ 肤色）H%.3f/S%.3f/L%.3f SatScale%+.2f'
-                    % (pc.h, pc.s, pc.l, pc.sat_scale))
-        elif person_local:
-            point_ok = True
-            log('    人物蒙版（subject 整身；白裙用 Whites 压）')
-        # ---- 局部：肤色窗曝光 / 人物蒙版白色
-        if plan.local.is_set():
-            if not point_ok:
-                log('    ! 没有可用蒙版（色票未落/无 skin_rgb）⇒ 跳过局部')
-            else:
-                v = float(plan.local.exposure_ev) * LOCAL_EXPOSURE_PER_EV
-                if abs(v) > 1e-9:
-                    rb = B.mask_param(tmp, 'LocalExposure2012', v)
-                    log('    局部曝光 %+.2f 档 ⇒ 蒙版 %.4f（回读 %s）'
-                        % (plan.local.exposure_ev, v, rb))
-            # LocalHighlights2012 的桥回读/导出实测不可用；白裙用 Whites。
-            for key, ui in (('LocalShadows2012', plan.local.shadows),
-                            ('LocalWhites2012', plan.local.whites)):
-                if abs(float(ui or 0.0)) < 1e-9:
-                    continue
-                try:
-                    B.mask_param(tmp, key, float(ui) / 100.0)
-                    log('    %s %+.0f（回读 ok）' % (key, float(ui)))
-                except RuntimeError as ex:               # noqa: BLE001
-                    log('    ! %s 跳过（桥回读不可用）：%s' % (key, str(ex)[:120]))
+                if 'res=true' not in rp:
+                    time.sleep(1.0)
+                    rp = B.point_watch(tmp, pc.h * 2.0 * 3.141592653589793,
+                                       pc.s, pc.l, pc.range, pc.sat_scale,
+                                       pc.lum_scale, pc.hue_shift)
+                if 'res=true' not in rp:
+                    log('    ! 肤色色票失败（H%.3f S%.3f L%.3f R%.3f '
+                        'H%+.3f Sat%+.3f Lum%+.3f）：%s'
+                        % (pc.h, pc.s, pc.l, pc.range, pc.hue_shift,
+                           pc.sat_scale, pc.lum_scale, rp[:120]))
+                else:
+                    point_ok = True
+                    log('    肤色色票（subject ∩ 肤色）H%+.3f Sat%+.3f Lum%+.3f'
+                        % (pc.hue_shift, pc.sat_scale, pc.lum_scale))
+            if plan.local.is_set():
+                if not point_ok:
+                    log('    ! 没有肤色窗 ⇒ 跳过肤色组曝光')
+                else:
+                    v = float(plan.local.exposure_ev) * LOCAL_EXPOSURE_PER_EV
+                    if abs(v) > 1e-9:
+                        rb = B.mask_param(tmp, 'LocalExposure2012', v,
+                                          index=skin_idx)
+                        log('    肤色组局部曝光 %+.2f 档 ⇒ 蒙版 %.4f（回读 %s）'
+                            % (plan.local.exposure_ev, v, rb))
+                for key, ui in (('LocalShadows2012', plan.local.shadows),
+                                ('LocalWhites2012', plan.local.whites)):
+                    if abs(float(ui or 0.0)) < 1e-9:
+                        continue
+                    try:
+                        B.mask_param(tmp, key, float(ui) / 100.0,
+                                     index=skin_idx)
+                        log('    肤色组 %s %+.0f（回读 ok）' % (key, float(ui)))
+                    except RuntimeError as ex:           # noqa: BLE001
+                        log('    ! %s 跳过（桥回读不可用）：%s'
+                            % (key, str(ex)[:120]))
         got = B.export_tif(tmp, out_dir, tag=stem)
         dst = os.path.join(out_dir, '%s_final.tif' % stem)
         shutil.copy2(got, dst)
