@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""卡缺的那两块：**暗部/高光的冷暖特征**（cards_v6 里 hue_bands / neutral_axis 是空的）。
+"""卡缺的那两块：**暗部/高光的冷暖特征**（目录 JSON 里 hue_bands / neutral_axis 是空的）。
 
 为什么能量、也为什么要量：
   · 量的是"这张卡在暗部/高光的**色偏**"（一个颜色），不是"蓝色占多少像素"（内容）。
@@ -7,9 +7,9 @@
   · 教程的第一句话就是"高光偏蓝、暗部偏青蓝"——这就是卡的暗部/高光色偏，
     卡里没有，只能从它自己的成片里取。
 
-产物：`analysis/corpus/kurai/card_tone.json`
-    { "<卡名>": {"shadow": {"ab": [a,b], "lab": [L,a,b], "hsl_h": 204.1, "n": 16},
-                 "highlight": {...}, "n_images": 16} }
+产物：写回每个**目录 JSON** 的 `tone` 字段：
+    {"shadow": {"ab": [a,b], "lab": [L,a,b], "hsl_h": 204.1, "n": 16},
+     "highlight": {...}, "n_images": 16}
 
 用法：
     python -m design.card_tone            # 全部卡
@@ -17,16 +17,13 @@
 """
 from __future__ import annotations
 
-import json
 import os
 import sys
-from typing import Dict, List, Optional
+from typing import Optional
 
 import numpy as np
 
 _CORPUS = r'E:\svStudio\svFilm\analysis\corpus\kurai'
-_MASTER = r'E:\ds\大师成片'
-_OUT = os.path.join(_CORPUS, 'card_tone.json')
 
 SHADOW = (5.0, 25.0)       # L* 区间：暗部
 HIGHLIGHT = (85.0, 99.5)   # L* 区间：高光
@@ -121,24 +118,20 @@ def main(argv=None) -> int:
     want = ''
     if '--card' in argv:
         want = argv[argv.index('--card') + 1]
-    d = json.load(open(os.path.join(_CORPUS, 'cards_v6.json'), encoding='utf-8'))
-    cards = [c for c in d['cards'] if (not want or c['name'] == want)]
-    old = {}
-    if os.path.isfile(_OUT):
-        old = json.load(open(_OUT, encoding='utf-8'))
+    from .matchcard import raw_cards
+    from .medium import update_card
+    cards = [c for c in raw_cards() if (not want or c['name'] == want)]
+    n = 0
     for i, c in enumerate(cards, 1):
         t = build_card(c)
         if t:
-            old[c['name']] = t
+            update_card(c['name'], tone=t)
+            n += 1
             print('[%d/%d] %s  暗部 b=%s ｜ 高光 b=%s'
                   % (i, len(cards), c['name'],
                      (t.get('shadow') or {}).get('ab', ['—', '—'])[1],
                      (t.get('highlight') or {}).get('ab', ['—', '—'])[1]))
-    tmp = _OUT + '.tmp'
-    with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
-        json.dump(old, fh, ensure_ascii=False, indent=2)
-    os.replace(tmp, _OUT)
-    print('写入 %s（%d 张卡）' % (_OUT, len(old)))
+    print('写回 %d 张卡的目录 JSON' % n)
     return 0
 
 

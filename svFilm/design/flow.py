@@ -119,6 +119,12 @@ def engine_jobs(n_images: int) -> int:
     return max(1, min(by_mem, os.cpu_count() or 1, n_images))
 
 
+def _filters_of(medium: dict):
+    sim = medium.get('simulation') or {}
+    return float(sim.get('print_y_filter_shift') or 0.0), \
+        float(sim.get('print_m_filter_shift') or 0.0)
+
+
 def render_card(card, raf_paths: Dict[str, str], out_dir: str,
                 long_side: int = DELIVERY_LONG_SIDE, log=print) -> Dict[str, str]:
     """用引擎固定 PE 渲一批：**引擎不做放置**，出 16-bit TIF。

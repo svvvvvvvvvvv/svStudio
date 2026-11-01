@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""每个目录自己的**介质**（2026-10-31：删掉"预设"这个概念）。
+"""每个目录自己的**介质**（2026-11-02：并进目录 JSON）。
 
 介质 = 一份完整的引擎参数块（卷 / 纸 / WB / amount / 化学 / 颗粒…），
-放在 `analysis/corpus/kurai/media/<卡名>.json`，**一个目录一份**。
+存在 `analysis/corpus/kurai/cards/<卡名>.json` 的 `medium` 字段里。
+**一个目录一份 JSON**；不再拆 `media/<卡名>.json` + `card_medium.json`。
 
 规矩：
   · 没有"预设列表"，没有"选一个 preset"，不按介质反查 —— 目录即介质。
@@ -19,7 +20,7 @@ import json
 import os
 from typing import Optional
 
-_ROOT = r'E:\svStudio\svFilm\analysis\corpus\kurai\media'
+_CARDS_DIR = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards'
 # 只作"生成新介质块"的模板（不是可选预设）
 _TEMPLATE = r'E:\svStudio\svFilm\analysis\corpus\kurai\medium_base\鹿井.json'
 
@@ -29,26 +30,37 @@ SCAN_BLACK_LEVEL = 0.01
 
 
 def path_of(card_name: str) -> str:
-    return os.path.join(_ROOT, '%s.json' % card_name)
+    return os.path.join(_CARDS_DIR, '%s.json' % card_name)
 
 
-def load(card_name: str) -> Optional[dict]:
+def _load_doc(card_name: str) -> Optional[dict]:
     p = path_of(card_name)
     if not os.path.isfile(p):
         return None
     return json.load(open(p, encoding='utf-8'))
 
 
+def load(card_name: str) -> Optional[dict]:
+    d = _load_doc(card_name)
+    if d is None:
+        return None
+    b = d.get('medium')
+    return b if isinstance(b, dict) else None
+
+
 def medium_of(card) -> dict:
     """这张卡的介质块。没有就**抛**——目录没介质是"未定义"，不是"用默认"。"""
     if isinstance(card, dict):
         name = card.get('name')
+        if isinstance(card.get('medium'), dict):
+            return card['medium']
     else:
         name = getattr(card, 'name', None)
     name = name or str(card)
     b = load(name)
     if b is None:
-        raise KeyError('目录没有介质：%s（应该在 %s）' % (name, path_of(name)))
+        raise KeyError('目录没有介质：%s（应该在 %s 的 medium 字段）'
+                       % (name, path_of(name)))
     return b
 
 
@@ -57,22 +69,36 @@ def template() -> dict:
 
 
 def save(card_name: str, block: dict, note: str = '') -> str:
-    os.makedirs(_ROOT, exist_ok=True)
+    """把介质块写回**目录 JSON** 的 `medium` 字段；不动卡的其他字段。"""
     p = path_of(card_name)
+    doc = _load_doc(card_name)
+    if doc is None:
+        raise KeyError('没有目录 JSON：%s' % p)
     if note:
         block = dict(block, _note_medium=note)
+    doc['medium'] = block
     tmp = p + '.tmp'
     with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
-        json.dump(block, fh, ensure_ascii=False, indent=1)
+        json.dump(doc, fh, ensure_ascii=False, indent=1)
+    os.replace(tmp, p)
+    return p
+
+
+def update_card(card_name: str, **fields) -> str:
+    """更新目录 JSON 的顶层字段（pe/tone/stock/paper/content…），原子写。"""
+    p = path_of(card_name)
+    doc = _load_doc(card_name)
+    if doc is None:
+        raise KeyError('没有目录 JSON：%s' % p)
+    doc.update(fields)
+    tmp = p + '.tmp'
+    with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
+        json.dump(doc, fh, ensure_ascii=False, indent=1)
     os.replace(tmp, p)
     return p
 
 
 # ---------------------------------------------------------------- 目录级目标（只换算）
-
-_CARDS = r'E:\svStudio\svFilm\analysis\corpus\kurai\cards_v6.json'
-_TONE = r'E:\svStudio\svFilm\analysis\corpus\kurai\card_tone.json'
-
 
 def _y_of_l(L: float) -> float:
     """CIE L* → 相对亮度 Y。"""
@@ -117,8 +143,7 @@ def targets_from_card(card_name: str) -> dict:
       · 形状：toe / shoulder / contrast_win 带（引擎侧对应 print morph 的
         fast / slow / global gamma，方向：带越宽 ⇒ gamma 越小）
     """
-    cards = {c['name']: c for c in json.load(open(_CARDS, encoding='utf-8'))['cards']}
-    c = cards.get(card_name)
+    c = _load_doc(card_name)
     if not c:
         raise KeyError('没有这张卡：%s' % card_name)
     pt = c.get('points') or {}
@@ -140,7 +165,7 @@ def targets_from_card(card_name: str) -> dict:
     v50 = _point('p50', None)
     if v50 is not None:
         out['p50_target_D'] = round(-__import__('math').log10(_y_of_l(v50)), 3)
-    tone = json.load(open(_TONE, encoding='utf-8')).get(card_name) if os.path.isfile(_TONE) else None
+    tone = c.get('tone') or {}
     if tone:
         for z in ('shadow', 'highlight', 'neutral'):
             t = tone.get(z) or {}

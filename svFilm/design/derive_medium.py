@@ -22,7 +22,7 @@
 4) **中性滤片（WB）不用我们定**：引擎自带 `data/filters/neutral_print_filters.json`
    （8 纸 × 20 卷 × 照明），`digest_params` 按 (卷, 纸) 自动套 C/M/Y 中性值。
 
-产物：`analysis/corpus/kurai/media/<卡名>.json` + 汇总 `card_medium.json`
+产物：写回每个**目录 JSON** 的 `medium` + `stock/paper/amount` 字段
 """
 from __future__ import annotations
 
@@ -33,7 +33,6 @@ import os
 import statistics as st
 
 _ROOT = r'E:\svStudio\svFilm\analysis\corpus\kurai'
-_CARDS = os.path.join(_ROOT, 'cards_v6.json')
 _BASE = r'E:\svStudio\svFilm\analysis\corpus\kurai\medium_base'
 
 # 每个语料的**基线介质**（已从旧 preset 一次性冻结成 medium_base/<语料>.json）。
@@ -250,8 +249,9 @@ def _apply_halation(block: dict, film_name: str) -> str:
 
 
 def apply_all() -> dict:
-    from design.medium import apply_targets, load, save
-    cards = json.load(open(_CARDS, encoding='utf-8'))['cards']
+    from design.matchcard import raw_cards
+    from design.medium import apply_targets, load, save, update_card
+    cards = raw_cards()
     out = {}
     all_cc = [x for x in (_shadow_cc(c['name']) for c in cards) if x is not None]
     for c in cards:
@@ -288,43 +288,23 @@ def apply_all() -> dict:
                              scene_fit=True,
                              neutral_filters='engine database (neutral_print_filters.json)')
         save(name, b, note='卷按暗部色偏、纸按黑端密度、amount 按分色强度；中性滤片由引擎数据库给')
+        update_card(name, stock=film.name, paper=paper, amount=amount,
+                    film_reason=film_why, paper_reason=paper_why,
+                    amount_reason=why)
         out[name] = dict(ok=True, base=base_name, film=film.name, paper=paper,
                          amount=amount, film_reason=film_why, paper_reason=paper_why,
                          amount_reason=why)
-    tmp = os.path.join(_ROOT, 'card_medium.json') + '.tmp'
-    with open(tmp, 'w', encoding='utf-8', newline='\n') as fh:
-        json.dump(out, fh, ensure_ascii=False, indent=1)
-    os.replace(tmp, os.path.join(_ROOT, 'card_medium.json'))
-    _report(out)
     return out
 
 
-def _report(out: dict) -> str:
-    """出一张人看的表：每行 = 目录 → 卷+纸、amount、凭哪个量推的。"""
-    p = os.path.join(_ROOT, 'card_medium.md')
-    rows = ['# 每目录介质（按成片统计拟合，`scene_fit`）', '',
-            '> 卷/纸/amount 都是**逐目录**算的；但打印端分不开"场景"与"介质"，',
-            '> 所以这是"这张成片像哪套介质"，不是"摄影师真的用了这支卷"。', '',
-            '| 目录 | 卷 | 纸 | amount | 依据 |', '|---|---|---|---|---|']
-    for name, v in sorted(out.items()):
-        if not v.get('ok'):
-            continue
-        rows.append('| %s | %s | %s | %.2f | %s ｜ %s |'
-                    % (name, v['film'], v['paper'], v['amount'],
-                       v['film_reason'].replace('|', '/'),
-                       v['paper_reason'].replace('|', '/')))
-    with open(p, 'w', encoding='utf-8', newline='\n') as fh:
-        fh.write('\n'.join(rows) + '\n')
-    return p
-
-
-_TONE = os.path.join(_ROOT, 'card_tone.json')
+def _tone_of(name: str) -> dict:
+    from .matchcard import raw_card
+    return ((raw_card(name) or {}).get('tone') or {})
 
 
 def _shadow_cc(name: str):
-    """这个目录暗部偏蓝/偏黄多少 CC（card_tone 的 Lab → 定义式）。"""
-    tones = json.load(open(_TONE, encoding='utf-8'))
-    lab = ((tones.get(name) or {}).get('shadow') or {}).get('lab')
+    """这个目录暗部偏蓝/偏黄多少 CC（目录 tone 的 Lab → 定义式）。"""
+    lab = (_tone_of(name).get('shadow') or {}).get('lab')
     if not lab:
         return None
     L, a, b = lab
@@ -335,9 +315,8 @@ def _shadow_cc(name: str):
 
 
 def _split_of(name: str):
-    """分色强度 = |暗部 CC − 高光 CC|（蓝/黄）。全部来自 card_tone 的 Lab。"""
-    tones = json.load(open(_TONE, encoding='utf-8'))
-    t = tones.get(name) or {}
+    """分色强度 = |暗部 CC − 高光 CC|（蓝/黄）。全部来自目录 tone 的 Lab。"""
+    t = _tone_of(name)
     sh = (t.get('shadow') or {}).get('lab')
     hi = (t.get('highlight') or {}).get('lab')
     if not sh or not hi:

@@ -244,7 +244,9 @@ def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict],
         dev = (card_dev or {}).get(st) or (_g(plan, 'card_dev') or {})
         diag = []
         for key, label in (('p50', 'p50'), ('p95', 'p95'),
-                           ('face_L', '脸L'), ('face_C', '脸C')):
+                           ('face_L', '脸L'), ('face_C', '脸C'),
+                           ('white_L50', '白L'), ('hair_L50', '发L'),
+                           ('skin_L25', '皮暗')):
             v = (dev or {}).get(key)
             if isinstance(v, (int, float)):
                 diag.append('%s 偏差 %+.1f' % (label, float(v)))

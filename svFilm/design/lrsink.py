@@ -156,7 +156,7 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
 
     pairs = [(stem, ①的TIF路径, LRPlan)]
 
-    顺序（设计）：XMP（Basic/分色/曲线）→ ADD → subject 组 + 肤色色票
+    顺序（设计）：XMP（曝光/分色/曲线）→ ADD → subject 组 + 肤色色票
     → 局部曝光（MASKPARAM，回读）→ 导出 ③。WB 在引擎解码层，不在 XMP。
     """
     from . import lr_bridge as B
@@ -171,6 +171,7 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
         tmp = os.path.join(work, 'design_%s_%s.tif' % (stem, stamp))
         lr_xmp.write_tif(src, tmp, xmp)
         B.add(tmp)
+        time.sleep(2.0)          # 刚导入的 TIF 等 LR 建完预览/选中，再建蒙版
 
         # ---- 局部：**肤色蒙版** = LR 主体 AI 蒙版 ∩ 肤色点颜色工具。
         #   ★ SDK 只有 aiSelection 的 subject/people/sky/...，**没有 facialSkin
@@ -180,26 +181,42 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
         #   收窄到肤色：白衫低饱和、不在肤色窗里，不会被一起抬（实测 +1EV：
         #   face L +3.9、人 clip 0.16%→0.74%）。这是设计意图（不改背景/白衫）
         #   在当前 SDK 下能做到的最近实现；SDK 若以后给 facialSkin，只换 mask 名。
-        need_mask = plan.point_color.is_set() or plan.local.is_set()
+        need_mask = (plan.point_color.is_set()
+                     or plan.local.is_set())
         if need_mask:
+            rc = B.run('CLEARMASKS %s' % tmp, timeout=180)
+            log('    清残留蒙版：%s' % rc[:120])
             rm = B.run('MASK %s subject' % tmp, timeout=180)
             if 'groups=0->0' in rm or 'tiles=0->0' in rm:
                 raise RuntimeError('%s 肤色蒙版没建出来：%s' % (stem, rm[:160]))
+            time.sleep(1.0)
+        point_ok = False
         if plan.point_color.is_set():
             pc = plan.point_color
             rp = B.point_watch(tmp, pc.h * 2.0 * 3.141592653589793,
                                pc.s, pc.l, pc.range, pc.sat_scale)
             if 'res=true' not in rp:
-                raise RuntimeError('%s 肤色色票没落下去：%s' % (stem, rp[:200]))
-            log('    肤色色票（subject ∩ 肤色）H%.3f/S%.3f/L%.3f SatScale%+.2f'
-                % (pc.h, pc.s, pc.l, pc.sat_scale))
-        # ---- 局部：只动肤色蒙版里的曝光（设计：一张卡一个局部蒙版）
+                # 一次重试：LR UI 刚建完组时偶尔还没选中
+                time.sleep(1.0)
+                rp = B.point_watch(tmp, pc.h * 2.0 * 3.141592653589793,
+                                   pc.s, pc.l, pc.range, pc.sat_scale)
+            if 'res=true' not in rp:
+                log('    ! 肤色色票失败（H%.3f S%.3f L%.3f R%.3f Sat%+.3f）：%s'
+                    % (pc.h, pc.s, pc.l, pc.range, pc.sat_scale, rp[:120]))
+            else:
+                point_ok = True
+                log('    肤色色票（subject ∩ 肤色）H%.3f/S%.3f/L%.3f SatScale%+.2f'
+                    % (pc.h, pc.s, pc.l, pc.sat_scale))
+        # ---- 局部：只动肤色蒙版里的曝光（必须有肤色窗）
         if plan.local.is_set():
-            v = float(plan.local.exposure_ev) * LOCAL_EXPOSURE_PER_EV
-            if abs(v) > 1e-9:
-                rb = B.mask_param(tmp, 'LocalExposure2012', v)
-                log('    局部曝光 %+.2f 档 ⇒ 蒙版 %.4f（回读 %s）'
-                    % (plan.local.exposure_ev, v, rb))
+            if not point_ok:
+                log('    ! 没有肤色窗（色票未落/无 skin_rgb）⇒ 跳过局部，避免 subject 整身抬')
+            else:
+                v = float(plan.local.exposure_ev) * LOCAL_EXPOSURE_PER_EV
+                if abs(v) > 1e-9:
+                    rb = B.mask_param(tmp, 'LocalExposure2012', v)
+                    log('    局部曝光 %+.2f 档 ⇒ 蒙版 %.4f（回读 %s）'
+                        % (plan.local.exposure_ev, v, rb))
             # ⚠ LocalHighlights2012 的桥回读/导出实测不可用（-1.0 会污染测量），
             #   不启用；靠肤色窗口本身压住白衫。
             for key, ui in (('LocalShadows2012', plan.local.shadows),):

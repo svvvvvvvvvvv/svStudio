@@ -1,30 +1,32 @@
 # -*- coding: utf-8 -*-
 """给每个目录标一个**基础印相曝光 PE**（per-directory baseline print exposure）。
 
-为什么（2026-10-31 用户提出）
---------------------------
-引擎不负责"放置"，但**必须从一个好曝光起步**：PE 太亮会把高光洗掉、太暗会堵黑，
-都是扫描阶段不可逆的损失。PE 是**介质的灵敏度**，属于目录，不是每张图追出来的。
+为什么（2026-10-31 用户提出；2026-11-01 修正）
+---------------------------------------------
+PE 是**介质的物理基准**，不是把卡的 p50 look 硬印出来。
+用 18.4% 参考灰印到**固定 L*50**（D≈0.735）；同一个 (卷, 纸, push) 应得同一个 PE。
+卡 p50 的放置交给 LR 逐图 Exposure，不再由 PE 承担。
 
-怎么算（不用照片，用参考灰）
---------------------------
-· 参考输入：线性 0.184 中灰（与引擎配平用的 18.4% 灰同一个数）
-· 目标：这张卡的**介质目标中间调密度** `_target.p50_target_D`
+怎么算
+------
+· 参考输入：线性 0.184 中灰
+· 目标：**固定** L*50 的线性 Y（`l_to_y(50)`），不是每张卡的 p50_target_D
 · 求解：对 PE 单调（PE↑ ⇒ 印相更暗 ⇒ Y↓），二分 12 次即可
-  每次都是 48×48 的灰块，约 0.1 秒
-· 求解时 **和真图同一状态**（`auto_exposure` 关，固定 PE）；
-  探针也必须关，否则测光会把探针本身归一化掉。
+· 求解时和真图同一状态（`auto_exposure` 关，固定 PE）；探针也必须关。
 
 结果写进 `simulation.print_exposure`，并在 `_derived.pe` 记账。
 """
 from __future__ import annotations
 
 import math
-import os
 
 import numpy as np
 
+from .photometry import l_to_y
+
 _GRAY = 0.184
+_REF_L = 50.0
+_REF_D = -math.log10(l_to_y(_REF_L))
 
 
 def _srgb_to_linear(v: float) -> float:
@@ -70,31 +72,22 @@ def solve_pe(medium: dict, d_target: float, lo: float = 0.05, hi: float = 6.0,
 
 
 def apply_all_pe() -> dict:
-    """给 64 个目录各解一个 PE，写进它们的介质。"""
-    import json
-
-    from .medium import load, save
-    root = r'E:\svStudio\svFilm\analysis\corpus\kurai'
-    cards = json.load(open(os.path.join(root, 'cards_v6.json'), encoding='utf-8'))['cards']
+    """给每个目录解一个 PE：参考灰 18.4% → 固定 L*50；写回目录 JSON。"""
+    from .matchcard import raw_cards
+    from .medium import load, save, update_card
     out = {}
-    for c in cards:
+    for c in raw_cards():
         name = c['name']
         m = load(name)
         if not m:
             out[name] = dict(ok=False, why='没有介质')
             continue
-        tg = m.get('_target') or {}
-        d50 = tg.get('p50_target_D')
-        if d50 is None:
-            out[name] = dict(ok=False, why='没有 p50 目标密度')
-            continue
-        pe, why = solve_pe(m, float(d50))
+        pe, why = solve_pe(m, _REF_D)
         sim = dict(m.get('simulation') or {})
         sim['print_exposure'] = pe
         m['simulation'] = sim
         m['_derived'] = dict(m.get('_derived') or {}, pe=pe, pe_reason=why)
-        save(name, m, note='print_exposure = 参考灰 18.4% → 本卡目标密度（二分求得）')
+        save(name, m, note='print_exposure = 参考灰 18.4% → 固定 L*50（二分求得）')
+        update_card(name, pe=pe, pe_why=why)
         out[name] = dict(ok=True, pe=pe, why=why)
-    json.dump(out, open(os.path.join(root, 'card_pe.json'), 'w', encoding='utf-8', newline='\n'),
-              ensure_ascii=False, indent=1)
     return out

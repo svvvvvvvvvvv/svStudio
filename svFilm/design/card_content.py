@@ -11,11 +11,9 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import Dict, List, Optional
 
-BASE = r'E:\svStudio\svFilm\analysis\corpus\kurai'
-CARDS = os.path.join(BASE, 'card_content.json')
+# 生产默认从每个目录 JSON 的 `content` 字段读；path 参数只留旧文件兼容。
 
 # 未标定前：**等权**；κ/成对比较出来后才允许写权重（纪律 1/3，§10）。
 # ★ 2026-11-01：`light` 不参与分数（技能 §194/§195）。
@@ -76,13 +74,21 @@ def _elements_d(a, b) -> Optional[float]:
     return 1.0 - len(sa & sb) / max(1, len(sa | sb))
 
 
-def load(path: str = CARDS) -> Dict[str, dict]:
-    """name → 内容卡。"""
-    try:
-        d = json.load(open(path, encoding='utf-8'))
-    except Exception:                                      # noqa: BLE001
-        return {}
-    return {c['card']: c for c in (d.get('cards') or []) if c.get('card')}
+def load(path: str = '') -> Dict[str, dict]:
+    """name → 内容卡；默认从每个目录 JSON 的 `content` 字段读。"""
+    if path:
+        try:
+            d = json.load(open(path, encoding='utf-8'))
+        except Exception:                                  # noqa: BLE001
+            return {}
+        return {c['card']: c for c in (d.get('cards') or []) if c.get('card')}
+    from .matchcard import raw_cards
+    out = {}
+    for c in raw_cards():
+        content = c.get('content')
+        if isinstance(content, dict) and content.get('card'):
+            out[content['card']] = content
+    return out
 
 
 def normalize_batch(b: dict) -> dict:

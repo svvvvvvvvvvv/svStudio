@@ -97,6 +97,19 @@ def _resolve_hero(card_name: str, hero: str) -> str:
     return hits[0] if len(hits) == 1 else ''
 
 
+def _hero_target(hero: str):
+    """hero 样片 → 与 peer 同结构的关系目标；不拿绝对 p50 当靶。"""
+    if not hero or not os.path.isfile(hero):
+        return None
+    try:
+        from .measure_all import measure_one
+        from .peer import target_from_rec
+        return target_from_rec(measure_one(hero))
+    except Exception as ex:                                # noqa: BLE001
+        print('  ! hero 测量失败，退卡目标：%s' % str(ex)[:120])
+        return None
+
+
 def _plans_from_manifest(path: str) -> dict:
     """XMP manifest → {stem: 轻量 plan}（只给 review 页显示用）。"""
     doc = json.load(open(path, encoding='utf-8'))
@@ -159,7 +172,7 @@ def cmd_run(a):
                                        for p in card_samples(b.card)[:3])))
             return
         b.hero = hero
-        print('hero：%s（只做目检参考，不进求解）' % os.path.basename(hero))
+        print('hero：%s（目检参考 + peer 不足时的关系兜底）' % os.path.basename(hero))
     print('批次元数据：%s' % b.write_meta())
 
     print('\n[1/4] 渲 ①（一次；只吃这个目录的介质 + PE）')
@@ -204,14 +217,16 @@ def cmd_run(a):
     for line in guard.get('ledger') or []:
         print('  ' + line)
 
-    print('\n[3/4] 逐片 peer（同构图 + 同场景/背景；光位只诊断）')
+    print('\n[3/4] 逐片 peer（同构图 + 连续光向量）')
     peers = build_peers(recs, card_mc.name, log=print)
     if peers:
         got = sum(1 for v in peers.values() if v.get('peer_n'))
         print('  %d/%d 张找到 peer 目标' % (got, len(peers)))
     else:
-        print('  ! 没有 per-photo 测量 ⇒ 回退卡点值（记账）')
-    plans = plan_batch(recs, card, peer_targets=peers, log=print)
+        print('  ! 没有 per-photo 测量 ⇒ 回退 hero/卡目标（记账）')
+    hero_target = _hero_target(b.hero)
+    plans = plan_batch(recs, card, peer_targets=peers,
+                       hero_target=hero_target, log=print)
     print(lr_summary(plans, card['name'], pe=card.get('pe')))
 
     if a.export:
@@ -267,7 +282,9 @@ def cmd_xmp(a):
     peers = {}
     if a.peers:
         peers = json.load(open(a.peers, encoding='utf-8'))
-    plans = plan_batch(recs, card, peer_targets=peers, log=print)
+    hero_target = _hero_target(getattr(a, 'hero', ''))
+    plans = plan_batch(recs, card, peer_targets=peers,
+                       hero_target=hero_target, log=print)
     print(lr_summary(plans, card['name'], pe=card.get('pe')))
     mf = write_jobs(plans, a.out, manifest_extra=dict(card=card['name'], step='xmp',
                                                       print_exposure=card.get('pe')))
@@ -314,7 +331,7 @@ def main(argv=None):
     p.add_argument('--render-limit', type=int, default=0, help='只渲前几张（试跑用）')
     p.add_argument('--card', default='', help='人拍板的卡名（不给则只做内容匹配）')
     p.add_argument('--content', default='', help='batch_content JSON（匹配用）')
-    p.add_argument('--hero', default='', help='hero 样片（只做目检参考）')
+    p.add_argument('--hero', default='', help='hero 样片（目检参考 + peer 不足兜底）')
     p.add_argument('--export', action='store_true', help='用 LR 出 ③（要 LR 在跑）')
     p.add_argument('--reuse', action='store_true', help='复用已渲好的 ①（只重测）')
 
@@ -323,6 +340,7 @@ def main(argv=None):
     p.add_argument('--card', required=True)
     p.add_argument('--out', required=True)
     p.add_argument('--peers', default='', help='peer.build 的输出 JSON（可选）')
+    p.add_argument('--hero', default='', help='hero 样片（peer 不足兜底）')
 
     p = sub.add_parser('review'); p.set_defaults(fn=cmd_review)
     p.add_argument('recs1', help='① 的测量 JSON')

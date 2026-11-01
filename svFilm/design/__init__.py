@@ -15,17 +15,17 @@
 引擎（介质级）
   flow.py           渲一次 ①（固定 PE、交付尺寸）+ 余量报告
   card_render.py    卡 → 介质块
-  medium.py         每目录一份介质（media/<卡名>.json）
+  medium.py         每目录一份 JSON（medium 字段）
   texture.py        质感参数（引擎链换算）
   stocks.py / profile_table.py   卷/纸事实（查 profile）
 
 LR（图级）
   lr_plan.py        LRPlan 数据模型（WB/Basic/PointColor/局部/曲线）
-  lr_solve.py       WB → 曝光/明暗（Basic 为主）→ 肤色（蒙版里的 Point Color）→ 局部
-  lr_response.py    Basic 滑杆实测一阶响应（规划起点）
+  lr_solve.py       WB → 曝光残差/曲线 → 肤色（Point Color）→ 局部
+  lr_response.py    Basic 滑杆实测一阶响应（只做规划起点/诊断）
   curve_design.py   曲线补形状（PCHIP，单调）
   lr_exec.py / lrsink.py / lr_bridge.py   XMP + 桥（肤色蒙版）
-  peer.py           逐片 peer（同构图/同场景）
+  peer.py           逐片 peer（同构图 + 连续光向量）
   batch_guard.py    批级护栏（只报告，不下发公共曲线）
 
 收尾

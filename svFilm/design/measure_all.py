@@ -4,7 +4,7 @@
     & $py -X utf8 -m design.measure_all --dir <图片目录> --corpus 鹿井 --out m_鹿井_v3.json [--limit 20]
     & $py -X utf8 -m design.measure_all --files a.jpg b.jpg
 
-口径（每条见 design/skin/CALIBER.md 与 设计真源 §13）：
+口径（每条见 测量设计.md 与 设计真源 §13）：
   · 检测在长边 1080，统计在**原生分辨率**；色彩 CIELAB D65
   · 脸 = YuNet 五点 + 框；FACE 区 = 框内椭圆；PERSON = 1−BG（selfie_multiclass 1~5 类）
   · 肤色 = design.skin.sample_skin（掩膜 + 颊 ROI + 分量中位 + ITA°）
@@ -42,6 +42,13 @@ CFG = dict(
     hair_band=(1.00, 1.40),
     white_pct=90.0,
     white_c_max=8.0,
+    # 部位统计：只做诊断/报告，不驱动 Basic 四根（LR设计 §5.2）。
+    # 像素不足 ⇒ null。
+    part_min_px=300,
+    # 白衫/高光落点用**绝对阈值**（测量设计 §7②：不用图自己的分位来定义）：
+    # L*≥80 且 C*≤8，且落在人身上 = 白衣服/白衫；天空/白墙不算“白衫”，
+    # 它们由白色控氛围/曲线管，不混进 Basic 的部位目标。
+    white_land_L=80.0,
     neutral_bands=5, hue_bands=6,
     ita=True,
 )
@@ -148,6 +155,8 @@ def measure_one(path: str, light_probe=None) -> dict:
         # ---- 脸
         det = _detect(det_rgb)
         out['det'] = dict(name='yunet', score=None if not det else det['score'])
+        face = None
+        face_v = None
         if det is None:
             out['face'] = dict(n=0)
             out['skin'] = None
@@ -254,6 +263,33 @@ def measure_one(path: str, light_probe=None) -> dict:
                                   b=_med(bn[wm]) if wm.sum() >= 500 else None,
                                   C=_med(Cn[wm]) if wm.sum() >= 500 else None,
                                   L_thr=_pct(Ln, CFG['white_pct']))
+
+        # ---- 部位（Basic 四根的卡内依据，`LR设计.md` §2.1/§3.1）
+        #   阴影看头发、黑色看皮肤暗部、高光/白色看白衫落点。
+        #   像素不够就整个部位 null，**不填 0**；卡级再按图片数决定用不用。
+        parts: dict = {}
+        hm = (hair > 0.5) & pm
+        if hm.sum() >= CFG['part_min_px']:
+            parts['hair'] = dict(
+                n=int(hm.sum()),
+                L_p10=_pct(Ln[hm], 10), L_p25=_pct(Ln[hm], 25),
+                L_p50=_med(Ln[hm]), L_p75=_pct(Ln[hm], 75),
+                L_p90=_pct(Ln[hm], 90), C=_med(Cn[hm]))
+        wl = pm & (Ln >= CFG['white_land_L']) & (Cn <= CFG['white_c_max'])
+        if wl.sum() >= CFG['part_min_px'] and pm.any():
+            parts['white'] = dict(
+                n=int(wl.sum()), share=float(wl.mean()),
+                share_person=float(wl.sum()) / max(int(pm.sum()), 1),
+                L_p50=_med(Ln[wl]), L_p90=_pct(Ln[wl], 90),
+                L_p95=_pct(Ln[wl], 95), L_p99=_pct(Ln[wl], 99),
+                C=_med(Cn[wl]))
+        if face_v is not None and face_v.sum() >= CFG['part_min_px']:
+            parts['skin'] = dict(
+                n=int(face_v.sum()),
+                L_p10=_pct(Ln[face_v], 10), L_p25=_pct(Ln[face_v], 25),
+                L_p50=_med(Ln[face_v]), L_p90=_pct(Ln[face_v], 90),
+                dark_share40=float((Ln[face_v] <= 40.0).mean()))
+        out['parts'] = parts or None
         lo, hi = _pct(Ln, 0), _pct(Ln, 100)
         edges = np.linspace(lo, hi + 1e-6, CFG['neutral_bands'] + 1)
         out['neutral_axis'] = [dict(L=(edges[i] + edges[i + 1]) / 2,

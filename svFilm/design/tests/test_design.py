@@ -4,12 +4,13 @@
 跑：
     & $py -X utf8 design/tests/test_design.py
 
-覆盖 v0.3 的链：
+覆盖：
   · 色度学 / 曲线（定义式）
   · WB 卡级（引擎解码层）
-  · 明暗目标（形状锚在 ① 的 p50；卡/批不匹配要报）
-  · Basic 滑杆（实测一阶响应；削顶不动）
-  · 肤色（蒙版里的 Point Color）+ 分色
+  · 曝光残差（人/脸优先；背景 clip 只诊断）
+  · 形状目标（peer → hero → 卡；Basic 四根为 0）
+  · 肤色 Point Color（C/L 动态 SatScale）+ 分色
+  · 局部（face_p99 余量、只抬不压）
   · LRPlan/XMP（WB 不写 XMP）
   · 目检页（没有机器过/不过）
 """
@@ -26,24 +27,31 @@ from design.color_math import cct_from_lab, duv_from_lab
 from design.curve import grid16
 from design.curve_design import apply_lut, curve_from_quantiles
 from design.lr_plan import LRPlan, Local, PointColor, WhiteBalance
-from design.lr_solve import (anchor_target, basic_tone, grading, plan_batch,
-                             skin_target, summary, tone_target, wb_of)
+from design.lr_solve import (grading, plan_batch, shape_target, skin_target,
+                             summary, tone_solve, wb_of)
 from design.lrsink import diagnostic, plan_to_xmp
+from design.peer import _d, target_from_rec, targets as peer_targets
 from design.photometry import code_to_l, ev_for_l, l_after_ev, l_to_code, l_to_y, y_to_l
 from design.review import contact_sheet, make_review
 
 
 # ---------------------------------------------------------------- 小工具
 
-def _rec(p5=10, p25=25, p50=50, p75=75, p95=90, p99=95, face_L=50, face_C=15,
-         face_h=45, clip=0.0, person_clip=0.0, wc=0.0, rgb=(210, 160, 130)):
+def _rec(p5=10, p25=25, p50=50, p75=75, p95=90, p99=95,
+         face_L=50, face_C=15, face_h=45,
+         person_p99=90, face_p99=90, person_clip=0.0, img_clip=0.0,
+         wc=0.0, rgb=(210, 160, 130)):
     return dict(
         img=dict(p5=p5, p25=p25, p50=p50, p75=p75, p95=p95, p99=p99,
-                 contrast=p95 - p5, clip_pct=clip),
-        skin=dict(L=face_L, C=face_C, h=face_h, b=18.0),
+                 contrast=p95 - p5, clip_pct=img_clip),
+        skin=dict(L=face_L, C=face_C, h=face_h, b=18.0, p99=face_p99),
         skin_rgb=list(rgb),
-        person=dict(clip_pct=person_clip, L=face_L),
+        face_L=face_L, face_C=face_C, face_h=face_h,
+        face_p99=face_p99,
+        person=dict(clip_pct=person_clip, L=face_L, p99=person_p99),
+        person_p99=person_p99, person_clip_pct=person_clip,
         bg=dict(L=40.0, L_p90=60.0),
+        bg_L=40.0,
         white_point=dict(n=5000, a=-1.0, b=-2.0, C=2.2, L_thr=93.0),
         warm_cool_b=wc)
 
@@ -52,9 +60,24 @@ def _card(**kw):
     c = dict(name='T_card', points=dict(
         p5=6.0, p25=18.0, p50=45.0, p75=75.0, p95=94.0, contrast=88.0,
         face_L=60.0, face_C=20.0, face_h=55.0, toe=12.0, shoulder=18.0,
-        contrast_win=60.0, skew=0.35, warm_cool_b=1.0), bands={}, samples=[])
+        contrast_win=60.0, skew=0.35, warm_cool_b=1.0,
+        face_over_bg=2.0), bands={}, samples=[])
     c.update(kw)
     return c
+
+
+def _target(shape=(0.30, 0.38), skin=(58.0, 19.0, 55.0),
+            p99=94.0, face_p99=94.0, clip=0.0,
+            face_over_bg=2.0, wc=1.0, source='hero'):
+    return dict(
+        source=source,
+        shape=dict(toe=shape[0], shoulder=shape[1],
+                   contrast_win=50.0),
+        skin=dict(L=skin[0], C=skin[1], h=skin[2]),
+        rel=dict(face_over_bg=face_over_bg, warm_cool_b=wc),
+        exposure=dict(person_p99=p99, face_p99=face_p99,
+                      person_clip_pct=clip),
+        peer_n=0)
 
 
 # ---------------------------------------------------------------- 色度学 / 曲线
@@ -77,12 +100,9 @@ def test_cct_neutral_is_6500():
 
 
 def test_duv_is_distance_to_planckian_locus():
-    # D65 自己不是 Duv=0；它在轨迹上方（正=绿）
     d0 = duv_from_lab([95.0, 0.0, 0.0])
     assert 0.002 < d0 < 0.005
-    # 加一点品红（a 正、b 负）⇒ Duv 下降
     assert duv_from_lab([95.0, 0.5, -0.5]) < d0
-    # 加一点绿（a 负）⇒ Duv 上升
     assert duv_from_lab([95.0, -1.0, 0.0]) > d0
 
 
@@ -105,33 +125,15 @@ def test_curve_keeps_p50_and_is_monotone():
     assert abs(apply_lut(pts, 100.0) - 100.0) < 1e-6
 
 
-# ---------------------------------------------------------------- 目标（形状锚定）
-
-def test_peer_shape_target():
-    peer = dict(peer_n=3, shape=dict(toe=10.0, shoulder=14.0, p95=94.0,
-                                    contrast_win=60.0),
-                rel=dict(p50=45.0, p95=94.0, contrast=88.0, warm_cool_b=1.0),
-                skin=dict(L=60.0, C=20.0, h=55.0))
-    t = tone_target(peer, _card())
-    assert t and t['source'] == 'peer'
-    assert abs(t['contrast'] - 88.0) < 1e-6
-    assert abs(t['skew'] - (45.0 - (94.0 - 88.0)) / 88.0) < 1e-6
+def test_curve_avoids_adjacent_anchors():
+    q = dict(p5=8.0, p25=30.0, p50=70.0, p75=96.0, p95=96.5)
+    pts = curve_from_quantiles(q, dict(toe=12.0, contrast_win=50.0,
+                                     shoulder=20.0), p95_cap=96.5)
+    xs = [x for x, _ in pts]
+    assert min(b - a for a, b in zip(xs, xs[1:])) >= 4.0
 
 
-def test_anchor_uses_own_p50():
-    t = anchor_target(dict(contrast=80.0, skew=0.4, toe=10.0, shoulder=14.0),
-                      50.0)
-    assert t and abs(t['q50'] - 50.0) < 1e-9
-    assert abs(t['q5'] - (50.0 - 0.4 * 80.0)) < 1e-9
-    assert t['q5'] < t['q25'] < t['q50'] < t['q75'] < t['q95']
-
-
-def test_anchor_reports_mismatch():
-    led = []
-    assert anchor_target(dict(contrast=88.0, skew=0.35, toe=12.0, shoulder=18.0),
-                         65.0, led) is None
-    assert any('卡/批不匹配' in x for x in led), led
-
+# ---------------------------------------------------------------- 肤色目标 / WB
 
 def test_skin_target_falls_back_to_card():
     s = skin_target({}, _card())
@@ -139,15 +141,19 @@ def test_skin_target_falls_back_to_card():
     assert abs(s['warm_cool_b'] - 1.0) < 1e-9
 
 
-# ---------------------------------------------------------------- WB（as-shot + 白点目标）
+def test_skin_target_prefers_hero():
+    s = skin_target(_target(skin=(58.0, 19.0, 55.0)), _card())
+    assert abs(s['skin']['L'] - 58.0) < 1e-9
+    assert abs(s['skin']['C'] - 19.0) < 1e-9
+
 
 def test_wb_is_card_level_not_white_point():
     card = _card(wb=dict(cast=dict(a=-1.0, b=0.5),
                          white_point=dict(L=94.0, a=-1.0, b=0.0, C=1.0),
                          duv=0.0005))
     wb = wb_of(card, {'a': _rec()})
-    assert not wb.is_set()          # 不落开尔文
-    assert wb.card_white is None    # 白点不再当目标
+    assert not wb.is_set()
+    assert wb.card_white is None
     assert 'cast' in wb.note and '不驱动' in wb.note
 
 
@@ -158,78 +164,162 @@ def test_wb_missing_is_reported():
     assert any('无 cast' in x for x in led), led
 
 
-# ---------------------------------------------------------------- Basic（实测响应）
+# ---------------------------------------------------------------- 曝光 / 形状
 
-def test_slider_domain():
-    assert R.slider_for_delta('contrast', 50.0, 0.2) is not None
-    assert R.slider_for_delta('contrast', 5.0, 0.2) is None      # L 域外
-    assert R.slider_for_delta('contrast', 50.0, 99.0) is None    # 超过 ±50
-
-
-def test_basic_tone_moves_shape():
-    rec = _rec(p5=8, p25=20, p50=50, p75=80, p95=92)
-    t = anchor_target(dict(contrast=80.0, skew=0.5, toe=20.0, shoulder=20.0),
-                      50.0)
-    assert t and abs((t['q75'] - t['q25']) - 40.0) < 1e-9
-    out = basic_tone(rec, t, [])
-    ui = out['ui']
-    assert any(abs(v) > 1e-9 for v in ui.values()), ui
-    before = abs(60.0 - 40.0)
-    after = abs((out['pred']['p75'] - out['pred']['p25']) - 40.0)
-    assert after <= before + 1e-6
-
-
-def test_basic_tone_skips_when_clipped():
-    rec = _rec(person_clip=3.0)
-    t = anchor_target(dict(contrast=80.0, skew=0.4, toe=10.0, shoulder=14.0), 50.0)
-    out = basic_tone(rec, t, [])
+def test_tone_solve_fills_exposure_residual():
+    rec = _rec(person_p99=80.0)
+    out = tone_solve(rec, _card(), _target(p99=94.0), [])
+    assert 0.0 < out['ev'] <= 0.35, out
+    assert out['curve'], out
     assert all(abs(v) < 1e-9 for v in out['ui'].values()), out['ui']
-    assert out['pred']['p50'] == rec['img']['p50']
 
 
-def test_basic_tone_skips_without_target():
-    out = basic_tone(_rec(), None, [])
+def test_tone_solve_person_clip_stops_global():
+    rec = _rec(person_clip=2.0)
+    out = tone_solve(rec, _card(), _target(p99=96.0), [])
+    assert out['ev'] == 0.0
+    assert out['curve'] is None
     assert all(abs(v) < 1e-9 for v in out['ui'].values())
+
+
+def test_tone_solve_background_clip_is_diagnostic_only():
+    rec = _rec(img_clip=20.0, person_clip=0.0, person_p99=80.0)
+    out = tone_solve(rec, _card(), _target(p99=90.0), [])
+    assert out['ev'] > 0.0, out
+    assert out['curve']
+
+
+def test_tone_solve_without_exposure_target_keeps_pe():
+    rec = _rec()
+    target = _target()
+    target['exposure'] = {}
+    out = tone_solve(rec, _card(), target, [])
+    assert out['ev'] == 0.0
+    assert out['curve']
+
+
+def test_shape_target_prefers_peer_hero():
+    sh = shape_target(_card(), _target(shape=(0.22, 0.44), source='hero'))
+    assert abs(sh['toe'] - 0.22) < 1e-9
+    assert abs(sh['shoulder'] - 0.44) < 1e-9
+    assert sh['source'] == 'hero'
+
+
+def test_shape_target_falls_back_to_card():
+    sh = shape_target(_card(), {})
+    assert 0.0 < sh['toe'] < 1.0 and 0.0 < sh['shoulder'] < 1.0
+    assert sh['source'] == 'card'
 
 
 # ---------------------------------------------------------------- 肤色 / 分色
 
-def test_grading_point_color():
-    # C/L: 12/50=0.24 → 目标 18/55=0.327 ⇒ SatScale +0.364（SDK -1..1 连续）
+def test_grading_point_color_dynamic():
     rec = _rec(face_L=50.0, face_C=12.0, face_h=40.0)
     t = dict(skin=dict(L=55.0, C=18.0, h=46.0), warm_cool_b=0.0)
-    g = grading(_card(), rec, t, [])
-    pc = g['point_color']
+    g = grading
+    out = g(_card(), rec, t, [])
+    pc = out['point_color']
     assert pc and pc.is_set()
-    assert abs(pc.sat_scale - 0.364) < 1e-9, pc.sat_scale
-    assert pc.sat_scale > 0
-    # 反向：目标更灰 ⇒ 负 SatScale
-    g2 = grading(_card(), rec, dict(skin=dict(L=55.0, C=8.0, h=46.0),
-                                    warm_cool_b=0.0), [])
-    assert abs(g2['point_color'].sat_scale + 0.394) < 1e-9
+    assert pc.sat_scale > 0.0
+    assert abs(pc.sat_scale) <= 0.2
+    assert pc.raw > 0.0
+
+
+def test_grading_point_color_zero_when_relation_matches():
+    rec = _rec(face_L=50.0, face_C=12.0)
+    t = dict(skin=dict(L=50.0, C=12.0, h=45.0), warm_cool_b=0.0)
+    g = grading
+    out = g(_card(), rec, t, [])
+    assert out['point_color'] is not None
+    assert abs(out['point_color'].sat_scale) < 1e-9
 
 
 def test_grading_split_direction():
-    # 近中性的暖/冷高光/暗部 ⇒ 分色按卡方向
     rec = _rec(wc=-5.0)
     card = _card(tone=dict(shadow=dict(lab=[10.0, -0.4, 0.3], hsl_h=210.0),
                            highlight=dict(lab=[90.0, 0.4, 0.3], hsl_h=40.0)))
     t = dict(skin=dict(L=50.0, C=15.0, h=45.0), warm_cool_b=1.0)
-    g = grading(card, rec, t, [])
-    sp = g['split']
+    g = grading
+    sp = g(card, rec, t, [])['split']
     assert sp and sp['highlight_hue'] == 40.0 and sp['shadow_hue'] == 210.0
     assert sp['shadow_sat'] > 0 and sp['highlight_sat'] > 0
 
 
 def test_grading_split_skips_scene_colour():
-    # 高光是树叶绿（C=2.67/h=99）⇒ 场景色，不做全局分色
     rec = _rec(wc=3.0)
     card = _card(tone=dict(shadow=dict(lab=[13.3, -0.11, 0.76], hsl_h=46.3),
                            highlight=dict(lab=[92.1, -1.86, 1.92], hsl_h=98.9)))
     t = dict(skin=dict(L=58.0, C=21.0, h=58.0), warm_cool_b=1.0)
-    g = grading(card, rec, t, [])
-    assert g['split']['highlight_sat'] == 0.0
-    assert g['split']['shadow_sat'] == 0.0
+    g = grading
+    sp = g(card, rec, t, [])['split']
+    assert sp['highlight_sat'] == 0.0
+    assert sp['shadow_sat'] == 0.0
+
+
+# ---------------------------------------------------------------- 局部
+
+def test_local_face_uses_face_headroom_not_global():
+    from design.lr_solve import local_face
+    rec = _rec(face_L=55.0, face_p99=88.0)
+    rec['bg_L'] = 40.0
+    rec['headroom_ev'] = 0.10
+    plan = LRPlan()
+    led = []
+    local_face(plan, rec, dict(face_over_bg=2.0), led)
+    assert plan.local.is_set(), led
+    assert plan.local.exposure_ev > 0.3, (plan.local.exposure_ev, led)
+
+
+def test_local_face_skips_without_face_p99():
+    from design.lr_solve import local_face
+    rec = _rec(face_L=55.0)
+    rec['face_p99'] = None
+    rec['skin']['p99'] = None
+    plan = LRPlan()
+    led = []
+    local_face(plan, rec, dict(face_over_bg=2.0), led)
+    assert not plan.local.is_set()
+    assert any('face_p99' in x for x in led), led
+
+
+# ---------------------------------------------------------------- peer / hero
+
+def _comp(**kw):
+    base = dict(framing='half', person_share=0.2, face_x=0.5, face_y=0.5,
+                light_vec=dict(d_lr_img=10.0, ratio_near90=0.9,
+                               hvf=5.0, clump=0.1))
+    base.update(kw)
+    return base
+
+
+def test_peer_light_vector_changes_distance():
+    a = _comp()
+    b = _comp()
+    c = _comp(light_vec=dict(d_lr_img=-40.0, ratio_near90=0.4,
+                             hvf=-25.0, clump=0.6))
+    assert _d(a, b) < _d(a, c)
+
+
+def test_peer_targets_include_exposure_and_ratio_shape():
+    row = dict(img=dict(p5=10.0, p25=25.0, p50=50.0, p75=75.0, p95=95.0),
+               person_p99=96.0, face_p99=94.0, person_clip_pct=0.0,
+               skin=dict(L=55.0, C=18.0, h=45.0), bg=dict(L=40.0),
+               warm_cool_b=1.0)
+    t = peer_targets([dict(rec=row, distance=0.0)])
+    assert 0.0 < t['shape']['toe'] < 1.0
+    assert 0.0 < t['shape']['shoulder'] < 1.0
+    assert t['exposure']['person_p99'] == 96.0
+    assert abs(t['rel']['face_over_bg'] - 55.0 / 40.0) < 1e-9
+
+
+def test_hero_target_from_rec():
+    row = dict(img=dict(p5=10.0, p25=25.0, p50=50.0, p75=75.0, p95=95.0),
+               person_p99=96.0, face_p99=94.0, person_clip_pct=0.0,
+               skin=dict(L=55.0, C=18.0, h=45.0), bg=dict(L=40.0),
+               warm_cool_b=1.0)
+    t = target_from_rec(row)
+    assert t['source'] == 'hero' and t['peer_n'] == 0
+    assert t['exposure']['person_p99'] == 96.0
 
 
 # ---------------------------------------------------------------- 计划 / XMP
@@ -237,8 +327,7 @@ def test_grading_split_skips_scene_colour():
 def _plan_example():
     p = LRPlan()
     p.wb = WhiteBalance(temperature=6464.0, note='card')
-    p.contrast = -12.0
-    p.highlights = -8.0
+    p.exposure_ev = 0.2
     p.point_color = PointColor(h=0.08, s=0.35, l=0.6, range=0.5,
                                sat_scale=0.05, rgb=[210, 160, 130])
     p.local = Local(exposure_ev=0.4)
@@ -246,10 +335,10 @@ def _plan_example():
     return p
 
 
-def test_plan_xmp_has_no_wb_and_has_basic():
+def test_plan_xmp_has_no_wb_and_has_exposure():
     p = _plan_example()
     sc = p.as_xmp_scalars()
-    assert sc['Contrast2012'] == -12.0
+    assert sc['Exposure2012'] == 0.2
     assert 'HueAdjustmentOrange' not in sc
     assert 'WhiteBalance' not in sc and 'Temperature' not in sc
     xmp = plan_to_xmp(p)
@@ -261,26 +350,61 @@ def test_plan_xmp_has_no_wb_and_has_basic():
 def test_summary_mentions_all_sections():
     plans = {'A': _plan_example()}
     text = summary(plans, 'T_card', pe=1.1)
-    for word in ('WB', 'PE', '明暗', '肤色', '分色', '局部', '卡偏差'):
+    for word in ('WB', 'PE', '曝光/曲线', '肤色', '分色', '局部', '卡偏差'):
         assert word in text, word
 
 
-def test_plan_batch_end_to_end():
-    recs = {'A': _rec(p5=12, p25=28, p50=52, p75=78, p95=92),
-            'B': _rec(p5=8, p25=22, p50=48, p75=72, p95=88, person_clip=2.0)}
-    card = _card(wb=dict(white_point=dict(L=94.0, a=-1.0, b=1.0),
-                         cct_look=6464.0, duv=0.0,
-                         temperature=7764.0, tint=1.06))
-    peers = {'A': dict(peer_n=3, shape=dict(toe=18.0, shoulder=22.0, p95=94.0),
-                       rel=dict(p50=45.0, p95=94.0, contrast=90.0,
-                                warm_cool_b=1.0),
-                       skin=dict(L=58.0, C=19.0, h=55.0)),
-             'B': dict(peer_n=0, shape={}, rel={}, skin={})}
-    plans = plan_batch(recs, card, peers, log=lambda *_: None)
-    assert set(plans) == {'A', 'B'}
-    assert plans['A'].wb.note
-    assert plans['A'].point_color.is_set()
-    assert abs(plans['B'].contrast) < 1e-9 and abs(plans['B'].highlights) < 1e-9
+def test_plan_batch_peer_hero_order():
+    recs = {'A': _rec(person_p99=80.0), 'B': _rec(person_p99=80.0),
+            'C': _rec(person_p99=80.0)}
+    card = _card()
+    peer_a = _target(shape=(0.3, 0.38), source='peer')
+    peer_a['peer_n'] = 3
+    peers = {'A': peer_a, 'B': dict(peer_n=1, shape={}, rel={}, skin={}),
+             'C': {}}
+    hero = _target(shape=(0.25, 0.4), source='hero')
+    plans = plan_batch(recs, card, peers, hero_target=hero,
+                       log=lambda *_: None)
+    assert plans['A'].target['source'] == 'peer'
+    assert plans['B'].target['source'] == 'hero'
+    assert plans['C'].target['source'] == 'hero'
+    assert plans['A'].exposure_ev > 0.0
+    for p in plans.values():
+        for k in ('contrast', 'highlights', 'shadows', 'whites', 'blacks'):
+            assert abs(getattr(p, k)) < 1e-9, (k, getattr(p, k))
+
+
+def test_plan_batch_card_fallback_without_hero():
+    plans = plan_batch({'C': _rec(person_p99=80.0)}, _card(),
+                       log=lambda *_: None)
+    assert plans['C'].target['source'] == 'card'
+    assert plans['C'].exposure_ev == 0.0
+
+
+def test_plan_batch_ignores_card_parts_for_basic():
+    # 卡里即使有 parts，也不该再驱动 Basic 四根
+    card = _card(parts=dict(
+        white=dict(points=dict(L_p50=92.0, L_p95=97.0)),
+        hair=dict(points=dict(L_p50=26.0)),
+        skin=dict(points=dict(L_p25=48.0))))
+    rec = _rec()
+    rec['parts'] = dict(white=dict(L_p50=80.0), hair=dict(L_p50=10.0),
+                        skin=dict(L_p25=30.0))
+    plans = plan_batch({'A': rec}, card, log=lambda *_: None)
+    p = plans['A']
+    for k in ('contrast', 'highlights', 'shadows', 'whites', 'blacks'):
+        assert abs(getattr(p, k)) < 1e-9, (k, getattr(p, k))
+
+
+def test_per_card_json_has_all_fields():
+    from design.matchcard import raw_cards
+    c = raw_cards()[0]
+    assert c.get('name')
+    assert isinstance(c.get('medium'), dict) and c['medium'].get('simulation')
+    assert c.get('pe') is not None
+    assert c.get('tone')
+    assert c.get('content')
+    assert c.get('stock') and c.get('paper')
 
 
 # ---------------------------------------------------------------- 批级护栏
@@ -292,7 +416,7 @@ def test_batch_guard_reports_not_judges():
     assert any('离散度' in x for x in g['ledger'])
 
 
-# ---------------------------------------------------------------- 目检页（不判过/不过）
+# ---------------------------------------------------------------- 目检页
 
 def test_review_page_has_no_verdict():
     a = _rec(face_L=50)
@@ -309,7 +433,7 @@ def test_review_page_has_no_verdict():
 
 
 def test_contact_sheet_rows():
-    html = contact_sheet([dict(stem='A', values='曝光 +0.0', note='脸 50→58',
+    html = contact_sheet([dict(stem='A', values='曝光 +0.2', note='脸 50→58',
                                diag='p50 偏差 +1.0')],
                          os.path.join(os.environ.get('TEMP', '.'), 'sv_test_sheet.html'),
                          '目检', sub='1 张')

@@ -11,8 +11,8 @@
 
 设计顺序（`LR设计.md` §3 / `纪律.md` 第 4 条）：
 
-    WB（卡级）→ 曝光/明暗（Basic 为主，曲线补）
-    → 颜色（**蒙版里的 Point Color** 调肤色）→ 局部（一张卡一个肤色蒙版）→ 细节
+    WB（卡级）→ 曝光/明暗（曝光补残差；Basic 四根默认 0；曲线补形状）
+    → 颜色（**蒙版里的 Point Color** 调肤色）→ 局部（肤色蒙版）→ 细节
 
 本模块只描述"要写什么"，不决定"写多少"：
   · 求解在 `lr_solve.py`（纯算，可离线复算）；
@@ -100,7 +100,7 @@ class LRPlan:
     shadows: float = 0.0
     whites: float = 0.0
     blacks: float = 0.0
-    # ---- 图级：曲线（只补形状；Basic 为主）
+    # ---- 图级：曲线（只补形状）
     curve: Optional[List[Tuple[int, int]]] = None
     # ---- 图级：肤色（**只用蒙版里的 Point Color**；不做 HSL）
     point_color: PointColor = field(default_factory=PointColor)

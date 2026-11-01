@@ -17,6 +17,9 @@ from typing import Dict, List, Optional, Sequence, Tuple
 from .curve import grid16
 from .photometry import code_to_l, l_to_code
 
+# 两个曲线锚点至少隔这么多码；p75≈p95 时避免 1 码内 20+ 级的陡跳（LR 会 solarize）
+MIN_ANCHOR_GAP = 4.0
+
 
 def _pchip(xs: Sequence[float], ys: Sequence[float], x: float) -> float:
     """单调三次 Hermite（Fritsch–Carlson）：保证不反折。"""
@@ -97,6 +100,19 @@ def curve_from_quantiles(quantiles: Dict[str, float],
         prev = v if prev is None else max(prev, v)
         mono.append(prev)
     ys = mono
+
+    # ★ p75 ≈ p95 时（高光被压在一起），两个锚点可能只差 1 个码；16 点曲线
+    #   在 LR 里会出现 0→255 的过陡段，实测会把高光/边缘 solarize（蓝边、整幅 clip）。
+    #   合并过近锚点：保留偏离 identity 更大的那个，宁可少一个肩部锚点，不让曲线过陡。
+    keep_x, keep_y = [], []
+    for x, y in zip(xs_in, ys):
+        if keep_x and x - keep_x[-1] < MIN_ANCHOR_GAP:
+            if abs(y - x) > abs(keep_y[-1] - keep_x[-1]):
+                keep_x[-1], keep_y[-1] = x, y
+            continue
+        keep_x.append(x)
+        keep_y.append(y)
+    xs_in, ys = keep_x, keep_y
 
     pts = [(0.0, 0.0)]
     for x, y in zip(xs_in, ys):

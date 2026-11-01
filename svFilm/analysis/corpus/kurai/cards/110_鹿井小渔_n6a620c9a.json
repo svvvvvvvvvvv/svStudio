@@ -1,0 +1,778 @@
+{
+ "name": "110_鹿井小渔_n6a620c9a",
+ "corpus": "鹿井",
+ "cond_table": "鹿井",
+ "n": 9,
+ "n_face": 9,
+ "n_skin": 9,
+ "n_strict": 9,
+ "thin": false,
+ "bands": {
+  "p5": [
+   7.06,
+   10.59
+  ],
+  "p25": [
+   14.9,
+   35.29
+  ],
+  "p50": [
+   58.82,
+   73.73
+  ],
+  "p75": [
+   76.47,
+   82.35
+  ],
+  "p95": [
+   85.49,
+   91.76
+  ],
+  "contrast": [
+   77.25,
+   82.35
+  ],
+  "clip": [
+   0.06,
+   0.15
+  ],
+  "face_L": [
+   77.65,
+   80.39
+  ],
+  "face_C": [
+   17.03,
+   18.44
+  ],
+  "face_h": [
+   42.71,
+   50.91
+  ],
+  "toe": [
+   5.88,
+   24.71
+  ],
+  "shoulder": [
+   6.67,
+   10.59
+  ],
+  "contrast_win": [
+   41.18,
+   58.43
+  ],
+  "skew": [
+   0.63,
+   0.77
+  ],
+  "face_over_bg": [
+   1.06,
+   1.13
+  ],
+  "person_over_bg": [
+   0.22,
+   0.32
+  ],
+  "warm_cool_b": [
+   -2.0,
+   2.0
+  ],
+  "light_ratio": [
+   1.03,
+   1.14
+  ]
+ },
+ "points": {
+  "p5": 9.02,
+  "p25": 27.45,
+  "p50": 66.27,
+  "p75": 78.82,
+  "p95": 89.8,
+  "contrast": 79.61,
+  "clip": 0.07,
+  "face_L": 80.0,
+  "face_C": 17.69,
+  "face_h": 49.76,
+  "toe": 18.43,
+  "shoulder": 9.41,
+  "contrast_win": 53.33,
+  "skew": 0.7,
+  "face_over_bg": 1.1,
+  "person_over_bg": 0.3,
+  "warm_cool_b": 1.0,
+  "light_ratio": 1.11
+ },
+ "neutral_axis": null,
+ "wb": {
+  "policy": "card-fixed",
+  "role": "look-white",
+  "source": "white_point(全幅亮部10% ∧ C*≤8, n≥300)",
+  "n": 9,
+  "white_point": {
+   "L": 85.88,
+   "a": 1.0,
+   "b": 1.0,
+   "C": 1.41,
+   "n": 601634
+  },
+  "neutral_axis": [
+   {
+    "band": 0,
+    "n": 9,
+    "a": 0.0,
+    "b": -2.0
+   },
+   {
+    "band": 3,
+    "n": 7,
+    "a": 3.0,
+    "b": 2.0
+   },
+   {
+    "band": 4,
+    "n": 8,
+    "a": 2.0,
+    "b": 3.0
+   }
+  ],
+  "duv": 0.00214,
+  "cast": {
+   "a": 2.0,
+   "b": -1.0,
+   "n": 9,
+   "a_iqr": 1.0,
+   "b_iqr": 2.0,
+   "a_range": [
+    -1.0,
+    3.0
+   ],
+   "b_range": [
+    -4.0,
+    3.0
+   ],
+   "method": "C*<=10, L*20-80, median per image, median across masters"
+  }
+ },
+ "hue_bands": [
+  {
+   "share": 0.2519,
+   "C": 5.83
+  },
+  {
+   "share": 0.3076,
+   "C": 12.04
+  },
+  {
+   "share": 0.0221,
+   "C": 3.61
+  },
+  {
+   "share": 0.0933,
+   "C": 3.61
+  },
+  {
+   "share": 0.221,
+   "C": 6.0
+  },
+  {
+   "share": 0.0753,
+   "C": 3.16
+  }
+ ],
+ "light": {},
+ "samples": [
+  "110_鹿井小渔_n6a620c9a/01_t1.jpg",
+  "110_鹿井小渔_n6a620c9a/03_t1.jpg",
+  "110_鹿井小渔_n6a620c9a/04_t1.jpg",
+  "110_鹿井小渔_n6a620c9a/05_t1.jpg",
+  "110_鹿井小渔_n6a620c9a/06_t1.jpg",
+  "110_鹿井小渔_n6a620c9a/07_t1.jpg",
+  "110_鹿井小渔_n6a620c9a/08_t1.jpg",
+  "110_鹿井小渔_n6a620c9a/09_t1.jpg",
+  "110_鹿井小渔_n6a620c9a/10_t1.jpg"
+ ],
+ "parts": {
+  "hair": {
+   "points": {
+    "L_p10": 9.41,
+    "L_p25": 10.98,
+    "L_p50": 14.51,
+    "L_p75": 25.49,
+    "L_p90": 37.25,
+    "C": 6.08
+   },
+   "band": {
+    "L_p10": [
+     8.24,
+     11.76
+    ],
+    "L_p25": [
+     9.8,
+     14.9
+    ],
+    "L_p50": [
+     12.94,
+     30.2
+    ],
+    "L_p75": [
+     19.61,
+     44.31
+    ],
+    "L_p90": [
+     29.8,
+     57.65
+    ],
+    "C": [
+     4.12,
+     17.69
+    ]
+   },
+   "n": 9,
+   "n_px": 80369
+  },
+  "white": {
+   "points": {
+    "L_p50": 89.02,
+    "L_p90": 100.0,
+    "L_p95": 100.0,
+    "L_p99": 100.0,
+    "C": 4.12,
+    "share_person": 0.02
+   },
+   "band": {
+    "L_p50": [
+     85.1,
+     99.61
+    ],
+    "L_p90": [
+     87.45,
+     100.0
+    ],
+    "L_p95": [
+     87.84,
+     100.0
+    ],
+    "L_p99": [
+     98.82,
+     100.0
+    ],
+    "C": [
+     0.0,
+     7.21
+    ],
+    "share_person": [
+     0.0,
+     0.15
+    ]
+   },
+   "n": 9,
+   "n_px": 4100
+  },
+  "skin": {
+   "points": {
+    "L_p10": 55.69,
+    "L_p25": 69.41,
+    "L_p50": 76.86,
+    "L_p90": 83.53,
+    "dark_share40": 0.05
+   },
+   "band": {
+    "L_p10": [
+     27.45,
+     61.57
+    ],
+    "L_p25": [
+     55.49,
+     73.33
+    ],
+    "L_p50": [
+     72.55,
+     79.22
+    ],
+    "L_p90": [
+     80.78,
+     86.27
+    ],
+    "dark_share40": [
+     0.03,
+     0.16
+    ]
+   },
+   "n": 9,
+   "n_px": 26052
+  }
+ },
+ "stock": "kodak_portra_800_push2",
+ "paper": "kodak_supra_endura",
+ "amount": 1.0,
+ "medium": {
+  "_note_self": "card38 medium-only: PE fixed 0.694; placement owned by LR Basic",
+  "wb": {
+   "white_balance": "custom",
+   "temperature": 4630.0,
+   "tint": 0.95
+  },
+  "input_image": {
+   "upscale_factor": 1.0,
+   "crop": false,
+   "crop_center": [
+    0.5,
+    0.5
+   ],
+   "crop_size": [
+    0.1,
+    0.1
+   ],
+   "input_color_space": "ProPhoto RGB",
+   "apply_cctf_decoding": false,
+   "spectral_upsampling_method": "hanatos2025",
+   "apply_hanatos2025_adaptation_window": true,
+   "apply_hanatos2025_adaptation_surface": false,
+   "spectral_gaussian_blur": 0.0,
+   "color_filter": "none"
+  },
+  "grain": {
+   "active": true,
+   "rms_granularity": [
+    9.0,
+    9.0,
+    9.0
+   ],
+   "particle_scale_sublayers": [
+    1.0,
+    0.5,
+    0.25
+   ],
+   "density_min": [
+    0.03,
+    0.03,
+    0.03
+   ],
+   "uniformity": [
+    0.97,
+    0.97,
+    0.97
+   ],
+   "blur": 2.0,
+   "mult_usm_sigma": 0.7,
+   "mult_usm_amount": 0.0,
+   "blur_dye_clouds_um": 3.0,
+   "micro_sublayers": 1
+  },
+  "preflashing": {
+   "exposure": 0.0,
+   "y_filter_shift": 0.0,
+   "m_filter_shift": 0.0
+  },
+  "halation": {
+   "active": true,
+   "scatter_amount": 1.0,
+   "scatter_spatial_scale": 1.0,
+   "halation_amount": 1.0,
+   "halation_spatial_scale": 1.0,
+   "boost_ev": 0.0,
+   "protect_ev": 4.0,
+   "boost_range": 0.3,
+   "scatter_core_um": [
+    2.2,
+    2.0,
+    1.6
+   ],
+   "scatter_tail_um": [
+    9.3,
+    9.7,
+    9.1
+   ],
+   "scatter_tail_weight": [
+    78.0,
+    65.0,
+    67.0
+   ],
+   "halation_strength": [
+    1.5,
+    0.5,
+    0.0
+   ],
+   "halation_first_sigma_um": [
+    65.0,
+    65.0,
+    65.0
+   ],
+   "halation_n_bounces": 3,
+   "halation_bounce_decay": 0.5,
+   "halation_renormalize": true
+  },
+  "couplers": {
+   "active": true,
+   "amount": 1.0,
+   "inhibition_samelayer": 1.0,
+   "inhibition_interlayer": 1.0,
+   "gamma_samelayer_rgb": [
+    0.341,
+    0.324,
+    0.273
+   ],
+   "gamma_interlayer_r_to_gb": [
+    0.355,
+    0.305
+   ],
+   "gamma_interlayer_g_to_rb": [
+    0.154,
+    0.358
+   ],
+   "gamma_interlayer_b_to_rg": [
+    0.171,
+    0.225
+   ],
+   "diffusion_size_um": 20.0,
+   "langmuir_donor_k_rgb": [
+    1.0,
+    1.0,
+    1.0
+   ],
+   "langmuir_receiver_k_rgb": [
+    1.0,
+    1.0,
+    1.0
+   ]
+  },
+  "glare": {
+   "active": true,
+   "percent": 0.03,
+   "roughness": 0.7,
+   "blur": 0.5
+  },
+  "film_chemistry": {
+   "gamma_factor": 1.0
+  },
+  "special": {
+   "film_channel_swap": [
+    0,
+    1,
+    2
+   ],
+   "print_channel_swap": [
+    0,
+    1,
+    2
+   ]
+  },
+  "print_chemistry": {
+   "gamma_factor_red": 1.0,
+   "gamma_factor_green": 1.0,
+   "gamma_factor_blue": 1.0
+  },
+  "simulation": {
+   "film_format_mm": 35,
+   "camera_lens_blur_um": 0.0,
+   "exposure_compensation_ev": 0.0,
+   "auto_exposure": false,
+   "auto_exposure_method": "center_weighted",
+   "print_illuminant": "TH-KG3",
+   "print_exposure": 0.982,
+   "output_lightness_compression": "off",
+   "print_exposure_compensation": true,
+   "print_y_filter_shift": -0.5,
+   "print_m_filter_shift": 0.1,
+   "scan_lens_blur": 0.0,
+   "scan_white_correction": true,
+   "scan_black_correction": true,
+   "scan_unsharp_mask": [
+    0.0,
+    0.0
+   ],
+   "scan_black_level": 0.01,
+   "scan_white_level": 0.98,
+   "output_color_space": "sRGB",
+   "scan_film": false,
+   "camera_diffusion_filter_active": true,
+   "camera_diffusion_filter_family": "black_pro_mist",
+   "camera_diffusion_filter_strength": 0.25,
+   "camera_diffusion_filter_spatial_scale": 1.0,
+   "camera_diffusion_filter_halo_warmth": 0.0,
+   "camera_diffusion_filter_core_intensity": 1.0,
+   "camera_diffusion_filter_core_size": 1.0,
+   "camera_diffusion_filter_halo_intensity": 1.0,
+   "camera_diffusion_filter_halo_size": 1.0,
+   "camera_diffusion_filter_bloom_intensity": 1.0,
+   "camera_diffusion_filter_bloom_size": 1.0,
+   "diffusion_filter_active": false,
+   "diffusion_filter_family": "black_pro_mist",
+   "diffusion_filter_strength": 0.125,
+   "diffusion_filter_spatial_scale": 1.0,
+   "diffusion_filter_halo_warmth": 0.0,
+   "diffusion_filter_core_intensity": 1.0,
+   "diffusion_filter_core_size": 1.0,
+   "diffusion_filter_halo_intensity": 1.0,
+   "diffusion_filter_halo_size": 1.0,
+   "diffusion_filter_bloom_intensity": 1.0,
+   "diffusion_filter_bloom_size": 1.0,
+   "film_stock": "kodak_portra_800_push2",
+   "print_paper": "kodak_supra_endura"
+  },
+  "display": {
+   "preview_max_size": 640
+  },
+  "_note_dead_keys": "死键不写：`load_raw.*` 整段 ｜ `special.print_gamma_factor` ｜ `couplers.diffusion_tail_um` ｜ `display.{use_display_transform,gray_18_canvas,white_padding,output_interpolation}` ｜ `simulation.{auto_preview,saving_color_space,saving_cctf_encoding}`。\n★ dev 原生：颗粒用 `rms_granularity`（48µm 孔径）、相机滤镜用 `color_filter`、两端化学用 `film_chemistry` / `print_chemistry`、Langmuir 显式 K=1.0。",
+  "_note_params": {
+   "wb.white_balance": "白平衡模式：custom = 用下面两个数；其它值是固定白点。",
+   "wb.temperature": "解码层色温（K）：假定现场光多暖；调高 ⇒ 画面更暖。",
+   "wb.tint": "绿-品红倍率：>1 加绿、<1 加品红（1.0 = 不动）。",
+   "input_image.upscale_factor": "先放大再模拟；1.0 = 原尺寸。",
+   "input_image.crop": "只裁一块做预览；false = 全图。",
+   "input_image.crop_center": "裁切中心（相对坐标 x,y，0~1）。",
+   "input_image.crop_size": "裁切大小（x,y 按长边归一，0~1）。",
+   "input_image.input_color_space": "输入图的色彩空间（这里是 ProPhoto RGB）。",
+   "input_image.apply_cctf_decoding": "是否对输入再做一次 CCTF 反解码；false = 按已线性处理。",
+   "input_image.spectral_upsampling_method": "RGB→光谱重建法：hanatos2025 覆盖全可见轨迹；mallett2019 只认 sRGB、会裁。",
+   "input_image.apply_hanatos2025_adaptation_window": "hanatos2025 的带通适配窗（重建光谱用）。",
+   "input_image.apply_hanatos2025_adaptation_surface": "hanatos2025 的曲面适配多项式。",
+   "input_image.spectral_gaussian_blur": "重建光谱的高斯模糊 σ（nm）；0 = 不糊。",
+   "input_image.color_filter": "镜头前滤镜（滤镜库名字）；none = 不加。",
+   "grain.active": "颗粒总开关；关掉会连那道全图柔化一起消失（不能当颗粒基线）。",
+   "grain.rms_granularity": "颗粒粗细（RMS×1000，48µm 孔径）；调大 = 粒子更大更粗；与出图尺寸无关。",
+   "grain.particle_scale_sublayers": "三层感光层的粒子面积比（最粗层 = 1）；调大 = 该层更细。",
+   "grain.density_min": "最小密度（灰雾）；不是暗端旋钮，同时是 LUT 的 0 参考点。",
+   "grain.uniformity": "颗粒均匀度；调低更接近 Selwyn 钟形（更不均）。",
+   "grain.blur": "颗粒高斯模糊 σ（像素）；按实际长边 ÷ 6264 缩放。",
+   "grain.mult_usm_sigma": "乘性密度锐化的半径（像素）；补 blur 糊掉的锐度。",
+   "grain.mult_usm_amount": "乘性密度锐化强度；0 = 关。",
+   "grain.blur_dye_clouds_um": "染料云模糊 σ（µm）；高放大才明显。",
+   "grain.micro_sublayers": "颗粒子层细分；只改细分，不改 RMS 规格。",
+   "preflashing.exposure": "预闪曝光（线性加性，代码里不是 EV）；调大 = 整体垫亮、抬黑位。",
+   "preflashing.y_filter_shift": "预闪的 Y 滤片偏移（Kodak CC 单位）。",
+   "preflashing.m_filter_shift": "预闪的 M 滤片偏移（Kodak CC 单位）。",
+   "halation.active": "散射 + 光晕开关；关不掉 boost_ev（那根在另一段）。",
+   "halation.scatter_amount": "散射强度：1.0 = 全物理；调大更柔、锐度更低。",
+   "halation.scatter_spatial_scale": "散射尺寸倍率（芯和尾一起放大）。",
+   "halation.halation_amount": "光晕强度倍率；1.0 = 物理默认。",
+   "halation.halation_spatial_scale": "光晕尺寸倍率（第一跳 σ）。",
+   "halation.boost_ev": "高光额外提亮上限（stop）；protect_ev=4 会把它门死（0 = 不开）。",
+   "halation.protect_ev": "中灰以上多少 stop 内不抬（保护范围）。",
+   "halation.boost_range": "高光提亮的过渡坡度（0~1）。",
+   "halation.scatter_core_um": "散射芯 σ（µm，R/G/B）；调大芯更糊。",
+   "halation.scatter_tail_um": "散射长尾的衰减长度（µm）；调大拖尾更长。",
+   "halation.scatter_tail_weight": "长尾占散射能量的比例；JSON 里 ×100（78 = 0.78）。",
+   "halation.halation_strength": "背反射光晕幅度（0~1）；JSON 里 ×100（1.5 = 0.015）；蓝通道通常≈0。",
+   "halation.halation_first_sigma_um": "第一跳光晕 σ（µm）；对应片基厚度 40~80µm。",
+   "halation.halation_n_bounces": "光晕叠加几跳（典型 2~3）。",
+   "halation.halation_bounce_decay": "每跳幅度衰减比例（物理 0.3~0.7）。",
+   "halation.halation_renormalize": "按 1+Σ 归一以保住中灰；关 = 纯加性（阴影也抬）。",
+   "couplers.active": "DIR 成色剂抑制总开关。",
+   "couplers.amount": "★ 唯一主标量：整张抑制矩阵乘它；调大 = 抑制强、饱和高；Langmuir 下阴影/高光不等比。",
+   "couplers.inhibition_samelayer": "同层抑制倍率（管每层反差 / γ）。",
+   "couplers.inhibition_interlayer": "层间抑制倍率（管饱和增强）。",
+   "couplers.gamma_samelayer_rgb": "同层逐通道抑制 γ（R,G,B）。",
+   "couplers.gamma_interlayer_r_to_gb": "R 层对 G/B 层的抑制量。",
+   "couplers.gamma_interlayer_g_to_rb": "G 层对 R/B 层的抑制量。",
+   "couplers.gamma_interlayer_b_to_rg": "B 层对 R/G 层的抑制量。",
+   "couplers.diffusion_size_um": "成色剂扩散 σ（µm，常见 5~20）；调大 = 串扰大、锐度降、影响饱和。",
+   "couplers.langmuir_donor_k_rgb": "负片供体饱和 K（默认 1.0）；调大接近线性，调小低密度更陡。",
+   "couplers.langmuir_receiver_k_rgb": "正片/反转的受体饱和 K；负片不走这条（1.0 = 默认）。",
+   "glare.active": "印相眩光；⚠ 用随机数，同参两次不可复现。",
+   "glare.percent": "眩光比例；调大整体/阴影被抬（起雾）。",
+   "glare.roughness": "眩光的空间不均匀度（0~1）。",
+   "glare.blur": "眩光斑块 σ（像素）。",
+   "film_chemistry.gamma_factor": "胶片密度曲线 γ 总倍率；1.0 = 不改，调大更陡、反差高。",
+   "print_chemistry.gamma_factor_red": "印相红通道 γ；>1 更陡；三通道不等会挪中性轴（不是调色刀）。",
+   "print_chemistry.gamma_factor_green": "印相绿通道 γ；>1 更陡。",
+   "print_chemistry.gamma_factor_blue": "印相蓝通道 γ；>1 更陡。",
+   "special.film_channel_swap": "负片通道重排；[0,1,2] = 不动。",
+   "special.print_channel_swap": "相纸通道重排；[0,1,2] = 不动。",
+   "simulation.film_format_mm": "画幅长边 mm（35/70/36）；调大 = 所有 µm 空间核与颗粒像素面积同比放大（不改景深）。",
+   "simulation.camera_lens_blur_um": "镜头光学柔 σ（µm）；0 = 不糊。",
+   "simulation.exposure_compensation_ev": "拍摄端曝光补偿（EV）；印相端会自动抵消，净亮度基本不变。",
+   "simulation.auto_exposure": "虚拟相机自动曝光（raw 域，中灰 = 1）。",
+   "simulation.auto_exposure_method": "测光方式；subject = svFilm 的「测光看人」（装不上退回普通测光）。",
+   "simulation.print_illuminant": "印相放大机光源（dev 只给 TH-KG3）。",
+   "simulation.print_exposure": "★ 印相曝光（线性倍率）；调大 = 印得更暗（脸 L* 约 −93/单位）；动态 PE 会再解一次。",
+   "simulation.output_lightness_compression": "输出明度压缩膝；off = 关（高光不压顶、可能裁切）；缺省 (0.7,1.0,2.2)。",
+   "simulation.print_exposure_compensation": "印相自动补偿相机曝光补偿；这里钉死 true。",
+   "simulation.print_y_filter_shift": "Y 滤片偏移（Kodak CC）；调大 = 偏冷（黄片吸蓝）。",
+   "simulation.print_m_filter_shift": "M 滤片偏移（Kodak CC）；调大 = 偏绿（品红片吸绿）。",
+   "simulation.scan_lens_blur": "扫描镜头模糊 σ（像素）；不随画幅缩放，按实际长边 ÷ 6264 缩放。",
+   "simulation.scan_white_correction": "白端校正门控；关掉 white_level 变死键、高光天花板降低。",
+   "simulation.scan_black_correction": "黑端校正门控；关掉 black_level 变死键。",
+   "simulation.scan_unsharp_mask": "[σ 像素, 强度]；σ 不随出图缩放；只有 σ>0 且强度>0 才跑（0/负 = 关闭）。",
+   "simulation.scan_black_level": "黑点目标（先按 sRGB 解码再当线性 Y）；调大 = 黑位抬。",
+   "simulation.scan_white_level": "白点目标；调大 = 白端更亮。",
+   "simulation.output_color_space": "输出色彩空间（成片 sRGB）。",
+   "simulation.scan_film": "false = 看成片；true = 看负片扫描。",
+   "simulation.camera_diffusion_filter_active": "相机端柔光开关（黑柔 1/4）。",
+   "simulation.camera_diffusion_filter_family": "柔光族；black_pro_mist = 黑柔（偏折更少、晕更紧；代码里不吸光，能量守恒）。",
+   "simulation.camera_diffusion_filter_strength": "商业档位：1/8=0.125、1/4=0.25、1/2=0.5；物理 = 偏折光子占比。",
+   "simulation.camera_diffusion_filter_spatial_scale": "PSF 尺寸倍率；和 film_format_mm 改同一件事。",
+   "simulation.camera_diffusion_filter_halo_warmth": "外晕暖/内晕冷偏移；0 = 族默认。",
+   "simulation.camera_diffusion_filter_core_intensity": "芯权重倍率；1.0 = 族默认（三组权重会归一）。",
+   "simulation.camera_diffusion_filter_core_size": "芯半径倍率；1.0 = 族默认。",
+   "simulation.camera_diffusion_filter_halo_intensity": "晕权重倍率；1.0 = 族默认。",
+   "simulation.camera_diffusion_filter_halo_size": "晕半径倍率；1.0 = 族默认。",
+   "simulation.camera_diffusion_filter_bloom_intensity": "泛光权重倍率；1.0 = 族默认。",
+   "simulation.camera_diffusion_filter_bloom_size": "泛光半径倍率；1.0 = 族默认。",
+   "simulation.diffusion_filter_active": "放大机端柔光开关。",
+   "simulation.diffusion_filter_family": "柔光族（与相机端同一套结构）。",
+   "simulation.diffusion_filter_strength": "商业档位：1/8=0.125、1/4=0.25、1/2=0.5。",
+   "simulation.diffusion_filter_spatial_scale": "PSF 尺寸倍率。",
+   "simulation.diffusion_filter_halo_warmth": "外晕暖/内晕冷偏移；0 = 族默认。",
+   "simulation.diffusion_filter_core_intensity": "芯权重倍率；1.0 = 族默认。",
+   "simulation.diffusion_filter_core_size": "芯半径倍率；1.0 = 族默认。",
+   "simulation.diffusion_filter_halo_intensity": "晕权重倍率；1.0 = 族默认。",
+   "simulation.diffusion_filter_halo_size": "晕半径倍率；1.0 = 族默认。",
+   "simulation.diffusion_filter_bloom_intensity": "泛光权重倍率；1.0 = 族默认。",
+   "simulation.diffusion_filter_bloom_size": "泛光半径倍率；1.0 = 族默认。",
+   "simulation.film_stock": "模拟胶卷；构建 params 时选定，overrides 改不了。",
+   "simulation.print_paper": "模拟相纸；构建 params 时选定，overrides 改不了。",
+   "display.preview_max_size": "预览长边像素（640）；只影响预览，不影响成片。"
+  },
+  "_note_medium_20261028": "介质定值 2026-10-28（报告§13/§4.3）：wb 4545/0.998→4630/0.95（n=10 生产路径格点：肤h中位47.53=靶47.7带内；中性a 0.0 量化噪声内）；amount 1.00→1.30（n=10：肤C中位17.42，带[15.12,23.36]内；高彩脸1526/1422/1772 C29-40 不再上推）。备份 .bak_medium_20261028，前sha 587767abb2bd",
+  "_note_base": "基线介质（从 卡38 一次性冻结；此后目录介质以各自 media/*.json 为准）",
+  "_note_medium": "print_exposure = 参考灰 18.4% → 固定 L*50（二分求得）",
+  "_target": {
+   "p50_target_D": 0.448,
+   "shape": {
+    "toe": 18.43,
+    "shoulder": 9.41,
+    "contrast_win": 53.33,
+    "skew": 0.7
+   },
+   "warm_cool_b": 1.0,
+   "face": {
+    "C": 17.69,
+    "h": 49.76,
+    "L": 80.0
+   },
+   "shadow": {
+    "lab": [
+     11.25,
+     -0.92,
+     -1.28
+    ],
+    "cc_blue_yellow": 3.5,
+    "cc_red_green": -1.0
+   },
+   "highlight": {
+    "lab": [
+     87.66,
+     1.53,
+     1.34
+    ],
+    "cc_blue_yellow": -1.0,
+    "cc_red_green": 0.4
+   },
+   "neutral": {
+    "lab": [
+     73.77,
+     0.22,
+     -0.63
+    ],
+    "cc_blue_yellow": 0.5,
+    "cc_red_green": 0.1
+   },
+   "filter_shift": {
+    "cc_blue_yellow": 0.5,
+    "cc_red_green": 0.1,
+    "y": -0.5,
+    "m": 0.1
+   },
+   "morph": "identity（未解：需前向模型；形状已用于选纸）"
+  },
+  "_derived": {
+   "corpus": "鹿井",
+   "base": "鹿井",
+   "film": "kodak_portra_800_push2",
+   "paper": "kodak_supra_endura",
+   "film_reason": "暗部 +3.5 CC ⇒ 蓝度分位 0.81；取中性黄滤片 Y=69.6（分位 0.74）的卷 kodak_portra_800_push2",
+   "paper_reason": "黑端需 D≥1.993；形状 (toe/win 0.29, sh/win 0.15) 分位 (0.38, 0.18) ⇒ 最接近的纸 kodak_supra_endura（σf/σm 1.32, σs/σm 1.38）",
+   "amount": 1.0,
+   "amount_reason": "卷 kodak_portra_800_push2 的 DIR couplers 默认 1.00（源码 DirCouplersParams.amount；profile 无此字段，不按卡推）",
+   "halation_reason": "still/strong ⇒ sigma_h 65 µm，strength (0.015, 0.005, 0.0)（写百分数 [1.5, 0.5, 0.0]）",
+   "split": 4.48,
+   "shadow_cc": 3.5,
+   "scene_fit": true,
+   "neutral_filters": "engine database (neutral_print_filters.json)",
+   "pe": 0.982,
+   "pe_reason": "参考灰 18.4% → 目标 D 0.735（Y 0.1842）；实测 Y 0.1842 ⇒ PE 0.9820"
+  }
+ },
+ "pe": 0.982,
+ "pe_why": "参考灰 18.4% → 目标 D 0.735（Y 0.1842）；实测 Y 0.1842 ⇒ PE 0.9820",
+ "tone": {
+  "shadow": {
+   "lab": [
+    11.25,
+    -0.92,
+    -1.28
+   ],
+   "ab": [
+    -0.92,
+    -1.28
+   ],
+   "hsl_h": 198.9,
+   "n": 9
+  },
+  "highlight": {
+   "lab": [
+    87.66,
+    1.53,
+    1.34
+   ],
+   "ab": [
+    1.53,
+    1.34
+   ],
+   "hsl_h": 13.1,
+   "n": 9
+  },
+  "n_images": 9,
+  "neutral": {
+   "lab": [
+    73.77,
+    0.22,
+    -0.63
+   ],
+   "ab": [
+    0.22,
+    -0.63
+   ],
+   "hsl_h": 238.0,
+   "n": 9
+  },
+  "overall_C": {
+   "med": 5.46,
+   "p75": 14.01,
+   "p90": 25.95,
+   "n": 9
+  }
+ },
+ "content": {
+  "scene": "interior",
+  "subject": "single",
+  "clothing": {
+   "type": "dress",
+   "palette": "navy",
+   "pattern": "solid",
+   "silhouette": "fitted",
+   "coverage": "short_sleeve"
+  },
+  "palette": "warm",
+  "elements": [
+   "furniture",
+   "wall",
+   "frames",
+   "plants",
+   "table",
+   "cafe"
+  ],
+  "light_note": "window",
+  "evidence": "室内咖啡馆/白木墙、深蓝连衣裙+白扣、暖光、画框/绿植",
+  "confidence": 0.9,
+  "card": "110_鹿井小渔_n6a620c9a",
+  "corpus": "鹿井",
+  "source": "manual",
+  "n": 9
+ },
+ "_meta": {
+  "built": "2026-11-02 01:12:03",
+  "source": "cards_v7 + card_medium + card_pe + card_tone + media + card_content",
+  "note": "一个目录一份；不再拆 card_pe/card_tone/card_medium/media"
+ }
+}

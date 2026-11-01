@@ -6,8 +6,9 @@ v0.3 流程（`设计真源.md` §3）：
     res = contentmatch.match_jpgs(...)      # 匹配 A：机内 JPG，不渲 ①′
     # 人拍板 card / hero
     recs  = run_engine(b, card)             # 只渲一次 ①（交付尺寸）
-    peers = peer.build(recs, card)          # 同构图/同场景 peer
-    plans = lr_solve.plan_batch(recs, card, peers)
+    peers = peer.build(recs, card)          # 同构图 + 连续光向量
+    hero_target = peer.target_from_rec(measure_one(b.hero)) if b.hero else None
+    plans = lr_solve.plan_batch(recs, card, peers, hero_target=hero_target)
     jobs  = lrsink.write_jobs(plans, out_dir)   # XMP 作业单
 """
 from __future__ import annotations
@@ -29,8 +30,8 @@ class Batch:
     raf_dir: str
     out_dir: str
     stems: List[str] = field(default_factory=list)
-    # ★ 人拍板的两件事（设计 §3.4）：选哪张卡 + 哪张样片当 hero。
-    #   hero 只做目检参考，**不进求解**（A 不拿 hero 做拟合，§4.1）。
+    # ★ 人拍板的两件事：选哪张卡 + 哪张样片当 hero。
+    #   hero = 目检参考 + peer 不足时的关系兜底（不拿绝对 p50 当靶）。
     card: str = ''
     hero: str = ''
 

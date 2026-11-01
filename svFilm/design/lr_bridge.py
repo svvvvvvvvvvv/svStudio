@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
-"""LR 桥的**最小生产客户端**：ADD / SELECT / EXPORTTIF / POINTSWATCH / MASKPARAM。
+"""LR 桥的**最小生产客户端**：ADD / SELECT / EXPORTTIF / PROOF / POINTSWATCH / MASKPARAM。
 
 生产只需要这几条命令（`LR设计.md` §5 接口事实）：
   · 写 XMP → ADD 进目录 → 导出 ③（EXPORTTIF 导的是**当前选中**那张，必须先 SELECT）；
+  · 调一根→量全局：`PROOF` 单张 JPEG 1024/q90/sRGB/不锐化，不走最终 TIFF；
   · 局部：先用 `POINTSWATCH` 建**肤色**（local point-color）蒙版/色票，
     再用 `MASKPARAM` 写局部滑杆（直接 `MASK ... LocalExposure2012=` 不落地）；
   · `MASKPARAM` 必须**回读**校验：读回来的值不匹配就当这一步没做，不许静默通过。
@@ -64,6 +65,24 @@ def export_tif(src: str, out_dir: str, tag: str = '', timeout: float = 240.0) ->
             return sorted(fs)[0]
         time.sleep(0.25)
     raise RuntimeError('EXPORTTIF 没有产出 TIF（%s）: %s' % (src, str(r)[:160]))
+
+
+def proof(src: str, out_dir: str, size: int = 1024, quality: float = 0.90,
+          timeout: float = 240.0) -> str:
+    """单张 proof JPEG（当前设置、1024、q90、sRGB、不锐化）；返回文件路径。
+
+    只用于“调一根→量全局”；肤色/局部/细高光仍看最终 TIFF。
+    """
+    sub = os.path.join(out_dir, 'proof_%d' % int(time.time() * 1000))
+    os.makedirs(sub, exist_ok=True)
+    select(src)
+    r = run('PROOF %s %s %d %.2f' % (src, sub, int(size), float(quality)),
+            timeout=timeout)
+    fs = [os.path.join(sub, f) for f in os.listdir(sub)
+          if f.lower().endswith(('.jpg', '.jpeg'))]
+    if not fs:
+        raise RuntimeError('PROOF 没有产出 JPEG（%s）: %s' % (src, str(r)[:160]))
+    return sorted(fs)[0]
 
 
 def point_watch(path: str, h: float, s: float, l: float, rng: float,

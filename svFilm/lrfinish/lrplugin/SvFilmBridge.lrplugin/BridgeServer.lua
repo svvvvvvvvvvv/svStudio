@@ -217,6 +217,46 @@ local function export_photos(outdir)
   return wrote
 end
 
+-- 单张 proof：当前设置导出 JPEG，用于“调一根→量一次”，不走最终 TIFF。
+-- 必须在库模块导出（develop 下 LrExportSession 会导出 0 个）。
+local function proof_one(path, outdir, size, quality)
+  local catalog, photo = find_photo(path)
+  local sz = tonumber(size) or 1024
+  local q = tonumber(quality) or 0.90
+  local was = cur_module()
+  if was ~= nil and was ~= 'library' then
+    LrTasks.pcall(function() LrApplicationView.gridView() end)
+    LrTasks.sleep(1.0)
+  end
+  LrFileUtils.createAllDirectories(outdir)
+  local base = LrPathUtils.removeExtension(LrPathUtils.leafName(path))
+  local target = LrPathUtils.child(outdir, base .. '.jpg')
+  if LrFileUtils.exists(target) then LrFileUtils.delete(target) end
+  local settings = {
+    LR_export_destinationType = 'specificFolder',
+    LR_export_destinationPathPrefix = outdir,
+    LR_export_useSubfolder = false,
+    LR_format = 'JPEG',
+    LR_jpeg_quality = q,
+    LR_size_doConstrain = true,
+    LR_size_maxWidth = sz,
+    LR_size_maxHeight = sz,
+    LR_size_units = 'pixels',
+    LR_outputSharpeningOn = false,
+    LR_export_colorSpace = 'sRGB',
+    LR_export_overwriteWithoutPrompting = true,
+  }
+  local session = LrExportSession({ photosToExport = { photo }, exportSettings = settings })
+  session:doExportOnCurrentTask()
+  local ok = LrFileUtils.exists(target)
+  if was ~= nil and was ~= 'library' then
+    LrTasks.pcall(function() LrApplicationView.switchToModule(was) end)
+    LrTasks.sleep(0.5)
+  end
+  if not ok then return 'PROOF failed -> ' .. target end
+  return 'PROOF ok -> ' .. target
+end
+
 -- ★ Windows 上 `getRawMetadata('path')` 给的是**反斜杠**，而调用方（Python）常传正斜杠
 --   ⇒ 必须先把两种分隔符归一化再比，否则"照片明明在 catalog 里"也会报 photo not in catalog。
 function norm_path(p)   -- 全局：select_path 比它先定义，靠运行时解析
@@ -1261,8 +1301,18 @@ local function _brief(v)
 end
 
 local function point_swatch(path, h, s, l, r, ss, ls)
-  local _, photo = find_photo(path)
-  local tpath = activate_develop(photo)
+  local catalog, photo = find_photo(path)
+  -- 如果这张已经是当前目标，不要再 setSelectedPhotos：那会把刚建好的蒙版组选择清掉，
+  -- addPointColorSwatch 随后就报 "attempt to index field '?' (a nil value)"。
+  local okc, cur = LrTasks.pcall(function() return catalog:getTargetPhoto() end)
+  local same = okc and cur and cur.localIdentifier == photo.localIdentifier
+  local tpath
+  if same then
+    local okt, p = LrTasks.pcall(function() return photo:getRawMetadata('path') end)
+    tpath = (okt and type(p) == 'string') and p or activate_develop(photo)
+  else
+    tpath = activate_develop(photo)
+  end
   local hit = target_matches(photo, tpath)
   if not hit then return 'POINTSWATCH target=MISMATCH' end
   LrTasks.pcall(function() LrDevelopController.selectTool('local_point_color') end)
@@ -1548,6 +1598,45 @@ local function thumb(path, outfile, size)
   return string.format('THUMB ok bytes=%d wait=%.2fs -> %s', #data, t, outfile)
 end
 
+-- 在库模块/放大视图里请求预览：看是否比 develop 下的 THUMB 更可靠
+local function thumb_lib(path, outfile, size)
+  local catalog, photo = find_photo(path)
+  LrTasks.pcall(function() catalog:setActiveSources({ catalog.kAllPhotos }) end)
+  LrTasks.pcall(function() catalog:setSelectedPhotos(photo, { photo }) end)
+  LrTasks.pcall(function()
+    if LrApplicationView.getCurrentModuleName() ~= 'library' then
+      LrApplicationView.switchToModule('library')
+    end
+  end)
+  LrTasks.sleep(0.8)
+  LrTasks.pcall(function() LrApplicationView.loupeView() end)
+  LrTasks.sleep(1.2)
+  local sz = tonumber(size) or 1024
+  local data, reason, fired = nil, nil, false
+  photo:requestJpegThumbnail(sz, sz, function(jpeg, r)
+    data, reason, fired = jpeg, r, true
+  end)
+  local t = 0
+  while not fired and t < 6 do LrTasks.sleep(0.02); t = t + 0.02 end
+  if not data then
+    return string.format('LIBTHUMB failed fired=%s reason=%s', tostring(fired), tostring(reason))
+  end
+  local f = io.open(outfile, 'wb')
+  if not f then return 'LIBTHUMB cannot write ' .. outfile end
+  f:write(data); f:close()
+  return string.format('LIBTHUMB ok bytes=%d wait=%.2fs -> %s', #data, t, outfile)
+end
+
+-- 触发 LR 生成 smart preview（会渲染，但不走导出）
+local function build_smart(path)
+  local catalog, photo = find_photo(path)
+  local r = catalog:buildSmartPreviews({ photo })
+  local function n(k)
+    return (r and r[k] and #r[k]) or 0
+  end
+  return string.format('SMART created=%d existed=%d failed=%d', n('created'), n('existed'), n('failed'))
+end
+
 -- 变化观察器（若 SDK 有）：把每次变化的键与值追加到文件
 local WATCH = { on = false, fh = nil, keys = nil }
 local function watch_start(path, outfile, keys)
@@ -1750,6 +1839,19 @@ local function handle(cmd)
     local path, out, sz = rest:match('^(%S+)%s+(%S+)%s*(%S*)$')
     if not path or not out then error('THUMB needs <path> <outfile> [size]') end
     return thumb(path, out, sz ~= '' and sz or nil)
+  end
+  if verb == 'PROOF' then
+    local path, outdir, sz, q = rest:match('^(%S+)%s+(%S+)%s*(%S*)%s*(%S*)$')
+    if not path or not outdir then error('PROOF needs <path> <outdir> [size] [quality]') end
+    return proof_one(path, outdir, sz ~= '' and sz or nil, q ~= '' and q or nil)
+  end
+  if verb == 'LIBTHUMB' then
+    local path, out, sz = rest:match('^(%S+)%s+(%S+)%s*(%S*)$')
+    if not path or not out then error('LIBTHUMB needs <path> <outfile> [size]') end
+    return thumb_lib(path, out, sz ~= '' and sz or nil)
+  end
+  if verb == 'SMART' then
+    return build_smart(rest:gsub('^%s+', ''):gsub('%s+$', ''))
   end
   if verb == 'WATCH' then
     local path, out, keys = rest:match('^(%S+)%s+(%S+)%s*(%S*)$')
