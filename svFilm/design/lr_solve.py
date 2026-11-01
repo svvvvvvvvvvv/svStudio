@@ -168,6 +168,35 @@ def curve_for(pred: Dict[str, float], shape: Optional[dict],
 
 # ---------------------------------------------------------------- 曝光 / 形状
 
+def _dist_ev(cur: dict, tgt: dict) -> Optional[float]:
+    """分布对齐：在 EV 上最小化平移后分位与 peer/hero 分位的加权 L1。"""
+    keys = ('p5', 'p25', 'p50', 'p75', 'p95')
+    pairs = []
+    for k in keys:
+        a, b = _num(cur.get(k)), _num(tgt.get(k))
+        if a is not None and b is not None:
+            pairs.append((float(a), float(b)))
+    if len(pairs) < 3:
+        return None
+    weights = (1.0, 1.0, 2.0, 1.0, 1.0)[:len(pairs)]
+
+    def loss(ev):
+        return sum(w * abs(l_after_ev(a, ev) - b)
+                   for w, (a, b) in zip(weights, pairs))
+
+    best_ev, best = 0.0, float('inf')
+    grid = [-3.0 + 0.02 * i for i in range(301)]
+    for ev in grid:
+        v = loss(ev)
+        if v < best:
+            best, best_ev = v, ev
+    for _ in range(2):
+        step = 0.01
+        around = [best_ev - step, best_ev, best_ev + step]
+        best_ev = min(around, key=loss)
+    return float(best_ev)
+
+
 def exposure_for(rec: dict, target: Optional[dict],
                  ledger: List[str]) -> float:
     """补全局曝光：对齐 peer/hero 的**背景分布**；人/脸只做上限约束。
@@ -185,21 +214,29 @@ def exposure_for(rec: dict, target: Optional[dict],
                       % (clip, PERSON_CLIP_MAX))
         return 0.0
 
-    bg = rec.get('bg') or {}
-    tb = (target or {}).get('bg') or {}
-    pairs = []
-    for k in ('L_p10', 'L_p90', 'L_p95'):
-        cur, tgt = _num(bg.get(k)), _num(tb.get(k))
-        if cur is not None and tgt is not None:
-            pairs.append((k, float(cur), float(tgt)))
-    if len(pairs) < 2:
-        ledger.append('没有 peer/hero 的背景分布目标 ⇒ 全局曝光保持起点')
-        return 0.0
-
-    evs = [ev_for_l(cur, tgt) for _, cur, tgt in pairs]
-    ev = sum(evs) / float(len(evs))
+    td = (target or {}).get('dist') or {}
+    ev = _dist_ev(rec.get('img') or {}, td)
+    if ev is None:
+        bg = rec.get('bg') or {}
+        tb = (target or {}).get('bg') or {}
+        pairs = []
+        for k in ('L_p10', 'L_p90', 'L_p95'):
+            cur, tgt = _num(bg.get(k)), _num(tb.get(k))
+            if cur is not None and tgt is not None:
+                pairs.append((k, float(cur), float(tgt)))
+        if len(pairs) < 2:
+            ledger.append('没有 peer/hero 的亮度分布目标 ⇒ 全局曝光保持起点')
+            return 0.0
+        evs = [ev_for_l(cur, tgt) for _, cur, tgt in pairs]
+        ev = sum(evs) / float(len(evs))
+        desc = '，'.join('%s %.1f→%.1f' % (k, cur, tgt) for k, cur, tgt in pairs)
+        src = '背景分布'
+    else:
+        desc = '分位 p5/p25/p50/p75/p95 对齐'
+        src = '整幅分布'
     if abs(ev) < 0.05:
         return 0.0
+    raw_ev = ev
     ev = max(-EXPOSURE_STEP_MAX, min(EXPOSURE_STEP_MAX, ev))
 
     # 人/脸只做上限：正 EV 不能把人推到死白。
@@ -210,30 +247,39 @@ def exposure_for(rec: dict, target: Optional[dict],
         room = ev_for_l(float(p99), PERSON_CEIL_L)
         if room is not None:
             ev = min(ev, max(0.0, float(room)))
-    desc = '，'.join('%s %.1f→%.1f' % (k, cur, tgt) for k, cur, tgt in pairs)
-    ledger.append('全局曝光 %+.2f 档：背景分布对齐 peer/hero（%s；人 p99 %s）'
-                  % (ev, desc, ('%.1f' % p99) if p99 is not None else '—'))
+    ledger.append('全局曝光 %+.2f 档：%s（%s；人 p99 %s；原始 %+.2f）'
+                  % (ev, src, desc, ('%.1f' % p99) if p99 is not None else '—',
+                     raw_ev))
     return round(float(ev), 3)
 
 
-def _basic_shape(pred: dict, sh: dict) -> dict:
-    """用 peer/hero 的肩趾比例给 Basic 一个粗形状；细分仍交给曲线/局部。"""
+def _basic_shape(pred: dict, sh: dict, tdist: Optional[dict] = None) -> dict:
+    """Basic 只拟合 peer/hero 分布的低频形状；高频残差留给曲线。"""
     p5, p25, p50 = float(pred['p5']), float(pred['p25']), float(pred['p50'])
     p75, p95 = float(pred['p75']), float(pred['p95'])
-    toe = float(sh.get('toe') or 0.0)
-    shoulder = float(sh.get('shoulder') or 0.0)
-    tq25 = p5 + toe * (p50 - p5)
-    tq75 = p95 - shoulder * (p95 - p50)
     cur_toe, cur_shoulder = p25 - p5, p95 - p75
     cur_win = p75 - p25
-    t_toe, t_shoulder = tq25 - p5, p95 - tq75
-    t_win = tq75 - tq25
+    td = tdist or {}
+    tq = {k: _num(td.get(k)) for k in ('p5', 'p25', 'p50', 'p75', 'p95')}
+    if all(v is not None for v in tq.values()):
+        t5, t25, t50, t75, t95 = (float(tq[k]) for k in
+                                 ('p5', 'p25', 'p50', 'p75', 'p95'))
+        t_toe, t_shoulder, t_win = t25 - t5, t95 - t75, t75 - t25
+        src = '分布'
+    else:
+        toe = float(sh.get('toe') or 0.0)
+        shoulder = float(sh.get('shoulder') or 0.0)
+        tq25 = p5 + toe * (p50 - p5)
+        tq75 = p95 - shoulder * (p95 - p50)
+        t_toe, t_shoulder = tq25 - p5, p95 - tq75
+        t_win = tq75 - tq25
+        src = '肩趾'
     return dict(
-        contrast=round(max(-25.0, min(25.0, (t_win - cur_win) * 1.0)), 1),
-        highlights=round(max(-30.0, min(30.0, (t_shoulder - cur_shoulder) * 1.5)), 1),
-        shadows=round(max(-25.0, min(25.0, (t_toe - cur_toe) * 1.0)), 1),
+        contrast=round(max(-40.0, min(40.0, (t_win - cur_win) * 0.8)), 1),
+        highlights=round(max(-40.0, min(40.0, (t_shoulder - cur_shoulder) * 1.2)), 1),
+        shadows=round(max(-40.0, min(40.0, (t_toe - cur_toe) * 0.8)), 1),
         whites=0.0, blacks=0.0,
-    )
+    ), src
 
 
 def tone_solve(rec: dict, card: dict, target: Optional[dict],
@@ -265,11 +311,17 @@ def tone_solve(rec: dict, card: dict, target: Optional[dict],
         ledger.append('没有可用的卡/peer/hero 形状 ⇒ 曲线不做')
         return dict(ev=ev, ui=ui, pred=pred, curve=None,
                     target=None, clipped=False)
-    ui.update(_basic_shape(pred, sh))
-    if any(abs(v) > 1e-9 for v in ui.values()):
-        ledger.append('Basic 粗形状：对比%+.0f 高光%+.0f 阴影%+.0f（peer 肩趾）'
-                      % (ui['contrast'], ui['highlights'], ui['shadows']))
-    curve = curve_for(pred, sh, ledger)
+    shape_ui, src = _basic_shape(pred, sh, (target or {}).get('dist'))
+    ui.update(shape_ui)
+    basic_mag = max(abs(ui[k]) for k in ('contrast', 'highlights', 'shadows'))
+    if basic_mag > 2.0:
+        ledger.append('Basic 粗形状（%s）：对比%+.0f 高光%+.0f 阴影%+.0f；'
+                      '曲线本轮不重复推形状'
+                      % (src, ui['contrast'], ui['highlights'], ui['shadows']))
+        curve = None
+    else:
+        ledger.append('Basic 已在目标内 ⇒ 曲线只补残差')
+        curve = curve_for(pred, sh, ledger)
     if curve:
         ledger.append('风格曲线：套 %s 肩趾比例（toe %.2f / shoulder %.2f）到本图锚点'
                       % (sh.get('source') or '卡', float(sh['toe']), float(sh['shoulder'])))
