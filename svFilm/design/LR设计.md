@@ -17,9 +17,9 @@
 
 | 残差 | 谁补 | 用什么 |
 |---|---|---|
-| **曝光 / 明暗** | LR | 全局对齐 peer/hero 背景分布；人/脸做上限；白裙由人物蒙版 Highlights 压 |
-| **形状** | LR | 卡的 `toe/shoulder` 比例，套到本图锚点 |
-| **肤色** | LR | Point Color 三轴（HueShift/LumScale/SatScale），在全局/局部之后算 |
+| **曝光 / 明暗** | LR | ① 的 subject-face 结果保留；Basic 四根 0；不重算全局 EV；白裙由人物蒙版 Highlights 压 |
+| **形状** | LR | peer → hero → 卡的形状比例，套到本图锚点（ToneCurve） |
+| **肤色** | LR | Point Color 三轴（HueShift/LumScale/SatScale），在局部肤色曝光之后算 |
 | **颜色** | LR | WB 定色相；冷暖/分色按卡的方向 |
 
 引擎管：卷/纸/颗粒/光晕/WB/PE/校准/HSL/色彩分级。  
@@ -62,14 +62,13 @@ peer 的取法：构图（景别、人占幅、脸位置）+ **连续光向量**
 
 ```
 WB（卡级）
-→ 全局曝光（peer/hero 背景分布）
-→ 形状（曲线）
+→ 形状（ToneCurve：peer → hero → 卡）
 → 肤色组（局部曝光 + Point Color 三轴）
 → 白裙检查 → 过曝才压人物蒙版 Highlights
 → 细节（锐化/降噪/导出）
 ```
 
-先全局，后局部；肤色组先做，白裙检查放在肤色组之后。
+不重算全局曝光；Basic 0。先形状，后局部；肤色组先做，白裙检查放在肤色组之后。
 
 ---
 
@@ -83,26 +82,22 @@ WB（卡级）
 
 ### 5.2 曝光 / 明暗
 
-**LR 全局曝光对齐 peer/hero 的背景分布，不拿脸/单张中位当全局靶。**
+**不重算全局曝光。① 的 subject-face 结果保留；Basic 四根默认 0。**
 
-- 目标：peer/hero 的 `bg.L_p10 / L_p90 / L_p95`；三个分位各算一个 EV，取平均。
-- 人/脸只做上限：`face_p99` / 皮肤 clip 决定正 EV 还能不能走；`person_p99` 含白裙，只做诊断。
-- **白裙允许先跟着全局亮**；不因为它压住全局曝光。
-- 全局之后先做肤色组（局部曝光 + Point Color 三轴），再检查白裙 `parts.white.L_p99`；
-  超过物理白点才用**人物蒙版 Highlights** 压回来。
-- **背景不忽略**：背景分布是全局靶；人/脸是硬上限，不是唯一服务对象。
-- 引擎 subject-face 只作 ① 起点；PE 只作基准；LR 用 peer/hero 背景分布把整体拉回规律。
-- 输入用：`bg.L_p10/L_p90/L_p95`、`face_p99`、皮肤 clip、`parts.white.L_p99`；`person_p99`/整幅 clip 只做诊断。
-- 没有 peer/hero 背景目标 ⇒ 保持 ① 起点；不用 p50/单张中位兜底。
-- 全局一步上限 0.7 档；剩余交局部/③ 目检。
+- 不把卡/peer/hero 的**绝对分位**当全局靶；
+- 不用 Adobe Auto Tone 当目标（它算的是它自己，不是卡）；
+- 不自己解 Basic 的五根滑杆；
+- 逐图只做 **ToneCurve 形状**（peer → hero → 卡）；
+- 白裙允许先亮；肤色组之后查 `parts.white.L_p99`，过曝才用人物蒙版 Highlights 压；
+- 局部肤色/白裙负责兜底，不反过来改全局 EV。
 
 **Basic 四根（Highlights/Shadows/Whites/Blacks）**：默认 0，作为**通用修图**使用。  
 人明确要求通用修图时：agent 给**方向 + 一小步候选**，人确认后写入；依据物理端点/细节（头发暗部、皮肤暗部、白衫/人 clip、亮部氛围）；卡里的部位 L 只做诊断，`k(L)` 只做规划起点；剂量由 ③ 目检。
 
 ### 5.3 形状（曲线）
 
-- 把卡/hero 的**肩趾比例**套到这张图自己的锚点。
-- 位置用本图锚点；曲线只补形状。
+- 把 peer → hero → 卡的**肩趾比例**套到这张图自己的锚点。
+- 位置用本图锚点；曲线只补形状；不套绝对分位。
 - 曲线检查：锚点单调、端点不反折、相邻锚点留间距；③ 出现 solarize 就修曲线/重出该图，不整批迭代。
 
 ### 5.4 肤色 / 颜色
@@ -140,7 +135,7 @@ SatScale  = 小步(C*/L* ÷ C0/L0 − 1)  # 修 C/L 关系
 顺序固定：
 
 ```text
-全局曝光/曲线
+形状/曲线（peer → hero → 卡）
 → 组 1 肤色（可能抬高人物）
 → 再检测白裙 p99
 → 过曝才建组 2，压人物蒙版 Highlights
@@ -175,7 +170,7 @@ SatScale  = 小步(C*/L* ÷ C0/L0 − 1)  # 修 C/L 关系
 ```
 target_source: peer / hero / card
 peer_ids / hero
-exposure: step + reason（bg.L_p10/L_p90/L_p95、face_p99、skin_clip）
+exposure: 0（保留 ① subject-face）
 curve: anchors + toe/shoulder
 point_color: r0、r*、sat_scale、skin_window
 local: skin ev、PointColor H/L/S、white highlights、mask_coverage
@@ -189,11 +184,12 @@ checks: skin_clip、bg_clip（诊断）、white_p99、curve_monotonic、mask_in_
 | 踩过的坑 | 现在的做法 |
 |---|---|
 | 旧 ① / 渲染凭证过期 | 核对 `_render.json` 的 `auto_exposure=subject-face`/PE 基准/WB；变就重渲；一次 ① 对应一份凭证 |
-| 曝光恒 0 | 0 只是 ① 起点；全局按 peer/hero 背景分布重算，不再只看脸 |
+| 曝光恒 0 | 0 = 保留 ① 的 subject-face；不再重算全局 EV |
 | Basic 数字靶 | Basic 四根默认 0；parts 只诊断；通用修图只给方向 + 人确认 |
+| 卡绝对分位 / Auto Tone 当靶 | 只套 peer→hero→卡的形状；卡的分位只诊断；Auto Tone 不进求解 |
 | 局部用整幅 headroom | 肤色组用肤色窗自己的余量；白裙组用 white p99；整幅只诊断 |
 | 局部负值把脸压黑 | 补脸只抬；脸已经比目标亮就跳过 |
-| 白裙把全局卡死 | 全局只受 face/skin 限制；白裙先亮，肤色组之后查 white p99，过曝才压 Highlights |
+| 白裙把全局卡死 | 全局 EV 不做；肤色组之后查 white p99，过曝才压人物蒙版 Highlights |
 | 局部漏到白衫/背景 | 肤色组只留肤色窗；白裙组只压人物 Highlights；两组分开 |
 | 曲线相邻锚点 solarize | 锚点留间距、单调、端点不反折；solarize 只修该图曲线重出 |
 | 1080 小脸测丢 | 检测在 1620；无脸就跳过肤色/局部并记账 |
