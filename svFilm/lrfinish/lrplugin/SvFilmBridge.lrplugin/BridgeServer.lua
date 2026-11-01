@@ -1300,7 +1300,7 @@ local function _brief(v)
   return 'table#' .. tostring(n)
 end
 
-local function point_swatch(path, h, s, l, r, ss, ls)
+local function point_swatch(path, h, s, l, r, hs, ss, ls)
   local catalog, photo = find_photo(path)
   -- 如果这张已经是当前目标，不要再 setSelectedPhotos：那会把刚建好的蒙版组选择清掉，
   -- addPointColorSwatch 随后就报 "attempt to index field '?' (a nil value)"。
@@ -1322,7 +1322,7 @@ local function point_swatch(path, h, s, l, r, ss, ls)
   end)
   LrTasks.sleep(0.5)
   local sw = { SrcHue = h, SrcSat = s, SrcLum = l, RangeAmount = r,
-               HueShift = 0, SatScale = ss, LumScale = ls or 0 }
+               HueShift = hs or 0, SatScale = ss, LumScale = ls or 0 }
   local ok, res, err = LrTasks.pcall(function()
     return LrDevelopController.addPointColorSwatch(sw, true)
   end)
@@ -1894,9 +1894,9 @@ local function handle(cmd)
     return 'KEYS ' .. table.concat(keys, '; ')
   end
   if verb == 'POINTSWATCH' then
-    local path, h, s, l, r, ss, ls = rest:match('^(%S+)%s+([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)%s*([%d%.%-]*)')
-    if not path then error('POINTSWATCH needs <path> <h> <s> <l> <range> <sat_scale> [lum_scale]') end
-    return point_swatch(path, tonumber(h), tonumber(s), tonumber(l), tonumber(r), tonumber(ss), tonumber(ls) or 0)
+    local path, h, s, l, r, hs, ss, ls = rest:match('^(%S+)%s+([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)%s+([%d%.%-]+)%s*([%d%.%-]*)')
+    if not path then error('POINTSWATCH needs <path> <h> <s> <l> <range> <hue_shift> <sat_scale> [lum_scale]') end
+    return point_swatch(path, tonumber(h), tonumber(s), tonumber(l), tonumber(r), tonumber(hs), tonumber(ss), tonumber(ls) or 0)
   end
   if verb == 'SHOWMASK' then
     return show_mask(rest:gsub('^%s+', ''):gsub('%s+$', ''))

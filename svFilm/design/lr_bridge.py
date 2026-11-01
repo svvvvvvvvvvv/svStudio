@@ -87,11 +87,12 @@ def proof(src: str, out_dir: str, size: int = 1024, quality: float = 0.90,
 
 def point_watch(path: str, h: float, s: float, l: float, rng: float,
                 sat_scale: float, lum_scale: float = 0.0,
+                hue_shift: float = 0.0,
                 timeout: float = 180.0) -> str:
-    """建**肤色蒙版**（local point-color 色票）并写 SatScale / LumScale。"""
-    return run('POINTSWATCH %s %.6f %.6f %.6f %.4f %.4f %.4f'
+    """建**肤色蒙版**（local point-color 色票）并写 HueShift / SatScale / LumScale。"""
+    return run('POINTSWATCH %s %.6f %.6f %.6f %.4f %.4f %.4f %.4f'
                % (path, float(h), float(s), float(l), float(rng),
-                  float(sat_scale), float(lum_scale)),
+                  float(hue_shift), float(sat_scale), float(lum_scale)),
                timeout=timeout)
 
 

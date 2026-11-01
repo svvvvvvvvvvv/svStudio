@@ -80,7 +80,9 @@ def write_jobs(plans: Dict[str, LRPlan], out_dir: str,
                        whites=plan.whites, blacks=plan.blacks),
             point_color=(dict(h=plan.point_color.h, s=plan.point_color.s,
                               l=plan.point_color.l, range=plan.point_color.range,
+                              hue_shift=plan.point_color.hue_shift,
                               sat_scale=plan.point_color.sat_scale,
+                              lum_scale=plan.point_color.lum_scale,
                               raw=plan.point_color.raw)
                          if plan.point_color.is_set() else None),
             split=dict(shadow_hue=plan.split_shadow_hue,
@@ -195,12 +197,14 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
         if plan.point_color.is_set() and not person_local:
             pc = plan.point_color
             rp = B.point_watch(tmp, pc.h * 2.0 * 3.141592653589793,
-                               pc.s, pc.l, pc.range, pc.sat_scale)
+                               pc.s, pc.l, pc.range, pc.sat_scale,
+                               pc.lum_scale, pc.hue_shift)
             if 'res=true' not in rp:
                 # 一次重试：LR UI 刚建完组时偶尔还没选中
                 time.sleep(1.0)
                 rp = B.point_watch(tmp, pc.h * 2.0 * 3.141592653589793,
-                                   pc.s, pc.l, pc.range, pc.sat_scale)
+                                   pc.s, pc.l, pc.range, pc.sat_scale,
+                                   pc.lum_scale, pc.hue_shift)
             if 'res=true' not in rp:
                 log('    ! 肤色色票失败（H%.3f S%.3f L%.3f R%.3f Sat%+.3f）：%s'
                     % (pc.h, pc.s, pc.l, pc.range, pc.sat_scale, rp[:120]))

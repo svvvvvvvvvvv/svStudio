@@ -266,31 +266,47 @@ def _skin_of(rec: dict) -> dict:
 
 
 def grading(card: dict, rec: dict, target: dict,
-            ledger: List[str]) -> dict:
-    """肤色：Point Color 同时做肤色窗和只动肤色的微调；色相归 WB。"""
+            ledger: List[str], skin_post: Optional[dict] = None) -> dict:
+    """肤色：Point Color 三轴只动肤色；目标来自卡/peer/hero 的 h/C/L。"""
     out = dict(point_color=None, split={})
     sk = _skin_of(rec)
     rgb = sk.get('rgb')
     if rgb:
         hh, ll, ss = colorsys.rgb_to_hls(*(float(v) / 255.0 for v in rgb[:3]))
         tsk = (target or {}).get('skin') or {}
-        L0, C0 = _num(sk.get('L')), _num(sk.get('C'))
-        Lt, Ct = _num(tsk.get('L')), _num(tsk.get('C'))
-        sat_scale, raw = 0.0, 0.0
+        L0, C0, h0 = _num(sk.get('L')), _num(sk.get('C')), _num(sk.get('h'))
+        if skin_post:
+            L0 = _num(skin_post.get('L')) or L0
+        Lt, Ct, ht = _num(tsk.get('L')), _num(tsk.get('C')), _num(tsk.get('h'))
+        hue_shift, lum_scale, sat_scale, raw = 0.0, 0.0, 0.0, 0.0
+        if h0 is not None and ht is not None:
+            dh = ((float(ht) - float(h0) + 180.0) % 360.0) - 180.0
+            hue_shift = max(-0.10, min(0.10, dh / 360.0))
+        if L0 is not None and Lt is not None:
+            lum_scale = max(-0.20, min(0.20, (float(Lt) - float(L0)) / 100.0))
         if L0 and C0 is not None and Lt and Ct is not None:
             r0 = float(C0) / float(L0)
             rt = float(Ct) / float(Lt)
             if r0 > 1e-9:
                 raw = rt / r0 - 1.0
                 sat_scale = max(-POINT_SAT_CAP, min(POINT_SAT_CAP, raw))
-                ledger.append('Point Color：C/L %.3f → 目标 %.3f（e %+.3f）'
-                              '⇒ SatScale %+.3f（小步；③ 目检）'
-                              % (r0, rt, raw, sat_scale))
+        if any(abs(v) > 1e-9 for v in (hue_shift, lum_scale, sat_scale)):
+            ledger.append('Point Color：H %+.3f / L %+.3f / S %+.3f'
+                          '（h %.1f→%.1f，L %.1f→%.1f，C/L %.3f→%.3f）'
+                          % (hue_shift, lum_scale, sat_scale,
+                             h0 if h0 is not None else float('nan'),
+                             ht if ht is not None else float('nan'),
+                             L0 if L0 is not None else float('nan'),
+                             Lt if Lt is not None else float('nan'),
+                             (float(C0) / float(L0)) if (L0 and C0 is not None) else float('nan'),
+                             (float(Ct) / float(Lt)) if (Lt and Ct is not None) else float('nan')))
         else:
-            ledger.append('Point Color：缺 C/L 关系 ⇒ SatScale 0，只做肤色窗')
+            ledger.append('Point Color：肤色 h/C/L 已在目标内 ⇒ 三轴 0，只做肤色窗')
         out['point_color'] = PointColor(
             h=round(float(hh), 4), s=round(float(ss), 4), l=round(float(ll), 4),
-            range=0.5, sat_scale=round(float(sat_scale), 4),
+            range=0.5, hue_shift=round(float(hue_shift), 4),
+            sat_scale=round(float(sat_scale), 4),
+            lum_scale=round(float(lum_scale), 4),
             raw=round(float(raw), 4), rgb=[int(v) for v in rgb[:3]])
     else:
         ledger.append('缺 skin_rgb ⇒ 没有肤色蒙版/Point Color（记账）')
@@ -462,8 +478,18 @@ def plan_batch(recs: Dict[str, dict], card: dict,
             ledger.append('曲线 %d 点（只套肩趾比例）' % len(plan.curve))
 
         target_skin = dict(skt['skin'])
+
+        white_local = local_white(plan, rec, ledger)
+        if not white_local:
+            local_face(plan, rec, dict(face_over_bg=skt.get('face_over_bg')), ledger)
+
+        sk = _skin_of(rec)
+        Lpost = (_apply_plan_to_L(plan, sk['L']) if sk.get('L') is not None else None)
+        if Lpost is not None and plan.local.is_set() and plan.local.mask == 'skin':
+            Lpost = l_after_ev(Lpost, plan.local.exposure_ev)
         g = grading(card, rec, dict(skin=target_skin,
-                                    warm_cool_b=skt['warm_cool_b']), ledger)
+                                    warm_cool_b=skt['warm_cool_b']), ledger,
+                    skin_post=dict(L=Lpost))
         if g.get('point_color') is not None:
             plan.point_color = g['point_color']
         sp = g.get('split') or {}
@@ -473,11 +499,6 @@ def plan_batch(recs: Dict[str, dict], card: dict,
         plan.split_highlight_sat = float(sp.get('highlight_sat') or 0.0)
         plan.split_balance = float(sp.get('balance') or 0.0)
 
-        white_local = local_white(plan, rec, ledger)
-        if not white_local:
-            local_face(plan, rec, dict(face_over_bg=skt.get('face_over_bg')), ledger)
-
-        sk = _skin_of(rec)
         pred = {k: _apply_plan_to_L(plan, float((rec.get('img') or {}).get(k)))
                 for k in ('p5', 'p25', 'p50', 'p75', 'p95')
                 if _num((rec.get('img') or {}).get(k)) is not None}

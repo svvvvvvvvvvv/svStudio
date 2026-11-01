@@ -57,7 +57,9 @@ class PointColor:
     s: float = 0.0
     l: float = 0.0
     range: float = 0.5
+    hue_shift: float = 0.0            # -1..1（相对色相）
     sat_scale: float = 0.0            # -1..1（相对饱和刻度）
+    lum_scale: float = 0.0            # -1..1（相对明度）
     raw: float = 0.0                  # 记账：C/L 关系残差（SatScale 之前）
     rgb: Optional[List[int]] = None   # 取样像素（真实像素，不反算）
 
@@ -163,7 +165,10 @@ class LRPlan:
     def color_text(self) -> str:
         parts = []
         if self.point_color.is_set():
-            parts.append('点颜色 SatScale %+.2f' % self.point_color.sat_scale)
+            parts.append('点颜色 H%+.2f S%+.2f L%+.2f'
+                         % (self.point_color.hue_shift,
+                            self.point_color.sat_scale,
+                            self.point_color.lum_scale))
         if abs(self.split_shadow_sat) > 1e-9 or abs(self.split_highlight_sat) > 1e-9:
             parts.append('分色 暗%.0f°/%.0f 高%.0f°/%.0f'
                          % (self.split_shadow_hue, self.split_shadow_sat,
