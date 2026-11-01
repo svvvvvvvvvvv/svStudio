@@ -1830,16 +1830,6 @@ local function handle(cmd)
     local path, keys = rest:match('^(%S+)%s*(%S*)$')
     return get_vals(path, keys ~= '' and keys or nil)
   end
-  if verb == 'AUTOTONE' then
-    local path = rest:gsub('^%s+', ''):gsub('%s+$', '')
-    local catalog, photo = find_photo(path)
-    local tpath = activate_develop(photo)
-    if not target_matches(photo, tpath) then return 'AUTOTONE target=MISMATCH' end
-    local ok, err = LrTasks.pcall(function() LrDevelopController.setAutoTone() end)
-    LrTasks.sleep(1.0)
-    if not ok then return 'AUTOTONE err=' .. tostring(err) end
-    return 'OK AUTOTONE'
-  end
   if verb == 'SETONE' then
     local path, key, val = rest:match('^(%S+)%s+(%S+)%s+(%S+)$')
     if not path then error('SETONE needs <path> <key> <value>') end

@@ -76,7 +76,6 @@ def _target(shape=(0.30, 0.38), skin=(58.0, 19.0, 55.0),
         skin=dict(L=skin[0], C=skin[1], h=skin[2]),
         rel=dict(face_over_bg=face_over_bg, warm_cool_b=wc),
         bg=dict(L_p10=20.0, L_p90=65.0, L_p95=80.0),
-        dist=dict(p5=10.0, p25=25.0, p50=52.0, p75=78.0, p95=95.0),
         exposure=dict(person_p99=p99, face_p99=face_p99,
                       person_clip_pct=clip),
         peer_n=0)
@@ -196,7 +195,6 @@ def test_tone_solve_without_exposure_target_keeps_pe():
     target = _target()
     target['exposure'] = {}
     target['bg'] = {}
-    target['dist'] = {}
     out = tone_solve(rec, _card(), target, [])
     assert out['ev'] == 0.0
     assert all(abs(v) < 1e-9 for v in out['ui'].values())
