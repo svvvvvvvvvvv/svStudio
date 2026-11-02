@@ -348,7 +348,7 @@
    ],
    "particle_scale_sublayers": [
     1.0,
-    0.5,
+    0.4,
     0.25
    ],
    "density_min": [
@@ -361,10 +361,10 @@
     0.97,
     0.97
    ],
-   "blur": 2.0,
+   "blur": 0.8,
    "mult_usm_sigma": 0.7,
-   "mult_usm_amount": 0.0,
-   "blur_dye_clouds_um": 3.0,
+   "mult_usm_amount": 1.5,
+   "blur_dye_clouds_um": 2.0,
    "micro_sublayers": 1
   },
   "preflashing": {
@@ -477,11 +477,11 @@
    "auto_exposure": false,
    "auto_exposure_method": "center_weighted",
    "print_illuminant": "TH-KG3",
-   "print_exposure": 0.9933,
+   "print_exposure": 1.0,
    "output_lightness_compression": "off",
    "print_exposure_compensation": true,
-   "print_y_filter_shift": -0.1,
-   "print_m_filter_shift": 0.1,
+   "print_y_filter_shift": 0.0,
+   "print_m_filter_shift": 0.0,
    "scan_lens_blur": 0.0,
    "scan_white_correction": true,
    "scan_black_correction": true,
@@ -677,10 +677,9 @@
     "cc_red_green": 0.1
    },
    "filter_shift": {
-    "cc_blue_yellow": 0.1,
-    "cc_red_green": 0.1,
-    "y": -0.1,
-    "m": 0.1
+    "y": 0.0,
+    "m": 0.0,
+    "note": "reset after stock/paper change"
    },
    "morph": "identity（未解：需前向模型；形状已用于选纸）"
   },
@@ -690,10 +689,11 @@
    "stock": "kodak_gold_200",
    "paper": "kodak_portra_endura",
    "source": "visual_lookbook_20261103"
-  }
+  },
+  "_fields_fixed": "2026-11-03 stock/paper fields: grain all + filters reset + pe nominal 1.0"
  },
- "pe": 0.9933,
- "pe_why": "参考灰 18.4% → 目标 D 0.735（Y 0.1842）；实测 Y 0.1841 ⇒ PE 0.9933",
+ "pe": 1.0,
+ "pe_why": "nominal 1.0; per-image PE table is authoritative",
  "tone": {
   "shadow": {
    "lab": [
