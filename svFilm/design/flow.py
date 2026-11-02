@@ -181,6 +181,7 @@ def render_card(card, raf_paths: Dict[str, str], out_dir: str,
         raise RuntimeError('缺少卡级曝光表（chart_calib.card_table_path）')
     jobs = engine_jobs(len(raf_paths))
     out: Dict[str, str] = {}
+    skipped: list = []
     argv = [(stem, raf, medium, out_dir, ov, white_level, long_side, wb,
              (targets or {}).get(stem), table, pe_nominal)
             for stem, raf in raf_paths.items()]
@@ -189,6 +190,11 @@ def render_card(card, raf_paths: Dict[str, str], out_dir: str,
         from multiprocessing import get_context
         with get_context('spawn').Pool(jobs) as pool:
             for stem, dst, hr, msgs in pool.imap_unordered(_render_one, argv):
+                if dst is None:
+                    skipped.append(stem)
+                    for m in msgs:
+                        log(m)
+                    continue
                 out[stem] = dst
                 _write_headroom(out_dir, stem, hr)
                 for m in msgs:
@@ -196,10 +202,18 @@ def render_card(card, raf_paths: Dict[str, str], out_dir: str,
     else:
         for a in argv:
             stem, dst, hr, msgs = _render_one(a)
+            if dst is None:
+                skipped.append(stem)
+                for m in msgs:
+                    log(m)
+                continue
             out[stem] = dst
             _write_headroom(out_dir, stem, hr)
             for m in msgs:
                 log(m)
+    if skipped:
+        raise RuntimeError('PE hit_bound，拒绝出片：%s（表够不到 target；换卡或重建表）'
+                           % '、'.join(sorted(skipped)))
     _write_render_meta(out_dir, card, media_label, out, wb, wb_info, medium,
                        targets=targets, table=table)
     return out
@@ -234,6 +248,12 @@ def _render_one(args):
         sol = dict(pe=float(pe_nominal), p50_pred=None, delta_ev=0.0,
                    hit_bound=False, target=None, pe_nominal=float(pe_nominal),
                    chart_sha=(table or {}).get('chart_sha'))
+    if sol.get('hit_bound'):
+        msgs.append('  ! PE hit_bound（target %.1f；表边界 PE %.4f；预测 p50 %.1f）'
+                    ' ⇒ 不渲这张，避免超出表的假曝光'
+                    % (sol.get('target') or -1, sol['pe'],
+                       sol.get('p50_pred') if sol.get('p50_pred') is not None else -1))
+        return stem, None, {}, msgs
     disp = presets.render(lin, medium, overrides=ov,
                           print_exposure=float(sol['pe']))
     if sol.get('target') is not None:

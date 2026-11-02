@@ -190,8 +190,8 @@ def solve_pe(lin: np.ndarray, target: float, table: dict,
             vals = (1.0 - w) * L0 + w * L1
         return float(np.median(vals))
 
-    lo = np.log2(nom) - span_ev
-    hi = np.log2(nom) + span_ev
+    lo = max(np.log2(nom) - span_ev, np.log2(pes[0]))
+    hi = min(np.log2(nom) + span_ev, np.log2(pes[-1]))
     f_lo, f_hi = p50_at(lo), p50_at(hi)
     # PE 越大越暗（render_key 同口径）
     hit = False
