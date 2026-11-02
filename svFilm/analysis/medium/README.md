@@ -21,6 +21,8 @@ python analysis/medium/amount_ramp.py                 # 9 配方 amount ramp
 python analysis/medium/pe_tables.py                   # 64 卡 PE 表
 python analysis/medium/pe_selftest.py                 # PE 表自检
 python analysis/medium/pe_batch_check.py              # 4 张样本逐图验算
+python analysis/medium/card_samples_review.py         # 64 卡多样片复核页
+python analysis/medium/wb_amount_review.py            # WB/amount 卡级复核页
 python analysis/medium/validate_engine.py             # vendor 确定性/基线对照
 ```
 
@@ -45,6 +47,8 @@ python analysis/medium/lookbook.py --limit 2      # 冒烟
   - `apply_report.json`；写卡前备份在 `out/backup_cards_before_*`
   - `wb_review.json` / `amount_ramp.json` / `amount_ramp.md`
   - `pe_tables/*.json` / `pe_selftest.json` / `pe_batch_check.json`
+  - `card_samples_review.html` / `.json`
+  - `wb_amount_review.html`
   - `baseline_vendor.json`
 
 ## 口径（必须保持）
@@ -54,6 +58,8 @@ python analysis/medium/lookbook.py --limit 2      # 冒烟
 - 同卷换纸、同纸换卷；结论写明卷还是纸；
 - 只写测量值（face C/h、leaf a/b、contrast），不写没有数的形容词；
 - 低置信只认族/配方，不硬给单支。
+- PE 表按卡加载：`chart_calib.load_card_table(card_name)`；**不回退旧全局表**。
+- 多样片页只标极端曝光/内容跨度，不自动拆卡；风格是否一致要人看。
 
 ## 迭代
 

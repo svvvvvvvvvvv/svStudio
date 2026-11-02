@@ -128,6 +128,26 @@ def load_table(path: str = TABLE) -> dict:
     return json.load(open(path, encoding='utf-8'))
 
 
+def card_table_path(card_name: str) -> str:
+    """Per-card PE table; never fall back to the old global table."""
+    roots = []
+    env = os.environ.get('SVFILM_PE_TABLES')
+    if env:
+        roots.append(env)
+    sv = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    roots.append(os.path.join(sv, 'analysis', 'medium', 'out', 'pe_tables'))
+    roots.append(os.path.join(sv, 'analysis', 'corpus', 'kurai', 'pe_tables'))
+    for root in roots:
+        p = os.path.join(root, card_name + '.json')
+        if os.path.isfile(p):
+            return p
+    raise RuntimeError('缺少卡级 PE 表：%s（先跑 analysis/medium/pe_tables.py）' % card_name)
+
+
+def load_card_table(card_name: str) -> dict:
+    return load_table(card_table_path(card_name))
+
+
 def _input_logy(lin: np.ndarray, max_px: int = 200000):
     arr = np.asarray(lin, np.float64)
     y = arr @ _Y_RGB

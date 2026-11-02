@@ -190,6 +190,10 @@ def run_engine(b: Batch, card, measure_fn=None, limit: int = 0,
     if not paths:
         raise RuntimeError('没有匹配到 RAW：%s' % b.raf_dir)
     t0 = time.time()
+    if table is None:
+        from . import chart_calib
+        cname = card.name if hasattr(card, 'name') else str(card.get('name'))
+        table = chart_calib.load_card_table(cname)
     tifs = render_card(card, paths, b.sub('engine'), log=log,
                        targets=targets, table=table)
     mf = measure_fn or measure_tif

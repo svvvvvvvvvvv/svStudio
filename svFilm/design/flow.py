@@ -178,7 +178,7 @@ def render_card(card, raf_paths: Dict[str, str], out_dir: str,
     sim = dict(medium.get('simulation') or {})
     pe_nominal = float(sim.get('print_exposure') or 0.987)
     if targets and table is None:
-        raise RuntimeError('缺少曝光表（chart_calib.TABLE）；先跑色卡标定')
+        raise RuntimeError('缺少卡级曝光表（chart_calib.card_table_path）')
     jobs = engine_jobs(len(raf_paths))
     out: Dict[str, str] = {}
     argv = [(stem, raf, medium, out_dir, ov, white_level, long_side, wb,

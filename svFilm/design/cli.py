@@ -211,10 +211,10 @@ def cmd_run(a):
     os.replace(tmp, pt)
     print('  target：%s' % pt)
     try:
-        table = chart_calib.load_table()
-    except Exception:                                      # noqa: BLE001
-        print('  ! 缺少曝光表 %s；先跑色卡标定（chart_calib.render_table）'
-              % chart_calib.TABLE)
+        table = chart_calib.load_card_table(card_mc.name)
+        print('  卡级 PE 表：%s' % chart_calib.card_table_path(card_mc.name))
+    except Exception as e:                                 # noqa: BLE001
+        print('  ! %s' % e)
         return
     flat = {k: v['target_p50'] for k, v in targets.items()
             if v.get('target_p50') is not None}
