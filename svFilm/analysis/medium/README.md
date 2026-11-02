@@ -16,6 +16,12 @@ python analysis/medium/measure.py           # 测量 + 4 组交叉配对 -> out/
 python analysis/medium/assign.py            # 64 卡视觉配方页 -> out/all_cards_assignment.html
 python analysis/medium/apply_assignments.py --dry-run
 python analysis/medium/apply_assignments.py --apply   # 先备份，再写 stock/paper
+python analysis/medium/wb_review.py                   # 卡级 WB 复核
+python analysis/medium/amount_ramp.py                 # 9 配方 amount ramp
+python analysis/medium/pe_tables.py                   # 64 卡 PE 表
+python analysis/medium/pe_selftest.py                 # PE 表自检
+python analysis/medium/pe_batch_check.py              # 4 张样本逐图验算
+python analysis/medium/validate_engine.py             # vendor 确定性/基线对照
 ```
 
 可选：
@@ -37,6 +43,9 @@ python analysis/medium/lookbook.py --limit 2      # 冒烟
   - `lookbook_sheet.png` / `lookbook_faces.png`
   - `all_cards_assignment.html` / `card_recipes.csv`
   - `apply_report.json`；写卡前备份在 `out/backup_cards_before_*`
+  - `wb_review.json` / `amount_ramp.json` / `amount_ramp.md`
+  - `pe_tables/*.json` / `pe_selftest.json` / `pe_batch_check.json`
+  - `baseline_vendor.json`
 
 ## 口径（必须保持）
 
