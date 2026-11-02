@@ -306,7 +306,7 @@
   }
  },
  "stock": "kodak_ektar_100",
- "paper": "kodak_supra_endura",
+ "paper": "kodak_portra_endura",
  "amount": 1.0,
  "medium": {
   "_note_self": "card38 medium-only: PE fixed 0.694; placement owned by LR Basic",
@@ -411,21 +411,21 @@
    "inhibition_samelayer": 1.0,
    "inhibition_interlayer": 1.0,
    "gamma_samelayer_rgb": [
-    0.341,
-    0.324,
-    0.273
+    0.5159,
+    0.5934,
+    0.2829
    ],
    "gamma_interlayer_r_to_gb": [
-    0.355,
-    0.305
+    0.4032,
+    0.2488
    ],
    "gamma_interlayer_g_to_rb": [
-    0.154,
-    0.358
+    0.2227,
+    0.434
    ],
    "gamma_interlayer_b_to_rg": [
-    0.171,
-    0.225
+    0.1829,
+    0.1799
    ],
    "diffusion_size_um": 20.0,
    "langmuir_donor_k_rgb": [
@@ -511,7 +511,7 @@
    "diffusion_filter_bloom_intensity": 1.0,
    "diffusion_filter_bloom_size": 1.0,
    "film_stock": "kodak_ektar_100",
-   "print_paper": "kodak_supra_endura"
+   "print_paper": "kodak_portra_endura"
   },
   "display": {
    "preview_max_size": 640
@@ -679,22 +679,12 @@
    },
    "morph": "identity（未解：需前向模型；形状已用于选纸）"
   },
-  "_derived": {
-   "corpus": "鹿井",
-   "base": "鹿井",
-   "film": "kodak_ektar_100",
-   "paper": "kodak_supra_endura",
-   "film_reason": "暗部 -3.8 CC ⇒ 蓝度分位 0.63；取中性黄滤片 Y=60.7（分位 0.59）的卷 kodak_ektar_100",
-   "paper_reason": "黑端需 D≥2.129；形状 (toe/win 0.28, sh/win 0.14) 分位 (0.36, 0.17) ⇒ 最接近的纸 kodak_supra_endura（σf/σm 1.32, σs/σm 1.38）",
-   "amount": 1.0,
-   "amount_reason": "卷 kodak_ektar_100 的 DIR couplers 默认 1.00（源码 DirCouplersParams.amount；profile 无此字段，不按卡推）",
-   "halation_reason": "still/strong ⇒ sigma_h 65 µm，strength (0.015, 0.005, 0.0)（写百分数 [1.5, 0.5, 0.0]）",
-   "split": 5.21,
-   "shadow_cc": -3.8,
-   "scene_fit": true,
-   "neutral_filters": "engine database (neutral_print_filters.json)",
-   "pe": 0.9882,
-   "pe_reason": "参考灰 18.4% → 目标 D 0.735（Y 0.1842）；实测 Y 0.1842 ⇒ PE 0.9882"
+  "_derived": null,
+  "_lookbook": {
+   "recipe": "EKTAR",
+   "stock": "kodak_ektar_100",
+   "paper": "kodak_portra_endura",
+   "source": "visual_lookbook_20261103"
   }
  },
  "pe": 0.9882,
