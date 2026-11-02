@@ -20,8 +20,10 @@ def main():
     ap.add_argument('--out', default=str(common.OUT_DEFAULT))
     ap.add_argument('--cards', default=str(common.CARDS))
     ap.add_argument('--limit', type=int, default=0)
-    ap.add_argument('--long-side', type=int, default=540)
+    ap.add_argument('--long-side', type=int, default=1080)
+    ap.add_argument('--pe-values', default='0.0625,0.125,0.25,0.5,1,2,4')
     args = ap.parse_args()
+    pe_values = [float(x) for x in args.pe_values.split(',') if x.strip()]
     out = os.path.abspath(args.out)
     tab_dir = os.path.join(out, 'pe_tables')
     os.makedirs(tab_dir, exist_ok=True)
@@ -36,7 +38,7 @@ def main():
         safe = c['name'].replace('/', '_')
         path = os.path.join(tab_dir, safe + '.json')
         t0 = time.time()
-        chart_calib.render_table(m, out_path=path, pe_values=[0.25, 0.5, 1.0, 2.0, 4.0],
+        chart_calib.render_table(m, out_path=path, pe_values=pe_values,
                                  long_side=args.long_side)
         # tag card/recipe for later
         doc = json.load(open(path, encoding='utf-8'))

@@ -18,7 +18,7 @@ python analysis/medium/apply_assignments.py --dry-run
 python analysis/medium/apply_assignments.py --apply   # 先备份，再写 stock/paper
 python analysis/medium/wb_review.py                   # 卡级 WB 复核
 python analysis/medium/amount_ramp.py                 # 9 配方 amount ramp
-python analysis/medium/pe_tables.py --long-side 1080      # 64 卡 PE 表
+python analysis/medium/pe_tables.py                  # 64 卡 PE 表（默认 1080 + 0.0625..4）
 python analysis/medium/pe_selftest.py                 # PE 表自检
 python analysis/medium/pe_batch_check.py              # 4 张样本逐图验算
 python analysis/medium/pe_full_check.py               # 19 张 xhs 全量验算
@@ -61,6 +61,8 @@ python analysis/medium/lookbook.py --limit 2      # 冒烟
 - 只写测量值（face C/h、leaf a/b、contrast），不写没有数的形容词；
 - 低置信只认族/配方，不硬给单支。
 - PE 表按卡加载：`chart_calib.load_card_table(card_name)`；**不回退旧全局表**。
+- PE 表网格必须覆盖 target 所需 PE；旧 0.25–4 对高亮目标不够，新默认 0.0625–4；当前只有 008 已重建，其余 63 张待重建。
+- `hit_bound` 不渲；表外 PE 不再外推。
 - 多样片页只标极端曝光/内容跨度，不自动拆卡；风格是否一致要人看。
 
 ## 迭代
