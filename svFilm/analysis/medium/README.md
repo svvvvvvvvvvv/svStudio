@@ -21,6 +21,7 @@ python analysis/medium/amount_ramp.py                 # 9 配方 amount ramp
 python analysis/medium/pe_tables.py --long-side 1080      # 64 卡 PE 表
 python analysis/medium/pe_selftest.py                 # PE 表自检
 python analysis/medium/pe_batch_check.py              # 4 张样本逐图验算
+python analysis/medium/pe_full_check.py               # 19 张 xhs 全量验算
 python analysis/medium/card_samples_review.py         # 64 卡多样片复核页
 python analysis/medium/wb_amount_review.py            # WB/amount 卡级复核页
 python analysis/medium/validate_engine.py             # vendor 确定性/基线对照
@@ -46,7 +47,7 @@ python analysis/medium/lookbook.py --limit 2      # 冒烟
   - `all_cards_assignment.html` / `card_recipes.csv`
   - `apply_report.json`；写卡前备份在 `out/backup_cards_before_*`
   - `wb_review.json` / `amount_ramp.json` / `amount_ramp.md`
-  - `pe_tables/*.json` / `pe_selftest.json` / `pe_batch_check.json`
+  - `pe_tables/*.json` / `pe_selftest.json` / `pe_batch_check.json` / `pe_full_check.json`
   - 生产表在 `analysis/corpus/kurai/pe_tables/`（进版本；`out/` 只是工作副本）
   - `card_samples_review.html` / `.json`
   - `wb_amount_review.html`
