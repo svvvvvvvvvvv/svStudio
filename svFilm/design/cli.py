@@ -183,6 +183,21 @@ def cmd_run(a):
 
     card_mc = by_name.get(a.card)
     if card_mc is None:
+        # 显式指定 thin 卡：允许跑，但不进自动匹配候选。
+        from types import SimpleNamespace
+        from .matchcard import raw_card
+        r = raw_card(a.card)
+        if r:
+            sim = (r.get('medium') or {}).get('simulation') or {}
+            card_mc = SimpleNamespace(
+                name=r['name'],
+                stock=str(sim.get('film_stock') or r.get('stock') or ''),
+                paper=str(sim.get('print_paper') or r.get('paper') or ''),
+                wb=dict(r.get('wb') or {}),
+                corpus=str(r.get('corpus') or ''),
+                thin=True)
+            print('  ! 卡是 thin（不参与自动匹配）；显式指定，允许跑')
+    if card_mc is None:
         print('没有这张卡：%s（有 %d 张）' % (a.card, len(by_name)))
         return
     print('\n卡：%s ｜ 介质 %s + %s' % (card_mc.name, card_mc.stock, card_mc.paper))
