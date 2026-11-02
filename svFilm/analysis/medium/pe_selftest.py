@@ -18,8 +18,10 @@ def main():
     out = os.path.join(str(common.OUT_DEFAULT), 'pe_tables.json')
     rows = json.load(open(out, encoding='utf-8'))
     chart, meta, sha = chart_calib.load_chart()
-    chart, centers, _ = chart_calib._resize_chart(chart, meta, 540)
-    doc = {'chart_sha': sha, 'n': 0, 'errors': [], 'hit': 0}
+    first = json.load(open(rows[0]['path'], encoding='utf-8')) if rows else {}
+    long_side = int(first.get('long_side') or 540)
+    chart, centers, _ = chart_calib._resize_chart(chart, meta, long_side)
+    doc = {'chart_sha': sha, 'long_side': long_side, 'n': 0, 'errors': [], 'hit': 0}
     for r in rows:
         if not os.path.isfile(r['path']):
             continue

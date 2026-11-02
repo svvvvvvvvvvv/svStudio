@@ -43,6 +43,7 @@ def main():
         doc['card'] = c['name']
         doc['recipe'] = (c.get('medium') or {}).get('_lookbook', {}).get('recipe')
         doc['stock'] = c.get('stock'); doc['paper'] = c.get('paper')
+        doc['long_side'] = args.long_side
         json.dump(doc, open(path, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
         rows.append({'card': c['name'], 'path': path, 'sec': round(time.time() - t0, 1),
                      'stock': c.get('stock'), 'paper': c.get('paper')})
