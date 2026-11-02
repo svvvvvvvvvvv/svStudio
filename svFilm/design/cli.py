@@ -29,7 +29,6 @@ from .lr_exec import run as lr_run
 from .lr_solve import plan_batch, summary as lr_summary
 from .matchcard import card_samples, cards as match_cards, raw_card
 from .matchpage import make_content_page
-from .peer import build as build_peers
 from .review import make_review
 from .lrsink import write_jobs, summary as xmp_summary
 from .stocks import registry
@@ -110,6 +109,30 @@ def _hero_target(hero: str):
         return None
 
 
+def _jpg_measures(b, content_path: str = '', log=print) -> dict:
+    """JPG 测量：优先复用 `match/jpg_measure.json`；否则抽 JPG 再量。不渲 ①。"""
+    from .contentmatch import find_raws, extract_jpgs, measure_jpgs
+    cache = os.path.join(b.out_dir, 'match', 'jpg_measure.json')
+    if os.path.isfile(cache):
+        try:
+            d = json.load(open(cache, encoding='utf-8'))
+            rows = d.get('per_image') if isinstance(d, dict) else d
+            if rows:
+                log('  JPG 测量 ← %s（%d 张）' % (cache, len(rows)))
+                return rows
+        except Exception:                                  # noqa: BLE001
+            pass
+    raws = find_raws(b.raf_dir)
+    jpgs = extract_jpgs(raws, b.out_dir, log=log)
+    measures = measure_jpgs(jpgs, log=log)
+    os.makedirs(os.path.dirname(cache), exist_ok=True)
+    tmp = cache + '.tmp'
+    json.dump({'per_image': measures}, open(tmp, 'w', encoding='utf-8'),
+              ensure_ascii=False, indent=1)
+    os.replace(tmp, cache)
+    return measures
+
+
 def _plans_from_manifest(path: str) -> dict:
     """XMP manifest → {stem: 轻量 plan}（只给 review 页显示用）。"""
     doc = json.load(open(path, encoding='utf-8'))
@@ -175,7 +198,31 @@ def cmd_run(a):
         print('hero：%s（目检参考 + peer 不足时的关系兜底）' % os.path.basename(hero))
     print('批次元数据：%s' % b.write_meta())
 
-    print('\n[1/4] 渲 ①（一次；介质 + PE 基准 + subject-face）')
+    print('\n[1/4] 机内 JPG 测量 + peer target（不渲 ①）')
+    measures = _jpg_measures(b, content_path=a.content, log=print)
+    from . import peer_ratio, chart_calib
+    targets = peer_ratio.build(measures, card_mc.name, log=print)
+    got_t = sum(1 for v in targets.values() if v.get('target_p50') is not None)
+    print('  peer：%d/%d 张有 target' % (got_t, len(targets)))
+    pt = os.path.join(b.out_dir, 'peer_targets.json')
+    tmp = pt + '.tmp'
+    json.dump({'card': card_mc.name, 'per_image': targets},
+              open(tmp, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    os.replace(tmp, pt)
+    print('  target：%s' % pt)
+    try:
+        table = chart_calib.load_table()
+    except Exception:                                      # noqa: BLE001
+        print('  ! 缺少曝光表 %s；先跑色卡标定（chart_calib.render_table）'
+              % chart_calib.TABLE)
+        return
+    flat = {k: v['target_p50'] for k, v in targets.items()
+            if v.get('target_p50') is not None}
+    if not flat:
+        print('  ! 没有 peer target ⇒ 停（卡中位不再当靶；先跑 peer/给 hero）')
+        return
+
+    print('\n[2/4] 渲 ①（一次；卡的介质 + 逐图 PE → peer target；不读脸）')
     if a.reuse:
         from .card_render import medium_of
         m = medium_of(card_mc)
@@ -187,7 +234,7 @@ def cmd_run(a):
         expect = dict(card=card_mc.name,
                       medium='%s + %s' % (sim.get('film_stock'), sim.get('print_paper')),
                       print_exposure=float(sim.get('print_exposure') or 0.0),
-                      auto_exposure='subject-face',
+                      auto_exposure=False,
                       wb=('custom' if use.get('temperature') is not None
                           and use.get('tint') is not None else 'as_shot'),
                       wb_temperature=float(use.get('temperature') or 0.0),
@@ -202,14 +249,16 @@ def cmd_run(a):
             print('  ⇒ 退回重渲（介质/WB/amount 变了，旧 ① 不能复用）')
             recs = {}
         if not recs:
-            recs = run_engine(b, card_mc, limit=a.render_limit, log=print)
+            recs = run_engine(b, card_mc, limit=a.render_limit, log=print,
+                              targets=flat, table=table)
     else:
-        recs = run_engine(b, card_mc, limit=a.render_limit, log=print)
+        recs = run_engine(b, card_mc, limit=a.render_limit, log=print,
+                          targets=flat, table=table)
     if not recs:
         print('整批无一有效 ⇒ 停')
         return
 
-    print('\n[2/4] LR-A 批级护栏（只报告）')
+    print('\n[3/4] LR-A 批级护栏 + LR-B 计划（EV 0）')
     card = raw_card(card_mc.name)
     if card is None:
         print('找不到卡的原样数据：%s' % card_mc.name)
@@ -218,13 +267,12 @@ def cmd_run(a):
     for line in guard.get('ledger') or []:
         print('  ' + line)
 
-    print('\n[3/4] 逐片 peer（同构图 + 连续光向量）')
-    peers = build_peers(recs, card_mc.name, log=print)
+    peers = targets
     if peers:
-        got = sum(1 for v in peers.values() if v.get('peer_n'))
-        print('  %d/%d 张找到 peer 目标' % (got, len(peers)))
+        got = sum(1 for v in peers.values() if v.get('target_p50') is not None)
+        print('  peer target：%d/%d 张' % (got, len(peers)))
     else:
-        print('  ! 没有 per-photo 测量 ⇒ 回退 hero/卡目标（记账）')
+        print('  ! 没有 peer target ⇒ 回退 hero/卡目标（记账）')
     hero_target = _hero_target(b.hero)
     plans = plan_batch(recs, card, peer_targets=peers,
                        hero_target=hero_target, log=print)

@@ -126,14 +126,12 @@ def _filters_of(medium: dict):
 
 
 def render_card(card, raf_paths: Dict[str, str], out_dir: str,
-                long_side: int = DELIVERY_LONG_SIDE, log=print) -> Dict[str, str]:
-    """用引擎固定 PE 渲一批：**引擎不做放置**，出 16-bit TIF。
+                long_side: int = DELIVERY_LONG_SIDE, log=print,
+                targets: Dict[str, float] = None, table: dict = None) -> Dict[str, str]:
+    """按 peer target 渲一批：**不读脸**，出 16-bit TIF。
 
-    `card`：MatchCard（有 name/corpus）或原样卡字典。
-    返回 {stem: TIF 路径}。
-
-    WB：解码用**相机 as-shot**（场景 WB）；卡白点是**交付域 look 目标**，
-    用这批第一张的 2 个探针解**印相滤片**（一次，写进本次介质），不碰解码。
+    `targets`：{stem: target_p50}；`table`：色卡标定的曝光表。
+    没有 target 时退回卡的 nominal pe（并记账），不建脸 mask。
     """
     from .card_render import medium_of
     from .texture import plan_texture, to_overrides
@@ -177,9 +175,14 @@ def render_card(card, raf_paths: Dict[str, str], out_dir: str,
         log('  解码 WB：没有卡/预设 wb ⇒ 相机 as-shot')
     log('  质感 overrides：%d 根（%s）' % (len(ov), '、'.join(sorted(
         k.split('.')[-1] for k in ov))))
+    sim = dict(medium.get('simulation') or {})
+    pe_nominal = float(sim.get('print_exposure') or 0.987)
+    if targets and table is None:
+        raise RuntimeError('缺少曝光表（chart_calib.TABLE）；先跑色卡标定')
     jobs = engine_jobs(len(raf_paths))
     out: Dict[str, str] = {}
-    argv = [(stem, raf, medium, out_dir, ov, white_level, long_side, wb)
+    argv = [(stem, raf, medium, out_dir, ov, white_level, long_side, wb,
+             (targets or {}).get(stem), table, pe_nominal)
             for stem, raf in raf_paths.items()]
     if jobs > 1:
         log('  并行渲：%d 路（长边 %d）' % (jobs, long_side))
@@ -197,7 +200,8 @@ def render_card(card, raf_paths: Dict[str, str], out_dir: str,
             _write_headroom(out_dir, stem, hr)
             for m in msgs:
                 log(m)
-    _write_render_meta(out_dir, card, media_label, out, wb, wb_info, medium)
+    _write_render_meta(out_dir, card, media_label, out, wb, wb_info, medium,
+                       targets=targets, table=table)
     return out
 
 
@@ -209,51 +213,41 @@ def _paper_of(card) -> str:
     return card.paper if hasattr(card, 'paper') else str(card.get('paper') or '')
 
 
-def _srgb_of_linear(lin):
-    import numpy as np
-    u = np.clip(np.asarray(lin, np.float64), 0.0, 1.0)
-    return np.where(u <= 0.0031308, 12.92 * u,
-                    1.055 * np.power(u, 1.0 / 2.4) - 0.055)
-
-
-def _subject_face_mask(lin):
-    """用 selfie_multiclass 的脸皮肤类给 `subject` 测光做 mask。
-
-    输入是 RAW 解码后的线性 RGB（与 render 同一个 1080 域）；mask 只取
-    类别 3（脸皮肤），不把白衣服/头发算进测光。
-    """
-    import numpy as np
-    from design.skin import face_mask as FM
-    rgb = (_srgb_of_linear(lin) * 255.0 + 0.5).astype(np.uint8)
-    probs = FM._probs(rgb)
-    return np.asarray(probs[3] > 0.5)
-
-
 def _render_one(args):
     """渲一张 + 量余量（**必须在模块级**：Windows 的 spawn 不能 pickle 闭包）。"""
-    (stem, raf, medium, out_dir, ov, white_level, long_side, wb) = args
+    (stem, raf, medium, out_dir, ov, white_level, long_side, wb,
+     target, table, pe_nominal) = args
     from svFilm import io, lrbase, presets
-    from svFilm import exposure
+    from . import chart_calib
     medium = dict(medium)
     sim = dict(medium.get('simulation') or {})
-    sim['auto_exposure'] = True
-    sim['auto_exposure_method'] = 'subject'
+    sim['auto_exposure'] = False
+    sim['auto_exposure_method'] = sim.get('auto_exposure_method') or 'matrix'
     medium['simulation'] = sim
     media_label = '%s + %s' % (sim['film_stock'], sim['print_paper'])
     msgs = ['  渲 %s ← %s（介质 %s，长边 %d）'
             % (stem, os.path.basename(raf), media_label, long_side)]
     lin = io.load_raw(raf, max_side=long_side, wb=wb).lin
-    mask = _subject_face_mask(lin)
-    cover = float(mask.mean())
-    exposure.set_mask(mask, 'face')
-    try:
-        disp = presets.render(lin, medium, overrides=ov)
-    finally:
-        exposure.clear()
-    msgs.append('  引擎自动曝光：subject-face（脸 mask 占比 %.3f；PE=%.3f 只作基准）'
-                % (cover, presets.pe_of(medium)))
+    if target is not None:
+        sol = chart_calib.solve_pe(lin, float(target), table)
+    else:
+        sol = dict(pe=float(pe_nominal), p50_pred=None, delta_ev=0.0,
+                   hit_bound=False, target=None, pe_nominal=float(pe_nominal),
+                   chart_sha=(table or {}).get('chart_sha'))
+    disp = presets.render(lin, medium, overrides=ov,
+                          print_exposure=float(sol['pe']))
+    if sol.get('target') is not None:
+        msgs.append('  peer target %.1f → PE %.4f（ΔEV %+.2f；预测 p50 %.1f%s）'
+                    % (sol['target'], sol['pe'], sol['delta_ev'],
+                       sol.get('p50_pred') if sol.get('p50_pred') is not None else -1,
+                       '；hit_bound' if sol.get('hit_bound') else ''))
+    else:
+        msgs.append('  ! 没有 peer target ⇒ 用 nominal PE %.4f；记账' % sol['pe'])
     dst = os.path.join(out_dir, '%s_engine.tif' % stem)
     lrbase.save_tiff16(disp, dst)
+    with open(os.path.join(out_dir, '%s_exposure.json' % stem), 'w',
+              encoding='utf-8') as fh:
+        json.dump(sol, fh, ensure_ascii=False, indent=1)
     hr = headroom_report(disp, white_level=white_level)
     msgs.append('  余量 %s：可抬 %.2f 档（产物，不是目标）'
                 % ('可信' if hr['valid'] else '不可信', hr['headroom_ev']))
@@ -268,24 +262,38 @@ def _write_headroom(out_dir, stem, hr):
                        ceiling_expect_L=hr['ceiling_expect_L'],
                        white_level=hr['white_level'],
                        tautology_ev=hr['tautology_ev'], why=hr['why'],
-                       note='引擎固定 PE；只报告余量，不改曝光；脸归 LR'),
+                       note='引擎按 peer target 解 PE；只报告余量，不改曝光；脸归 LR'),
                   fh, ensure_ascii=False, indent=1)
 
 
 def _write_render_meta(out_dir: str, card, media_label: str, out: dict,
-                       wb=None, wb_info=None, medium=None) -> str:
+                       wb=None, wb_info=None, medium=None,
+                       targets=None, table=None) -> str:
     """把"这批 ① 是用什么渲的"写下来（供 --reuse 校验）。"""
     from .card_render import medium_of
     m = medium or medium_of(card)
     sim = m.get('simulation') or {}
     info = dict(wb_info or {})
+    ex = {}
+    for stem in out:
+        ep = os.path.join(out_dir, '%s_exposure.json' % stem)
+        if os.path.isfile(ep):
+            try:
+                ex[stem] = json.load(open(ep, encoding='utf-8'))
+            except Exception:                              # noqa: BLE001
+                pass
     p = os.path.join(out_dir, '_render.json')
     d = dict(card=getattr(card, 'name', '') if hasattr(card, 'name')
              else str((card or {}).get('name') or ''),
              medium=media_label,
              print_exposure=float(sim.get('print_exposure') or 0.0),
-             auto_exposure='subject-face',
-             auto_exposure_method='subject',
+             auto_exposure=False,
+             auto_exposure_method='none',
+             peer_targets={k: v.get('target') for k, v in ex.items()},
+             pe_solved={k: v.get('pe') for k, v in ex.items()},
+             delta_ev={k: v.get('delta_ev') for k, v in ex.items()},
+             hit_bound={k: bool(v.get('hit_bound')) for k, v in ex.items()},
+             chart_sha=(table or {}).get('chart_sha'),
              amount=float((m.get('couplers') or {}).get('amount') or 0.0),
              wb=(wb or {}).get('white_balance', 'as_shot'),
              wb_temperature=float((wb or {}).get('temperature') or 0.0),

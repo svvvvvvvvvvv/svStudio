@@ -2,7 +2,7 @@
 """设计层（v0.3，2026-11-01 整理）。
 
 唯一设计真源：`design/设计真源.md`；纪律：`design/纪律.md`。
-一句话：**选卡 → 引擎给介质基线 ① → LR 对齐卡 ③ → 人目检**。
+一句话：**选卡 → 引擎给介质与 peer 曝光落点 ① → LR 对齐形状/肤色/颜色 ③ → 人目检**。
 
 模块地图
 --------
@@ -13,7 +13,8 @@
   matchcard.py      卡注册表（cards / raw_card / card_samples）
 
 引擎（介质级）
-  flow.py           渲一次 ①（固定 PE、交付尺寸）+ 余量报告
+  flow.py           渲一次 ①（逐图 PE、交付尺寸）+ 余量报告
+  chart_calib.py    标准色卡（ColorChecker + 21 级灰阶）→ 曝光表 + 解 PE
   card_render.py    卡 → 介质块
   medium.py         每目录一份 JSON（medium 字段）
   texture.py        质感参数（引擎链换算）
@@ -25,7 +26,8 @@ LR（图级）
   lr_response.py    Basic 滑杆实测一阶响应（只做规划起点/诊断）
   curve_design.py   曲线补形状（PCHIP，单调）
   lr_exec.py / lrsink.py / lr_bridge.py   XMP + 桥（肤色蒙版）
-  peer.py           逐片 peer（同构图 + 连续光向量）
+  peer.py           逐片 peer（旧：同构图 + 连续光向量；只留兼容）
+  peer_ratio.py     逐片 peer（关系比 + 构图/场景；target = p50 中位）
   batch_guard.py    批级护栏（只报告，不下发公共曲线）
 
 收尾

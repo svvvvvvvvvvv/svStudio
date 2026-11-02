@@ -136,10 +136,10 @@ def test_curve_avoids_adjacent_anchors():
 
 # ---------------------------------------------------------------- 肤色目标 / WB
 
-def test_skin_target_falls_back_to_card():
+def test_skin_target_has_no_card_fallback():
     s = skin_target({}, _card())
-    assert abs(s['skin']['L'] - 60.0) < 1e-9
-    assert abs(s['warm_cool_b'] - 1.0) < 1e-9
+    assert s['skin'] == dict(L=None, C=None, h=None)
+    assert s['warm_cool_b'] is None
 
 
 def test_skin_target_prefers_hero():
@@ -207,10 +207,8 @@ def test_shape_target_prefers_peer_hero():
     assert sh['source'] == 'hero'
 
 
-def test_shape_target_falls_back_to_card():
-    sh = shape_target(_card(), {})
-    assert 0.0 < sh['toe'] < 1.0 and 0.0 < sh['shoulder'] < 1.0
-    assert sh['source'] == 'card'
+def test_shape_target_has_no_card_fallback():
+    assert shape_target(_card(), {}) is None
 
 
 def test_curve_rejects_color_shifting_slope():
@@ -246,15 +244,13 @@ def test_grading_point_color_zero_when_relation_matches():
     assert abs(out['point_color'].sat_scale) < 1e-9
 
 
-def test_grading_split_direction():
+def test_grading_split_is_off():
     rec = _rec(wc=-5.0)
     card = _card(tone=dict(shadow=dict(lab=[10.0, -0.4, 0.3], hsl_h=210.0),
                            highlight=dict(lab=[90.0, 0.4, 0.3], hsl_h=40.0)))
     t = dict(skin=dict(L=50.0, C=15.0, h=45.0), warm_cool_b=1.0)
-    g = grading
-    sp = g(card, rec, t, [])['split']
-    assert sp and sp['highlight_hue'] == 40.0 and sp['shadow_hue'] == 210.0
-    assert sp['shadow_sat'] > 0 and sp['highlight_sat'] > 0
+    sp = grading(card, rec, t, [])['split']
+    assert sp['highlight_sat'] == 0.0 and sp['shadow_sat'] == 0.0
 
 
 def test_grading_split_skips_scene_colour():
@@ -382,10 +378,12 @@ def test_plan_batch_peer_hero_order():
     assert plans['C'].target['source'] == 'hero'
 
 
-def test_plan_batch_card_fallback_without_hero():
-    plans = plan_batch({'C': _rec(person_p99=80.0)}, _card(),
-                       log=lambda *_: None)
-    assert plans['C'].target['source'] == 'card'
+def test_plan_batch_without_peer_or_hero_raises():
+    try:
+        plan_batch({'C': _rec(person_p99=80.0)}, _card(), log=lambda *_: None)
+    except RuntimeError:
+        return
+    raise AssertionError('expected RuntimeError（卡中位不再当靶）')
 
 
 def test_plan_batch_ignores_card_parts_for_basic():
@@ -397,9 +395,12 @@ def test_plan_batch_ignores_card_parts_for_basic():
     rec = _rec()
     rec['parts'] = dict(white=dict(L_p50=80.0), hair=dict(L_p50=10.0),
                         skin=dict(L_p25=30.0))
-    plans = plan_batch({'A': rec}, card, log=lambda *_: None)
+    pt = _target(shape=(0.30, 0.38), source='peer')
+    pt['peer_n'] = 1
+    plans = plan_batch({'A': rec}, card, {'A': pt}, log=lambda *_: None)
     p = plans['A']
-    assert p.target['source'] == 'card'
+    assert p.target['source'] == 'peer'
+    assert p.exposure_ev == 0.0
 
 
 def test_per_card_json_has_all_fields():

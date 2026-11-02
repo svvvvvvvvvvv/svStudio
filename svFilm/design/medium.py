@@ -134,37 +134,17 @@ def _cc(L: float, a: float, b: float):
 
 
 def targets_from_card(card_name: str) -> dict:
-    """卡的**目录级目标**：打印端 + 色偏 CC + 形状带。
+    """卡的**目录级目标**：打印端 + 色偏 CC。
 
-    全部是定义式换算（L*→Y→D、Lab→CC），不渲染、不拟合：
-      · scanner.white_level = Y(p95 上沿)；black_level = Y(p5 下沿)
-      · p50 的目标密度 D = −log10(Y(p50 中点))
-      · 暗部/高光的色偏 → 蓝黄、红绿 CC 当量
-      · 形状：toe / shoulder / contrast_win 带（引擎侧对应 print morph 的
-        fast / slow / global gamma，方向：带越宽 ⇒ gamma 越小）
+    全部是定义式换算（Lab→CC），不渲染、不拟合：
+      · 暗部/高光/中性的色偏 → 蓝黄、红绿 CC 当量
+      · 卡不再提供逐图形状/肤色/冷暖靶（这些走 peer）
     """
     c = _load_doc(card_name)
     if not c:
         raise KeyError('没有这张卡：%s' % card_name)
-    pt = c.get('points') or {}
 
-    def _point(key, fallback=None):
-        """点值优先；没有点值就返回 None（不退回带中点/带边）。"""
-        v = pt.get(key)
-        if isinstance(v, (int, float)):
-            return float(v)
-        return fallback
-
-    out = dict(
-        p50_target_D=None,
-        shape={k: _point(k, None) for k in ('toe', 'shoulder', 'contrast_win', 'skew')},
-        warm_cool_b=_point('warm_cool_b', None),
-        face=dict(C=_point('face_C', None), h=_point('face_h', None),
-                  L=_point('face_L', None)),
-    )
-    v50 = _point('p50', None)
-    if v50 is not None:
-        out['p50_target_D'] = round(-__import__('math').log10(_y_of_l(v50)), 3)
+    out = {}
     tone = c.get('tone') or {}
     if tone:
         for z in ('shadow', 'highlight', 'neutral'):
@@ -184,7 +164,7 @@ def apply_targets(card_name: str) -> str:
     · **整幅色偏 → `simulation.print_y_filter_shift / print_m_filter_shift`**
       （放大机 CC 滤片位移，单位 = Kodak CC；1 CC = 0.01 密度）
       为什么用中性轴而不是暗部：滤片是**整幅**的，暗部青蓝来自分色，不是白平衡。
-    · 其余（p50 点值密度、形状点值、暗部/高光 CC）→ `_target`，留给批次级求解
+    · 其余（暗部/高光/中性 CC）→ `_target`，留给批次级求解
     """
     tg = targets_from_card(card_name)
     block = load(card_name)

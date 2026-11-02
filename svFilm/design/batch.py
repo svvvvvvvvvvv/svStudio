@@ -179,7 +179,9 @@ def measure_tif(path: str) -> dict:
 # ---------------------------------------------------------------- 整批
 
 def run_engine(b: Batch, card, measure_fn=None, limit: int = 0,
-               skip: Optional[List[str]] = None, log=print) -> Dict[str, dict]:
+               skip: Optional[List[str]] = None, log=print,
+               targets: Optional[Dict[str, float]] = None,
+               table: Optional[dict] = None) -> Dict[str, dict]:
     """整批渲 + 立刻量（交付域），返回 ① 的记录。"""
     stems = b.stems[:limit] if limit else b.stems
     if skip:
@@ -188,7 +190,8 @@ def run_engine(b: Batch, card, measure_fn=None, limit: int = 0,
     if not paths:
         raise RuntimeError('没有匹配到 RAW：%s' % b.raf_dir)
     t0 = time.time()
-    tifs = render_card(card, paths, b.sub('engine'), log=log)
+    tifs = render_card(card, paths, b.sub('engine'), log=log,
+                       targets=targets, table=table)
     mf = measure_fn or measure_tif
     recs = {}
     for st, p in tifs.items():

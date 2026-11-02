@@ -13,17 +13,17 @@
 
 ## 1 一句话
 
-**引擎给底片 ①，LR 把 ① 相对卡/peer 的四项残差补齐，出 ③，人看像不像。**
+**引擎给底片 ①（含 peer 曝光落点），LR 把 ① 相对卡/peer 的三项残差补齐，出 ③，人看像不像。**
 
 | 残差 | 谁补 | 用什么 |
 |---|---|---|
-| **曝光 / 明暗** | LR | ① 的 subject-face 结果保留；Basic 四根 0；不重算全局 EV；白裙由人物蒙版 Highlights 压 |
-| **形状** | LR | peer → hero → 卡的形状比例，套到本图锚点（ToneCurve） |
+| **曝光 / 明暗** | 引擎 | peer 组整幅 p50 中位；逐图 PE 落点；LR 不重算，EV 0；白裙由人物蒙版 Highlights 压 |
+| **形状** | LR | peer → hero 的形状比例，套到本图锚点（ToneCurve） |
 | **肤色** | LR | Point Color 三轴（HueShift/LumScale/SatScale），在局部肤色曝光之后算 |
-| **颜色** | LR | WB 定色相；冷暖/分色按卡的方向 |
+| **颜色** | LR | WB 定色相；冷暖目标来自 peer；分色暂不做 |
 
-引擎管：卷/纸/颗粒/光晕/WB/PE/校准/HSL/色彩分级。  
-LR 管：以上四项残差、局部、导出。  
+引擎管：卷/纸/颗粒/光晕/WB/PE/peer 落点/校准/HSL/色彩分级。  
+LR 管：以上三项残差、局部、导出。  
 人管：选卡、选 hero、批边界、意图、目检。
 
 ---
@@ -34,27 +34,27 @@ LR 管：以上四项残差、局部、导出。
 |---|---|---|
 | **卡级** | 一个大师目录 = 一套风格 | 人选卡；agent 标 |
 | **场景级** | 同一次拍摄 = 同一套光 | 人拆批；一个场景一个 hero 参考 |
-| **图级** | 每一张 | agent 补四项残差 |
+| **图级** | 每一张 | agent 补三项残差（曝光归引擎） |
 
 WB 是卡级/组级：一个目录一个，同光整组共用；混光先拆场景。  
 曲线和局部按场景/图算：同一场景共用参考，跨场景各自算。
 
 ---
 
-## 3 参考顺序：peer → hero → 卡
+## 3 参考顺序：peer → hero（卡不当靶）
 
-LR 的对齐目标按这个顺序取：
+LR 的对齐目标按这个顺序取（**曝光目标也走这条线**）：
 
-1. **peer**：卡内**同构图 + 连续光向量**（`d_lr_img` / `ratio_near90` / `hvf` / `clump`）最近的 2–4 张大师片；
-2. **hero**：peer_n<3，或没有同构图/同光 → 用**人选的那张 hero** 的关系值；
-3. **卡**：hero 也没有 → 用卡的关系值；
-4. 整卡中位只用于介质推导与风格展示；逐张目标用上面三层。
+1. **peer**：卡内 **构图/场景/服装 + 人/背景、脸/背景关系比** 最近的 2–4 张单帧大师片；target = 组内整幅 p50 中位；**有 peer 就用（哪怕 1 张，低置信记账），不再等 3 张**；
+2. **hero**：没有 peer（卡内无可用测量/无 target）→ 用**人选的那张 hero** 的关系值；
+3. **停**：hero 也没有 → 停；卡不当靶（卡只定介质/卷纸/WB/PE nominal）；
+4. 整卡点值只用于介质推导/展示，不当逐图靶。
 
 hero 的用途：人选的卡内代表片；目检参考 + peer 不足时的关系兜底。  
-取 hero 的**形状 / `face_over_bg` / 肤色 C/L / 冷暖方向**作为关系目标。
+取 hero 的**形状 / `person_over_bg` / 肤色 C/L / 冷暖方向**作为关系目标。
 
-peer 的取法：构图（景别、人占幅、脸位置）+ **连续光向量** + 场景/背景结构。  
-光位四分组/标签只做诊断；连续光向量用于找同光参考。
+peer 的取法：构图（景别、人占幅、脸位置）+ 场景结构（sky/env/green/blue）+ **人/背景、脸/背景的明暗比例**。  
+绝对 L\*/p50/contrast/clip/光强不进距离；光位四分组/标签只做诊断；连续光向量不进距离。
 
 ---
 
@@ -62,7 +62,7 @@ peer 的取法：构图（景别、人占幅、脸位置）+ **连续光向量**
 
 ```
 WB（卡级）
-→ 形状（ToneCurve：peer → hero → 卡）
+→ 形状（ToneCurve：peer → hero）
 → 肤色组（局部曝光 + Point Color 三轴）
 → 白裙检查 → 过曝才压人物蒙版 Highlights
 → 细节（锐化/降噪/导出）
@@ -82,12 +82,14 @@ WB（卡级）
 
 ### 5.2 曝光 / 明暗
 
-**不重算全局曝光。① 的 subject-face 结果保留；Basic 四根默认 0。**
+**不重算全局曝光。① 的 PE 落点保留；Basic 四根默认 0。**
+
+曝光不归 LR：① 的整幅 p50 已由引擎解到 peer target（§3）；LR 只补形状/肤色/颜色。
 
 - 不把卡/peer/hero 的**绝对分位**当全局靶；
 - 不用 Adobe Auto Tone 当目标（它算的是它自己，不是卡）；
 - 不自己解 Basic 的五根滑杆；
-- 逐图只做 **ToneCurve 形状**（peer → hero → 卡）；
+- 逐图只做 **ToneCurve 形状**（peer → hero）；
 - 白裙允许先亮；肤色组之后查 `parts.white.L_p99`，过曝才用人物蒙版 Highlights 压；
 - 局部肤色/白裙负责兜底，不反过来改全局 EV。
 
@@ -96,7 +98,7 @@ WB（卡级）
 
 ### 5.3 形状（曲线）
 
-- 把 peer → hero → 卡的**肩趾比例**套到这张图自己的锚点。
+- 把 peer → hero 的**肩趾比例**套到这张图自己的锚点。
 - 位置用本图锚点；曲线只补形状；不套绝对分位。
 - 曲线检查：锚点单调、端点不反折、相邻锚点留间距；③ 出现 solarize 就修曲线/重出该图，不整批迭代。
 
@@ -106,7 +108,7 @@ WB（卡级）
 
 ```
 h0, L0, C0 = 全局/肤色局部之后的肤色
-h*, L*, C* = 卡/hero/peer 的肤色目标
+h*, L*, C* = hero/peer 的肤色目标
 HueShift  = 小步(h* − h0)        # 修 WB 修不掉的逐图色相残差
 LumScale  = 小步(L* − L0)        # 修明度残差
 SatScale  = 小步(C*/L* ÷ C0/L0 − 1)  # 修 C/L 关系
@@ -120,7 +122,7 @@ SatScale  = 小步(C*/L* ÷ C0/L0 − 1)  # 修 C/L 关系
 颜色：
 
 - WB 定卡级色相；Point Color 只补肤色窗内的 h/L/C 残差。
-- 冷暖/分色取卡里**近中性**（C* ≤ 1.5）且方向在暖（20–70°）/冷（200–260°）的高光/暗部；场景色归场景。
+- 冷暖目标来自 peer；**分色暂不做**（卡 tone 不当靶；等 peer 的 hue_bands 再接）。
 
 ### 5.5 局部
 
@@ -135,7 +137,7 @@ SatScale  = 小步(C*/L* ÷ C0/L0 − 1)  # 修 C/L 关系
 顺序固定：
 
 ```text
-形状/曲线（peer → hero → 卡）
+形状/曲线（peer → hero）
 → 组 1 肤色（可能抬高人物）
 → 再检测白裙 p99
 → 过曝才建组 2，压人物蒙版 Highlights
@@ -159,18 +161,18 @@ SatScale  = 小步(C*/L* ÷ C0/L0 − 1)  # 修 C/L 关系
 
 ### 6.1 出计划前先核对
 
-- **① 与渲染凭证一致**：读 `_render.json` 的 `auto_exposure=subject-face`、PE 基准、WB；不一致先重渲，再出 plan。
+- **① 与渲染凭证一致**：读 `_render.json` 的 `auto_exposure=false`、`peer_target`、`pe_solved`、WB；不一致先重渲，再出 plan。
 - **场景一致**：混光先拆；一张 plan 只属于一个场景/一张卡。
 - **脸/肤色可用**：检测在 1620；有脸/肤色窗才做肤色、局部；没有就跳过该层并记账。
-- **目标源清楚**：peer≥3 用 peer；否则 hero；否则卡；plan 写 `target_source` 和 `peer_ids`/`hero`。
+- **目标源清楚**：有 peer 用 peer；peer 不足 → 借最近比值 peer（低置信）→ hero → 停；plan 写 `target_source` / `peer_ids` / `target_p50`。
 - **蒙版作用域**：肤色组 = subject ∩ 肤色票；白裙组 = subject 整身 + Highlights；两组分开，不共用一个滑杆组。
 
 ### 6.2 每张 plan 记什么
 
 ```
 target_source: peer / hero / card
-peer_ids / hero
-exposure: 0（保留 ① subject-face）
+peer_ids / peer_target / target_source
+exposure: 0（保留 ① 的 PE 落点；pe_solved / delta_ev / hit_bound 记账）
 curve: anchors + toe/shoulder
 point_color: r0、r*、sat_scale、skin_window
 local: skin ev、PointColor H/L/S、white highlights、mask_coverage
@@ -183,8 +185,8 @@ checks: skin_clip、bg_clip（诊断）、white_p99、curve_monotonic、mask_in_
 
 | 踩过的坑 | 现在的做法 |
 |---|---|
-| 旧 ① / 渲染凭证过期 | 核对 `_render.json` 的 `auto_exposure=subject-face`/PE 基准/WB；变就重渲；一次 ① 对应一份凭证 |
-| 曝光恒 0 | 0 = 保留 ① 的 subject-face；不再重算全局 EV |
+| 旧 ① / 渲染凭证过期 | 核对 `_render.json` 的 `auto_exposure=false`/`peer_target`/`pe_solved`/WB；变就重渲；一次 ① 对应一份凭证 |
+| 曝光恒 0 | 0 = 保留 ① 的 PE 落点；不再重算全局 EV |
 | Basic 数字靶 | Basic 四根默认 0；parts 只诊断；通用修图只给方向 + 人确认 |
 | 卡绝对分位 / Auto Tone 当靶 | 只套 peer→hero→卡的形状；卡的分位只诊断；Auto Tone 不进求解 |
 | 局部用整幅 headroom | 肤色组用肤色窗自己的余量；白裙组用 white p99；整幅只诊断 |
@@ -196,8 +198,8 @@ checks: skin_clip、bg_clip（诊断）、white_p99、curve_monotonic、mask_in_
 | 批内混场景 | 先按场景拆批；一个场景一个参考 |
 | 静默开关跳过一层 | 每层默认执行；要关闭就写进 plan 并记账 |
 | 机器验收 | 物理只诊断；人看 Reference View + 整组并排 |
-| peer 退卡中位 | peer = 构图 + 连续光向量；peer<3 → hero 关系 → 卡关系 |
-| hero 不参与计算 | peer 不足时接 hero 的关系值（形状/face_over_bg/肤色 C/L/冷暖） |
+| peer 退卡中位 | peer = 构图/场景/服装 + 人/背景、脸/背景关系比；peer 不足 → 借最近比值 peer（低置信）→ hero → 停 |
+| hero 不参与计算 | peer 不足时接 hero 的关系值（形状/person_over_bg/肤色 C/L/冷暖） |
 | Point Color 只当载体 | Point Color 同时做肤色窗和三轴微调：HueShift / LumScale / SatScale |
 | 白裙/背景被肤色带偏 | 肤色组只在肤色窗；白裙组只压人物 Highlights；动了就减量或停 |
 
@@ -206,7 +208,7 @@ checks: skin_clip、bg_clip（诊断）、white_p99、curve_monotonic、mask_in_
 - 缺 ① 或渲染凭证不一致 → 先重渲；仍不一致就停。
 - 缺场景 → 先拆批。
 - 缺脸/肤色窗 → 跳过肤色/局部，记账；其余层继续。
-- 缺 peer → 用 hero；缺 hero → 用卡；都写进 plan。
+- 缺 peer → 借最近比值 peer（低置信）→ hero → 停；都写进 plan。
 - 回读失败 → 停，记账。
 
 ---
@@ -214,12 +216,12 @@ checks: skin_clip、bg_clip（诊断）、white_p99、curve_monotonic、mask_in_
 ## 7 验收
 
 ```
-LR 出 ③ → 参考页（③ + 卡 hero + ①）→ 人目检
+LR 出 ③ → 参考页（③ + peer + ①）→ 人目检
 机器出片 + 参考页 + 物理诊断
 人说过，才算过；人说过不了，写“哪一段没做到”
 ```
 
-- **Reference View**：③ 与卡 hero 并排看；先看整体，再看脸。
+- **Reference View**：③ 与 peer 并排看；先看整体，再看脸。
 - **整组一致性**：所有 ③ 按拍摄顺序并排；看“比邻居暖/亮一档”的跳变。
 - **背景允许过曝**；看整体结构、脸、白衫、头发；背景结构塌/死黑、或脸黑，都记录给人看。
 
@@ -229,12 +231,13 @@ LR 出 ③ → 参考页（③ + 卡 hero + ①）→ 人目检
 
 ```
 lr_plan.py      LRPlan 数据模型
-lr_solve.py     图级：曝光/曲线/肤色/冷暖/局部
+lr_solve.py     图级：曲线/肤色/冷暖/局部（EV 0）
 lr_exec.py      plan → XMP/桥
 lrsink.py       XMP 作业单 + 桥执行
 lr_bridge.py    桥客户端
-review.py       ③ 参考页
-peer.py         同构图 + 连续光向量 peer
+review.py       ③ 参考页 + 脸 L/clip 诊断
+peer_ratio.py   关系比 + 构图/场景 peer；target = 组内 p50 中位
+chart_calib.py  标准色卡（ColorChecker + 21 级灰阶）→ input_luminance × PE → output_L*
 card_*          卡级 WB/点值/内容
 ```
 

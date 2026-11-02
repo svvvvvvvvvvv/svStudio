@@ -92,50 +92,27 @@ def wb_of(card: dict, recs: Dict[str, dict],
 # ---------------------------------------------------------------- 目标
 
 def skin_target(target: Optional[dict], card: dict) -> dict:
-    """肤色目标：peer/hero 优先，缺了回退卡；只给关系。"""
+    """肤色目标：**只用 peer/hero**；缺了就 None（不回退卡点值）。"""
     t = (target or {}).get('skin') or {}
-    c = (card or {}).get('points') or {}
-    skin = {}
-    for k, ck in (('L', 'face_L'), ('C', 'face_C'), ('h', 'face_h')):
-        v = _num(t.get(k))
-        skin[k] = v if v is not None else _num(c.get(ck))
+    skin = {k: _num(t.get(k)) for k in ('L', 'C', 'h')}
     rel = (target or {}).get('rel') or {}
     wc = _num(rel.get('warm_cool_b'))
     if wc is None:
         wc = _num((target or {}).get('warm_cool_b'))
-    if wc is None:
-        wc = _num(c.get('warm_cool_b'))
     ratio = _num(rel.get('face_over_bg'))
     if ratio is None:
         ratio = _num((target or {}).get('face_over_bg'))
-    if ratio is None:
-        ratio = _num(c.get('face_over_bg'))
     return dict(skin=skin, warm_cool_b=wc, face_over_bg=ratio)
 
 
-def _card_shape(card: dict) -> Optional[dict]:
-    p = _card_points(card)
-    try:
-        p5, p25, p50 = (float(p[k]) for k in ('p5', 'p25', 'p50'))
-        p75, p95 = (float(p[k]) for k in ('p75', 'p95'))
-        toe = (p25 - p5) / (p50 - p5)
-        shoulder = (p95 - p75) / (p95 - p50)
-    except Exception:                                      # noqa: BLE001
-        return None
-    if not (0.0 < toe < 1.0 and 0.0 < shoulder < 1.0):
-        return None
-    return dict(toe=toe, shoulder=shoulder,
-                contrast_win=p75 - p25, source='card')
-
-
 def shape_target(card: dict, target: Optional[dict]) -> Optional[dict]:
-    """peer/hero 的形状优先；缺了用卡的肩趾比例。"""
+    """peer/hero 的形状；没有就 None（不用卡中位兜底）。"""
     sh = (target or {}).get('shape') or {}
     if _valid_shape(sh):
         return dict(toe=float(sh['toe']), shoulder=float(sh['shoulder']),
                     contrast_win=_num(sh.get('contrast_win')) or 0.0,
                     source=str((target or {}).get('source') or 'peer'))
-    return _card_shape(card)
+    return None
 
 
 def curve_for(pred: Dict[str, float], shape: Optional[dict],
@@ -255,48 +232,10 @@ def grading(card: dict, rec: dict, target: dict,
     else:
         ledger.append('缺 skin_rgb ⇒ 没有肤色蒙版/Point Color（记账）')
 
-    # 冷暖/分色：只处理卡里近中性的暖/冷方向；场景色不做全局分色
-    tone = (card or {}).get('tone') or {}
-    wc_t = _num((target or {}).get('warm_cool_b'))
-    wc_c = _num(rec.get('warm_cool_b'))
-    if wc_t is not None and wc_c is not None and abs(wc_t - wc_c) >= 0.5:
-        hi = tone.get('highlight') or {}
-        sh = tone.get('shadow') or {}
-
-        def _node(node):
-            lab = node.get('lab')
-            if not lab:
-                return None
-            C = math.hypot(float(lab[1]), float(lab[2]))
-            h = _num(node.get('hsl_h'))
-            if h is None or C > SPLIT_C_MAX:
-                return None
-            if not (SPLIT_HUE_WARM[0] <= h <= SPLIT_HUE_WARM[1]
-                    or SPLIT_HUE_COOL[0] <= h <= SPLIT_HUE_COOL[1]):
-                return None
-            return h, C
-
-        hi_n, sh_n = _node(hi), _node(sh)
-        if hi_n is None or sh_n is None:
-            out['split'] = dict(shadow_hue=0.0, shadow_sat=0.0,
-                                highlight_hue=0.0, highlight_sat=0.0, balance=0.0)
-            ledger.append('分色跳过：卡高光/暗部不是近中性暖冷 ⇒ 场景色不当色偏')
-        else:
-            hi_h, hi_c = hi_n
-            sh_h, sh_c = sh_n
-            out['split'] = dict(
-                shadow_hue=round(float(sh_h), 1),
-                shadow_sat=round(min(SPLIT_UI_MAX, sh_c * SPLIT_UI_PER_C), 1),
-                highlight_hue=round(float(hi_h), 1),
-                highlight_sat=round(min(SPLIT_UI_MAX, hi_c * SPLIT_UI_PER_C), 1),
-                balance=0.0)
-            ledger.append('分色（卡，近中性暖冷）：暖冷 %.2f → %.2f ⇒ '
-                          '暗 %.0f°/%.0f、高 %.0f°/%.0f'
-                          '（剂量=卡色度×%g，③ 目检）'
-                          % (wc_c, wc_t, sh_h, out['split']['shadow_sat'],
-                             hi_h, out['split']['highlight_sat'], SPLIT_UI_PER_C))
-    elif wc_t is not None and wc_c is not None:
-        ledger.append('暖冷 %.2f ≈ 目标 %.2f ⇒ 不分色' % (wc_c, wc_t))
+    # 分色：卡 tone 不再当靶（2026-11-02）；暂不做分色，等 peer 的 hue_bands 再接
+    out['split'] = dict(shadow_hue=0.0, shadow_sat=0.0,
+                        highlight_hue=0.0, highlight_sat=0.0, balance=0.0)
+    ledger.append('分色不做：卡 tone 不当靶（等 peer 的 hue_bands 再接）')
     return out
 
 
@@ -384,22 +323,11 @@ def local_white(plan: LRPlan, rec: dict, ledger: List[str]) -> bool:
 
 # ---------------------------------------------------------------- 主流程
 
-def _card_target(card: dict) -> dict:
-    pts = (card or {}).get('points') or {}
-    skin = dict(L=_num(pts.get('face_L')), C=_num(pts.get('face_C')),
-                h=_num(pts.get('face_h')))
-    rel = dict(face_over_bg=_num(pts.get('face_over_bg')),
-               person_over_bg=_num(pts.get('person_over_bg')),
-               warm_cool_b=_num(pts.get('warm_cool_b')))
-    return dict(source='card', peer_n=0, shape=_card_shape(card) or {},
-                skin=skin, rel=rel, exposure={})
-
-
 def plan_batch(recs: Dict[str, dict], card: dict,
                peer_targets: Optional[Dict[str, dict]] = None,
                hero_target: Optional[dict] = None,
                log=print) -> Dict[str, LRPlan]:
-    """逐图出 LRPlan；目标顺序 peer → hero → 卡。"""
+    """逐图出 LRPlan；目标 peer → hero；都没有就停（卡不当靶）。"""
     led0: List[str] = []
     wb = wb_of(card, recs, led0)
     for line in led0:
@@ -409,12 +337,15 @@ def plan_batch(recs: Dict[str, dict], card: dict,
         ledger: List[str] = []
         pt = (peer_targets or {}).get(stem) or {}
         peer_n = int(pt.get('peer_n') or 0)
-        if peer_n >= 3 and _valid_shape(pt.get('shape')):
+        if peer_n >= 1 and _valid_shape(pt.get('shape')):
+            # ★ 2026-11-02：peer 先算、最准；哪怕 1 张也用 peer（低置信已在
+            #   peer_ratio 记账），不再等到 3 张才退 hero/卡。
             target, source = pt, 'peer'
         elif hero_target:
             target, source = hero_target, 'hero'
         else:
-            target, source = _card_target(card), 'card'
+            raise RuntimeError('没有 peer/hero target：%s（卡中位不再当靶；先跑 peer 或给 hero）'
+                               % stem)
         target = dict(target)
         target['source'] = source
 
