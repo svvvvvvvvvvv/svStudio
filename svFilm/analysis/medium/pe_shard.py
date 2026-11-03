@@ -34,7 +34,8 @@ def main():
         try:
             med = medium_of(card)
             CC.render_table(med, out_path=out, long_side=args.long_side,
-                            wedge_mode='ramp')
+                            wedge_mode='ramp',
+                            pe_values=[0.0625, 0.125, 0.25, 0.5, 1.0, 2.0, 4.0])
             doc = json.load(open(out, encoding='utf-8'))
             doc['card'] = name
             with open(out, 'w', encoding='utf-8') as fh:
