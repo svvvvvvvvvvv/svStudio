@@ -185,7 +185,6 @@ def cmd_run(a):
     if card_mc is None:
         # 显式指定 thin 卡：允许跑，但不进自动匹配候选。
         from types import SimpleNamespace
-        from .matchcard import raw_card
         r = raw_card(a.card)
         if r:
             sim = (r.get('medium') or {}).get('simulation') or {}
