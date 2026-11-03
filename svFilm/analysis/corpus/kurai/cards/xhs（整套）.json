@@ -369,7 +369,9 @@
  "medium": {
   "_note_self": "medium-only；placement 归 LR（ADR-001..006 见 decisions_solver.md）",
   "wb": {
-   "white_balance": "as_shot"
+   "white_balance": "custom",
+   "temperature": 5200.0,
+   "tint": 1.0
   },
   "input_image": {
    "upscale_factor": 1.0,
@@ -743,7 +745,7 @@
    "source": "visual_lookbook_20261103"
   },
   "_fields_fixed": "2026-11-03 stock/paper fields: grain all + filters reset + pe nominal 1.0",
-  "_wb_note": "as-shot; per-RAW camera WB (2026-11-03 user request)"
+  "_wb_note": "fixed card-level style bias vs old 4477/0.944: +723K, +0.056 tint; not master inversion"
  },
  "pe": 1.0,
  "pe_why": "nominal 1.0; per-image PE table is authoritative",

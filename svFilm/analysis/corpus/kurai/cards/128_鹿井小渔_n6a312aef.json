@@ -317,8 +317,8 @@
   "_note_self": "card38 medium-only: PE fixed 0.694; placement owned by LR Basic",
   "wb": {
    "white_balance": "custom",
-   "temperature": 4630.0,
-   "tint": 0.95
+   "temperature": 5353.0,
+   "tint": 1.006
   },
   "input_image": {
    "upscale_factor": 1.0,
@@ -690,7 +690,8 @@
    "paper": "kodak_portra_endura",
    "source": "visual_lookbook_20261103"
   },
-  "_fields_fixed": "2026-11-03 stock/paper fields: grain all + filters reset + pe nominal 1.0"
+  "_fields_fixed": "2026-11-03 stock/paper fields: grain all + filters reset + pe nominal 1.0",
+  "_wb_note": "global fixed style bias +723K / +0.056 tint vs old card value; not per-RAW solve"
  },
  "pe": 1.0,
  "pe_why": "nominal 1.0; per-image PE table is authoritative",

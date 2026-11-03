@@ -314,8 +314,8 @@
   "_note_self": "medium-only；placement 归 LR（ADR-001..006 见 decisions_solver.md）",
   "wb": {
    "white_balance": "custom",
-   "temperature": 4663.0,
-   "tint": 0.931
+   "temperature": 5386.0,
+   "tint": 0.987
   },
   "input_image": {
    "upscale_factor": 1.0,
@@ -687,7 +687,8 @@
    "paper": "kodak_portra_endura",
    "source": "visual_lookbook_20261103"
   },
-  "_fields_fixed": "2026-11-03 stock/paper fields: grain all + filters reset + pe nominal 1.0"
+  "_fields_fixed": "2026-11-03 stock/paper fields: grain all + filters reset + pe nominal 1.0",
+  "_wb_note": "global fixed style bias +723K / +0.056 tint vs old card value; not per-RAW solve"
  },
  "pe": 1.0,
  "pe_why": "nominal 1.0; per-image PE table is authoritative",
