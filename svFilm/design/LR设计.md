@@ -1,5 +1,9 @@
 > 🔒 **没有我的授权，不准去动。**
 >
+> **2026-11-04 更新（已授权）**：曝光残差由引擎**锚脸**解决（不再是整幅 p50）；
+> 曲线新增**暗部拉伸**（按引擎报的 `shadow_gap` 把 q5 往 peer 压，上限 20 L*，
+> 且 **p50 锚点不许被动**）；新增"模拟 ③"与 ①/③/peer 目检页。
+>
 # LR 设计
 
 > 服从 `纪律.md` / `设计真源.md`。
@@ -17,10 +21,11 @@
 
 | 残差 | 谁补 | 用什么 |
 |---|---|---|
-| **曝光 / 明暗** | 引擎 | peer 组整幅 p50 中位；逐图 PE 落点；LR 不重算，EV 0；白裙由人物蒙版 Highlights 压 |
-| **形状** | LR | peer → hero 的形状比例，套到本图锚点（ToneCurve） |
-| **肤色** | LR | Point Color 三轴（HueShift/LumScale/SatScale），在局部肤色曝光之后算 |
-| **颜色** | LR | WB 定色相；冷暖目标来自 peer；分色暂不做 |
+| **整体明暗 / 背景** | 引擎 | 整幅五分位对齐 peer（L1 最小）；PE 由**渲了再量**求根；LR 不重算，EV 0 |
+| **整体颜色** | 引擎 | WB（卡级）+ 介质 + 印相滤片；LR 不改整体色相 |
+| **形状** | LR | peer 的肩趾比例 + **按 shadow_gap 拉暗部**（ToneCurve；p50 锚点不动） |
+| **肤色** | LR | Point Color 三轴（HueShift/LumScale/SatScale）+ 局部曝光补脸（允许引擎把脸放偏 ±5~8） |
+| **服装** | LR | 人物蒙版：白裙/衣服高光回收；不单独圈白裙 |
 
 引擎管：卷/纸/颗粒/光晕/WB/PE/peer 落点/校准/HSL/色彩分级。  
 LR 管：以上三项残差、局部、导出。  
@@ -45,9 +50,11 @@ WB 是卡级/组级：一个目录一个，同光整组共用；混光先拆场�
 
 LR 的对齐目标按这个顺序取（**曝光目标也走这条线**）：
 
-1. **peer**：卡内 **构图/场景/服装 + 人/背景、脸/背景关系比** 最近的 2–4 张单帧大师片；target = 组内整幅 p50 中位；**有 peer 就用（哪怕 1 张，低置信记账），不再等 3 张**；
-2. **hero**：没有 peer（卡内无可用测量/无 target）→ 用**人选的那张 hero** 的关系值；
-3. **停**：hero 也没有 → 停；卡不当靶（卡只定介质/卷纸/WB/PE nominal）；
+1. **peer**：卡内**同光位**（front/side/back/dappled）里距离最近的那 **1 张**单帧大师片
+   （距离 = 构图/场景/服装 + 人/背景、脸/背景比例 + 场景反差 + 脸大小 + 肤色 + 光方向符号）；
+   target = 这张 peer 的**五分位**；**只取一张，不取 k 张、不做中位/平均**；
+2. **常数分布**：同光位一张都没有 → 语料中位（8.2/21.8/51.8/75.7/91.0），标 `constant`；
+3. **hero**：只作 look 参考与肤色/形状的兜底，不再是曝光目标；
 4. 整卡点值只用于介质推导/展示，不当逐图靶。
 
 hero 的用途：人选的卡内代表片；目检参考 + peer 不足时的关系兜底。  
@@ -84,12 +91,13 @@ WB（卡级）
 
 **不重算全局曝光。① 的 PE 落点保留；Basic 四根默认 0。**
 
-曝光不归 LR：① 的整幅 p50 已由引擎解到 peer target（§3）；LR 只补形状/肤色/颜色。
+曝光不归 LR：① 的**整幅五分位**已由引擎对齐 peer（§3）；LR 只补形状/肤色/颜色，
+以及**脸和裙子的局部**（引擎不管这两块，允许脸偏 ±5~8）。
 
-- 不把卡/peer/hero 的**绝对分位**当全局靶；
+- 不把卡/peer/hero 的**整幅绝对分位**当全局靶（脸中位除外，那是引擎的活）；
 - 不用 Adobe Auto Tone 当目标（它算的是它自己，不是卡）；
 - 不自己解 Basic 的五根滑杆；
-- 逐图只做 **ToneCurve 形状**（peer → hero）；
+- 逐图只做 **ToneCurve 形状**（peer 肩趾比例 + 暗部拉伸，见 5.3）；
 - 白裙允许先亮；肤色组之后查 `parts.white.L_p99`，过曝才用人物蒙版 Highlights 压；
 - 局部肤色/白裙负责兜底，不反过来改全局 EV。
 
@@ -98,9 +106,20 @@ WB（卡级）
 
 ### 5.3 形状（曲线）
 
-- 把 peer → hero 的**肩趾比例**套到这张图自己的锚点。
-- 位置用本图锚点；曲线只补形状；不套绝对分位。
-- 曲线检查：锚点单调、端点不反折、相邻锚点留间距；③ 出现 solarize 就修曲线/重出该图，不整批迭代。
+两条腿：**peer 的肩趾比例** + **暗部拉伸**（引擎报的 `shadow_gap`）。
+
+```
+shadow_gap = ① 的 p5 − peer 的 p5         （引擎算好写进契约）
+曲线目标 q5 = peer 的 p5，但最多往下拉 20 L*（MD_TOE_MAX；再多会出硬边）
+```
+
+- 位置用本图锚点；**p50 锚点不许动**（位置归曝光）——锚点合并、单调化都不许把它挤掉；
+- 趾/肩用**比例口径**：压完暗部后 `new25 = new5 + toe_frac·(q50 − new5)`，
+  不能再用"宽度增量"（分位挤在一起时会和 new5 打架，实测把中位带跑 15 级）；
+- 曲线检查：锚点单调、端点不反折、相邻锚点留间距；局部斜率 > 3.0 判"不硬修"，记账；
+- ③ 出现 solarize 就修曲线/重出该图，不整批迭代；
+- **残留要报**：`shadow_gap_before` / `shadow_gap_after` 都写进 plan；
+  `after` 用**模拟 ③ 实测**回填，不拿锚点意图当结果。
 
 ### 5.4 肤色 / 颜色
 
@@ -127,6 +146,7 @@ SatScale  = 小步(C*/L* ÷ C0/L0 − 1)  # 修 C/L 关系
 ### 5.5 局部
 
 **两组局部修正，共用同一个人物选择；不是两个独立的人物 AI 蒙版。**
+（分工：引擎只保证整体背景明暗/颜色；**肤色和服装是 LR 的活**。）
 
 ```
 人物选择（People / subject）
@@ -164,16 +184,17 @@ SatScale  = 小步(C*/L* ÷ C0/L0 − 1)  # 修 C/L 关系
 - **① 与渲染凭证一致**：读 `_render.json` 的 `auto_exposure=false`、`peer_target`、`pe_solved`、WB；不一致先重渲，再出 plan。
 - **场景一致**：混光先拆；一张 plan 只属于一个场景/一张卡。
 - **脸/肤色可用**：检测在 1620；有脸/肤色窗才做肤色、局部；没有就跳过该层并记账。
-- **目标源清楚**：有 peer 用 peer；peer 不足 → 借最近比值 peer（低置信）→ hero → 停；plan 写 `target_source` / `peer_ids` / `target_p50`。
+- **目标源清楚**：同光位 peer 用 peer；一张都没有 → 常数靶 60.3；plan 写 `target_source` / `peer_ids` / `face_mid_target` / `status`。
 - **蒙版作用域**：肤色组 = subject ∩ 肤色票；白裙组 = subject 整身 + Highlights；两组分开，不共用一个滑杆组。
 
 ### 6.2 每张 plan 记什么
 
 ```
-target_source: peer / hero / card
-peer_ids / peer_target / target_source
-exposure: 0（保留 ① 的 PE 落点；pe_solved / delta_ev / hit_bound 记账）
-curve: anchors + toe/shoulder
+target_source: peer / constant
+peer_ids / face_mid_target / status（ok·unreachable·fallback_hist·clip_limited）
+exposure: 0（保留 ① 的 PE 落点；pe_solved / delta_ev / status 记账）
+shadow_gap_before / shadow_gap_after（后者 = 模拟 ③ 实测）
+curve: anchors + toe/shoulder + q5 目标
 point_color: r0、r*、sat_scale、skin_window
 local: skin ev、PointColor H/L/S、white highlights、mask_coverage
 checks: skin_clip、bg_clip（诊断）、white_p99、curve_monotonic、mask_in_skin
@@ -185,7 +206,11 @@ checks: skin_clip、bg_clip（诊断）、white_p99、curve_monotonic、mask_in_
 
 | 踩过的坑 | 现在的做法 |
 |---|---|
-| 旧 ① / 渲染凭证过期 | 核对 `_render.json` 的 `auto_exposure=false`/`peer_target`/`pe_solved`/WB；变就重渲；一次 ① 对应一份凭证 |
+| 旧 ① / 渲染凭证过期 | 核对 `_render.json` 的 `auto_exposure=false`/`status`/`pe_solved`/WB；变就重渲；一次 ① 对应一份凭证 |
+| 整幅 p50 当中位靶（2026-11 证伪） | 靶换成 peer 的 **face_mid**；整幅中位只诊断 |
+| 曲线把中位带跑 | p50 锚点永不合并、不被单调化挤掉；趾宽按**新区间**重算 |
+| 分位挤在一起时 16 点曲线表达不了 | 斜率 > 3.0 判"不硬修"，记账，不硬拧 |
+| 计划里写的是锚点意图 | `shadow_gap_after` 由**模拟 ③ 实测**回填 |
 | 曝光恒 0 | 0 = 保留 ① 的 PE 落点；不再重算全局 EV |
 | Basic 数字靶 | Basic 四根默认 0；parts 只诊断；通用修图只给方向 + 人确认 |
 | 卡绝对分位 / Auto Tone 当靶 | 只套 peer→hero→卡的形状；卡的分位只诊断；Auto Tone 不进求解 |
@@ -198,8 +223,8 @@ checks: skin_clip、bg_clip（诊断）、white_p99、curve_monotonic、mask_in_
 | 批内混场景 | 先按场景拆批；一个场景一个参考 |
 | 静默开关跳过一层 | 每层默认执行；要关闭就写进 plan 并记账 |
 | 机器验收 | 物理只诊断；人看 Reference View + 整组并排 |
-| peer 退卡中位 | peer = 构图/场景/服装 + 人/背景、脸/背景关系比；peer 不足 → 借最近比值 peer（低置信）→ hero → 停 |
-| hero 不参与计算 | peer 不足时接 hero 的关系值（形状/person_over_bg/肤色 C/L/冷暖） |
+| peer 退卡中位 | peer = 同光位 + 构图/场景/服装 + 关系比；只取一张；没有 → 常数靶 60.3 |
+| hero 不参与计算 | hero 只作 look 参考；形状/肤色走 peer，曝光走引擎 |
 | Point Color 只当载体 | Point Color 同时做肤色窗和三轴微调：HueShift / LumScale / SatScale |
 | 白裙/背景被肤色带偏 | 肤色组只在肤色窗；白裙组只压人物 Highlights；动了就减量或停 |
 
@@ -208,7 +233,7 @@ checks: skin_clip、bg_clip（诊断）、white_p99、curve_monotonic、mask_in_
 - 缺 ① 或渲染凭证不一致 → 先重渲；仍不一致就停。
 - 缺场景 → 先拆批。
 - 缺脸/肤色窗 → 跳过肤色/局部，记账；其余层继续。
-- 缺 peer → 借最近比值 peer（低置信）→ hero → 停；都写进 plan。
+- 缺 peer（同光位一张都没有）→ 常数靶 60.3，status=constant；写进 plan。
 - 回读失败 → 停，记账。
 
 ---
@@ -235,9 +260,11 @@ lr_solve.py     图级：曲线/肤色/冷暖/局部（EV 0）
 lr_exec.py      plan → XMP/桥
 lrsink.py       XMP 作业单 + 桥执行
 lr_bridge.py    桥客户端
-review.py       ③ 参考页 + 脸 L/clip 诊断
-peer_ratio.py   关系比 + 构图/场景 peer；target = 组内 p50 中位
-chart_calib.py  标准色卡（ColorChecker + 21 级灰阶）→ input_luminance × PE → output_L*
+review.py       ①/③/peer 三图并排目检页（review-sim）
+peer_ratio.py   同光位单 peer + 距离权重；target = peer 的 face_mid
+sim3.py         模拟 ③：曲线套到 ① 上 → 量 → 暗差实测（不驱动 LR）
+curve_design.py 锚点 → 16 点 LUT（比例口径 + q5 拉伸 + p50 锚点保护）
+chart_calib.py  36 级 ramp × 7 档 PE → input_luminance × PE → output_L*（PCHIP）
 card_*          卡级 WB/点值/内容
 ```
 
