@@ -110,6 +110,59 @@ def _med(x):
 
 # ---------------------------------------------------------------- 逐图
 
+def skin_of_linear(lin, long_side: int = 1080) -> dict:
+    """线性 RAW → 肤色读数（**复用测量层这一套**：YuNet 五点 + face_skin 掩膜 +
+    颊 ROI + 去鼻影/去镜面/去离群）。
+
+    用途：渲 ① 之前就算出「这张的脸现在有多亮」——
+      · 编码只做 sRGB 传输函数（不加任何 tone map）⇒ 显示域 L* 和线性 Y 一一对应，
+        再回算 Y 就是 RAW 里脸上的线性亮度；
+      · 有了它，PE 可以按「脸落在目标亮度」直接解，不用先渲代理图。
+
+    返回 {ok, L, C, h, n, why}；失败给 ok=False + why，不静默。
+    """
+    import numpy as _np
+    from PIL import Image as _Im
+    u = _np.clip(_np.asarray(lin, _np.float64), 0.0, 1.0)
+    disp = _np.where(u <= 0.0031308, u * 12.92,
+                     1.055 * _np.power(u, 1.0 / 2.4) - 0.055)
+    rgb = (_np.clip(disp, 0, 1) * 255.0 + 0.5).astype(_np.uint8)
+    H0, W0 = rgb.shape[:2]
+    s = min(1.0, DET_LONG / max(W0, H0))
+    det_rgb = _np.asarray(_Im.fromarray(rgb).resize(
+        (int(round(W0 * s)), int(round(H0 * s))), resample=3), _np.uint8)
+    det = _detect(det_rgb)
+    if det is None:
+        return dict(ok=False, why='no_face')
+    cx = (det['box'][0] + det['box'][2] / 2) / s
+    cy = (det['box'][1] + det['box'][3] / 2) / s
+    fw = det['fw'] / s
+    fh = det['fh'] / s
+    face = _ellipse(rgb.shape[:2], cx, cy, 0.42 * fw, 0.55 * fh)
+    meta = dict(le=_np.array(det['le']) / s, re=_np.array(det['re']) / s,
+                lm=_np.array(det['lm']) / s, rm=_np.array(det['rm']) / s,
+                nose=_np.array(det['nose']) / s, fw=fw)
+    Ln, an, bn, Cn, hn = _lab(rgb)
+    try:
+        from .skin import face_mask as _FM
+        fs = _FM._probs(det_rgb)[3]
+        sm = cv2.resize(fs, (W0, H0)) if fs.shape != rgb.shape[:2] else fs
+    except Exception:                                      # noqa: BLE001
+        sm = None
+    out = None
+    for smx, loose in ((sm, False), (None, True)):
+        r = sample_skin(rgb, meta, img_lab=(Ln, an, bn, Cn, hn),
+                        mapper=None, skin_mask=smx, loose=loose) or {}
+        if r.get('ok'):
+            out = r
+            break
+    if not out:
+        return dict(ok=False, why='skin_fail')
+    lit = out.get('lit') or {}
+    return dict(ok=True, L=lit.get('L'), C=lit.get('C'), h=lit.get('h'),
+                n=lit.get('n'), src=out.get('src') or 'strict')
+
+
 def measure_one(path: str, light_probe=None) -> dict:
     out: dict = dict(file=path, err=None, caliber=dict(CFG, sha=measure_sha()))
     try:

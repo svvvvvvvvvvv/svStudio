@@ -154,6 +154,7 @@ def _plans_from_manifest(path: str) -> dict:
             point_color=types.SimpleNamespace(**pc) if pc else None,
             local=types.SimpleNamespace(**loc) if loc else None,
             curve=[None] * int(it.get('curve_points') or 0),
+            target=it.get('target') or {},
             card_dev=it.get('card_dev') or {})
     return out
 
@@ -216,7 +217,7 @@ def cmd_run(a):
     measures = _jpg_measures(b, content_path=a.content, log=print)
     from . import peer_ratio, chart_calib
     targets = peer_ratio.build(measures, card_mc.name, log=print)
-    got_t = sum(1 for v in targets.values() if v.get('target_p50') is not None)
+    got_t = sum(1 for v in targets.values() if (v.get('peer_q') or {}).get('p50') is not None)
     print('  peer：%d/%d 张有 target' % (got_t, len(targets)))
     pt = os.path.join(b.out_dir, 'peer_targets.json')
     tmp = pt + '.tmp'
@@ -225,15 +226,29 @@ def cmd_run(a):
     os.replace(tmp, pt)
     print('  target：%s' % pt)
     try:
-        table = chart_calib.load_card_table(card_mc.name)
-        print('  卡级 PE 表：%s' % chart_calib.card_table_path(card_mc.name))
+        _st, _pp = (getattr(a, 'stock', '') or ''), (getattr(a, 'paper', '') or '')
+        _ovr = ''
+        if _st or _pp:
+            _tdir = os.environ.get('SV_PE_TABLE_DIR',
+                                   r'E:\ds\photo\_paper_matrix\_tables')
+            _cand = os.path.join(_tdir, '%s__%s.json'
+                                 % (_st or card_mc.stock, _pp or card_mc.paper))
+            if os.path.isfile(_cand):
+                _ovr = _cand
+        if _ovr:
+            table = chart_calib.load_table(_ovr)
+            print('  介质 PE 表（覆盖卷纸）：%s' % _ovr)
+        else:
+            table = chart_calib.load_card_table(card_mc.name)
+            print('  卡级 PE 表：%s' % chart_calib.card_table_path(card_mc.name))
     except Exception as e:                                 # noqa: BLE001
         print('  ! %s' % e)
         return
-    flat = {k: v['target_p50'] for k, v in targets.items()
-            if v.get('target_p50') is not None}
+    # 目标现在是「一张 peer 的直方图」，整条传给引擎（不再是单个 p50 数）
+    flat = {k: v for k, v in targets.items()
+            if (v.get('peer_q') or {}).get('p50') is not None}
     if not flat:
-        print('  ! 没有 peer target ⇒ 停（卡中位不再当靶；先跑 peer/给 hero）')
+        print('  ! 没有 peer target ⇒ 停（先跑 peer）')
         return
 
     print('\n[2/4] 渲 ①（一次；卡的介质 + 逐图 PE → peer target；不读脸）')
@@ -264,10 +279,14 @@ def cmd_run(a):
             recs = {}
         if not recs:
             recs = run_engine(b, card_mc, limit=a.render_limit, log=print,
-                              targets=flat, table=table)
+                              targets=flat, table=table,
+                              stock=getattr(a, 'stock', '') or '',
+                              paper=getattr(a, 'paper', '') or '')
     else:
         recs = run_engine(b, card_mc, limit=a.render_limit, log=print,
-                          targets=flat, table=table)
+                          targets=flat, table=table,
+                          stock=getattr(a, 'stock', '') or '',
+                          paper=getattr(a, 'paper', '') or '')
     if not recs:
         print('整批无一有效 ⇒ 停')
         return
@@ -283,14 +302,62 @@ def cmd_run(a):
 
     peers = targets
     if peers:
-        got = sum(1 for v in peers.values() if v.get('target_p50') is not None)
+        got = sum(1 for v in peers.values() if (v.get('peer_q') or {}).get('p50') is not None)
         print('  peer target：%d/%d 张' % (got, len(peers)))
     else:
         print('  ! 没有 peer target ⇒ 回退 hero/卡目标（记账）')
     hero_target = _hero_target(b.hero)
+    # 引擎状态从 ① 的 exposure.json 读（交接契约的一部分）
+    status_map = {}
+    for st in recs:
+        f = os.path.join(b.sub('engine'), '%s_exposure.json' % st)
+        if os.path.isfile(f):
+            try:
+                status_map[st] = (json.load(open(f, encoding='utf-8')) or {}).get('status') or ''
+            except Exception:                              # noqa: BLE001
+                pass
     plans = plan_batch(recs, card, peer_targets=peers,
-                       hero_target=hero_target, log=print)
+                       hero_target=hero_target, status_map=status_map, log=print)
     print(lr_summary(plans, card['name'], pe=card.get('pe')))
+
+    # 模拟 ③（只套曲线）：把**实测**的暗差写回计划，不拿锚点意图当结果
+    peer_q_map = {st: ((peers or {}).get(st) or {}).get('peer_q') for st in plans}
+    try:
+        from . import sim3 as _sim3
+        off = os.environ.get('SV_SIM3', '1') != '0'
+        if off:
+            _m = _sim3.measure_plans(plans, b.sub('engine'),
+                                     os.path.join(b.out_dir, 'final_sim'),
+                                     peer_q=peer_q_map, log=print)
+            for _st, _pl in plans.items():
+                _r = _m.get(_st) or {}
+                if _r.get('gap_after') is not None:
+                    _pl.shadow_gap_after = round(float(_r['gap_after']), 1)
+            _gs = [x['gap_after'] for x in _m.values() if x.get('gap_after') is not None]
+            if _gs:
+                print('  ③ 模拟暗差：中位 %+.1f ｜ 0 附近的 %d/%d 张'
+                      % (sorted(_gs)[len(_gs) // 2], sum(1 for g in _gs if abs(g) <= 5), len(_gs)))
+    except Exception as _e:                                # noqa: BLE001
+        print(' ! 模拟 ③ 失败：%s' % _e)
+
+    # 计划落盘：sim3 / 复核 / 以后对 XMP 都对得上
+    try:
+        _pj = {}
+        for _st, _pl in plans.items():
+            _pt = (peers or {}).get(_st) or {}
+            _pj[_st] = dict(curve=getattr(_pl, 'curve', None),
+                            target=getattr(_pl, 'target', None),
+                            status=getattr(_pl, 'status', None),
+                            target_source=getattr(_pl, 'target_source', None),
+                            face_mid_target=getattr(_pl, 'face_mid_target', None),
+                            shadow_gap_before=getattr(_pl, 'shadow_gap_before', None),
+                            shadow_gap_after=getattr(_pl, 'shadow_gap_after', None),
+                            peer_q=_pt.get('peer_q'),
+                            target_from=_pt.get('target_from'))
+        with open(os.path.join(b.out_dir, 'plans.json'), 'w', encoding='utf-8') as _f:
+            json.dump(_pj, _f, ensure_ascii=False, indent=1)
+    except Exception as _e:                                # noqa: BLE001
+        print(' ! 计划落盘失败：%s' % _e)
 
     if a.export:
         print('\n[4/4] 出片：LR 出 ③ → 量 → 目检页（唯一驱动 LR 的一步）')
@@ -356,6 +423,46 @@ def cmd_xmp(a):
     print('输出：%s' % a.out)
 
 
+def cmd_simcurve(a):
+    """模拟 ③（不驱动 LR）：曲线套到 ① 上 → 量 → 跟 peer 比。"""
+    from . import sim3
+    res = sim3.run(a.run_dir, log=print)
+    print(sim3.table(res))
+
+
+def cmd_review_sim(a):
+    """①/③(模拟)/peer 三图并排的目检页。"""
+    import glob as _glob
+    from . import sim3
+    from .review import make_review
+    from .matchcard import card_samples
+    run = a.run_dir
+    eng = os.path.join(run, 'engine')
+    recs1 = {}
+    for f in _glob.glob(os.path.join(eng, '*_rec1.json')):
+        st = os.path.basename(f)[:-len('_rec1.json')]
+        recs1[st] = json.load(open(f, encoding='utf-8'))
+    plans = json.load(open(os.path.join(run, 'plans.json'), encoding='utf-8'))
+    doc = json.load(open(os.path.join(run, 'peer_targets.json'), encoding='utf-8'))
+    per = doc.get('per_image') or {}
+    peer_q = {st: (per.get(st) or {}).get('peer_q') for st in plans}
+    m3 = sim3.measure_plans(plans, eng, os.path.join(run, 'final_sim'),
+                            peer_q=peer_q, log=print)
+    recs3 = {st: dict(img=dict(p5=v['p5'], p50=v['p50'], p95=v['p95']))
+             for st, v in m3.items()}
+    samples = {os.path.basename(p): p for p in card_samples(doc.get('card') or '')}
+    peer_src = {}
+    for st in plans:
+        ids = (per.get(st) or {}).get('peer_ids') or []
+        if ids and samples.get(ids[0]):
+            peer_src[st] = samples[ids[0]]
+    sub = '① 引擎 / ③ 模拟（只套曲线）/ peer 靶 —— 数字只用来定位，不判过不过'
+    out = make_review(recs1, recs3, plans, run, tif_1_dir=eng,
+                      tif_3_dir=os.path.join(run, 'final_sim'),
+                      peer_src=peer_src, title='①/③/peer 目检', sub=sub, log=print)
+    print('\n目检页：%s（%d 张）' % (out['html'], out['n']))
+
+
 def cmd_review(a):
     """①/③ 测量 + manifest → 目检页（**不判过/不过**）。"""
     r1 = _load_recs(a.recs1)
@@ -395,6 +502,8 @@ def main(argv=None):
     p.add_argument('--card', default='', help='人拍板的卡名（不给则只做内容匹配）')
     p.add_argument('--content', default='', help='batch_content JSON（匹配用）')
     p.add_argument('--hero', default='', help='hero 样片（目检参考 + peer 不足兜底）')
+    p.add_argument('--stock', default='', help='临时覆盖卷（跑介质对比用）')
+    p.add_argument('--paper', default='', help='临时覆盖纸（跑介质对比用）')
     p.add_argument('--export', action='store_true', help='用 LR 出 ③（要 LR 在跑）')
     p.add_argument('--reuse', action='store_true', help='复用已渲好的 ①（只重测）')
 
@@ -415,6 +524,12 @@ def main(argv=None):
     p.add_argument('--urls', default='', help='图片直链 json（手机端）')
     p.add_argument('--hero', default='', help='hero 样片')
     p.add_argument('--title', default='成片目检')
+
+    p = sub.add_parser('review-sim'); p.set_defaults(fn=cmd_review_sim)
+    p.add_argument('run_dir')
+
+    p = sub.add_parser('simcurve'); p.set_defaults(fn=cmd_simcurve)
+    p.add_argument('run_dir', help='run 的输出目录（要含 plans.json 与 engine/）')
 
     a = ap.parse_args(argv)
     a.fn(a)

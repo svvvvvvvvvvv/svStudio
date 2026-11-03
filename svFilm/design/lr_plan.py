@@ -106,6 +106,13 @@ class LRPlan:
     blacks: float = 0.0
     # ---- 图级：曲线（只补形状）
     curve: Optional[List[Tuple[int, int]]] = None
+    # ---- 交接：引擎报的暗部差，曲线压完还剩多少（都是 L*）
+    shadow_gap_before: Optional[float] = None
+    shadow_gap_after: Optional[float] = None
+    # ---- 交接：引擎的状态与靶（2026-11-04 设计）
+    status: str = ''
+    target_source: str = ''
+    face_mid_target: Optional[float] = None
     # ---- 图级：肤色（**只用蒙版里的 Point Color**；不做 HSL）
     point_color: PointColor = field(default_factory=PointColor)
     # ---- 图级：冷暖/分色（按卡方向；剂量由目检验证）

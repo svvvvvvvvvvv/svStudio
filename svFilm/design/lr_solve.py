@@ -116,7 +116,9 @@ def shape_target(card: dict, target: Optional[dict]) -> Optional[dict]:
 
 
 def curve_for(pred: Dict[str, float], shape: Optional[dict],
-              ledger: Optional[List[str]] = None) -> Optional[List[Tuple[int, int]]]:
+              ledger: Optional[List[str]] = None,
+              q5_target: Optional[float] = None,
+              meta: Optional[dict] = None) -> Optional[List[Tuple[int, int]]]:
     """形状残差 → 16 点 LUT；只套肩趾比例，不搬绝对分位。"""
     if not shape or pred.get('p50') is None:
         return None
@@ -130,7 +132,11 @@ def curve_for(pred: Dict[str, float], shape: Optional[dict],
     q25 = q5 + toe * (q50 - q5)
     q75 = q95 - shoulder * (q95 - q50)
     shape_abs = dict(toe=q25 - q5, contrast_win=q75 - q25, shoulder=q95 - q75)
-    out = curve_from_quantiles(q, shape_abs, p95_cap=q95)
+    # 比例口径（推荐路径）：压暗部后趾宽按**新跨度**重算，p50 锚点不动。
+    # 宽度增量口径在分位很挤时会和 new5 打架（模拟 ③ 抓到中位被带跑 15 级）。
+    fr = dict(toe=float(toe), shoulder=float(shoulder)) if q5_target is not None else None
+    out = curve_from_quantiles(q, shape_abs, p95_cap=q95, q5_target=q5_target,
+                               meta=meta, fracs=fr)
     if out:
         worst = max((float(y1) - float(y0)) / max(1.0, float(x1) - float(x0))
                     for (x0, y0), (x1, y1) in zip(out, out[1:]))
@@ -168,11 +174,25 @@ def tone_solve(rec: dict, card: dict, target: Optional[dict],
     sh = shape_target(card, target)
     ev = 0.0
     pred = {k: float(v) for k, v in q.items()}
-    curve = curve_for(pred, sh, ledger) if sh else None
+    # ★ 交接：引擎报了 shadow_gap（渲出来的 p5 比 peer 高多少），曲线负责把暗部往 peer 压。
+    pq = (target or {}).get('peer_q') or {}
+    q5_t = _num(pq.get('p5')) or _num(pq.get(5))
+    if q5_t is not None and pred.get('p5') is not None and float(pred['p5']) > q5_t + 1.0:
+        ledger.append('交接：暗部比 peer 高 %.1f 级 ⇒ 曲线往 %.1f 压（上限 %.0f）'
+                      % (float(pred['p5']) - q5_t, q5_t, 20.0))
+    cmeta = {}
+    curve = curve_for(pred, sh, ledger, q5_target=q5_t, meta=cmeta) if sh else None
     ledger.append('卡形状 tone：EV 0；曲线%s'
                   % (('%d 点' % len(curve)) if curve else '不动'))
+    after = cmeta.get('new5') if curve else None
     return dict(ev=ev, ui=ui, pred=pred, curve=curve,
-                target=sh, clipped=False)
+                target=sh, clipped=False,
+                shadow_before=(None if pred.get('p5') is None else float(pred['p5'])),
+                shadow_after=after,
+                shadow_gap_before=(None if (pred.get('p5') is None or q5_t is None)
+                                   else float(pred['p5']) - float(q5_t)),
+                shadow_gap_after=(None if (after is None or q5_t is None)
+                                  else float(after) - float(q5_t)))
 
 
 # ---------------------------------------------------------------- 颜色 / 肤色
@@ -326,6 +346,7 @@ def local_white(plan: LRPlan, rec: dict, ledger: List[str]) -> bool:
 def plan_batch(recs: Dict[str, dict], card: dict,
                peer_targets: Optional[Dict[str, dict]] = None,
                hero_target: Optional[dict] = None,
+               status_map: Optional[Dict[str, str]] = None,
                log=print) -> Dict[str, LRPlan]:
     """逐图出 LRPlan；目标 peer → hero；都没有就停（卡不当靶）。"""
     led0: List[str] = []
@@ -357,10 +378,21 @@ def plan_batch(recs: Dict[str, dict], card: dict,
         for k in ('contrast', 'highlights', 'shadows', 'whites', 'blacks'):
             setattr(plan, k, float((tone.get('ui') or {}).get(k) or 0.0))
         plan.curve = tone.get('curve')
+        plan.shadow_gap_before = tone.get('shadow_gap_before')
+        plan.shadow_gap_after = tone.get('shadow_gap_after')
+        plan.status = str((status_map or {}).get(stem)
+                           or pt.get('status') or (target or {}).get('status') or '')
+        plan.target_source = str(pt.get('target_from') or target.get('target_from') or source)
+        plan.face_mid_target = pt.get('face_mid_target')
         if plan.curve:
             ledger.append('曲线 %d 点（只套肩趾比例）' % len(plan.curve))
+        if plan.shadow_gap_before is not None:
+            ledger.append('暗部：渲出比 peer 高 %.1f 级 → 曲线意图 %s'
+                          % (plan.shadow_gap_before,
+                             ('高 %.1f 级' % plan.shadow_gap_after)
+                             if plan.shadow_gap_after is not None else '不动') + '（实测见 ③ 模拟）')
 
-        target_skin = dict(skt['skin'])
+        target_skin = dict(skt['skin'])      # 设计：肤色目标 = peer 自己的 L/C/h
 
         local_face(plan, rec, dict(face_over_bg=skt.get('face_over_bg')), ledger)
         local_white(plan, rec, ledger)
@@ -408,7 +440,15 @@ def plan_batch(recs: Dict[str, dict], card: dict,
         plan.target = dict(source=source, peer_n=peer_n,
                            shape=tone.get('target') or {},
                            skin={k: (round(v, 2) if isinstance(v, (int, float)) else v)
-                                 for k, v in tsk.items()})
+                                 for k, v in tsk.items()},
+                           # ★ 曝光目标本来只进 engine/ 的 target 表；顺手写进 plan，
+                           #   目检页才能把「① 目标 vs ① 实测」摆在一起（2026-11-03）。
+                           target_p50=pt.get('target_p50'),
+                           face_mid_target=pt.get('face_mid_target'),
+                           status=pt.get('status') or (target or {}).get('status'),
+                           target_from=pt.get('target_from'),
+                           target_rel=pt.get('target_rel'),
+                           target_clamped=pt.get('target_clamped'))
         plan.notes = dict(pred=pred, face_pred=face_pred,
                           target_source=source,
                           framing=pt.get('framing'),

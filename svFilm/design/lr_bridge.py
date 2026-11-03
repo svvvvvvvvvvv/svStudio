@@ -35,6 +35,10 @@ def ping(timeout: float = 5.0) -> str:
 
 
 def add(path: str, timeout: float = 240.0) -> str:
+    # ★ 必须先归一化：LR 的 ADD 只吃纯反斜杠。若路径里混了 '/'（例如从
+    #   Bash/MSYS 传进来的 `E:/ds/photo\...`），Lua 侧解析失败 ⇒ 回 `ok=false`，
+    #   现象是“ADD 失败”且随后 LR 直接退出，很容易误判成插件或沙箱问题。
+    path = os.path.normpath(path)
     r = run('ADD ' + path, timeout=timeout)
     if 'ADDED' not in r.upper() and 'EXIST' not in r.upper():
         raise RuntimeError('ADD 失败 %s: %s' % (os.path.basename(path), r[:160]))
@@ -42,7 +46,7 @@ def add(path: str, timeout: float = 240.0) -> str:
 
 
 def select(path: str, timeout: float = 120.0) -> str:
-    return run('SELECT ' + path, timeout=timeout)
+    return run('SELECT ' + os.path.normpath(path), timeout=timeout)
 
 
 def export_tif(src: str, out_dir: str, tag: str = '', timeout: float = 240.0) -> str:
@@ -52,7 +56,7 @@ def export_tif(src: str, out_dir: str, tag: str = '', timeout: float = 240.0) ->
       不传才是原生尺寸（缩放交给测量层统一到交付域）。
     ★ 每次用**独立子目录**：EXPORTTIF 可能把当前选中之外的残留也带出来。
     """
-    sub = os.path.join(out_dir, tag or ('exp_%d' % int(time.time() * 1000)))
+    sub = os.path.normpath(os.path.join(out_dir, tag or ('exp_%d' % int(time.time() * 1000))))
     if os.path.isdir(sub):
         shutil.rmtree(sub, ignore_errors=True)
     os.makedirs(sub, exist_ok=True)

@@ -58,11 +58,24 @@ def _point(v) -> Optional[float]:
     return None
 
 
+MD_TOE_MAX = 20.0     # 曲线往暗部最多拉多少 L*（再多会出硬边）
+
+
 def curve_from_quantiles(quantiles: Dict[str, float],
                          shape: Dict[str, Sequence[float]],
                          p95_cap: Optional[float] = None,
-                         points: int = 16) -> Optional[List[Tuple[int, int]]]:
-    """Basic 之后的分位 + 目标形状 → 16 点 LUT（0..255）。None = 曲线不动。"""
+                         points: int = 16,
+                         q5_target: Optional[float] = None,
+                         meta: Optional[dict] = None,
+                         fracs: Optional[dict] = None) -> Optional[List[Tuple[int, int]]]:
+    """Basic 之后的分位 + 目标形状 → 16 点 LUT（0..255）。None = 曲线不动。
+
+    `fracs`（比例口径，推荐）：{toe, shoulder} 是「趾/肩占该侧跨度的比例」。
+    给了它 + `q5_target` 时，锚点按**新区间**绝对定位 ——
+        new25 = new5 + toe · (q50 − new5)
+    这样 new5 < new25 < q50 天然成立，p50 锚点不会被单调化挤掉
+    （2026-11-04 模拟 ③ 抓到的就是「宽度增量」口径把中位带跑 15 级）。
+    """
     q5, q25, q50, q75, q95 = (quantiles.get('p5'), quantiles.get('p25'),
                               quantiles.get('p50'), quantiles.get('p75'),
                               quantiles.get('p95'))
@@ -74,6 +87,30 @@ def curve_from_quantiles(quantiles: Dict[str, float],
     if None in (toe, cw, sh):
         return None
 
+    # ★ 2026-11-04：引擎只能放曝光（一个旋钮），暗部抬起来这件事归曲线。
+    #   给了 q5_target（peer 的 p5）就把 q5 往它压，压多少由 MD_TOE_MAX 兜。
+    new5 = float(q5)
+    if q5_target is not None and float(q5_target) < new5:
+        new5 = max(float(q5_target), new5 - MD_TOE_MAX)
+
+    if fracs:
+        f_toe = _point(fracs.get('toe'))
+        f_sh = _point(fracs.get('shoulder'))
+        if None not in (f_toe, f_sh):
+            # 比例口径：压暗部后，趾宽按**新跨度**重算 ⇒ 中位锚点不动
+            new25 = new5 + f_toe * (float(q50) - new5)
+            new75 = float(q95) - f_sh * (float(q95) - float(q50))
+            new95 = float(q95)
+            cap = float(p95_cap) if p95_cap is not None else float(q95)
+            new95 = min(new95, max(cap, new75 + 1.0))
+            new50 = float(q50)
+            xq = [float(q5), float(q25), float(q50), float(q75), float(q95)]
+            yq = [new5, new25, new50, new75, new95]
+            if meta is not None:
+                meta.update(q5=float(q5), new5=float(new5),
+                            q95=float(q95), new95=float(new95))
+            return _build_lut(xq, yq, points)
+
     toe_i = max(float(q25) - float(q5), 1.0)
     cw_i = max(float(q75) - float(q25), 1.0)
     sh_i = max(float(q95) - float(q75), 1.0)
@@ -81,7 +118,6 @@ def curve_from_quantiles(quantiles: Dict[str, float],
     d_cw = cw - cw_i
     d_sh = sh - sh_i
 
-    new5 = float(q5)
     new25 = float(q25) + d_toe
     new75 = float(q75) + d_toe + d_cw
     cap = float(p95_cap) if p95_cap is not None else float(q95)
@@ -89,33 +125,40 @@ def curve_from_quantiles(quantiles: Dict[str, float],
     new95 = min(cand95, max(cap, new75 + 1.0))
     new50 = float(q50)                     # 位置归曝光，曲线不动 p50
 
-    xs_in = sorted([float(q5), float(q25), float(q50), float(q75), float(q95)])
+    if meta is not None:
+        meta.update(q5=float(q5), new5=float(new5),
+                    q95=float(q95), new95=float(new95))
+    return _build_lut([float(q5), float(q25), float(q50), float(q75), float(q95)],
+                      [new5, new25, new50, new75, new95], points)
+
+
+def _build_lut(xq, yq, points: int = 16):
+    """锚点（L* 域）→ 16 点 LUT（0..255），带单调化/去挤/斜率保护。"""
+    xs_in = sorted(float(v) for v in xq)
     for i in range(1, len(xs_in)):
         if xs_in[i] <= xs_in[i - 1]:
             xs_in[i] = xs_in[i - 1] + 1e-3
-    ys = [new5, new25, new50, new75, new95]
+    ys = [float(v) for v in yq]
     prev = None
     mono = []
     for v in ys:
         prev = v if prev is None else max(prev, v)
         mono.append(prev)
     ys = mono
-
-    # ★ p75 ≈ p95 时（高光被压在一起），两个锚点可能只差 1 个码；16 点曲线
-    #   在 LR 里会出现 0→255 的过陡段，实测会把高光/边缘 solarize（蓝边、整幅 clip）。
-    #   合并过近锚点：保留偏离 identity 更大的那个，宁可少一个肩部锚点，不让曲线过陡。
+    q50 = xs_in[len(xs_in) // 2]
     keep_x, keep_y = [], []
     for x, y in zip(xs_in, ys):
-        if keep_x and x - keep_x[-1] < MIN_ANCHOR_GAP:
+        is_mid = abs(float(x) - float(q50)) < 1e-6
+        if (not is_mid) and keep_x and x - keep_x[-1] < MIN_ANCHOR_GAP:
             if abs(y - x) > abs(keep_y[-1] - keep_x[-1]):
                 keep_x[-1], keep_y[-1] = x, y
             continue
+        if is_mid and keep_x and abs(float(keep_x[-1]) - float(q50)) < 1e-6:
+            continue
         keep_x.append(x)
         keep_y.append(y)
-    xs_in, ys = keep_x, keep_y
-
     pts = [(0.0, 0.0)]
-    for x, y in zip(xs_in, ys):
+    for x, y in zip(keep_x, keep_y):
         if x <= 1e-6 or x >= 100.0 - 1e-6:
             continue
         if x <= pts[-1][0] + 1e-6:
@@ -124,11 +167,10 @@ def curve_from_quantiles(quantiles: Dict[str, float],
     pts.append((100.0, 100.0))
     xs = [p[0] for p in pts]
     ys = [p[1] for p in pts]
-
     anchor_codes = [l_to_code(v) for v in xs if 0.0 < v < 100.0]
     grid = grid16(anchor_codes) if points == 16 else \
         [255.0 * i / (points - 1) for i in range(points)]
-    out: List[Tuple[int, int]] = []
+    out = []
     prev = -1
     for gx in grid:
         yl = _pchip(xs, ys, code_to_l(gx))

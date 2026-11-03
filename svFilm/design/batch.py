@@ -181,8 +181,12 @@ def measure_tif(path: str) -> dict:
 def run_engine(b: Batch, card, measure_fn=None, limit: int = 0,
                skip: Optional[List[str]] = None, log=print,
                targets: Optional[Dict[str, float]] = None,
-               table: Optional[dict] = None) -> Dict[str, dict]:
-    """整批渲 + 立刻量（交付域），返回 ① 的记录。"""
+               table: Optional[dict] = None,
+               stock: str = '', paper: str = '') -> Dict[str, dict]:
+    """整批渲 + 立刻量（交付域），返回 ① 的记录。
+
+    `stock`/`paper`：只跑介质对比时临时覆盖卡的卷/纸。
+    """
     stems = b.stems[:limit] if limit else b.stems
     if skip:
         stems = [s for s in stems if s not in set(skip)]
@@ -195,7 +199,7 @@ def run_engine(b: Batch, card, measure_fn=None, limit: int = 0,
         cname = card.name if hasattr(card, 'name') else str(card.get('name'))
         table = chart_calib.load_card_table(cname)
     tifs = render_card(card, paths, b.sub('engine'), log=log,
-                       targets=targets, table=table)
+                       targets=targets, table=table, stock=stock, paper=paper)
     mf = measure_fn or measure_tif
     recs = {}
     for st, p in tifs.items():

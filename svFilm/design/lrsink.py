@@ -165,6 +165,11 @@ def apply_and_export(pairs, out_dir: str, log=print) -> Dict[str, str]:
     """
     from . import lr_bridge as B
 
+    # ★ 出口目录先归一化：调用方（Bash/MSYS、Path、手敲）可能给 `E:/x\y` 这种
+    #   混分隔符的路径，拼出的工作副本路径会一路传给 LR 的 ADD/MASK/MASKPARAM，
+    #   而 Lua 侧只认纯反斜杠 ⇒ 整条链路 ok=false。
+    out_dir = os.path.normpath(out_dir)
+
     os.makedirs(out_dir, exist_ok=True)
     work = os.path.join(out_dir, '_work')
     os.makedirs(work, exist_ok=True)

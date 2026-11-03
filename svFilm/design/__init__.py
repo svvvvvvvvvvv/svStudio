@@ -27,7 +27,7 @@ LR（图级）
   curve_design.py   曲线补形状（PCHIP，单调）
   lr_exec.py / lrsink.py / lr_bridge.py   XMP + 桥（肤色蒙版）
   peer.py           逐片 peer（旧：同构图 + 连续光向量；只留兼容）
-  peer_ratio.py     逐片 peer（关系比 + 构图/场景；target = p50 中位）
+  peer_ratio.py     逐片 peer（**只找一张**：同光位 + 最近；目标 = 那张的直方图）
   batch_guard.py    批级护栏（只报告，不下发公共曲线）
 
 收尾
@@ -49,5 +49,5 @@ __all__ = ['batch', 'batch_guard', 'calibration', 'card_content', 'card_render',
            'cli', 'color_math', 'contentmatch', 'curve', 'curve_design',
            'flow', 'lr_bridge', 'lr_exec', 'lr_plan', 'lr_response', 'lr_solve',
            'lr_xmp', 'lrsink', 'matchcard', 'matchpage', 'measure', 'measure_all',
-           'medium', 'peer', 'photometry', 'review', 'stocks', 'texture',
-           'profile_table']
+           'medium', 'peer', 'peer_ratio', 'photometry', 'review',
+           'stocks', 'texture', 'profile_table']

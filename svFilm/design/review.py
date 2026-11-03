@@ -56,6 +56,11 @@ details img{margin-top:8px}
 .foot{color:#6f6b64;font-size:12px;margin:30px 0 0;border-top:1px solid #2e2d2b;padding-top:12px}
 .herobox{border:1px solid #3a3126;background:#1b1815;border-radius:10px;padding:10px 12px;margin:0 0 22px}
 .herobox img{width:100%;height:auto;display:block;border-radius:8px;background:#000;margin-top:8px}
+
+.tri{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin:6px 0}
+.tri figure.t{margin:0}
+.tri figure.t img{width:100%;border-radius:6px;display:block}
+.tri figcaption{color:#9a948a;font-size:12px;text-align:center;padding-top:3px}
 """
 
 
@@ -82,14 +87,24 @@ def contact_sheet(rows: List[dict], out_html: str, title: str, sub: str = '',
         out.append('<div class="lab"><span class="name">%s</span>'
                    '<span class="num">%s</span></div>'
                    % (r.get('stem', ''), r.get('values', '')))
-        if r.get('final_jpg'):
+        if r.get('peer_jpg'):
+            out.append('<div class="tri">'
+                       '<figure class="t"><img loading="lazy" src="%s" alt="①">'
+                       '<figcaption>① 引擎</figcaption></figure>'
+                       '<figure class="t"><img loading="lazy" src="%s" alt="③">'
+                       '<figcaption>③ 模拟（只套曲线）</figcaption></figure>'
+                       '<figure class="t"><img loading="lazy" src="%s" alt="peer">'
+                       '<figcaption>peer（靶）</figcaption></figure></div>'
+                       % (r.get('engine_jpg') or '', r.get('final_jpg') or '',
+                          r['peer_jpg']))
+        elif r.get('final_jpg'):
             out.append('<img loading="lazy" src="%s" alt="%s">'
                        % (r['final_jpg'], r.get('stem', '')))
         if r.get('note'):
             out.append('<p class="cap">%s</p>' % r['note'])
         if r.get('diag'):
             out.append('<p class="diag">%s</p>' % r['diag'])
-        if r.get('engine_jpg'):
+        if r.get('engine_jpg') and not r.get('peer_jpg'):
             out.append('<details><summary>看 ① 引擎底片</summary>'
                        '<img loading="lazy" src="%s" alt="%s 底片"></details>'
                        % (r['engine_jpg'], r.get('stem', '')))
@@ -228,6 +243,7 @@ def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict],
                 title: str = '成片目检', sub: str = '',
                 url_map: Optional[Dict[str, str]] = None,
                 hero: str = '', card_dev: Optional[Dict[str, dict]] = None,
+                peer_src: Optional[Dict[str, str]] = None,
                 log=print) -> Dict[str, object]:
     """量完 ③ 之后出目检页。**只读，不判过/不过**。
 
@@ -243,6 +259,22 @@ def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict],
         a = r1.get(st) or {}
         dev = (card_dev or {}).get(st) or (_g(plan, 'card_dev') or {})
         diag = []
+        # ★ 2026-11-04：引擎的靶是**脸的中位**（face_mid），不是整幅 p50。
+        #   有脸靶就报脸靶 vs 实测；没有才退回旧的 p50 对照。
+        tmid = _g(plan, 'face_mid_target') or _g(plan, 'bg_dist')
+        m5, m95 = a.get('face_p5'), a.get('face_p95')
+        got_mid = ((float(m5) + float(m95)) / 2.0
+                   if isinstance(m5, (int, float)) and isinstance(m95, (int, float))
+                   else None)
+        if isinstance(tmid, (int, float)) and got_mid is not None:
+            diag.append('① 脸靶 %.1f / 实测 %.1f（Δ%+.1f）'
+                        % (float(tmid), got_mid, got_mid - float(tmid)))
+        else:
+            tg = _g(_g(plan, 'target'), 'target_p50')
+            p50_1 = (a.get('img') or {}).get('p50')
+            if isinstance(tg, (int, float)) and isinstance(p50_1, (int, float)):
+                diag.append('① 目标 %.1f / 实测 %.1f（Δ%+.1f）'
+                            % (float(tg), float(p50_1), float(p50_1) - float(tg)))
         for key, label in (('p50', 'p50'), ('p95', 'p95'),
                            ('face_L', '脸L'), ('face_C', '脸C'),
                            ('white_L50', '白L'), ('hair_L50', '发L'),
@@ -262,9 +294,14 @@ def make_review(recs_1: Dict[str, dict], recs_3: Dict[str, dict],
             p = jpg_of(eng, os.path.join(prev_dir, st + '_1.jpg'))
             ej = 'preview/%s_1.jpg' % st if p else None
             ej = um.get(st + '_1.jpg') or um.get(st + '_1') or ej
+        pj = None
+        psrc = (peer_src or {}).get(st)
+        if psrc and os.path.isfile(psrc):
+            q = jpg_of(psrc, os.path.join(prev_dir, st + '_p.jpg'))
+            pj = 'preview/%s_p.jpg' % st if q else None
         rows.append(dict(stem=st, values=_plan_line(plan),
                          note=_meas_line(a, b), diag=' ｜ '.join(diag),
-                         final_jpg=fj, engine_jpg=ej))
+                         final_jpg=fj, engine_jpg=ej, peer_jpg=pj))
     html = contact_sheet(rows, os.path.join(out_dir, '目检.html'), title=title,
                          sub=sub or ('%d 张 ｜ 机器只出片+测量，过不过由你目检' % len(rows)),
                          hero=_hero_block(hero, prev_dir, log=log))
