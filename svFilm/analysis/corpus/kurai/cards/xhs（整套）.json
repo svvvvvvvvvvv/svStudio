@@ -370,8 +370,8 @@
   "_note_self": "medium-only；placement 归 LR（ADR-001..006 见 decisions_solver.md）",
   "wb": {
    "white_balance": "custom",
-   "temperature": 5200.0,
-   "tint": 1.0
+   "temperature": 5353.0,
+   "tint": 1.036
   },
   "input_image": {
    "upscale_factor": 1.0,
@@ -745,7 +745,7 @@
    "source": "visual_lookbook_20261103"
   },
   "_fields_fixed": "2026-11-03 stock/paper fields: grain all + filters reset + pe nominal 1.0",
-  "_wb_note": "fixed card-level style bias vs old 4477/0.944: +723K, +0.056 tint; not master inversion"
+  "_wb_note": "master-cast style bias: base 5353K/1.006; a-3.0 b+0.0 -> 5353.0K/1.036; direction only, not inversion"
  },
  "pe": 1.0,
  "pe_why": "nominal 1.0; per-image PE table is authoritative",

@@ -17,7 +17,7 @@ python analysis/medium/assign.py            # 64 卡视觉配方页 -> out/all_c
 python analysis/medium/apply_assignments.py --dry-run
 python analysis/medium/apply_assignments.py --apply   # 先备份，再写 stock/paper
 python analysis/medium/fix_medium_fields.py --apply   # grain 全字段 + 滤片归零 + pe nominal
-python analysis/medium/apply_wb_bias.py --apply        # 卡级固定 WB 偏置 +723K / +0.056 tint
+python analysis/medium/apply_wb_from_cast.py --apply   # 按大师 cast 方向做卡级 WB 偏置
 python analysis/medium/fields_audit.py                # 字段/表审计
 python analysis/medium/wb_review.py                   # 卡级 WB 复核
 python analysis/medium/amount_ramp.py                 # 9 配方 amount ramp
@@ -51,7 +51,7 @@ python analysis/medium/lookbook.py --limit 2      # 冒烟
   - `apply_report.json`；写卡前备份在 `out/backup_cards_before_*`
   - `wb_review.json` / `amount_ramp.json` / `amount_ramp.md`
   - `fields_audit.json` / `fields_fix_report.json`
-  - `wb_bias_report.json`
+  - `wb_cast_report.json` / `wb_cast_table.csv`
   - `pe_tables/*.json` / `pe_selftest.json` / `pe_batch_check.json` / `pe_full_check.json`
   - 生产表在 `analysis/corpus/kurai/pe_tables/`（进版本；`out/` 只是工作副本）
   - `card_samples_review.html` / `.json`
@@ -68,7 +68,7 @@ python analysis/medium/lookbook.py --limit 2      # 冒烟
 - PE 表按卡加载：`chart_calib.load_card_table(card_name)`；**不回退旧全局表**。
 - PE 表网格必须覆盖 target 所需 PE；旧 0.25–4 对高亮目标不够，新默认 0.0625–4；64 张已全部重建。
 - 引擎侧**不打肤色靶**：skin/face 只走后面的 LR 计划，不进口径/print filter/PE。
-- WB 固定偏置是卡级风格旋钮：+723K / +0.056 tint；不是从大师反解，也不是逐 RAW 解。
+- WB 是卡级方向偏置：`temp = 5353 + 40×cast.b`，`tint = 1.006 − 0.010×cast.a`；不是从大师反解，也不是逐 RAW 解。
 - `hit_bound` 不渲；表外 PE 不再外推。
 - 多样片页只标极端曝光/内容跨度，不自动拆卡；风格是否一致要人看。
 

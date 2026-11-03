@@ -307,7 +307,7 @@
   "_note_self": "card38 medium-only: PE fixed 0.694; placement owned by LR Basic",
   "wb": {
    "white_balance": "custom",
-   "temperature": 5353.0,
+   "temperature": 5473.0,
    "tint": 1.006
   },
   "input_image": {
@@ -681,7 +681,7 @@
    "source": "visual_lookbook_20261103"
   },
   "_fields_fixed": "2026-11-03 stock/paper fields: grain all + filters reset + pe nominal 1.0",
-  "_wb_note": "global fixed style bias +723K / +0.056 tint vs old card value; not per-RAW solve"
+  "_wb_note": "master-cast style bias: base 5353K/1.006; a+0.0 b+3.0 -> 5473.0K/1.006; direction only, not inversion"
  },
  "pe": 1.0,
  "pe_why": "nominal 1.0; per-image PE table is authoritative",
