@@ -1,28 +1,26 @@
 # -*- coding: utf-8 -*-
 """按**颜色**给 64 张卡选卷/纸配方（颜色优先，目标 = 大师作品的颜色特征）。
 
-口径（两侧同定义，才可比）：
-  · 色偏曲线：中性面在 L*≈10/30/50/70/90 处的 a*/b*（卡：`photos_tone_v04` 的
-    `neutral_axis` 中位；配方：灰阶条渲出来的 a*/b* 插值到同样的 L*）
-  · 肤色：L/C/h（卡：`skin` 中位；配方：作者 test 人像的 face 区域）
-  · 树叶：绿相带的 C 与色相（卡：`hue_bands` 的 60–120°；配方：leaf 区域）
-  · 冷暖：`warm_cool_b`（卡）/ 整幅 b* 均值（配方）
+两侧同口径（`卷纸测量.md` §3.4 的定义）：
+  肤色   face L/C/h     （卡：`skin` 中位；配方：作者 test 人像 face 区）
+  树叶   leaf a/b/C/h   （卡：`hue_bands` 60–120° 绿带的 C；配方：leaf 区）
+  冷暖   整幅 b*        （卡：`warm_cool_b`；配方：整幅 a/b 均值）
+  色偏   中性面 a*/b* @ L*=10/30/50/70/90（卡：`neutral_axis` 中位；配方：灰阶条插值）
+  明暗   contrast / face L（**最后**考虑，颜色优先）
 
-距离 = 各项按**配方间离散**归一化后相加（颜色项在前，明暗只占很小权重）。
+距离 = 每项按「配方之间的离散」归一化后加权求和。
+输出：out/color_assign.json（{卡 key: 配方码}）+ out/color_match.json（明细）
 
 用法：
-  python analysis/medium/color_match.py                 # 只出报告
-  python analysis/medium/color_match.py --apply         # 写卡（先备份）
+  python analysis/medium/color_match.py
+  python analysis/medium/color_match.py --write-assign   # 写 assignments_color.json，供 apply_assignments
 """
 from __future__ import annotations
 
 import argparse
-import glob
 import json
 import os
-import shutil
 import sys
-import time
 
 import numpy as np
 
@@ -32,6 +30,23 @@ import common
 TONE = common.SVFILM / 'analysis' / 'corpus' / 'kurai' / 'photos_tone_v04.json'
 LEVELS = [10.0, 30.0, 50.0, 70.0, 90.0]
 
+RECIPE_PAIR = {
+    'P160': ('kodak_portra_160', 'kodak_portra_endura'),
+    'P400': ('kodak_portra_400', 'kodak_portra_endura'),
+    'GOLD': ('kodak_gold_200', 'kodak_portra_endura'),
+    'P800': ('kodak_portra_800', 'kodak_portra_endura'),
+    'PUSH1': ('kodak_portra_800_push1', 'kodak_portra_endura'),
+    'PUSH2': ('kodak_portra_800_push2', 'kodak_portra_endura'),
+    'GREEN': ('kodak_portra_400', 'fujifilm_crystal_archive_typeii'),
+    'XTRA': ('fujifilm_xtra_400', 'fujifilm_crystal_archive_typeii'),
+    'EKTAR': ('kodak_ektar_100', 'kodak_portra_endura'),
+}
+PAIR_TO_CODE = {v: k for k, v in RECIPE_PAIR.items()}
+
+# 权重：颜色项在前，明暗只在最后
+W = dict(skinC=1.0, skinh=0.9, greenC=0.9, greenb=0.6, wcb=0.7,
+         cast=1.0, faceL=0.25, contrast=0.15)
+
 
 def _med(xs):
     xs = [x for x in xs if x is not None]
@@ -39,7 +54,6 @@ def _med(xs):
 
 
 def card_features():
-    """→ {card: 特征}"""
     tone = json.load(open(TONE, encoding='utf-8'))['per_image']
     by = {}
     for r in tone:
@@ -59,139 +73,136 @@ def card_features():
                         bb.append(p.get('b'))
             cast[L] = (_med(aa), _med(bb))
         sk = [r.get('skin') for r in rows if r.get('skin')]
-        green_C = []
+        gC, gb = [], []
         for r in rows:
             for band in (r.get('hue_bands') or []):
                 if 60.0 <= float(band.get('h0', -1)) <= 120.0:
-                    green_C.append(band.get('C'))
+                    gC.append(band.get('C'))
+                    gb.append(band.get('b') if 'b' in band else None)
+        contrast = []
+        for r in rows:
+            im = r.get('img') or {}
+            if im.get('p95') is not None and im.get('p5') is not None:
+                contrast.append(float(im['p95']) - float(im['p5']))
         out[card] = dict(
-            n=len(rows),
-            cast=cast,
+            n=len(rows), cast=cast,
             skin_L=_med([s.get('L') for s in sk]),
             skin_C=_med([s.get('C') for s in sk]),
             skin_h=_med([s.get('h') for s in sk]),
-            green_C=_med(green_C),
+            green_C=_med(gC), green_b=_med(gb),
             warm_cool_b=_med([r.get('warm_cool_b') for r in rows]),
+            contrast=_med(contrast),
         )
     return out
 
 
 def recipe_features(sig):
-    """把 color_sig 的灰阶条插值到 LEVELS，并补整幅 b*（warm/cool）。"""
     out = {}
     for key, s in sig.items():
+        code = PAIR_TO_CODE.get((s['stock'], s['paper']))
+        if code is None:
+            continue
         g = s['gray']
-        Ls = [g[k]['L'] for k in sorted(g)]
-        As = [g[k]['a'] for k in sorted(g)]
-        Bs = [g[k]['b'] for k in sorted(g)]
+        ks = sorted(g)
+        Ls = [g[k]['L'] for k in ks]
+        As = [g[k]['a'] for k in ks]
+        Bs = [g[k]['b'] for k in ks]
         cast = {L: (float(np.interp(L, Ls, As)), float(np.interp(L, Ls, Bs)))
                 for L in LEVELS}
-        leaf = s['leaf']
-        out[key] = dict(
-            stock=s['stock'], paper=s['paper'], cast=cast,
-            skin_L=s['face']['L'], skin_C=s['face']['C'], skin_h=s['face']['h'],
-            leaf_C=leaf['C'], leaf_h=leaf['h'],
-            contrast=s['contrast'],
-            warm_cool_b=float(np.mean(Bs)),
-        )
+        out[code] = dict(code=code, stock=s['stock'], paper=s['paper'], cast=cast,
+                         skin_L=s['face']['L'], skin_C=s['face']['C'],
+                         skin_h=s['face']['h'],
+                         green_C=s['leaf']['C'], green_b=s['leaf']['b'],
+                         warm_cool_b=s.get('whole_b'),
+                         contrast=s['contrast'])
     return out
 
 
-def _spread(values):
-    v = np.array([x for x in values if x is not None], float)
+def _sd(vals):
+    v = np.array([x for x in vals if x is not None], float)
     return float(v.std()) if len(v) > 1 and v.std() > 1e-6 else 1.0
+
+
+def dist(f, r, sd):
+    d = 0.0
+    # 色偏曲线（5 个亮度 × a/b）
+    for L in LEVELS:
+        ca, cb = f['cast'].get(L, (None, None))
+        ra, rb = r['cast'][L]
+        if ca is not None and cb is not None:
+            d += W['cast'] * ((abs(ca - ra) + abs(cb - rb)) / 2.0) / sd['cast']
+    if f.get('skin_C') is not None:
+        d += W['skinC'] * abs(f['skin_C'] - r['skin_C']) / sd['skinC']
+    if f.get('skin_h') is not None:
+        dh = abs(f['skin_h'] - r['skin_h'])
+        d += W['skinh'] * min(dh, 360 - dh) / sd['skinh']
+    if f.get('green_C') is not None:
+        d += W['greenC'] * abs(f['green_C'] - r['green_C']) / sd['greenC']
+    if f.get('green_b') is not None and r.get('green_b') is not None:
+        d += W['greenb'] * abs(f['green_b'] - r['green_b']) / sd['greenb']
+    if f.get('warm_cool_b') is not None and r.get('warm_cool_b') is not None:
+        d += W['wcb'] * abs(f['warm_cool_b'] - r['warm_cool_b']) / sd['wcb']
+    if f.get('skin_L') is not None:
+        d += W['faceL'] * abs(f['skin_L'] - r['skin_L']) / sd['faceL']
+    if f.get('contrast') is not None:
+        d += W['contrast'] * abs(f['contrast'] - r['contrast']) / sd['contrast']
+    return d
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--sig', default=str(common.OUT_DEFAULT / 'color_sig.json'))
     ap.add_argument('--out', default=str(common.OUT_DEFAULT))
-    ap.add_argument('--apply', action='store_true')
+    ap.add_argument('--write-assign', action='store_true')
     args = ap.parse_args()
 
     cards = card_features()
     rec = recipe_features(json.load(open(args.sig, encoding='utf-8')))
-    keys = sorted(rec)
+    codes = sorted(rec)
 
-    # 归一化尺度：用配方之间的离散（颜色项都是同口径的 Lab 单位）
-    sd_cast = _spread([rec[k]['cast'][L][i] for k in keys for L in LEVELS for i in (0, 1)])
-    sd_skinC = _spread([rec[k]['skin_C'] for k in keys])
-    sd_skinh = _spread([rec[k]['skin_h'] for k in keys])
-    sd_greenC = _spread([rec[k]['leaf_C'] for k in keys])
-    sd_greenh = _spread([rec[k]['leaf_h'] for k in keys])
-    sd_wcb = _spread([rec[k]['warm_cool_b'] for k in keys])
-
-    # 权重：颜色在前（色偏曲线最重），明暗只在最后一点点
-    W = dict(cast=1.0, skinC=0.8, skinh=0.6, greenC=0.5, greenh=0.4, wcb=0.7, contrast=0.15)
+    sd = dict(
+        cast=max(_sd([rec[c]['cast'][L][i] for c in codes for L in LEVELS for i in (0, 1)]), 0.3),
+        skinC=_sd([rec[c]['skin_C'] for c in codes]),
+        skinh=_sd([rec[c]['skin_h'] for c in codes]),
+        greenC=_sd([rec[c]['green_C'] for c in codes]),
+        greenb=_sd([rec[c]['green_b'] for c in codes]),
+        wcb=_sd([rec[c]['warm_cool_b'] for c in codes if rec[c]['warm_cool_b'] is not None]),
+        faceL=_sd([rec[c]['skin_L'] for c in codes]),
+        contrast=_sd([rec[c]['contrast'] for c in codes]),
+    )
 
     rows = []
     for card, f in sorted(cards.items()):
-        # 卡侧的色偏曲线：先减掉自身均值 ⇒ 只剩**形状**（随亮度怎么变），
-        # 绝对色偏交给卡级 WB（`卷纸测量.md` §5.5 已有规则），不靠换卷纸硬扛。
-        cvals = [(f['cast'].get(L) or (None, None)) for L in LEVELS]
-        ok = [(a, b) for a, b in cvals if a is not None and b is not None]
-        if not ok:
-            continue
-        ca0 = float(np.mean([a for a, _ in ok]))
-        cb0 = float(np.mean([b for _, b in ok]))
-        shape_c = [(a - ca0, b - cb0) for a, b in ok]
-        best = None
-        second = None
-        for k in keys:
-            r = rec[k]
-            rv = [r['cast'][L] for L in LEVELS]
-            ra0 = float(np.mean([a for a, _ in rv]))
-            rb0 = float(np.mean([b for _, b in rv]))
-            shape_r = [(a - ra0, b - rb0) for a, b in rv]
-            d = 0.0
-            for (a1, b1), (a2, b2) in zip(shape_c, shape_r):
-                d += (abs(a1 - a2) + abs(b1 - b2)) / 2.0
-            d /= max(len(shape_c), 1)
-            if best is None or d < best[0]:
-                second = best
-                best = (d, k, r['stock'], r['paper'])
-            elif second is None or d < second[0]:
-                second = (d, k, r['stock'], r['paper'])
-        rows.append(dict(card=card, dist=round(best[0], 3),
-                         second=round(second[0], 3) if second else None,
-                         offset_a=round(-ca0, 2), offset_b=round(-cb0, 2),
-                         recipe=best[1], stock=best[2], paper=best[3]))
+        scored = sorted((dist(f, rec[c], sd), c) for c in codes)
+        best, second = scored[0], scored[1]
+        rows.append(dict(card=card, recipe=best[1], dist=round(best[0], 3),
+                         second=round(second[0], 3), gap=round(second[0] - best[0], 3),
+                         stock=rec[best[1]]['stock'], paper=rec[best[1]]['paper']))
 
     from collections import Counter
-    cnt = Counter(r['recipe'] for r in rows)
-    print('== 颜色匹配结果（%d 卡）' % len(rows))
-    for k, v in cnt.most_common():
-        print('  %-42s %2d 张' % (k, v))
+    print('== 颜色匹配（%d 卡）' % len(rows))
+    for k, v in Counter(r['recipe'] for r in rows).most_common():
+        print('  %-6s %2d 张' % (k, v))
+    gaps = [r['gap'] for r in rows]
+    print('  与次名的差距：中位 %.2f ｜ >0.15 的 %d/%d' % (float(np.median(gaps)),
+                                                       sum(1 for g in gaps if g > 0.15), len(gaps)))
 
     os.makedirs(args.out, exist_ok=True)
-    rep = os.path.join(args.out, 'color_match.json')
-    with open(rep, 'w', encoding='utf-8') as fh:
-        json.dump(dict(weights=W, spreads=dict(cast=sd_cast, skinC=sd_skinC, skinh=sd_skinh,
-                                              greenC=sd_greenC, greenh=sd_greenh, wcb=sd_wcb),
-                       rows=[{k: v for k, v in r.items() if k != 'feats'} for r in rows]),
-                  fh, ensure_ascii=False, indent=1)
-    print('写出', rep)
+    with open(os.path.join(args.out, 'color_match.json'), 'w', encoding='utf-8') as fh:
+        json.dump(dict(weights=W, sd=sd, rows=rows), fh, ensure_ascii=False, indent=1)
 
-    if args.apply:
-        stamp = time.strftime('%Y%m%d_%H%M')
-        backup = os.path.join(args.out, 'backup_cards_color_%s' % stamp)
-        os.makedirs(backup, exist_ok=True)
-        changed = 0
-        for r in rows:
-            p = os.path.join(str(common.CARDS), r['card'] + '.json')
-            if not os.path.isfile(p):
-                continue
-            shutil.copy2(p, os.path.join(backup, r['card'] + '.json'))
-            j = json.load(open(p, encoding='utf-8'))
-            md = j.setdefault('medium', {})
-            if md.get('stock') == r['stock'] and md.get('paper') == r['paper']:
-                continue
-            md['stock'] = r['stock']
-            md['paper'] = r['paper']
-            with open(p, 'w', encoding='utf-8') as fh:
-                json.dump(j, fh, ensure_ascii=False, indent=1)
-            changed += 1
-        print('写卡 %d 张（备份 %s）' % (changed, backup))
+    if args.write_assign:
+        def key(name):
+            if name.startswith('xhs'):
+                return 'xhs'
+            if name.startswith('滨田'):
+                return '滨田'
+            return name[:3]
+        assign = {key(r['card']): r['recipe'] for r in rows}
+        p = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'assignments_color.json')
+        with open(p, 'w', encoding='utf-8') as fh:
+            json.dump(assign, fh, ensure_ascii=False, indent=1)
+        print('写出', p, '（%d 条）' % len(assign))
 
 
 if __name__ == '__main__':

@@ -299,7 +299,7 @@
    "n_px": 22326
   }
  },
- "stock": "kodak_portra_800",
+ "stock": "kodak_portra_800_push1",
  "paper": "kodak_portra_endura",
  "amount": 1.0,
  "medium": {
@@ -331,9 +331,9 @@
   "grain": {
    "active": true,
    "rms_granularity": [
-    6.0,
-    6.0,
-    6.0
+    7.0,
+    7.0,
+    7.0
    ],
    "particle_scale_sublayers": [
     1.0,
@@ -504,7 +504,7 @@
    "diffusion_filter_halo_size": 1.0,
    "diffusion_filter_bloom_intensity": 1.0,
    "diffusion_filter_bloom_size": 1.0,
-   "film_stock": "kodak_portra_800",
+   "film_stock": "kodak_portra_800_push1",
    "print_paper": "kodak_portra_endura"
   },
   "display": {
@@ -674,8 +674,8 @@
   },
   "_derived": null,
   "_lookbook": {
-   "recipe": "P800",
-   "stock": "kodak_portra_800",
+   "recipe": "PUSH1",
+   "stock": "kodak_portra_800_push1",
    "paper": "kodak_portra_endura",
    "source": "visual_lookbook_20261103"
   },

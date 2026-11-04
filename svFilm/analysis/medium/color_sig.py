@@ -69,8 +69,12 @@ def main():
             continue
         m1 = common.metrics(d1)
         m2 = measure_regions(d2, gregions)
+        lab_whole = common.srgb_to_lab(d1)
+        whole_a = float(np.mean(lab_whole[..., 1]))
+        whole_b = float(np.mean(lab_whole[..., 2]))
         sig[key] = dict(stock=stock, paper=paper, face=m1['face'], leaf=m1['leaf'],
-                        whole_C=m1['whole_C'], contrast=m1['contrast'], gray=m2)
+                        whole_C=m1['whole_C'], whole_a=whole_a, whole_b=whole_b,
+                        contrast=m1['contrast'], gray=m2)
         # 灰阶三级：暗 / 中 / 亮
         g_lo, g_mid, g_hi = m2['g02'], m2['g06'], m2['g10']
         print('%-42s 肤色 C%5.1f h%5.1f ｜ 树叶 a%+5.1f ｜ 灰阶 暗 a%+4.1f b%+4.1f ｜ 中 a%+4.1f b%+4.1f ｜ 亮 a%+4.1f b%+4.1f'

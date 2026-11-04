@@ -297,8 +297,8 @@
    "n_px": 3246
   }
  },
- "stock": "kodak_portra_800",
- "paper": "kodak_portra_endura",
+ "stock": "kodak_portra_400",
+ "paper": "fujifilm_crystal_archive_typeii",
  "amount": 1.0,
  "medium": {
   "_note_self": "card38 medium-only: PE fixed 0.694; placement owned by LR Basic",
@@ -329,9 +329,9 @@
   "grain": {
    "active": true,
    "rms_granularity": [
-    6.0,
-    6.0,
-    6.0
+    4.5,
+    4.5,
+    4.5
    ],
    "particle_scale_sublayers": [
     1.0,
@@ -502,8 +502,8 @@
    "diffusion_filter_halo_size": 1.0,
    "diffusion_filter_bloom_intensity": 1.0,
    "diffusion_filter_bloom_size": 1.0,
-   "film_stock": "kodak_portra_800",
-   "print_paper": "kodak_portra_endura"
+   "film_stock": "kodak_portra_400",
+   "print_paper": "fujifilm_crystal_archive_typeii"
   },
   "display": {
    "preview_max_size": 640
@@ -672,9 +672,9 @@
   },
   "_derived": null,
   "_lookbook": {
-   "recipe": "P800",
-   "stock": "kodak_portra_800",
-   "paper": "kodak_portra_endura",
+   "recipe": "GREEN",
+   "stock": "kodak_portra_400",
+   "paper": "fujifilm_crystal_archive_typeii",
    "source": "visual_lookbook_20261103"
   },
   "_fields_fixed": "2026-11-03 stock/paper fields: grain all + filters reset + pe nominal 1.0",

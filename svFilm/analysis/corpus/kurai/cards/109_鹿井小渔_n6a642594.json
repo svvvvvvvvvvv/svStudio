@@ -318,7 +318,7 @@
    "n_px": 21917
   }
  },
- "stock": "kodak_portra_800_push1",
+ "stock": "kodak_portra_800_push2",
  "paper": "kodak_portra_endura",
  "amount": 1.0,
  "medium": {
@@ -350,9 +350,9 @@
   "grain": {
    "active": true,
    "rms_granularity": [
-    7.0,
-    7.0,
-    7.0
+    9.0,
+    9.0,
+    9.0
    ],
    "particle_scale_sublayers": [
     1.0,
@@ -523,7 +523,7 @@
    "diffusion_filter_halo_size": 1.0,
    "diffusion_filter_bloom_intensity": 1.0,
    "diffusion_filter_bloom_size": 1.0,
-   "film_stock": "kodak_portra_800_push1",
+   "film_stock": "kodak_portra_800_push2",
    "print_paper": "kodak_portra_endura"
   },
   "display": {
@@ -693,8 +693,8 @@
   },
   "_derived": null,
   "_lookbook": {
-   "recipe": "PUSH1",
-   "stock": "kodak_portra_800_push1",
+   "recipe": "PUSH2",
+   "stock": "kodak_portra_800_push2",
    "paper": "kodak_portra_endura",
    "source": "visual_lookbook_20261103"
   },
