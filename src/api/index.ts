@@ -66,6 +66,13 @@ declare global {
       extIndex: (srcDir: string) => Promise<ExtIndexResult>;
       /** 返回取消订阅函数 */
       onExtIndexProgress: (cb: (line: string) => void) => () => void;
+      /* ---- 拼图台 ---- */
+      /** 任意格式 → 显示方向正确的 PNG dataURL（同源，能直接画进 canvas） */
+      collageReadImage: (opts: CollageReadOpts) => Promise<CollageImage>;
+      /** canvas 的 dataURL 写盘；取消 ⇒ { ok:false, canceled:true } */
+      collageSave: (opts: CollageSaveOpts) => Promise<CollageSaveResult>;
+      /** 多选本地图片，返回绝对路径数组 */
+      collagePickFiles: () => Promise<string[]>;
     };
   }
 }
@@ -272,6 +279,57 @@ export interface ExtIndexResult {
   note?: string;
 }
 
+/* ---------------- 拼图台 ---------------- */
+
+export interface CollageReadOpts {
+  /** 外部图片的绝对路径（拖入 / 文件选择）；给了它就不看下面两个 */
+  path?: string;
+  /** 当前目录路径 + 身份键（从图库里选片时用） */
+  sessionPath?: string;
+  rel?: string;
+  /** 0 = 原尺寸（导出用）；>0 = 长边缩到该值（预览用，快） */
+  maxSide?: number;
+}
+
+export interface CollageImage {
+  ok: boolean;
+  /** data:image/png;base64,… —— 同源，可直接 new Image() 后 drawImage */
+  url?: string;
+  /** 显示方向正确后的宽高（EXIF 已摆正） */
+  w?: number;
+  h?: number;
+  /** 缩放前的原始像素（maxSide=0 时与 w/h 相同） */
+  ow?: number;
+  oh?: number;
+  bytes?: number;
+  /** 主进程实际读到的文件（排查用） */
+  src?: string;
+  error?: string;
+}
+
+export interface CollageSaveOpts {
+  /** canvas.toDataURL('image/png' | 'image/jpeg') 的结果 */
+  dataUrl: string;
+  /** 文件名（不含扩展名）：两张图名用 and 拼好，无特殊符号 */
+  name?: string;
+  /** 源图所在目录；主进程会在它下面建 Collage/ 再写盘（不弹保存框） */
+  dir?: string;
+  w?: number;
+  h?: number;
+}
+
+export interface CollageSaveResult {
+  ok: boolean;
+  /** 完整落盘路径 */
+  path?: string;
+  /** 实际写入的目录（<源目录>/Collage） */
+  dir?: string;
+  name?: string;
+  bytes?: number;
+  canceled?: boolean;
+  error?: string;
+}
+
 /* ---------------- 封装 ---------------- */
 
 const noApi = () => {
@@ -306,9 +364,11 @@ export const API = {
 
   /* 星级与归位 */
   saveRatings: (ratings: Record<string, number>) => api().saveRatings(ratings),
-  writeRatingsJson: (opts) => api().writeRatingsJson(opts),
-  readRatingsJson: (dirPath) => api().readRatingsJson(dirPath),
-  onRatingsJsonChanged: (cb) => api().onRatingsJsonChanged(cb),
+  writeRatingsJson: (opts: { dirPath: string; sessionName: string; ratings: Record<string, number> }) =>
+    api().writeRatingsJson(opts),
+  readRatingsJson: (dirPath: string) => api().readRatingsJson(dirPath),
+  onRatingsJsonChanged: (cb: (d: { session: string; updated: string; ratings: Record<string, number> }) => void) =>
+    api().onRatingsJsonChanged(cb),
   archivePhotos: (opts: ArchiveOpts) => api().archivePhotos(opts),
   resetColorGrade: (dirPath: string) => api().resetColorGrade(dirPath),
 
@@ -337,4 +397,9 @@ export const API = {
   extIndex: (srcDir: string) => api().extIndex(srcDir),
   onExtIndexProgress: (cb: (line: string) => void) =>
     api().onExtIndexProgress(cb),
+
+  /* 拼图台 */
+  collageReadImage: (opts: CollageReadOpts) => api().collageReadImage(opts),
+  collageSave: (opts: CollageSaveOpts) => api().collageSave(opts),
+  collagePickFiles: () => api().collagePickFiles(),
 };

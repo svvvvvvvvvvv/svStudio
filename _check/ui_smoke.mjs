@@ -36,6 +36,10 @@ function check(name, cond, detailOK = '', detailBad = '') {
   if (cond) ok(name, detailOK);
   else bad(name, detailBad || detailOK);
 }
+/** 检查项依赖的源码已被重构删掉 ⇒ 明确跳过，不谎报通过，也别让整轮自检崩在 readFileSync */
+function skip(name, why) {
+  console.log(`  SKIP ${name}   ${why}`);
+}
 const read = (p) => fs.readFileSync(path.join(ROOT, p), 'utf8');
 const exists = (p) => fs.existsSync(path.join(ROOT, p));
 
@@ -199,7 +203,11 @@ check(
    两边的字段名必须对得上，而且**前端不许自己拼参数串**（要走唯一的 `paramStr`）。 */
 const preloadSrc = read('preload.js');
 const apiSrc = read('src/api/index.ts');
-const svcSrcForExport = read('svFilm/svFilm/service.py');
+/* ⚠ 11-04：引擎服务模块 `svFilm/svFilm/service.py` 已在
+   ff194eb「drop the tone-chasing layer」里被删掉，新的服务入口没接回这条自检。
+   这里不假装有文件：找不到就跳过并写明原因，等入口定下来再迁移这两条。 */
+const svcFile = ['svFilm/svFilm/service.py', 'svFilm/service.py'].find((p) => exists(p));
+const svcSrcForExport = svcFile ? read(svcFile) : '';
 check('★ main.js 有 export-image 通道，且回来的是**文件路径**（不是 image 数据）',
   /ipcMain\.handle\('export-image'[\s\S]{0,3000}?Object\.assign\(\{ ok: true \}, r\.data/.test(mainJsSrc),
   '', '导出拿不到路径 ⇒ 界面只能说"失败了"，用户不知道文件去哪了');
@@ -223,12 +231,17 @@ check('★ 导出用 p.loadPath（同名 RAW 优先），不是身份键 rel',
 check('★ 导出尺寸**由引擎定**（前端一个写死的 side 都没有）',
   !/side: \d+/.test(storeSrc), '',
   '前端写死导出尺寸 ⇒ 引擎改了工作分辨率，前端还按老数字要图');
-check('★★ 引擎 /export 有**尺寸上限**（原图全尺寸会当场 OOM）',
-  /EXPORT_MAX_SIDE/.test(svcSrcForExport) && /side_clamped/.test(svcSrcForExport),
-  '', '不设上限 ⇒ 导出 40MP 时 spektrafilm 要一次分配 24.2 GiB，引擎进程直接死');
-check('★★ 被夹住要说出来（`side_clamped` 一路回到提示里）',
-  /side_clamped/.test(storeSrc) && /side_clamped/.test(svcSrcForExport), '',
-  '静默降级 ⇒ 用户以为导出的是原尺寸');
+if (svcFile) {
+  check('★★ 引擎 /export 有**尺寸上限**（原图全尺寸会当场 OOM）',
+    /EXPORT_MAX_SIDE/.test(svcSrcForExport) && /side_clamped/.test(svcSrcForExport),
+    '', '不设上限 ⇒ 导出 40MP 时 spektrafilm 要一次分配 24.2 GiB，引擎进程直接死');
+  check('★★ 被夹住要说出来（`side_clamped` 一路回到提示里）',
+    /side_clamped/.test(storeSrc) && /side_clamped/.test(svcSrcForExport), '',
+    '静默降级 ⇒ 用户以为导出的是原尺寸');
+} else {
+  skip('★★ 引擎 /export 尺寸上限 / side_clamped 两条',
+    'service.py 已被重构删除，新服务入口未接回这条自检（不谎报通过）');
+}
 
 /* ---------- 共享：被后面几组用到的源码副本（剥掉注释后的） ---------- */
 const storeCode = storeSrc.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -251,9 +264,13 @@ const presetsSrc = exists('svFilm/svFilm/presets.py') ? read('svFilm/svFilm/pres
    ★ 这里钉的是**契约**：列表由引擎给、胶片风格进渲染请求、曝光风格一点痕迹都不许剩。
    ⚠ 锚点一律用**剥掉注释**的源码 —— 注释里就会出现这些字，会骗过检查（踩过三次）。 */
 console.log('\n[8] 调色台：只剩「胶片风格」一个选择器');
-check('★ 引擎 /stocks 给胶片风格；`/styles` **已经删了**',
-  /u\.path == '\/stocks'/.test(svcSrc) && !/u\.path == '\/styles'/.test(svcSrc), '',
-  '影调层删了却还留着 /styles ⇒ 那条接口没人读，只会骗下一个人照它加回来');
+if (svcFile) {
+  check('★ 引擎 /stocks 给胶片风格；`/styles` **已经删了**',
+    /u\.path == '\/stocks'/.test(svcSrc) && !/u\.path == '\/styles'/.test(svcSrc), '',
+    '影调层删了却还留着 /styles ⇒ 那条接口没人读，只会骗下一个人照它加回来');
+} else {
+  skip('★ 引擎 /stocks 契约（/styles 已删）', 'service.py 已被重构删除，待迁移到新入口');
+}
 check('★ 滑杆 / 相纸 / 成色基准那三条路由确实删了（别留在接口上骗人）',
   !/u\.path == '\/params'/.test(svcSrc) && !/u\.path == '\/papers'/.test(svcSrc) &&
     !/u\.path == '\/bases'/.test(svcSrc), '',
@@ -265,12 +282,16 @@ check('★ 引擎里 **`tone.py` 整个删了**（不是关开关）',
 //   ⇒ 它变成了一条**恒红**的检查（红着就没人看了，等于没这条闸）。改成钉今天真正会坏的两件事：
 //     ① 卷表**现读**、service.py 里不许写死卷名（写死过就"删了这条预设变 500 / 列表永远一条"）；
 //     ② 默认卷**由引擎给**（`isDefault`）—— 两条之后按名字排序滨田在前，取 `items[0]` 会悄悄换线。
-check('★ 胶片风格从 `presets.names()` 现读，`service.py` 里不写死卷名',
-  /presets\.names\(\)/.test(svcSrc) && !/鹿井预设|滨田预设/.test(svcSrc), '',
-  '写死卷名 ⇒ 预设一改名/一删，要么 500、要么列表里永远只有那一条');
-check('★★ 默认卷由引擎给（`/stocks` 带 `isDefault`）',
-  /isDefault=\(n == _dflt\)/.test(svcSrc) && /getattr\(C, 'PRESET_DEFAULT'/.test(svcSrc), '',
-  '没有 isDefault ⇒ 前端只能写死卷名或取 items[0]，两条预设时会悄悄换掉默认卷');
+if (svcFile) {
+  check('★ 胶片风格从 `presets.names()` 现读，`service.py` 里不写死卷名',
+    /presets\.names\(\)/.test(svcSrc) && !/鹿井预设|滨田预设/.test(svcSrc), '',
+    '写死卷名 ⇒ 预设一改名/一删，要么 500、要么列表里永远只有那一条');
+  check('★★ 默认卷由引擎给（`/stocks` 带 `isDefault`）',
+    /isDefault=\(n == _dflt\)/.test(svcSrc) && /getattr\(C, 'PRESET_DEFAULT'/.test(svcSrc), '',
+    '没有 isDefault ⇒ 前端只能写死卷名或取 items[0]，两条预设时会悄悄换掉默认卷');
+} else {
+  skip('★ 胶片风格现读 / 默认卷 isDefault 两条', 'service.py 已被重构删除，待迁移到新入口');
+}
 check('★ 右栏**没有滑杆了**（Slider 一次都不许出现）',
   !/Slider/.test(gpCode), '', '又出现滑杆 ⇒ 有人把老控件捡回来了');
 check('★★ 右栏只允许批量出片那两个下拉（相纸 / 成色基准不许回来）',
@@ -847,9 +868,17 @@ if (eirM && eidM) {
     let fx = null;
     try {
       /* ⚠ `describeSessionDir` → `photoFilesIn` → `stemKey`，三层依赖都要一起注进去，
-         少一层就是 `ReferenceError: stemKey is not defined`（整段断在这儿）。 */
+         少一层就是 `ReferenceError: stemKey is not defined`（整段断在这儿）。
+         ⚠ 11-04 补：重构后 `describeSessionDir` 还调了 `rawHomeOf`（找 RAF 子目录），
+         它和 `RAW_DIR` 也得一起注进来，否则 `ReferenceError: rawHomeOf is not defined`。 */
+      const rhM = mainJsCode.match(/function rawHomeOf\(dir\)\s*\{[\s\S]*?\n\}/);
+      const rhSrc = [
+        "const RAW_DIR = 'RAF';",
+        "const JPG_DIR = 'JPG';",
+        "const RATINGS_JSON = '星级.json';"
+      ].join('\n') + '\n' + (rhM ? rhM[0] : '');
       fx = new Function('fs', 'path', 'loadConfig', 'crypto', 'app',
-        cSrc + '\n' + (stemM ? stemM[0] : '') + '\n' + pfiSrc + '\n' + region +
+        cSrc + '\n' + rhSrc + '\n' + (stemM ? stemM[0] : '') + '\n' + pfiSrc + '\n' + region +
         '\n; return { extraSessions: extraSessions };'
       )(fs, path, () => ({ extraRoots: [theRoot] }), crypto, { getPath: () => idxRoot });
     } catch (e) { fx = null; }
@@ -980,8 +1009,10 @@ console.log('\n[14.5] 归档 · 从 RAW 抠全尺寸机内 JPG');
         }
         return { text: 'ok' };
       };
+      const rh2 = (mainJsCode.match(/function rawHomeOf\(dir\)\s*\{[\s\S]*?\n\}/) || [''])[0];
       so = new Function('fs', 'path', 'RAW_EXT', 'stemKey', 'rawNameFor',
         'spawnPy', 'extIndexPy', 'extIndexScriptPath',
+        "const RAW_DIR = 'RAF';\n" + rh2 + '\n' +
         stM2[0] + '\n' + rnM2[0] + '\n' + soM[0] + '; return makeStraightOut;'
       )(fs, path, RAWE3, stemFn, rawNameFn, fakeSpawn, () => 'PY', () => 'SCRIPT');
     } catch (e) { so = null; }
@@ -1098,6 +1129,62 @@ console.log('\n[15] 界面构建是否最新（"看不到新功能"的那个坑�
     '写成调 `node`/`vite` 命令 ⇒ 双击启动那个环境里根本找不到，静默不重建（白做）');
   check('★ 这一段的代码里不写死本机路径（要开源）',
     !!nurM && !/[A-Za-z]:\\/.test(nurM[0]) && !!rbiM && !/[A-Za-z]:\\/.test(rbiM[0]), '');
+}
+
+/* ---------- [16] 拼图台导出的落盘契约（11-04 SV 定） ----------
+   ★ 不弹保存框、自动建 Collage 子目录、文件名两个图名用 and 拼、重名不覆盖。 */
+console.log('\n[16] 拼图台导出落盘');
+const csM = mainJsSrc.match(/ipcMain\.handle\('collage-save'[\s\S]*?\n\}\);/);
+check('★ 能抽出 collage-save 处理函数整段', !!csM, '',
+  '抽不出来 ⇒ 下面几条全是空转');
+if (csM) {
+  const cs = csM[0];
+  check('★★ 导出**不弹保存框**（不再用 showSaveDialog）',
+    !/showSaveDialog/.test(cs), '', '又弹框了 ⇒ SV 要的是「同目录直接出，不用自己选」');
+  check('★ 目录名是拼接的英文单词 Collage',
+    /COLLAGE_SUBDIR\s*=\s*'Collage'/.test(mainJsSrc) && /COLLAGE_SUBDIR/.test(cs), '',
+    '目录名写死中文/写到源目录根 ⇒ 文件散在照片堆里');
+  check('★ 目录自己建（recursive），源目录只读',
+    /mkdirSync\(outDir,\s*\{\s*recursive:\s*true\s*\}\)/.test(cs), '',
+    '不建目录 ⇒ 第一次导出直接 ENOENT');
+  check('★ 文件名做特殊符号清洗（safeCollageName）',
+    /function safeCollageName\(/.test(mainJsSrc) && /safeCollageName\(/.test(cs), '',
+    '空格/括号/中文括号进文件名 ⇒ 后续脚本和同步全踩坑');
+  check('★ 重名自动加序号，不覆盖已有拼图',
+    /while\s*\(fs\.existsSync\(target\)\)/.test(cs) && /let i = 2/.test(cs) && /i\+\+/.test(cs), '',
+    '覆盖 ⇒ 导两次就丢上一张');
+  check('★ 前端传的是「两张图名拼起来」而不是布局名/时间戳',
+    /join\('_and_'\)/.test(read('src/components/CollageView.tsx')) &&
+      !/拼图_\$\{getLayout/.test(read('src/components/CollageView.tsx')), '',
+    '文件名又变回「拼图_上下双拼_2格」了');
+}
+
+/* ---------- [17] 拼图组：片归组 / 互斥 / 批量导出（11-04 SV 定） ---------- */
+console.log('\n[17] 拼图组（搭配形式）');
+{
+  const st = read('src/store/useStore.ts');
+  const dock = read('src/components/Dock.tsx');
+  const cv = read('src/components/CollageView.tsx');
+  const cp = read('src/components/collagePaint.ts');
+  check('★ store 里组是一等对象（collageGroups / CollageGroup）',
+    /interface CollageGroup/.test(st) && /collageGroups:\s*CollageGroup\[\]/.test(st));
+  check('★★ 一张片只属于一个组：加入前先从所有组撤同 key',
+    /function detach\(/.test(st) && /detach\(groups, it\.key\)/.test(st) &&
+      /detach\(groups, item\.key\)/.test(st), '',
+    '少了 detach ⇒ 加到新组还留在旧组，导出的组会串片');
+  check('★★ 底栏缩略图打「组 N」角标，且 Thumb 自己订阅 groups',
+    /data-collage-group/.test(dock) && /photoGroupIndex\(groups,/.test(dock), '',
+    '角标靠父组件传 ⇒ Virtuoso 不重渲，框/角标不动（和 cur 那个坑同源）');
+  check('★ 组可增、可删、可切换',
+    /collageAddGroup/.test(st) && /collageRemoveGroup/.test(st) && /setCollageActive/.test(st));
+  check('★★ 导出遍历所有非空组（一次点，全部出）',
+    /\.filter\(\(\{ gg \}\) => gg\.items\.some\(Boolean\)\)/.test(cv) &&
+      /for \(let k = 0; k < todo\.length; k\+\+\)/.test(cv), '',
+    '只导当前组 ⇒ 分了 N 组还得点 N 次，SV 要的不是这个');
+  check('★★ 没放满的组导出时不印「第 N 格」占位文字',
+    /preview = false/.test(cp) && /else if \(preview\)/.test(cp) &&
+      /paintCollage\(cv, imgs, layout, opts, 0, true\)/.test(cv), '',
+    '占位文字印进成品 ⇒ 空格组全废');
 }
 
 /* ---------- 汇总 ---------- */

@@ -12,6 +12,8 @@ import { Stars, FilterChips, ExifBar } from './Stars';
 import { SessionPane } from './SessionPane';
 import { PickPanel } from './PickPanel';
 import { RenderBar } from './RenderBar';
+import { CollageView } from './CollageView';
+import { CollagePanel } from './CollagePanel';
 
 /**
  * 主布局：顶栏 + [中：大图/分屏 + 底栏] + [右：参数]
@@ -135,41 +137,46 @@ export function App() {
             ⚠ minHeight:0 必须加 —— 嵌套 flex 的子项默认 min-height:auto，
               会被大图内容撑爆，把底栏/星级挤出视口（09-15 SV 实测踩到） */}
         <Flex direction="column" style={{ flex: 1, minWidth: 0, minHeight: 0 }}>
-          {!sessionName ? (
+          {/* ★ 拼图台是**唯一不需要进目录**的台：它可以直接「从文件添加」本地图片
+              （SV 11-04 要拼的 TIFF 扫描件就不在图库里）。其它两台照旧要先选目录。 */}
+          {!sessionName && mode !== 'collage' ? (
             <Box style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
               <HomeView />
             </Box>
           ) : (
             <>
-              <Viewer />
+              {mode === 'collage' ? <CollageView /> : <Viewer />}
 
-              {/* 星级 + 筛选（调色台不显示筛选：那边定死只收 ★≥1） */}
-              <Flex
-                align="center"
-                gap="3"
-                px="3"
-                py="2"
-                style={{
-                  borderTop: '1px solid var(--line)',
-                  background: 'var(--bg-panel)',
-                  flex: '0 0 auto',
-                }}
-              >
-                <Stars big />
-                <Box style={{ flex: 1 }} />
-                {mode === 'pick' && <FilterChips />}
-              </Flex>
+              {/* 星级 + 筛选（调色台不显示筛选；拼图台不需要星级/EXIF） */}
+              {mode !== 'collage' && (
+                <Flex
+                  align="center"
+                  gap="3"
+                  px="3"
+                  py="2"
+                  style={{
+                    borderTop: '1px solid var(--line)',
+                    background: 'var(--bg-panel)',
+                    flex: '0 0 auto',
+                  }}
+                >
+                  <Stars big />
+                  <Box style={{ flex: 1 }} />
+                  {mode === 'pick' && <FilterChips />}
+                </Flex>
+              )}
 
-              <ExifBar />
+              {mode !== 'collage' && <ExifBar />}
               <Dock virtuoso={virtuoso} />
               {mode === 'grade' && <RenderBar />}
             </>
           )}
         </Flex>
 
-        {/* 右栏：选片台 = 照片参数（只读）；调色台 = 调色面板 */}
+        {/* 右栏：选片台 = 照片参数（只读）；调色台 = 调色面板；拼图台 = 拼图参数 */}
         {sessionName && mode === 'pick' && <PickPanel />}
         {sessionName && mode === 'grade' && <GradePanel />}
+        {mode === 'collage' && <CollagePanel />}
       </Flex>
 
       {/* busy 遮罩 */}

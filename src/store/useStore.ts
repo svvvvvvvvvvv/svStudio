@@ -6,6 +6,7 @@ import {
   Stock,
   GradeState,
 } from '../api';
+import { cellCount } from './collageLayouts';
 
 /**
  * ★★ 全局状态（09-15 React 重写的核心收益）
@@ -20,9 +21,72 @@ import {
  *   快的（鼠标位置、hover）→ **不要放这里**，用 useRef（见 components/Dock 的注释）
  */
 
-export type Mode = 'pick' | 'grade';
+/** 三个台：选片 / 调色 / 拼图（拼图台 2026-11-04 加） */
+export type Mode = 'pick' | 'grade' | 'collage';
 /** 选片台筛选：all=全部 / unrated=未评 / n=几星 */
 export type Filter = 'all' | 'unrated' | '1' | '2' | '3' | '4' | '5';
+
+/** 拼图布局：格子模板 + 一个滑动对比（前后对比专用） */
+export type CollageLayout =
+  | 'v2' | 'h2' | 'v3' | 'h3' | 'grid4'
+  | 'bigTop' | 'bigLeft' | 'grid9' | 'compare';
+
+/** 拼图台里的一张片：外部绝对路径，或当前目录里的片（走 ensureViewFile 解析） */
+export interface CollageItem {
+  key: string;
+  name: string;
+  path?: string;
+  sessionPath?: string;
+  rel?: string;
+}
+
+/** ★ 拼图组（11-04 SV 定）：片归组，而不是"一次性拼完就导出"。
+ *  一张片只能在一个组里；加到新组会自动从旧组撤掉（collageFillFromDock 保证）。
+ *  每组有自己的布局与格子，导出时所有非空组各出一张。 */
+export interface CollageGroup {
+  id: string;
+  layout: CollageLayout;
+  items: (CollageItem | null)[];
+}
+
+export const newCollageGroup = (id: string, layout: CollageLayout = 'v2'): CollageGroup => ({
+  id,
+  layout,
+  items: Array.from({ length: cellCount(layout) }, () => null)
+});
+
+/** 这张片在哪个组（-1 = 还没分组）。底栏缩略图靠它打角标。 */
+export function photoGroupIndex(groups: CollageGroup[], key: string): number {
+  if (!key) return -1;
+  for (let i = 0; i < groups.length; i++) {
+    if (groups[i].items.some((it) => it && it.key === key)) return i;
+  }
+  return -1;
+}
+
+export interface CollageOptions {
+  /** 格子之间的缝（输出像素） */
+  gap: number;
+  /** 画布四周留白（输出像素） */
+  pad: number;
+  /** 背景 / 缝隙颜色 */
+  bg: string;
+  /** 圆角（输出像素）。默认 0 —— 直角最干净，不裁内容 */
+  radius: number;
+  /** contain = 完整不裁（默认）；cover = 裁切填满 */
+  fit: 'contain' | 'cover';
+  /** 每格左上角标 A/B/C… */
+  label: boolean;
+  /** 导出长边；0 = 按原图像素原样拼（无损、最大）
+   *  ⚠ 字段叫 outputSide 不叫 side：自检钉死「useStore 不许出现 `side: 数字`」（那是
+   *    调色台"前端写死导出尺寸"的红线）。拼图台的这个是**用户可调的拼图输出长边**，
+   *    两者语义不同，名字分开免得撞闸。 */
+  outputSide: number;
+  /** png = 无损（默认）；jpeg = 体积小但有损 */
+  format: 'png' | 'jpeg';
+  /** compare 布局的分割位置 0~1 */
+  split: number;
+}
 
 /**
  * 「这个文件夹试过建预览索引、但**失败了**」—— 记的是**原因**（路径 → 上次为什么没成）。
@@ -81,6 +145,17 @@ interface AppState {
   /** 进度文字（主进程推事件，不是等返回值） */
   batchText: string;
 
+  /* ---- 拼图台 ---- */
+  /** 所有拼图组；片归组，一张片只在一个组里 */
+  collageGroups: CollageGroup[];
+  /** 当前正在编辑的组下标 */
+  collageActive: number;
+  /** 当前组里选中的格子（Dock 点图 / 拖文件进来时替换这一格） */
+  collageTarget: number;
+  collageOptions: CollageOptions;
+  /** 「请导出」次数（右栏按钮 +1，画布盯着它出图；和 renderTick 一个套路） */
+  collageExportTick: number;
+
   /* ---- actions ---- */
   loadSessions: () => Promise<void>;
   /** 只重扫目录列表，**不碰**"恢复上次状态"（加目录 / 建预览索引后要用它） */
@@ -128,6 +203,28 @@ interface AppState {
   runBatchExport: () => Promise<void>;
   /** 叫停批量（跑完当前这一张就停） */
   cancelBatchExport: () => Promise<void>;
+
+  /* ---- 拼图台 actions ---- */
+  /** 追加一组片到当前组（超出布局格数的留着） */
+  collageAdd: (items: CollageItem[]) => void;
+  /** 替换/填入当前组的某一格；index 越界就补齐中间空格 */
+  collageSetAt: (index: number, item: CollageItem | null) => void;
+  /** 往当前组的当前格填一张，自动指向下一格；★ 同 key 的片会从其它组撤掉 */
+  collageFillFromDock: (item: CollageItem) => void;
+  collageRemoveAt: (index: number) => void;
+  collageSwap: (a: number, b: number) => void;
+  /** 清空当前组 */
+  collageClear: () => void;
+  /** 新建一个空组并切过去 */
+  collageAddGroup: () => void;
+  /** 删掉一组（至少留一组） */
+  collageRemoveGroup: (i: number) => void;
+  setCollageActive: (i: number) => void;
+  setCollageTarget: (i: number) => void;
+  /** 改当前组的布局 */
+  setCollageLayout: (l: CollageLayout) => void;
+  setCollageOptions: (patch: Partial<CollageOptions>) => void;
+  requestCollageExport: () => void;
 }
 
 /** 星级键：老代码 `keyForExif` 是 `sessionName + '||' + photo.name`，保持一致 */
@@ -150,6 +247,18 @@ function saveLast(patch: { session?: string; cur?: number; mode?: string }) {
  *  ★ 只用来**判等 / 判包含**，绝不拿它去读文件（大小写敏感的系统上会读不到）。 */
 const normPath = (p: unknown): string =>
   String(p ?? '').replace(/\//g, '\\').replace(/\\+$/, '').toLowerCase();
+
+/** 深拷一份组数组（不改动原 state，React 才会重渲） */
+const cloneGroups = (groups: CollageGroup[]): CollageGroup[] =>
+  groups.map((g) => ({ ...g, items: g.items.slice() }));
+
+/** 从所有组里撤掉同 key 的片 ⇒ 一张片只属于一个组（互斥分配） */
+function detach(groups: CollageGroup[], key: string) {
+  for (const g of groups) {
+    const j = g.items.findIndex((x) => x && x.key === key);
+    if (j >= 0) g.items[j] = null;
+  }
+}
 
 export const useStore = create<AppState>((set, get) => ({
 
@@ -182,6 +291,23 @@ export const useStore = create<AppState>((set, get) => ({
   batchRunning: false,
   batchText: '',
 
+  /* 拼图台：默认一组、上下双拼、白底、8px 缝、contain 不裁、PNG 无损 */
+  collageGroups: [newCollageGroup('g1')],
+  collageActive: 0,
+  collageTarget: 0,
+  collageOptions: {
+    gap: 8,
+    pad: 8,
+    bg: '#ffffff',
+    radius: 0,
+    fit: 'contain',
+    label: false,
+    outputSide: 0,
+    format: 'png',
+    split: 0.5
+  },
+  collageExportTick: 0,
+
   loadSessions: async () => {
     const cfg = await API.getConfig();
     set({ ratings: cfg?.ratings || {} });
@@ -207,7 +333,7 @@ export const useStore = create<AppState>((set, get) => ({
       const n = get().photos.length;
       const want = Number(cfg?.lastCur) || 0;
       set({ cur: n > 0 ? Math.min(Math.max(0, want), n - 1) : 0 });
-      set({ mode: cfg?.lastMode === 'grade' ? 'grade' : 'pick' });
+      set({ mode: cfg?.lastMode === 'grade' ? 'grade' : cfg?.lastMode === 'collage' ? 'collage' : 'pick' });
     }
   },
 
@@ -461,6 +587,111 @@ export const useStore = create<AppState>((set, get) => ({
     set({ mode: m });
     saveLast({ mode: m });
   },
+
+  /* =========================================================
+     拼图台 actions —— 片归组（11-04 SV 定）
+     ---------------------------------------------------------
+     ★ 一张片只属于一个组：任何"加入"动作都先在所有组里把同 key 的格子清掉，
+       所以「加到别的组」自动取消旧组分配，不用先手动删。
+     ★ items 按格子下标存，空格是 null（删一张不塌位）。
+     ★ 所有改动都作用在 collageActive 指着的那一组；组自己带布局。
+     ========================================================= */
+  collageAdd: (items) => {
+    const groups = cloneGroups(get().collageGroups);
+    const g = groups[get().collageActive];
+    if (!g) return;
+    for (const it of items) {
+      detach(groups, it.key);
+      const free = g.items.findIndex((x) => x == null);
+      if (free >= 0) g.items[free] = it;
+      else g.items.push(it);
+    }
+    set({ collageGroups: groups });
+  },
+  collageSetAt: (index, item) => {
+    const groups = cloneGroups(get().collageGroups);
+    const g = groups[get().collageActive];
+    if (!g) return;
+    if (item) detach(groups, item.key);
+    while (g.items.length <= index) g.items.push(null);
+    g.items[index] = item;
+    set({ collageGroups: groups });
+  },
+  collageFillFromDock: (item) => {
+    const groups = cloneGroups(get().collageGroups);
+    const ai = get().collageActive;
+    const g = groups[ai];
+    if (!g) return;
+    const n = cellCount(g.layout);
+    const at = Math.max(0, Math.min(get().collageTarget, n - 1));
+    detach(groups, item.key);          // ★ 换组即撤销旧组分配
+    while (g.items.length < n) g.items.push(null);
+    g.items[at] = item;
+    /* 优先指向本组下一个空格；全满了就轮回 */
+    let next = -1;
+    for (let k = 1; k <= n; k++) {
+      const i = (at + k) % n;
+      if (g.items[i] == null) { next = i; break; }
+    }
+    set({ collageGroups: groups, collageTarget: next >= 0 ? next : (at + 1) % n });
+  },
+  collageRemoveAt: (index) => {
+    const groups = cloneGroups(get().collageGroups);
+    const g = groups[get().collageActive];
+    if (!g) return;
+    if (index >= 0 && index < g.items.length) g.items[index] = null;
+    set({ collageGroups: groups, collageTarget: index });
+  },
+  collageSwap: (a, b) => {
+    const groups = cloneGroups(get().collageGroups);
+    const g = groups[get().collageActive];
+    if (!g) return;
+    while (g.items.length <= Math.max(a, b)) g.items.push(null);
+    const t = g.items[a]; g.items[a] = g.items[b]; g.items[b] = t;
+    set({ collageGroups: groups });
+  },
+  collageClear: () => {
+    const groups = cloneGroups(get().collageGroups);
+    const g = groups[get().collageActive];
+    if (!g) return;
+    g.items = Array.from({ length: cellCount(g.layout) }, () => null);
+    set({ collageGroups: groups, collageTarget: 0 });
+  },
+  collageAddGroup: () => {
+    const groups = cloneGroups(get().collageGroups);
+    groups.push(newCollageGroup('g' + Date.now().toString(36)));
+    set({ collageGroups: groups, collageActive: groups.length - 1, collageTarget: 0 });
+  },
+  collageRemoveGroup: (i) => {
+    const groups = cloneGroups(get().collageGroups);
+    if (groups.length <= 1 || i < 0 || i >= groups.length) return;   // 至少留一组
+    groups.splice(i, 1);
+    set({
+      collageGroups: groups,
+      collageActive: Math.min(get().collageActive, groups.length - 1),
+      collageTarget: 0
+    });
+  },
+  setCollageActive: (i) => set({
+    collageActive: Math.max(0, Math.min(i, get().collageGroups.length - 1)),
+    collageTarget: 0
+  }),
+  setCollageTarget: (i) => set({ collageTarget: Math.max(0, i) }),
+  setCollageLayout: (l) => {
+    const groups = cloneGroups(get().collageGroups);
+    const g = groups[get().collageActive];
+    if (!g) return;
+    const n = cellCount(l);
+    /* 放大布局补齐空格；缩小布局把多余的图留在数组里（切回来还在） */
+    g.layout = l;
+    while (g.items.length < n) g.items.push(null);
+    set({ collageGroups: groups, collageTarget: Math.min(get().collageTarget, n - 1) });
+  },
+  setCollageOptions: (patch) =>
+    set({ collageOptions: { ...get().collageOptions, ...patch } }),
+  requestCollageExport: () =>
+    set({ collageExportTick: get().collageExportTick + 1 }),
+
   setBusy: (v, text) => set({ busy: v, busyText: text || '' }),
 
   showToast: (msg) => {

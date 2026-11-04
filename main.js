@@ -1886,3 +1886,169 @@ ipcMain.handle('ext-index', async (e, srcDir) => {
   return Object.assign({ text: r.text }, out, { error: out.error || r.error || '' });
 });
 
+
+/* =========================================================
+   拼图台（Collage）—— 两条通道
+   ---------------------------------------------------------
+   collage-read-image  任意格式（JPG/PNG/BMP/TIFF）→ 显示方向正确的 PNG dataURL
+   collage-save        canvas 导出的 dataURL → 写盘（PNG 无损 / JPEG）
+
+   ★ 为什么不用 nativeImage：实测 Windows 下它对 TIFF/BMP 返回 0x0（createFromPath
+     拿不到像素），而拼图台要能吃刚从 BMP 转出来的 TIFF 扫描件。
+   ★ 为什么统一走 dataURL：页面是 file:// + contextIsolation，
+     <img src="file:///…"> 画进 canvas 会**污染画布** ⇒ toDataURL/toBlob 抛安全错。
+     dataURL 同源，预览和导出共用同一块 canvas（所见即所得、一份实现）。
+   ★ 为什么带 maxSide：4653×3200 的扫描件预览没必要解码全尺寸；
+     预览走长边 1600 的副本，导出走 maxSide=0 的原图，**同一套绘制参数**。
+   ========================================================= */
+function collageCacheDir() {
+  const d = path.join(cacheDir(), 'collage');
+  try { fs.mkdirSync(d, { recursive: true }); } catch (e) { /* ignore */ }
+  return d;
+}
+
+/** 拼图台的图片来源：外部绝对路径，或当前目录里某张片（走 ensureViewFile 解析桶/RAW 缓存） */
+async function collageResolvePath(p) {
+  const direct = String(p && p.path || '').trim();
+  if (direct) return fs.existsSync(direct) ? direct : '';
+  const sp = String(p && p.sessionPath || '').trim();
+  const rel = String(p && p.rel || '').trim();
+  if (sp && rel) {
+    const full = await ensureViewFile(sp, rel);
+    if (full && fs.existsSync(full)) return full;
+    /* 兜底：按 Viewer 的口径拼一次真实文件名（新库 JPG 子目录） */
+    try {
+      const list = listPhotos(sp) || [];
+      const hit = list.find((x) => x.rel === rel);
+      if (hit) {
+        const f = path.join(hit.dir || sp, hit.name);
+        if (fs.existsSync(f)) return f;
+      }
+    } catch (e) { /* ignore */ }
+  }
+  return '';
+}
+
+ipcMain.handle('collage-read-image', async (e, p) => {
+  const o = p || {};
+  const full = await collageResolvePath(o);
+  if (!full) {
+    return { ok: false, error: '找不到这张图：' + (o.path || o.rel || '(空)') };
+  }
+  let stat;
+  try { stat = fs.statSync(full); } catch (err) {
+    return { ok: false, error: '读不到文件：' + err.message };
+  }
+  const maxSide = Math.max(0, Number(o.maxSide) || 0);
+  const key = crypto.createHash('md5')
+    .update(full + '|' + stat.size + '|' + stat.mtimeMs + '|' + maxSide)
+    .digest('hex');
+  const outPng = path.join(collageCacheDir(), key + '.png');
+  if (!fs.existsSync(outPng)) {
+    const script = path.join(__dirname, 'tools', 'collage_read.py');
+    if (!fs.existsSync(script)) {
+      return { ok: false, error: '拼图读取脚本不在：' + script };
+    }
+    const r = await spawnPy(extIndexPy(), script, [
+      '--src=' + full,
+      '--out=' + outPng,
+      '--max-side=' + String(maxSide)
+    ]);
+    const line = String(r.text || '').split('\n')
+      .find((x) => x.startsWith('KS_COLLAGE_OK') || x.startsWith('KS_COLLAGE_ERR'));
+    if (!line || line.startsWith('KS_COLLAGE_ERR')) {
+      let msg = '读取失败';
+      try { msg = JSON.parse(line.slice(line.indexOf('{'))).error || msg; } catch (_) { /* ignore */ }
+      /* 脚本连结果行都没给（最常见：Python 缺 PIL，import 就在模块级炸了）
+         ⇒ 把 traceback 尾巴带上，别只说「读取失败」让人无从下手。 */
+      const tail = !line
+        ? String(r.text || '').trim().split('\n').filter(Boolean).slice(-2).join(' | ')
+        : '';
+      return { ok: false, error: msg + (tail ? ' · ' + tail : '') + (r.error ? ' · ' + r.error : '') };
+    }
+    if (!fs.existsSync(outPng)) {
+      return { ok: false, error: '转换脚本没产出 PNG：' + outPng };
+    }
+    /* 把「缩放前的原始像素」记下来：预览要据此把 gap/pad 按同一比例缩小，
+       否则预览看起来缝很宽、导出却很窄（所见非所得）。 */
+    try {
+      const meta = JSON.parse(line.slice(line.indexOf('{')));
+      fs.writeFileSync(outPng + '.json', JSON.stringify({ ow: meta.ow, oh: meta.oh }));
+    } catch (_) { /* 元数据写不了就按 w/h 兜底 */ }
+  }
+  try {
+    const buf = fs.readFileSync(outPng);
+    /* 尺寸从 PNG 头直接读（大端 32 位），不依赖额外库 */
+    const w = buf.readUInt32BE(16);
+    const h = buf.readUInt32BE(20);
+    let ow = w, oh = h;
+    try {
+      const meta = JSON.parse(fs.readFileSync(outPng + '.json', 'utf8'));
+      if (meta.ow > 0 && meta.oh > 0) { ow = meta.ow; oh = meta.oh; }
+    } catch (_) { /* 老缓存没有元数据 */ }
+    return {
+      ok: true,
+      url: 'data:image/png;base64,' + buf.toString('base64'),
+      w, h, ow, oh, bytes: buf.length, src: full
+    };
+  } catch (err) {
+    return { ok: false, error: '读回 PNG 失败：' + err.message };
+  }
+});
+
+/* ★ 11-04 SV 定：**不弹保存框**。导出到「源图同目录 / Collage」，
+   Collage = 拼接的英文单词；文件名由前端把两张图名用 and 拼好（无特殊符号），
+   这里再兜底洗一遍，重名自动加 _2 不覆盖。
+   ⚠ 目录必须自己建（recursive），源目录只读，别往里散落文件。 */
+const COLLAGE_SUBDIR = 'Collage';
+function safeCollageName(s) {
+  return String(s || '')
+    .replace(/\.[^./\\]+$/, '')                       // 去扩展名
+    .replace(/[^\w\u4e00-\u9fa5-]+/g, '_')           // 空格/括号/# 等特殊符号 → _
+    .replace(/_+/g, '_')                              // 连续下划线并成一个（文件名规范）
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 120) || 'Collage';
+}
+
+ipcMain.handle('collage-save', async (e, p) => {
+  const o = p || {};
+  const dataUrl = String(o.dataUrl || '');
+  const m = /^data:image\/(png|jpeg);base64,(.*)$/s.exec(dataUrl);
+  if (!m) return { ok: false, error: '没有可保存的图像数据（canvas 没画出来？）' };
+  const ext = m[1] === 'png' ? 'png' : 'jpg';
+  const srcDir = String(o.dir || '').trim();
+  const root = srcDir && fs.existsSync(srcDir) ? srcDir : app.getPath('pictures');
+  const outDir = path.join(root, COLLAGE_SUBDIR);
+  const name = safeCollageName(o.name || 'Collage');
+  let target = path.join(outDir, name + '.' + ext);
+  let i = 2;
+  while (fs.existsSync(target)) {
+    target = path.join(outDir, name + '_' + i + '.' + ext);
+    i++;
+  }
+  try {
+    fs.mkdirSync(outDir, { recursive: true });
+    const buf = Buffer.from(m[2], 'base64');
+    fs.writeFileSync(target, buf);
+    return {
+      ok: true, path: target, dir: outDir, name: path.basename(target),
+      bytes: buf.length, w: o.w || 0, h: o.h || 0
+    };
+  } catch (err) {
+    return { ok: false, error: '写盘失败：' + err.message };
+  }
+});
+
+/** 拼图台「从文件添加」：多选本地图片（JPG/PNG/BMP/TIFF 都收，反正读图侧有 PIL 兜底） */
+ipcMain.handle('collage-pick-files', async () => {
+  const res = await dialog.showOpenDialog(win, {
+    title: '选择要拼的图片（可多选）',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      { name: '图片', extensions: ['jpg', 'jpeg', 'png', 'bmp', 'tif', 'tiff', 'webp'] },
+      { name: '全部文件', extensions: ['*'] }
+    ]
+  });
+  if (res.canceled || !res.filePaths || !res.filePaths.length) return [];
+  return res.filePaths;
+});

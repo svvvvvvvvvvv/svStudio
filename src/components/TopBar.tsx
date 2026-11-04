@@ -79,6 +79,7 @@ export function TopBar() {
           [
             ['pick', '选片台'],
             ['grade', '调色台'],
+            ['collage', '拼图台'],
           ] as const
         ).map(([m, label]) => (
           <button

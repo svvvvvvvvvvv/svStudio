@@ -67,5 +67,14 @@ contextBridge.exposeInMainWorld('api', {
     const h = (_e, line) => cb(line);
     ipcRenderer.on('ext-index-progress', h);
     return () => ipcRenderer.removeListener('ext-index-progress', h);
-  }
+  },
+
+  /* ---- 拼图台 ----
+     ★ 读图统一回 PNG dataURL（不是 file:// 路径）：file:// 图片画进 canvas 会污染画布，
+       toDataURL 会抛安全错；dataURL 同源，预览和导出能共用一块 canvas。
+       TIFF/BMP 也靠主进程那份 Python/PIL 转，Electron 的 nativeImage 读不了。 */
+  collageReadImage: (opts) => ipcRenderer.invoke('collage-read-image', opts),
+  collageSave: (opts) => ipcRenderer.invoke('collage-save', opts),
+  /** 拖进来的本地图片 → 绝对路径（和文件夹共用同一个 webUtils 入口） */
+  collagePickFiles: () => ipcRenderer.invoke('collage-pick-files')
 });

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { API, Photo } from '../api';
-import { ratingKey, useStore, visiblePhotos } from '../store/useStore';
+import { ratingKey, photoGroupIndex, useStore, visiblePhotos } from '../store/useStore';
 import { HoverPreview } from './HoverPreview';
 
 /**
@@ -29,6 +29,11 @@ function Thumb({ p, gi }: { p: Photo; gi: number }) {
   const active = gi === cur;
   const sessionPath = useStore((s) => s.sessionPath);
   const sessionName = useStore((s) => s.sessionName);
+  /* ★ 拼图组角标：这张片归哪组了，一眼看得出（任何台都显示）。
+     ⚠ 角标自己订阅 groups —— 不能靠父组件传，Virtuoso 的 itemContent
+     只在 totalCount 变化时重跑（和 cur 那个坑同源）。 */
+  const groups = useStore((s) => s.collageGroups);
+  const groupNo = photoGroupIndex(groups, (sessionPath || '') + '||' + p.rel);
   const star = useStore((s) => s.ratings[ratingKey(sessionName, p.rel)] || 0);
   const [src, setSrc] = useState<string | null>(null);
 
@@ -79,6 +84,20 @@ function Thumb({ p, gi }: { p: Photo; gi: number }) {
         ) : (
           <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>…</span>
         )}
+        {/* ★ 已加入拼图组的标记 */}
+        {groupNo >= 0 && (
+          <span
+            data-collage-group={groupNo + 1}
+            title={`这张片已加入拼图组 ${groupNo + 1}`}
+            style={{
+              position: 'absolute', top: 2, right: 2,
+              background: 'var(--accent)', color: '#fff',
+              fontSize: 9, lineHeight: 1.4, padding: '0 4px',
+              borderRadius: 3, pointerEvents: 'none', whiteSpace: 'nowrap'
+            }}>
+            组{groupNo + 1}
+          </span>
+        )}
       </div>
       <div
         style={{
@@ -101,11 +120,17 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
   const filter = useStore((s) => s.filter);
   const ratings = useStore((s) => s.ratings);
   const sessionName = useStore((s) => s.sessionName);
+  const sessionPath = useStore((s) => s.sessionPath);
   const setCur = useStore((s) => s.setCur);
+  const fillFromDock = useStore((s) => s.collageFillFromDock);
   const hostRef = useRef<HTMLDivElement>(null);
 
-  // 调色台只收 ★≥1（SV 09-14 定死）
-  const list = visiblePhotos(photos, sessionName, ratings, filter, mode === 'grade');
+  /* ★ 拼图台：底栏就是「选片来源」—— 点一张填进当前选中的格子。
+     ⚠ 这里**不按星级/筛选过滤**（拼图台不该被选片台的星级挡住），
+        也不走 setCur（那会把大图换掉，但拼图台没有大图）。 */
+  const list = mode === 'collage'
+    ? photos.map((_, i) => i)
+    : visiblePhotos(photos, sessionName, ratings, filter, mode === 'grade');
 
   /** 当前片在"筛选后片单"里的位置，用于滚到可见 */
   const idxInList = list.indexOf(cur);
@@ -158,7 +183,9 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
         >
           {mode === 'grade'
             ? '这个目录还没有打星的片 —— 调色台底栏只列 ★≥1，先去「选片台」打星'
-            : '当前筛选下没有照片（换一个筛选看看）'}
+            : mode === 'collage'
+              ? '这个目录里没有照片 —— 也可以用右栏「从文件添加…」，或直接把图片拖进画布'
+              : '当前筛选下没有照片（换一个筛选看看）'}
         </div>
       )}
       <Virtuoso
@@ -170,7 +197,18 @@ export function Dock({ virtuoso }: { virtuoso: React.RefObject<VirtuosoHandle> }
           const gi = list[i];
           return (
             <div
-              onClick={() => setCur(gi)}
+              onClick={() => {
+                if (mode === 'collage') {
+                  fillFromDock({
+                    key: (sessionPath || '') + '||' + photos[gi].rel,
+                    name: photos[gi].name,
+                    sessionPath,
+                    rel: photos[gi].rel
+                  });
+                } else {
+                  setCur(gi);
+                }
+              }}
               data-idx={gi}
               style={{ padding: '0 3px' }}
             >
